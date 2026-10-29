@@ -720,5 +720,78 @@ class UnnamedExperienceTests(unittest.TestCase):
             self.assertIn("需求化石", text)
 
 
+class AuditTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.target = Path(self._tmp.name) / "sample"
+        shutil.copytree(SAMPLE, self.target)
+
+    def test_version_reads_repo_version_file(self) -> None:
+        expected = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        completed = run_cli("--version")
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertEqual(f"sure {expected}", completed.stdout.strip())
+
+    def test_plan_records_current_method_version(self) -> None:
+        target = Path(self._tmp.name) / "planned"
+        completed = run_cli(
+            "plan",
+            str(target),
+            "--goal",
+            "AI glasses dissent",
+            "--region",
+            "overseas",
+            "--sample-size",
+            "1000",
+            "--platform-types",
+            "forum,social,video",
+        )
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        study = json.loads((target / "study.json").read_text(encoding="utf-8"))
+        expected = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        self.assertEqual(expected, study["method_version"])
+
+    def test_demo_runs_bundled_sample_in_temp_dir(self) -> None:
+        completed = run_cli("demo")
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        self.assertIn("SURE 审计", completed.stdout)
+        self.assertIn("pass", completed.stdout)
+        self.assertFalse((ROOT / "examples/sample-study/05-audit/audit.json").exists())
+
+    def test_audit_passes_sample_and_writes_artifacts(self) -> None:
+        completed = run_cli("audit", str(self.target))
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        payload = json.loads((self.target / "05-audit/audit.json").read_text(encoding="utf-8"))
+        self.assertEqual("pass", payload["status"])
+        self.assertEqual("supported", payload["claims"][0]["verdict"])
+        self.assertTrue((self.target / "05-audit/audit.md").is_file())
+        self.assertIn("可支持", (self.target / "05-audit/audit.md").read_text(encoding="utf-8"))
+
+    def test_audit_flags_a_validated_claim_that_exceeds_evidence(self) -> None:
+        judgments_path = self.target / "04-findings/demand-judgments.json"
+        judgments = json.loads(judgments_path.read_text(encoding="utf-8"))
+        judgments[0]["commercial_evidence_ids"] = []
+        judgments_path.write_text(json.dumps(judgments, ensure_ascii=False, indent=2), encoding="utf-8")
+        completed = run_cli("audit", str(self.target))
+        self.assertEqual(1, completed.returncode, completed.stdout + completed.stderr)
+        payload = json.loads((self.target / "05-audit/audit.json").read_text(encoding="utf-8"))
+        self.assertEqual("exceeds_evidence", payload["claims"][0]["verdict"])
+        self.assertTrue(any("commercial" in reason for reason in payload["claims"][0]["reasons"]))
+
+    def test_audit_unknown_claim_filter_is_a_usage_error(self) -> None:
+        completed = run_cli("audit", str(self.target), "--claim", "no-such-claim")
+        self.assertEqual(2, completed.returncode)
+        self.assertIn("no claim matched", completed.stderr)
+
+    def test_study_template_has_no_hardcoded_version(self) -> None:
+        template = (
+            ROOT
+            / "skills/user-demand-research/assets/study-template/study.json"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"{{method_version}}"', template)
+        self.assertNotIn("SURE 1.6", template)
+
+
 if __name__ == "__main__":
     unittest.main()

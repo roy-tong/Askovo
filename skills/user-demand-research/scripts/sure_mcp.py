@@ -34,7 +34,7 @@ sys.modules["sure"] = sure
 _spec.loader.exec_module(sure)
 
 SERVER_NAME = "user-demand-research"
-SERVER_VERSION = "1.9.0"
+SERVER_VERSION = sure.SURE_VERSION
 DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 SUPPORTED_PROTOCOL_VERSIONS = {"2024-11-05", "2025-03-26", "2025-06-18"}
 SERVER_INSTRUCTIONS = (
@@ -47,7 +47,8 @@ SERVER_INSTRUCTIONS = (
     "(3) collect only with registry-supported connectors, writing a run manifest per "
     "collection; (4) sure_signals computes deterministic corpus signals; "
     "(5) sure_report assembles the research-status report. "
-    "Tool results embed exit codes: 1 = failed gate, 3 = no feasible platform — both are "
+    "Start with sure_audit when the user already has a study or corpus: it returns gates, "
+    "signals, and per-claim verdicts. Tool results embed exit codes: 1 = failed gate, 3 = no feasible platform — both are "
     "research statuses to report, never reasons to retry or to substitute a commercial "
     "provider, merchant API, saved login, internal endpoint, or browser automation. "
     "Evidence is graded E0-E5; a validated demand judgment needs linked problem, solution, "
@@ -139,6 +140,14 @@ def _build_check(arguments: dict[str, Any]) -> argparse.Namespace:
         study_dir=_string(arguments.get("study_dir"), "study_dir"),
         stage=stage,
         write_report=bool(arguments.get("write_report", False)),
+    )
+
+
+def _build_audit(arguments: dict[str, Any]) -> argparse.Namespace:
+    return _namespace(
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        claim=_optional_string(arguments, "claim"),
+        json=True,
     )
 
 
@@ -271,6 +280,22 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sure_audit",
+        "description": (
+            "Audit a study end to end: run all gates, compute deterministic corpus signals, and "
+            "return per-claim verdicts (supported / exceeds_evidence / open). Use this first when "
+            "the user asks whether existing material can support a decision."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "study_dir": {"type": "string"},
+                "claim": {"type": "string", "description": "optional filter: claim id, title, or status"},
+            },
+            "required": ["study_dir"],
+        },
+    },
+    {
         "name": "sure_signals",
         "description": (
             "Compute deterministic corpus signals from 02-data/evidence.jsonl into "
@@ -347,6 +372,7 @@ TOOL_BUILDERS = {
     "sure_plan": (sure.command_plan, _build_plan),
     "sure_init": (sure.command_init, _build_init),
     "sure_check": (sure.command_check, _build_check),
+    "sure_audit": (sure.command_audit, _build_audit),
     "sure_signals": (sure.command_signals, _build_signals),
     "sure_lexicon": (sure.command_lexicon, _build_lexicon),
     "sure_report": (sure.command_report, _build_report),

@@ -1,7 +1,7 @@
 {
   "study_id": "待填写",
   "title": "待填写",
-  "method_version": "SURE 1.6",
+  "method_version": "{{method_version}}",
   "decision": {
     "question": "待填写",
     "owner": "待填写",

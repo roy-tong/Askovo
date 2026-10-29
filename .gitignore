@@ -4,3 +4,7 @@ __pycache__/
 .venv/
 **/05-audit/latest.json
 **/05-audit/latest.md
+
+*.egg-info/
+build/
+dist/

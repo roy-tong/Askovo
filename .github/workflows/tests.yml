@@ -14,3 +14,15 @@ jobs:
           python-version: "3.12"
       - run: python3 -m unittest discover -s tests -v
       - run: python3 skills/user-demand-research/scripts/sure.py check examples/sample-study --stage full
+      - name: Version is single-sourced
+        run: |
+          test "$(cat VERSION)" = "$(python3 skills/user-demand-research/scripts/sure.py --version | awk '{print $2}')"
+          test "$(cat VERSION)" = "$(python3 -c 'import sure_research; print(sure_research.__version__)')"
+          ! grep -q 'SURE 1\.[0-9]' skills/user-demand-research/assets/study-template/study.json
+          ! grep -q 'SERVER_VERSION = "1\.' skills/user-demand-research/scripts/sure_mcp.py
+      - name: Packaging smoke
+        run: |
+          python3 -m pip install -e .
+          sure --version
+          sure doctor
+          sure demo

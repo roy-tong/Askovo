@@ -68,6 +68,7 @@ class SureMcpServerTests(unittest.TestCase):
         self.assertIn("sure_plan", tool_names)
         self.assertIn("sure_report", tool_names)
         self.assertIn("sure_lexicon", tool_names)
+        self.assertIn("sure_audit", tool_names)
 
         connectors = tool_payload(by_id[3])
         self.assertEqual(0, connectors["exit_code"])

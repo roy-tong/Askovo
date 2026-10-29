@@ -15,12 +15,30 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+
+def _read_version() -> str:
+    """Single source of truth: <repo>/VERSION, shared by CLI, MCP, and packaging."""
+    for candidate in (
+        Path(__file__).resolve().parents[3] / "VERSION",
+        Path(__file__).resolve().parents[1] / "VERSION",
+    ):
+        try:
+            value = candidate.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if value:
+            return value
+    return "dev"
+
+
+SURE_VERSION = _read_version()
 
 LEVELS = {"E0", "E1", "E2", "E3", "E4+", "E4-", "E5"}
 CORPUS_ROLES = {
@@ -1928,6 +1946,7 @@ def _create_workspace(
     study = _load_json(study_path)
     study["study_id"] = study_id
     study["title"] = title
+    study["method_version"] = SURE_VERSION
     study["decision"]["question"] = decision
     platform_templates: list[str] = []
     for platform in sorted(set(platforms)):
@@ -1970,6 +1989,318 @@ def command_init(args: argparse.Namespace) -> int:
         )
     )
     return 0
+
+
+# ---------------------------------------------------------------------------
+# audit: gates + deterministic signals + claim-level verdicts
+
+
+LEVEL_RANK = {"E0": 0, "E1": 1, "E2": 2, "E3": 3, "E4-": 4, "E4+": 5, "E5": 6}
+CHAIN_RULES = (
+    ("problem", "problem_evidence_ids", {"E1", "E2"}),
+    ("solution", "solution_evidence_ids", {"E3"}),
+    ("commercial", "commercial_evidence_ids", {"E4+", "E5"}),
+)
+AUDIT_BOUNDARY = (
+    "审计只回答「现有材料能支持到哪一级」：不证明需求真实存在、不估计总体比例、不替代人工复核。"
+)
+
+
+def _load_evidence_levels(path: Path) -> dict[str, str]:
+    if not path.is_file():
+        return {}
+    try:
+        records = _load_jsonl(path)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+    levels: dict[str, str] = {}
+    for record in records:
+        record_id = str(record.get("record_id", ""))
+        level = str(record.get("evidence_level", ""))
+        if record_id and level in LEVELS:
+            levels[record_id] = level
+    return levels
+
+
+def _claim_verdicts(
+    judgments: list[Any],
+    levels: dict[str, str],
+    require_counter: bool,
+) -> list[dict[str, Any]]:
+    claims: list[dict[str, Any]] = []
+    for index, judgment in enumerate(judgments, start=1):
+        if not isinstance(judgment, dict):
+            continue
+        claim_id = str(judgment.get("id") or index)
+        status = str(judgment.get("status") or "")
+        reasons: list[str] = []
+        chains: dict[str, Any] = {}
+        referenced: set[str] = set()
+
+        for name, field, accepted in CHAIN_RULES:
+            ids = [str(value) for value in (judgment.get(field) or []) if str(value)]
+            referenced.update(ids)
+            observed = sorted(
+                {levels[value] for value in ids if value in levels},
+                key=lambda level: LEVEL_RANK.get(level, -1),
+            )
+            ok = bool(set(observed) & accepted)
+            chains[name] = {"ok": ok, "levels": observed, "evidence_ids": ids}
+            if not ok:
+                reasons.append(f"缺 {name} 链（需要 {', '.join(sorted(accepted))}）")
+
+        counter_ids = [
+            str(value) for value in (judgment.get("counter_evidence_ids") or []) if str(value)
+        ]
+        referenced.update(counter_ids)
+        if require_counter and not counter_ids:
+            reasons.append("缺反证")
+
+        unknown = sorted(value for value in referenced if value not in levels)
+        if unknown:
+            reasons.append("引用不存在的证据：" + ", ".join(unknown))
+
+        all_levels = sorted(
+            {levels[value] for value in referenced if value in levels},
+            key=lambda level: LEVEL_RANK.get(level, -1),
+        )
+        max_level = all_levels[-1] if all_levels else "none"
+
+        if status == "validated":
+            verdict = "supported" if not reasons else "exceeds_evidence"
+        elif status == "rejected":
+            verdict = "rejected"
+        elif status == "deprioritized":
+            verdict = "deprioritized"
+        else:
+            verdict = "open"
+
+        claims.append(
+            {
+                "id": claim_id,
+                "title": str(judgment.get("title") or ""),
+                "claimed_status": status,
+                "confidence": str(judgment.get("confidence") or ""),
+                "verdict": verdict,
+                "max_evidence_level": max_level,
+                "chains": chains,
+                "counter_evidence": len(counter_ids),
+                "gaps": [str(value) for value in (judgment.get("gaps") or [])],
+                "next_test": str(judgment.get("next_test") or ""),
+                "reasons": reasons,
+            }
+        )
+    return claims
+
+
+def _audit_next_actions(payload: dict[str, Any]) -> list[str]:
+    actions: list[str] = []
+    for claim in payload["claims"]:
+        if claim["verdict"] == "exceeds_evidence":
+            actions.append(
+                f"把 {claim['id']} 降级为 needs-validation，或补齐：" + "；".join(claim["reasons"])
+            )
+    failed = {item["id"]: item for item in payload["checks"] if item["status"] == "fail"}
+    if "study_contract" in failed:
+        actions.append("补全 study.json 的决策问题、假设、证伪条件与停止规则")
+    for check_id in sorted(failed):
+        if check_id.endswith("_source_design"):
+            actions.append(f"补全 {check_id[:-14]} 的 data_rights_basis / retention_rule / terms_reviewed_at")
+    if "evidence_records" in failed:
+        actions.append("按缺口补采，直到记录数与证据角色覆盖达到质量门槛")
+    if "demand_judgments" in failed and not payload["claims"]:
+        actions.append("补写 04-findings/demand-judgments.json，并为每条判断挂上证据 id")
+    if not payload["claims"]:
+        actions.append("先写至少一条 demand judgment，再跑 audit")
+    return actions[:8]
+
+
+def _render_audit_md(payload: dict[str, Any]) -> str:
+    verdict_zh = "可支持" if payload["status"] == "pass" else "不可支持（或超出证据）"
+    lines = [
+        "# SURE 审计结论",
+        "",
+        f"- 研究：`{payload['study_id']}` — {payload['study_title']}",
+        f"- 方法版本：`{payload['method_version']}`"
+        + (f"（⚠ {payload['version_warning']}）" if payload.get("version_warning") else ""),
+        f"- 审计时间：{payload['generated_at']}",
+        f"- 结论：**{verdict_zh}**",
+        "",
+    ]
+    if payload.get("decision_question"):
+        lines.extend(["## 要回答的决定", "", payload["decision_question"], ""])
+
+    summary = payload["summary"]
+    lines.extend(
+        [
+            "## 材料概况",
+            "",
+            f"- 证据记录：{summary['records']} 条",
+            f"- 重复率：{summary['duplicate_rate']:.1%}",
+            f"- 主导来源占比：{summary['dominant_source_share']:.1%}",
+            f"- 判断：{summary['claims']} 条（可支持 {summary['supported']}、"
+            f"超出证据 {summary['overclaims']}、未定 {summary['open']}）",
+            "",
+            "## 判断与证据",
+            "",
+        ]
+    )
+    if payload["claims"]:
+        lines.append("| 判断 | 声称状态 | 最高证据 | 问题链 | 方案链 | 商业链 | 结论 |")
+        lines.append("| --- | --- | --- | --- | --- | --- | --- |")
+        verdict_label = {
+            "supported": "可支持",
+            "exceeds_evidence": "**超出证据**",
+            "open": "未定",
+            "rejected": "已否决",
+            "deprioritized": "降级",
+        }
+        for claim in payload["claims"]:
+            chains = claim["chains"]
+            tick = lambda key: "✓" if chains[key]["ok"] else "✗"
+            lines.append(
+                f"| {claim['id']} {claim['title']} | {claim['claimed_status']} | "
+                f"{claim['max_evidence_level']} | {tick('problem')} | {tick('solution')} | "
+                f"{tick('commercial')} | {verdict_label.get(claim['verdict'], claim['verdict'])} |"
+            )
+    else:
+        lines.append("尚无 demand judgment。")
+    lines.append("")
+
+    lines.extend(["## 缺口与下一步", ""])
+    actions = payload.get("next_actions") or []
+    if actions:
+        lines.extend(f"- {action}" for action in actions)
+    else:
+        lines.append("- 未发现需要阻断的缺口；继续补采或进入写作。")
+    lines.extend(["", "## 边界", "", payload["meaning"], ""])
+    return "\n".join(lines)
+
+
+def command_demo(args: argparse.Namespace) -> int:
+    """Run the bundled synthetic sample in a temporary directory."""
+    source = Path(__file__).resolve().parents[3] / "examples" / "sample-study"
+    if not source.is_dir():
+        print(f"bundled sample not found at {source}", file=sys.stderr)
+        return 2
+    with tempfile.TemporaryDirectory() as tmp:
+        target = Path(tmp) / "sample-study"
+        shutil.copytree(source, target)
+        return command_audit(
+            argparse.Namespace(study_dir=str(target), claim=None, json=False)
+        )
+
+
+def command_audit(args: argparse.Namespace) -> int:
+    root = Path(args.study_dir).resolve()
+    study_path = root / "study.json"
+    if not study_path.is_file():
+        print(f"missing study.json under {root}", file=sys.stderr)
+        return 2
+    try:
+        study = _load_json(study_path)
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"cannot parse study.json: {exc}", file=sys.stderr)
+        return 2
+    if not isinstance(study, dict):
+        print("study.json must contain an object", file=sys.stderr)
+        return 2
+
+    audit = audit_study(root, "full")
+    paths = _study_paths(root)
+    try:
+        signals = _compute_signals(root, study)
+    except (OSError, json.JSONDecodeError, ValueError):
+        signals = {}
+    levels = _load_evidence_levels(paths["evidence"])
+
+    judgments: list[Any] = []
+    if paths["judgments"].is_file():
+        try:
+            loaded = _load_json(paths["judgments"])
+            if isinstance(loaded, list):
+                judgments = loaded
+        except (OSError, json.JSONDecodeError):
+            judgments = []
+    gates = study.get("quality_gates")
+    if not isinstance(gates, dict):
+        gates = {}
+    require_counter = bool(gates.get("require_counter_evidence_for_validated", True))
+    claims = _claim_verdicts(judgments, levels, require_counter)
+
+    focus = str(getattr(args, "claim", "") or "").strip()
+    if focus:
+        needle = focus.casefold()
+        claims = [
+            claim
+            for claim in claims
+            if needle in " ".join(
+                [claim["id"], claim["title"], claim["claimed_status"]]
+            ).casefold()
+        ]
+        if not claims:
+            print(f"no claim matched {focus!r}", file=sys.stderr)
+            return 2
+
+    overclaims = [claim for claim in claims if claim["verdict"] == "exceeds_evidence"]
+    status = "pass" if audit.status == "pass" and not overclaims else "fail"
+    summary = {
+        "records": int(signals.get("record_count", 0) or 0),
+        "duplicate_rate": float(signals.get("normalized_duplicate_rate", 0.0) or 0.0),
+        "dominant_source_share": float(signals.get("dominant_source_family_share", 0.0) or 0.0),
+        "claims": len(claims),
+        "supported": sum(1 for claim in claims if claim["verdict"] == "supported"),
+        "overclaims": len(overclaims),
+        "open": sum(1 for claim in claims if claim["verdict"] == "open"),
+    }
+    payload: dict[str, Any] = {
+        "status": status,
+        "study_id": str(study.get("study_id", "")),
+        "study_title": str(study.get("title", "")),
+        "method_version": str(study.get("method_version") or SURE_VERSION),
+        "version_warning": (
+            None
+            if str(study.get("method_version") or SURE_VERSION) == SURE_VERSION
+            else f"study records {study.get('method_version') or 'unknown'}; current runtime is {SURE_VERSION}"
+        ),
+        "decision_question": str(
+            (study.get("decision") if isinstance(study.get("decision"), dict) else {}).get(
+                "question", ""
+            )
+        ),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "checks": [item.as_dict() for item in audit.findings],
+        "signals": signals,
+        "claims": claims,
+        "summary": summary,
+        "meaning": AUDIT_BOUNDARY,
+    }
+    payload["next_actions"] = _audit_next_actions(payload)
+
+    paths["audit_dir"].mkdir(parents=True, exist_ok=True)
+    json_path = paths["audit_dir"] / "audit.json"
+    md_path = paths["audit_dir"] / "audit.md"
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    md_path.write_text(_render_audit_md(payload), encoding="utf-8")
+
+    if getattr(args, "json", False):
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"SURE 审计：{payload['study_id']} — {payload['status']}")
+        if payload.get("version_warning"):
+            print(f"- 版本警告：{payload['version_warning']}")
+        print(
+            f"- 记录 {summary['records']} 条；重复率 {summary['duplicate_rate']:.1%}；"
+            f"主导来源 {summary['dominant_source_share']:.1%}"
+        )
+        print(
+            f"- 判断 {summary['claims']} 条：可支持 {summary['supported']}、"
+            f"超出证据 {summary['overclaims']}、未定 {summary['open']}"
+        )
+        for action in payload["next_actions"][:3]:
+            print(f"- 下一步：{action}")
+        print(f"- 报告：{md_path}")
+    return 0 if status == "pass" else 1
 
 
 def command_check(args: argparse.Namespace) -> int:
@@ -3218,6 +3549,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="sure",
         description="Initialize and audit a SURE user-demand research study.",
     )
+    parser.add_argument("--version", action="version", version=f"sure {SURE_VERSION}")
     subparsers = parser.add_subparsers(dest="command", required=True)
     init_parser = subparsers.add_parser("init", help="create a study workspace from the bundled template")
     init_parser.add_argument("study_dir")
@@ -3299,6 +3631,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--output", help="report path; defaults to 06-report/report.md"
     )
     report_parser.set_defaults(func=command_report)
+
+    demo_parser = subparsers.add_parser(
+        "demo", help="run the bundled synthetic sample in a temporary directory"
+    )
+    demo_parser.set_defaults(func=command_demo)
+
+    audit_parser = subparsers.add_parser(
+        "audit",
+        help="audit a study and explain what the evidence can support (gates + signals + claim verdicts)",
+    )
+    audit_parser.add_argument("study_dir")
+    audit_parser.add_argument(
+        "--claim", help="limit the report to claims whose id/title/status matches this text"
+    )
+    audit_parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
+    audit_parser.set_defaults(func=command_audit)
 
     check_parser = subparsers.add_parser("check", help="audit one research stage")
     check_parser.add_argument("study_dir")

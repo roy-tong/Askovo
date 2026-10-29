@@ -1,6 +1,19 @@
 # Changelog
 
 
+## 1.12.0 — 2026-10-29
+
+- **Packaging**: added `pyproject.toml`, `sure_research` entry package, and `sure` / `sure-mcp` console scripts. `pipx install --editable .` now exposes the CLI; `sure --version`, `sure doctor`, and `sure demo` work from any directory.
+- **Single version source**: added `VERSION`; the CLI, MCP `serverInfo`, and the study template read it. `plan` writes the current version into `study.json`; `audit` warns when an existing study records a different one. Removed the hardcoded `SURE 1.6` template value and `SERVER_VERSION = "1.9.0"`.
+- **`sure audit`**: new command that runs all gates, computes deterministic signals, and returns per-claim verdicts — `supported`, `exceeds_evidence`, `open`, `rejected`, `deprioritized` — with reasons, gaps, and next actions. Writes `05-audit/audit.json` and `audit.md`. `--claim` filters to one claim; exit code 1 means a claim exceeds its evidence.
+- **`sure demo`**: moved into the core CLI (no longer shim-only), so `python3 skills/user-demand-research/scripts/sure.py demo` works without installation.
+- **MCP**: added the `sure_audit` tool; `sure mcp` starts the stdio server without an absolute path. `serverInfo.version` now follows `VERSION`.
+- **Docs**: new `docs/` set — quickstart, concepts, modes, CLI reference, data contract, connectors, troubleshooting. README first screen now leads with the 30-second demo and the audit/plan entry choice.
+- **Skill install**: added `scripts/install-skill.sh` (symlink, idempotent) and documented `sure mcp` / `npx skills add`.
+- **CI**: verifies the single version source, rejects hardcoded versions in the template/MCP, and smoke-tests packaging (`pip install -e .`, `sure doctor`, `sure demo`).
+- Tests: 32 (was 26), covering audit verdicts, claim filtering, version injection, and the template placeholder.
+
+
 ## 1.11.0 — 2026-10-02
 
 - Added `skills/user-demand-research/templates/` with two judgment-layer template groups in Chinese, distilled from completed research projects (高尔夫智能设备调研, 脑机接口调研, 大人糖, 灵泷视界) with synthetic examples only — no real customer or company names:

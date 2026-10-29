@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sure-research"
+dynamic = ["version"]
+description = "SURE — auditable user-demand research via Skill, CLI, and MCP"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Roy.Tong" }]
+dependencies = []
+
+[project.scripts]
+sure = "sure_research.cli:main"
+sure-mcp = "sure_research.mcp:main"
+
+[tool.setuptools]
+packages = ["sure_research"]
+
+[tool.setuptools.dynamic]
+version = { attr = "sure_research.__version__" }

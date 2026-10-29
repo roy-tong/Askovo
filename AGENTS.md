@@ -9,8 +9,11 @@ User Demand Research (SURE) ships three surfaces over one behavior: an Agent Ski
 ## Layout
 
 - `skills/user-demand-research/` — the shippable skill: `SKILL.md`, `references/` (protocol, contracts, per-platform guides), `assets/` (templates, connector registry, platform map), `scripts/` (`sure.py`, `validate_study.py`, `sure_mcp.py`).
+- `sure_research/` — thin packaging entry (`sure`, `sure-mcp`); stage 1 is editable-install only, the runtime stays under `skills/`.
+- `docs/` — human-facing Chinese docs; keep in sync with README and the CLI.
 - `examples/sample-study/` — synthetic, no-network sample used by tests and the README quickstart.
 - `tests/` — `unittest` suites for the CLI and the MCP protocol.
+- `VERSION` — single version source; never hardcode a version elsewhere.
 
 ## Working rules
 
@@ -19,7 +22,7 @@ User Demand Research (SURE) ships three surfaces over one behavior: an Agent Ski
 - Never commit study outputs: `05-audit/latest.*`, `06-report/`, generated studies, credentials, or collected platform content. The sample study is synthetic by design.
 - Registry changes (`assets/open-source-connectors.json`) must pin an exact upstream revision, state license and access basis, and record the reason; blocked entries are kept deliberately as negative reviews. Update `reviewed_at` and add a CHANGELOG line.
 - Docs are bilingual by layer: `references/` and code comments in English, `README.md` in Chinese. Keep both in sync when behavior changes.
-- A release means: version bumped in `CHANGELOG.md` and `SERVER_VERSION` (MCP), tests green, README quickstart commands re-run.
+- A release means: version bumped once in `VERSION` (CLI, MCP, and packaging read it), `CHANGELOG.md` updated, tests green, README quickstart commands re-run.
 
 ## Safety boundaries (apply to every change)
 

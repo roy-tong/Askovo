@@ -6,13 +6,16 @@ Stable raw base: https://raw.githubusercontent.com/roy-tong/user-demand-research
 
 ## Start here
 
-- [Agent Skill — judgment and protocol](skills/user-demand-research/SKILL.md): mode selection, evidence grading, demand-judgment gates, claim discipline, safety boundaries. Read this before running a study.
+- [Agent Skill — judgment and protocol](skills/user-demand-research/SKILL.md): mode selection, evidence grading, demand-judgment gates, claim discipline, stop rules, safety boundaries. Read this before running a study.
+- Use `sure audit <study>` when the user already has a corpus; it returns `supported` / `exceeds_evidence` / `open` per demand judgment.
 - [Agent runbook](skills/user-demand-research/references/agent-runbook.md): file-level execution steps, stage gates, and inter-agent handoff format.
 - [README quickstart](README.md): 30-second sample check and the plan → collect → signals → report walkthrough (Chinese).
 
 ## Interfaces
 
-- [CLI sure.py](skills/user-demand-research/scripts/sure.py): `plan`, `init`, `check`, `signals`, `report`, `connectors`, plus the thin `stage` forwarder into the stages toolbox. Standard library only; Python 3.9+.
+- Install: `pipx install sure-research` (CLI) or `bash scripts/install-skill.sh` (Skill). Version lives in `VERSION`.
+- [CLI sure.py](skills/user-demand-research/scripts/sure.py): `audit` (recommended first call: gates + signals + per-claim verdicts), `plan`, `init`, `check`, `signals`, `lexicon`, `report`, `connectors`, plus the thin `stage` forwarder. Standard library only; Python 3.9+.
+- [Human docs](docs/README.md): quickstart, concepts, modes, CLI reference, data contract, connectors, troubleshooting.
 - [MCP server sure_mcp.py](skills/user-demand-research/scripts/sure_mcp.py): stdio JSON-RPC, same commands as tools (`sure_plan`, `sure_init`, `sure_check`, `sure_signals`, `sure_report`, `sure_connectors`, `sure_platform_map`). Registration snippets are in the README's "三种接入方式" section.
 - [Connector registry](skills/user-demand-research/assets/open-source-connectors.json): machine-readable decisions (`supported` / `historical_only` / `blocked`) with pinned commits, licenses, access bases, and the Reddit 2026-09-30 policy watch.
 - [Platform map](skills/user-demand-research/assets/platform-map.json): how regions (cn / overseas / global) and platform types (forum, social, video, ecommerce, crowdfunding) resolve to platforms.

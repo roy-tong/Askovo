@@ -11,6 +11,8 @@ Use SURE — Structured User Research with Evidence — to turn source material 
 
 The same deterministic operations are available as MCP tools via [scripts/sure_mcp.py](scripts/sure_mcp.py) for MCP-first agents; this Skill remains the source of judgment, mode selection, and safety boundaries regardless of the entry point.
 
+The same operations are exposed as the `sure` CLI (`sure audit`, `sure plan`) and as MCP tools via `sure mcp`. Examples below use `python3 scripts/sure.py` for a repo checkout; the installed CLI is equivalent, and `sure audit` is the recommended first call when the user already has material.
+
 ## Select the mode from available artifacts
 
 | What the user has | Mode | First output |
@@ -163,3 +165,21 @@ Review counter-evidence, including `E4-`, satisfactory substitutes, absent-probl
 - Include blocked routes, limitations, missing roles, and prohibited inferences in every formal deliverable.
 
 When a gate fails, deliver a research-status report with the failed check, its decision impact, and the next permitted remediation. A CLI pass confirms configured structure and evidence chains; it does not certify truth, representativeness, market size, or causality.
+
+## Entry points and stop rules
+
+Three surfaces, one behavior:
+
+- **Skill** (this file): mode selection, judgment rules, boundaries.
+- **CLI** (`sure` or `python3 scripts/sure.py`): deterministic workspace, gates, signals, report.
+- **MCP** (`sure mcp`): the same commands as tools; it adds no judgment.
+
+Stop and ask before continuing when:
+
+1. the Design gate has not passed and the user wants to collect;
+2. evidence from different roles, time windows, or languages would be merged into one conclusion;
+3. a `validated` judgment is missing the problem, solution, or commercial chain, or has no counter-evidence;
+4. a requested platform has no supported connector — record the gap; do not substitute a login session, merchant API, internal endpoint, or browser automation;
+5. the only path to a conclusion is a prohibited inference (prevalence, market size, or causality from a convenience sample).
+
+When a gate fails, deliver the failed check, its decision impact, and the next permitted remediation. A pass confirms configured structure and evidence chains; it does not certify truth, representativeness, market size, or causality.
