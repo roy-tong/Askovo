@@ -56,7 +56,7 @@ jobs:
           import pathlib, re
           version = pathlib.Path("VERSION").read_text(encoding="utf-8").strip()
           text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
-          pattern = r"^## " + re.escape(version) + r" .*$\n(.*?)(?=^## |\Z)"
+          pattern = r"^## " + re.escape(version) + r" [^\n]*\n(.*?)(?=^## |\Z)"
           match = re.search(pattern, text, re.M | re.S)
           assert match, "missing CHANGELOG section for " + version
           header = "# Askovo v" + version + "\n\n"
@@ -78,6 +78,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes-file /tmp/notes.md
             gh release upload "$TAG" -R "$GITHUB_REPOSITORY" dist/*.whl dist/*.tar.gz --clobber
           else
             gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "Askovo ${TAG#v}" --notes-file /tmp/notes.md dist/*.whl dist/*.tar.gz
