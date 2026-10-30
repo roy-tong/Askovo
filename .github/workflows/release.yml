@@ -18,7 +18,10 @@ jobs:
         run: |
           case "${GITHUB_REF}" in
             refs/tags/*) TAG="${GITHUB_REF#refs/tags/}" ;;
-            refs/heads/release/*) TAG="v${GITHUB_REF#refs/heads/release/}" ;;
+            refs/heads/release/*)
+              TAG="${GITHUB_REF#refs/heads/release/}"
+              case "${TAG}" in v*) ;; *) TAG="v${TAG}" ;; esac
+              ;;
             *) echo "unexpected ref: ${GITHUB_REF}" >&2; exit 2 ;;
           esac
           echo "TAG=${TAG}" >> "$GITHUB_ENV"
