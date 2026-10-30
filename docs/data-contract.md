@@ -22,6 +22,7 @@ study/
 │   ├── codebook.csv              编码表
 │   └── gold-set.jsonl            人工金标（用于校准）
 ├── 04-findings/
+│   ├── product-reasoning.json    场景→用户→痛点→需求→特性→产品推理链
 │   ├── signals.json              signals 生成
 │   ├── demand-judgments.json     需求判断台账
 │   └── lexicon-yield.json        命名前研究产物
@@ -35,6 +36,18 @@ study/
 ```
 
 生成物（`05-audit/latest.*`、`06-report/`、`04-findings/signals.json`）不应提交到代码仓库。
+
+## product-reasoning.json
+
+`do` 自动创建、`askovo chain` 渲染的产品推理主链。每个 chain 固定按 `scene → user → pain → need → feature → product` 排列，每个节点必须包含：
+
+- `statement`：这一节点的明确判断；
+- `rationale`：为什么由上一节点推导到这一节点；
+- `status`：`hypothesis` / `needs-validation` / `validated` / `rejected` / `deprioritized`；
+- `evidence_ids`：直接支撑该节点的证据；
+- `assumptions`：尚未验证的推理假设。
+
+`validated` 节点需要对应等级的直接证据；`validated` chain 还要求所有节点已验证、关联同一 `context_key` 的 validated 需求判断，并记录反证。证据支持推理，不能替代需求到特性、特性到产品的推导理由。
 
 ## study.json
 

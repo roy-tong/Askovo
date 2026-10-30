@@ -1,0 +1,80 @@
+{
+  "schema_version": "1.0",
+  "flow": ["scene", "user", "pain", "need", "feature", "product"],
+  "chains": [
+    {
+      "id": "PR01",
+      "title": "待填写",
+      "context_key": "",
+      "demand_judgment_id": "",
+      "status": "hypothesis",
+      "confidence": "low",
+      "nodes": {
+        "scene": {
+          "statement": "待填写",
+          "rationale": "待填写：这个场景为什么值得进入当前产品决策",
+          "status": "hypothesis",
+          "evidence_ids": [],
+          "assumptions": [],
+          "trigger": "待填写",
+          "environment": "待填写",
+          "task_context": "待填写"
+        },
+        "user": {
+          "statement": "待填写",
+          "rationale": "待填写：为什么由场景推出这些用户",
+          "status": "hypothesis",
+          "evidence_ids": [],
+          "assumptions": [],
+          "role": "待填写",
+          "state": "待填写",
+          "decision_role": "待填写"
+        },
+        "pain": {
+          "statement": "待填写",
+          "rationale": "待填写：为什么这些用户在该场景遇到这个痛点",
+          "status": "hypothesis",
+          "evidence_ids": [],
+          "assumptions": [],
+          "current_substitute": "待填写",
+          "friction_cost": "待填写",
+          "consequence": "待填写"
+        },
+        "need": {
+          "statement": "待填写",
+          "rationale": "待填写：为什么痛点构成值得满足的用户需求",
+          "status": "hypothesis",
+          "evidence_ids": [],
+          "assumptions": [],
+          "desired_outcome": "待填写",
+          "constraints": [],
+          "measure": "待填写"
+        },
+        "feature": {
+          "statement": "待填写",
+          "rationale": "待填写：为什么这个特性能满足用户需求，而不是仅仅被用户提到",
+          "status": "hypothesis",
+          "evidence_ids": [],
+          "assumptions": [],
+          "capability": "待填写",
+          "acceptance_conditions": [],
+          "alternatives_considered": []
+        },
+        "product": {
+          "statement": "待填写",
+          "rationale": "待填写：为什么这些特性应组合成这个产品或 MVP",
+          "status": "hypothesis",
+          "evidence_ids": [],
+          "assumptions": [],
+          "form": "待填写",
+          "scope": "待填写",
+          "non_goals": [],
+          "acceptance_criteria": []
+        }
+      },
+      "counter_evidence_ids": [],
+      "gaps": ["待填写：当前最薄弱的推理节点或推导关系"],
+      "next_test": "待填写：能最大幅度降低当前推理不确定性的最小验证"
+    }
+  ]
+}

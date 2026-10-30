@@ -57,6 +57,25 @@ STAGES = (
 )
 INTENTS = ("route", "plan", "instruments", "import", "sources", "collect", "analyze", "audit", "deliver")
 CLAIM_TYPES = ("need", "acceptance", "usability", "performance", "commercial", "safety")
+REASONING_NODES = ("scene", "user", "pain", "need", "feature", "product")
+REASONING_NODE_LABELS = {
+    "scene": "场景",
+    "user": "用户",
+    "pain": "痛点",
+    "need": "需求",
+    "feature": "特性",
+    "product": "产品",
+}
+REASONING_STAGE_FOCUS = {
+    "discovery": ("scene", "user", "pain", "need"),
+    "concept": ("need", "feature"),
+    "prototype": ("feature", "product"),
+    "validation": ("feature", "product"),
+    "pricing": ("need", "product"),
+    "prelaunch": ("feature", "product"),
+    "postlaunch": ("scene", "user", "pain", "need", "feature", "product"),
+    "audit": REASONING_NODES,
+}
 HIGH_RISK_FLAGS = {
     "road_test",
     "food_ingest",
@@ -289,6 +308,17 @@ def _method_view(method: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def product_reasoning_contract(stage: str) -> dict[str, Any]:
+    """Declare the product-facing spine; methods and sources only support it."""
+    return {
+        "flow": list(REASONING_NODES),
+        "flow_label": "场景 → 用户 → 痛点 → 需求 → 特性 → 产品",
+        "focus": list(REASONING_STAGE_FOCUS.get(stage, REASONING_NODES)),
+        "primary_artifact": "04-findings/product-reasoning.json",
+        "principle": "先显式写出每个节点及推导理由，再针对薄弱节点收集和分析证据。",
+    }
+
+
 def route_request(
     text: str,
     domain: str | None = None,
@@ -312,6 +342,7 @@ def route_request(
             "intent": intent_info["intent"],
             "risk_flags": risks,
             "safety_gate": "review" if risks else "clear",
+            "product_reasoning": product_reasoning_contract(stage_info["stage"]),
             "questions": ["你要研究的是软件、硬件、消费品、汽车还是手机/可穿戴产品？"],
             "next_commands": ['askovo route "<需求>" --domain software'],
         }
@@ -370,6 +401,7 @@ def route_request(
         "stage_confidence": stage_info["confidence"],
         "intent": intent_info["intent"],
         "intent_source": intent_info["source"],
+        "product_reasoning": product_reasoning_contract(stage_key),
         "risk_flags": risks,
         "safety_gate": "review" if requires_ack else "clear",
         "risk_notes": pack.get("risk_notes", []),
@@ -410,7 +442,13 @@ def route_markdown(route: dict[str, Any]) -> str:
         f"- 意图：`{route['intent']}`",
         f"- 安全门：`{route['safety_gate']}`",
         "",
-        "## 推荐方法",
+        "## 产品推理主链",
+        "",
+        f"{route['product_reasoning']['flow_label']}",
+        "",
+        f"本阶段重点：{' → '.join(route['product_reasoning']['focus'])}。先写出节点、推导理由与假设，再选择补证方法。",
+        "",
+        "## 支撑方法",
         "",
         "| 方法 | 回答什么 | 证据形式 | 不能证明 |",
         "|---|---|---|---|",
@@ -442,6 +480,177 @@ def _write_if_missing(path: Path, content: str) -> bool:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     return True
+
+
+def product_reasoning_template(title: str = "") -> dict[str, Any]:
+    """Create a hypothesis-first canvas; it never invents semantic product claims."""
+    nodes: dict[str, Any] = {}
+    previous = ""
+    for node in REASONING_NODES:
+        rationale = "待填写：这个场景为什么值得进入当前产品决策"
+        if previous:
+            rationale = f"待填写：为什么由{REASONING_NODE_LABELS[previous]}推出{REASONING_NODE_LABELS[node]}"
+        nodes[node] = {
+            "statement": "待填写",
+            "rationale": rationale,
+            "status": "hypothesis",
+            "evidence_ids": [],
+            "assumptions": [],
+        }
+        previous = node
+    nodes["scene"].update({"trigger": "待填写", "environment": "待填写", "task_context": "待填写"})
+    nodes["user"].update({"role": "待填写", "state": "待填写", "decision_role": "待填写"})
+    nodes["pain"].update({"current_substitute": "待填写", "friction_cost": "待填写", "consequence": "待填写"})
+    nodes["need"].update({"desired_outcome": "待填写", "constraints": [], "measure": "待填写"})
+    nodes["feature"].update({"capability": "待填写", "acceptance_conditions": [], "alternatives_considered": []})
+    nodes["product"].update({"form": "待填写", "scope": "待填写", "non_goals": [], "acceptance_criteria": []})
+    return {
+        "schema_version": "1.0",
+        "flow": list(REASONING_NODES),
+        "chains": [
+            {
+                "id": "PR01",
+                "title": title or "待填写",
+                "context_key": "",
+                "demand_judgment_id": "",
+                "status": "hypothesis",
+                "confidence": "low",
+                "nodes": nodes,
+                "counter_evidence_ids": [],
+                "gaps": ["待填写：当前最薄弱的推理节点或推导关系"],
+                "next_test": "待填写：能最大幅度降低当前推理不确定性的最小验证",
+            }
+        ],
+    }
+
+
+def scaffold_product_reasoning(study_dir: Path) -> dict[str, Any]:
+    study_dir = study_dir.resolve()
+    path = study_dir / "04-findings" / "product-reasoning.json"
+    if path.exists():
+        return {"status": "exists", "path": str(path)}
+    title = ""
+    study_path = study_dir / "study.json"
+    if study_path.is_file():
+        study = load_json(study_path)
+        if isinstance(study, dict):
+            title = str(study.get("title") or "")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(product_reasoning_template(title), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return {"status": "created", "path": str(path)}
+
+
+def load_product_reasoning(study_dir: Path) -> dict[str, Any] | None:
+    path = study_dir / "04-findings" / "product-reasoning.json"
+    if not path.is_file():
+        return None
+    value = load_json(path)
+    if not isinstance(value, dict):
+        raise ValueError("product-reasoning.json must contain an object")
+    return value
+
+
+def product_reasoning_summary(data: dict[str, Any] | None) -> dict[str, Any]:
+    chains = data.get("chains", []) if isinstance(data, dict) else []
+    if not isinstance(chains, list):
+        chains = []
+    by_status: dict[str, int] = {}
+    node_summary = {
+        node: {"total": 0, "validated": 0, "with_evidence": 0}
+        for node in REASONING_NODES
+    }
+    for chain in chains:
+        if not isinstance(chain, dict):
+            continue
+        status = str(chain.get("status") or "unknown")
+        by_status[status] = by_status.get(status, 0) + 1
+        nodes = chain.get("nodes", {})
+        if not isinstance(nodes, dict):
+            continue
+        for node in REASONING_NODES:
+            value = nodes.get(node, {})
+            if not isinstance(value, dict):
+                continue
+            node_summary[node]["total"] += 1
+            if value.get("status") == "validated":
+                node_summary[node]["validated"] += 1
+            if value.get("evidence_ids"):
+                node_summary[node]["with_evidence"] += 1
+    return {
+        "chains": len(chains),
+        "validated": by_status.get("validated", 0),
+        "by_status": by_status,
+        "nodes": node_summary,
+    }
+
+
+def _markdown_cell(value: Any) -> str:
+    return str(value or "—").replace("|", "\\|").replace("\n", " ")
+
+
+def _product_chain_lines(data: dict[str, Any]) -> list[str]:
+    lines = [
+        "> 主链：场景 → 用户 → 痛点 → 需求 → 特性 → 产品。证据支撑推理，不替代推理。",
+        "",
+    ]
+    chains = data.get("chains", [])
+    if not isinstance(chains, list) or not chains:
+        lines.append("尚无产品推理链。")
+        return lines
+    for chain in chains:
+        if not isinstance(chain, dict):
+            continue
+        lines.extend(
+            [
+                f"### {chain.get('id', 'PR?')} · {chain.get('title', '未命名推理链')}",
+                "",
+                f"- 状态：`{chain.get('status', 'unknown')}`；置信度：`{chain.get('confidence', 'unknown')}`",
+                f"- 需求判断：`{chain.get('demand_judgment_id') or '未关联'}`；上下文：`{chain.get('context_key') or '未设置'}`",
+                "",
+                "| 节点 | 判断 | 为什么到这一步 | 状态 | 证据 |",
+                "|---|---|---|---|---|",
+            ]
+        )
+        nodes = chain.get("nodes", {})
+        for node in REASONING_NODES:
+            value = nodes.get(node, {}) if isinstance(nodes, dict) else {}
+            if not isinstance(value, dict):
+                value = {}
+            evidence = ", ".join(f"`{item}`" for item in value.get("evidence_ids", []))
+            lines.append(
+                f"| **{REASONING_NODE_LABELS[node]}** | {_markdown_cell(value.get('statement'))} | "
+                f"{_markdown_cell(value.get('rationale'))} | `{value.get('status', 'unknown')}` | "
+                f"{_markdown_cell(evidence)} |"
+            )
+        for node in REASONING_NODES:
+            value = nodes.get(node, {}) if isinstance(nodes, dict) else {}
+            if not isinstance(value, dict):
+                continue
+            assumptions = value.get("assumptions", [])
+            if assumptions:
+                lines.append(f"- {REASONING_NODE_LABELS[node]}假设：{'；'.join(str(item) for item in assumptions)}")
+        product = nodes.get("product", {}) if isinstance(nodes, dict) else {}
+        if isinstance(product, dict):
+            non_goals = product.get("non_goals", [])
+            acceptance = product.get("acceptance_criteria", [])
+            if non_goals:
+                lines.append(f"- 产品非目标：{'；'.join(str(item) for item in non_goals)}")
+            if acceptance:
+                lines.append(f"- 产品验收：{'；'.join(str(item) for item in acceptance)}")
+        counter = chain.get("counter_evidence_ids", [])
+        gaps = chain.get("gaps", [])
+        lines.append(f"- 反证：{', '.join(f'`{item}`' for item in counter) if counter else '未记录'}")
+        lines.append(f"- 缺口：{'；'.join(str(item) for item in gaps) if gaps else '未记录'}")
+        lines.append(f"- 下一验证：{chain.get('next_test') or '未记录'}")
+        lines.append("")
+    return lines
+
+
+def product_reasoning_markdown(data: dict[str, Any], title: str = "产品推理链") -> str:
+    return "\n".join([f"# {title}", ""] + _product_chain_lines(data)) + "\n"
 
 
 def _write_route(study_dir: Path, route: dict[str, Any]) -> None:
@@ -476,6 +685,7 @@ def create_study(
         "method_version": VERSION,
         "product_domain": route["domain"],
         "lifecycle_stage": route["stage"],
+        "product_reasoning": product_reasoning_contract(route["stage"]),
         "decision": {
             "question": route["query"],
             "owner": "待确认",
@@ -524,17 +734,18 @@ def create_study(
     _write_route(study_dir, route)
     for sub in ("01-sources/instruments", "01-sources/manifests", "02-data/raw", "03-codebook", "04-findings", "05-audit", "06-report"):
         (study_dir / sub).mkdir(parents=True, exist_ok=True)
+    reasoning_scaffold = scaffold_product_reasoning(study_dir)
 
     rows = [
-        ["direct_solution", "prototype_test", "待设计：目标方案原型/概念测试", 2, 0.40, "planned", "自选择/活跃用户偏差"],
-        ["open_scene", "field_observation", "待设计：开放场景访谈/观察", 2, 0.40, "planned", "场景覆盖偏差"],
-        ["substitute_rejector", "interview", "待设计：替代方案拒绝/放弃访谈", 2, 0.40, "planned", "难触达/回忆偏差"],
-        ["post_purchase_support", "support_ticket", "待设计：购买后支持记录", 1, 0.40, "planned", "沉默用户缺失"],
-        ["control", "control_survey", "待设计：背景对照调查", 1, 0.40, "planned", "相关性低"],
+        ["direct_solution", "prototype_test", "待设计：验证特性/产品节点及方案接受", 2, 0.40, "planned", "自选择/活跃用户偏差", "feature;product"],
+        ["open_scene", "field_observation", "待设计：验证场景/用户/痛点/需求节点", 2, 0.40, "planned", "场景覆盖偏差", "scene;user;pain;need"],
+        ["substitute_rejector", "interview", "待设计：验证替代、反证与需求成立条件", 2, 0.40, "planned", "难触达/回忆偏差", "pain;need;feature"],
+        ["post_purchase_support", "support_ticket", "待设计：验证特性组合与真实产品行为", 1, 0.40, "planned", "沉默用户缺失", "feature;product"],
+        ["control", "control_survey", "待设计：验证场景边界、非用户与反例", 1, 0.40, "planned", "相关性低", "scene;user;pain"],
     ]
     with (study_dir / "01-sources" / "source-plan.csv").open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["corpus_role", "source_family", "route_or_query", "target_records", "cap_share", "access_status", "known_bias"])
+        writer.writerow(["corpus_role", "source_family", "route_or_query", "target_records", "cap_share", "access_status", "known_bias", "reasoning_nodes"])
         writer.writerows(rows)
 
     (study_dir / "01-sources" / "evidence-plan.json").write_text(
@@ -572,15 +783,24 @@ def create_study(
 - 方法：{', '.join(item['name'] for item in selected)}
 - 安全门：`{route['safety_gate']}`
 
+## 产品推理主链
+
+场景 → 用户 → 痛点 → 需求 → 特性 → 产品
+
+先填写 `04-findings/product-reasoning.json`：每个节点都要有判断、推导理由、状态和假设；再针对最薄弱的节点设计采集与分析。
+
 ## 下一步
 
 ```bash
+askovo chain .
+# 填写 product-reasoning.json 与 study.json 后检查设计门
+askovo check . --stage design
 askovo instruments .
 askovo import . <材料文件> --source-family interview
-askovo deliver . --kind memo
+askovo deliver . --kind prd
 ```
 
-先补全 `study.json` 的决策、假设、证伪条件、样本理由与停止规则，再开始执行。
+先补全 `study.json` 的决策、假设、证伪条件、样本理由与停止规则。没有通过设计门前，不启动真实采集。
 """,
         encoding="utf-8",
     )
@@ -593,6 +813,7 @@ askovo deliver . --kind memo
         "risk_flags": route.get("risk_flags", []),
         "safety_gate": route["safety_gate"],
         "methods": method_ids,
+        "product_reasoning": reasoning_scaffold["path"],
         "instruments": instruments,
     }
 
@@ -608,18 +829,34 @@ def research_plan_markdown(study: dict[str, Any], route: dict[str, Any]) -> str:
         "- 负责人 / 截止日：待确认",
         "- 最低证据：待确认（什么情况下敢拍板）",
         "",
-        "## 2. 产品与研究阶段",
+        "## 2. 产品推理主链",
+        "",
+        "场景 → 用户 → 痛点 → 需求 → 特性 → 产品",
+        "",
+        "在 `04-findings/product-reasoning.json` 中逐节点填写：判断、为什么由上一步推出、状态、证据、假设。",
+        "产品推理是主干；下面的方法、来源和采集只负责修补最薄弱的节点或推导关系。",
+        "",
+        "| 节点 | 必须回答的推理问题 |",
+        "|---|---|",
+        "| 场景 | 什么触发、环境和任务边界构成了这个决策场景？ |",
+        "| 用户 | 为什么是这个角色/用户状态，而不是泛泛的人口画像？ |",
+        "| 痛点 | 当前替代方案在哪里失效，造成什么可观察后果？ |",
+        "| 需求 | 为什么这些痛点构成值得满足的任务/结果，而非功能愿望？ |",
+        "| 特性 | 为什么这个特性能满足需求？与替代特性相比，关键假设是什么？ |",
+        "| 产品 | 为什么这些特性应组合成这个产品/MVP？边界、非目标和验收是什么？ |",
+        "",
+        "## 3. 产品与研究阶段",
         "",
         f"- 产品类型：{route['domain_label']} (`{route['domain']}`)",
         f"- 阶段：{route['stage_label']} (`{route['stage']}`)",
-        f"- 方法：{', '.join(item['name'] for item in route['recommended_methods'])}",
+        f"- 支撑方法：{', '.join(item['name'] for item in route['recommended_methods'])}",
         "",
-        "## 3. 假设与证伪",
+        "## 4. 推理假设与证伪",
         "",
-        "- H1：待确认",
+        "- H1：待确认（必须落到具体节点或推导关系）",
         "- 证伪条件：待确认",
         "",
-        "## 4. 证据计划",
+        "## 5. 证据计划（服务主链）",
         "",
     ]
     for item in route["recommended_methods"]:
@@ -628,22 +865,22 @@ def research_plan_markdown(study: dict[str, Any], route: dict[str, Any]) -> str:
             f"证据形式 `{', '.join(item['evidence_forms'])}`；"
             f"不能证明 `{', '.join(item['does_not_support'])}`"
         )
-    lines.extend(["", "## 5. 本阶段要回答", ""])
+    lines.extend(["", "## 6. 本阶段要回答", ""])
     lines.extend(f"- {item}" for item in route.get("decisions", []))
-    lines.extend(["", "## 6. 风险与停止规则", "", _risk_markdown(route.get("risk_flags", []))])
+    lines.extend(["", "## 7. 风险与停止规则", "", _risk_markdown(route.get("risk_flags", []))])
     lines.extend(
         [
             "- 采集前检查授权、隐私与参与者保护；高风险研究必须完成 S0。",
             "- 证据不足时输出研究状态与补证计划，不下结论。",
             "",
-            "## 7. 交付物",
+            "## 8. 交付物",
             "",
         ]
     )
     lines.extend(f"- {item}" for item in route.get("deliverables", []))
     preview = route.get("platform_preview") or []
     if preview:
-        lines.extend(["", "## 8. 数据来源预判", "", "| 平台 | 适配分 | 可用性 | 批量 |", "|---|---|---|---|"])
+        lines.extend(["", "## 9. 数据来源预判", "", "| 平台 | 适配分 | 可用性 | 批量 |", "|---|---|---|---|"])
         for item in preview:
             lines.append(f"| {item['name']} | {item['score']} | {item['decision']} | {item['bulk']} |")
         lines.append("")
@@ -1009,6 +1246,7 @@ def deliver(study_dir: Path, kind: str = "memo") -> dict[str, Any]:
     study = load_json(study_dir / "study.json")
     route = study.get("route") or {}
     evidence = _evidence_summary(study_dir)
+    reasoning = load_product_reasoning(study_dir)
     audit_path = study_dir / "05-audit" / "audit.json"
     audit = load_json(audit_path) if audit_path.is_file() else None
     out_dir = study_dir / "06-report"
@@ -1028,17 +1266,41 @@ def deliver(study_dir: Path, kind: str = "memo") -> dict[str, Any]:
         f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label', study.get('product_domain', ''))}；"
         f"阶段：{route.get('stage_label', study.get('lifecycle_stage', ''))}。",
         "",
-        "## 1. 结论",
-        "",
-        "- 结论 1（待补，必须挂证据 id）：",
-        "- 结论 2（待补）：",
-        "- 结论 3（待补）：",
-        "",
-        "## 2. 我们知道的",
-        "",
-        "| 证据 | 类型 | 证据形式 | 说明 |",
-        "|---|---|---|---|",
     ]
+    if kind == "report":
+        lines.extend(
+            [
+                "## 研究方法与样本（支撑层）",
+                "",
+                f"- 方法：{', '.join(study.get('selected_methods', []))}",
+                "- 样本与流失：待补",
+                "",
+            ]
+        )
+    lines.extend(["## 1. 产品推理主链", ""])
+    if reasoning is not None:
+        lines.extend(_product_chain_lines(reasoning))
+    else:
+        lines.extend(
+            [
+                "尚未建立 `04-findings/product-reasoning.json`。先补齐“场景 → 用户 → 痛点 → 需求 → 特性 → 产品”，再交付产品结论。",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "## 2. 产品决策",
+            "",
+            "- 建议（做/不做/调整哪个节点，必须对应上方推理链）：",
+            "- 适用条件与代价：",
+            "- 优先级依据（后果、替代成本、证据强度、战略匹配分别说明）：",
+            "",
+            "## 3. 支撑证据",
+            "",
+            "| 证据 | 类型 | 证据形式 | 说明 |",
+            "|---|---|---|---|",
+        ]
+    )
     for record in evidence["records"][:20]:
         basis = str(
             record.get("evidence_basis")
@@ -1055,20 +1317,11 @@ def deliver(study_dir: Path, kind: str = "memo") -> dict[str, Any]:
     lines.extend(
         [
             "",
-            "## 3. 我们不知道的",
+            "## 4. 反证、缺口与下一步",
             "",
-            "- 缺口（按 claim_type 列）：",
-            "- 反证：",
-            "- 适用范围：",
-            "",
-            "## 4. 建议与代价",
-            "",
-            "- 建议：",
-            "- 代价/风险：",
-            "",
-            "## 5. 下一步验证",
-            "",
-            "- 最便宜的补证：",
+            "- 缺口（按推理节点和推导关系列）：",
+            "- 反证与替代解释：",
+            "- 最便宜且能改变决策的下一验证：",
             "",
             "## 附录：证据概况",
             "",
@@ -1079,31 +1332,18 @@ def deliver(study_dir: Path, kind: str = "memo") -> dict[str, Any]:
             "",
             "## 边界",
             "",
-            "本交付物不证明总体比例、市场规模或因果；可用性、工程性能、商业与安全结论分别有各自证据要求。",
+            "本交付物不证明总体比例、市场规模或因果；证据强度不替代需求到特性、特性到产品的推导理由；可用性、工程性能、商业与安全结论分别有各自证据要求。",
         ]
     )
-    if kind == "report":
-        lines[6:6] = ["## 0. 方法与样本", "", f"- 方法：{', '.join(study.get('selected_methods', []))}", "- 样本与流失：待补", ""]
-    if kind == "prd":
-        lines = [
-            f"# PRD 输入：{study.get('title', '')}",
-            "",
-            "## 用户与场景",
-            "",
-            "## 需求与证据",
-            "",
-            "## 非目标",
-            "",
-            "## 验收标准",
-            "",
-            "## 复测/上市跟踪",
-            "",
-            "## 证据附录",
-            "",
-        ] + lines[4:]
     path = out_dir / f"{kind}.md"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return {"status": "written", "path": str(path), "kind": kind, "evidence_count": evidence["count"]}
+    return {
+        "status": "written",
+        "path": str(path),
+        "kind": kind,
+        "evidence_count": evidence["count"],
+        "product_reasoning": product_reasoning_summary(reasoning),
+    }
 
 
 def doctor() -> int:
@@ -2761,7 +3001,8 @@ def cli_do(args: Any) -> int:
         print(f"- 方法：{', '.join(item['name'] for item in route['recommended_methods'])}")
         if result["instruments"]:
             print(f"- 工具包：{', '.join(result['instruments'])}")
-        print(f"- 下一步：askovo instruments {result['study_dir']}；补全 study.json 后运行 askovo audit")
+        print(f"- 产品推理链：{result['product_reasoning']}")
+        print(f"- 下一步：先补全产品推理链与 study.json，再运行 askovo check {result['study_dir']} --stage design")
     return 0
 
 
@@ -2853,6 +3094,33 @@ def cli_import(args: Any) -> int:
 def cli_codebook(args: Any) -> int:
     try:
         result = scaffold_codebook(Path(args.study_dir))
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cli_chain(args: Any) -> int:
+    try:
+        study_dir = Path(args.study_dir).resolve()
+        scaffold = scaffold_product_reasoning(study_dir)
+        reasoning = load_product_reasoning(study_dir)
+        if reasoning is None:
+            raise ValueError("cannot create product-reasoning.json")
+        study = load_json(study_dir / "study.json") if (study_dir / "study.json").is_file() else {}
+        title = str(study.get("title") or "产品推理链") if isinstance(study, dict) else "产品推理链"
+        report = study_dir / "06-report" / "product-reasoning.md"
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(product_reasoning_markdown(reasoning, title), encoding="utf-8")
+        result = {
+            "status": scaffold["status"],
+            "chain_file": scaffold["path"],
+            "report": str(report),
+            "flow": list(REASONING_NODES),
+            "summary": product_reasoning_summary(reasoning),
+            "next_step": "填写各节点的 statement/rationale/status/evidence_ids，再运行 askovo check STUDY --stage design 或 --stage full",
+        }
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2

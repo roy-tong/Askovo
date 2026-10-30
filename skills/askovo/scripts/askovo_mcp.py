@@ -38,14 +38,14 @@ SERVER_VERSION = askovo_cli.ASKOVO_VERSION
 DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 SUPPORTED_PROTOCOL_VERSIONS = {"2024-11-05", "2025-03-26", "2025-06-18"}
 SERVER_INSTRUCTIONS = (
-    "askovo product research, deterministic surface. Start with askovo_route or askovo_do: "
-    "one entry routes software / hardware / consumer / automotive / mobile requests to a "
-    "method pack, lifecycle stage, claim types and a platform plan. "
-    "(1) askovo_platforms ranks where relevant data exists, how it can be accessed, and what it "
-    "cannot prove; (2) askovo_do scaffolds the study, research plan and instruments; "
-    "(3) askovo_collect runs a supported adapter (github/reddit) or a local export with quota, "
-    "manifest and dedup; (4) askovo_analyze normalizes, dedups and describes the corpus; "
-    "(5) askovo_audit checks gates and per-claim verdicts; (6) askovo_deliver assembles memo, "
+    "askovo product reasoning and evidence, deterministic surface for product managers, user "
+    "researchers and user operations. Start with askovo_route or askovo_do across software / "
+    "hardware / consumer / automotive / mobile. The primary spine is scene -> user -> pain -> "
+    "need -> feature -> product; collection and analysis only support weak nodes and inferences. "
+    "(1) askovo_do scaffolds the study and product-reasoning.json; (2) askovo_chain renders the "
+    "reasoning canvas; (3) askovo_platforms and askovo_collect gather permitted supporting "
+    "material; (4) askovo_analyze describes it; (5) askovo_audit checks product rationales, "
+    "evidence gates and per-claim verdicts; (6) askovo_deliver assembles chain-led memo, product "
     "report, PRD input or tracker. Legacy text/platform planning remains available as "
     "askovo_plan; askovo_check remains the low-level gate command. "
     "exit codes: 1 = failed gate or claim exceeding evidence, 3 = no feasible platform or "
@@ -592,8 +592,13 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {"type": "object", "properties": {"study_dir": {"type": "string"}}, "required": ["study_dir"]},
     },
     {
+        "name": "askovo_chain",
+        "description": "Scaffold if needed and render the canonical scene-user-pain-need-feature-product reasoning chain; every node requires a rationale, not just evidence IDs.",
+        "inputSchema": {"type": "object", "properties": {"study_dir": {"type": "string"}}, "required": ["study_dir"]},
+    },
+    {
         "name": "askovo_deliver",
-        "description": "Assemble a decision memo, report, PRD input or post-launch tracker from a study.",
+        "description": "Assemble a chain-led decision memo, product report, PRD input or post-launch tracker from a study.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -676,6 +681,7 @@ TOOL_BUILDERS = {
     "askovo_analyze": (askovo_cli.sure_engine.cli_analyze, _build_analyze),
     "askovo_instruments": (askovo_cli.sure_engine.cli_instruments, _build_instruments),
     "askovo_codebook": (askovo_cli.sure_engine.cli_codebook, _build_codebook),
+    "askovo_chain": (askovo_cli.sure_engine.cli_chain, _build_codebook),
     "askovo_deliver": (askovo_cli.sure_engine.cli_deliver, _build_deliver),
     "askovo_methods": (askovo_cli.sure_engine.cli_methods, _build_methods),
     "askovo_domains": (askovo_cli.sure_engine.cli_domains, _build_domains),

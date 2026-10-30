@@ -44,6 +44,16 @@ def complete_design(target: Path, sources: list[str]) -> None:
     study["stopping_rules"] = ["Stop after the synthetic fixture"]
     study["restart_rules"] = ["Restart with a revised design"]
     path.write_text(json.dumps(study, ensure_ascii=False), encoding="utf-8")
+    reasoning_path = target / "04-findings" / "product-reasoning.json"
+    if reasoning_path.is_file():
+        reasoning = json.loads(reasoning_path.read_text(encoding="utf-8"))
+        for chain in reasoning.get("chains", []):
+            chain["title"] = "Synthetic product reasoning"
+            chain["next_test"] = "Run a synthetic validation"
+            for node_name, node in chain.get("nodes", {}).items():
+                node["statement"] = f"Synthetic {node_name} statement"
+                node["rationale"] = f"Synthetic rationale for {node_name}"
+        reasoning_path.write_text(json.dumps(reasoning), encoding="utf-8")
 
 
 class RouterTests(unittest.TestCase):
@@ -129,6 +139,19 @@ class RouterTests(unittest.TestCase):
             platform_plan = json.loads((target / "01-sources/platform-plan.json").read_text(encoding="utf-8"))
             self.assertTrue(platform_plan["recommended"])
             self.assertTrue(list((target / "01-sources/instruments").iterdir()))
+            reasoning_path = target / "04-findings/product-reasoning.json"
+            self.assertTrue(reasoning_path.is_file())
+            reasoning = json.loads(reasoning_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                ["scene", "user", "pain", "need", "feature", "product"],
+                reasoning["flow"],
+            )
+            chain = run_cli("chain", str(target))
+            self.assertEqual(0, chain.returncode, chain.stderr + chain.stdout)
+            chain_payload = json.loads(chain.stdout)
+            self.assertEqual("exists", chain_payload["status"])
+            chain_report = Path(chain_payload["report"]).read_text(encoding="utf-8")
+            self.assertIn("场景 → 用户 → 痛点 → 需求 → 特性 → 产品", chain_report)
             with (target / "01-sources/source-plan.csv").open(encoding="utf-8", newline="") as handle:
                 reader = csv.DictReader(handle)
                 rows = list(reader)

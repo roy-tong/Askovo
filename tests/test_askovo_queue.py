@@ -39,6 +39,16 @@ def complete_design(target: Path) -> None:
     study["stopping_rules"] = ["Stop after fixture"]
     study["restart_rules"] = ["Restart after redesign"]
     path.write_text(json.dumps(study), encoding="utf-8")
+    reasoning_path = target / "04-findings" / "product-reasoning.json"
+    if reasoning_path.is_file():
+        reasoning = json.loads(reasoning_path.read_text(encoding="utf-8"))
+        for chain in reasoning.get("chains", []):
+            chain["title"] = "Synthetic product reasoning"
+            chain["next_test"] = "Run a synthetic validation"
+            for node_name, node in chain.get("nodes", {}).items():
+                node["statement"] = f"Synthetic {node_name} statement"
+                node["rationale"] = f"Synthetic rationale for {node_name}"
+        reasoning_path.write_text(json.dumps(reasoning), encoding="utf-8")
 
 
 class QueueStoreTests(unittest.TestCase):

@@ -58,6 +58,15 @@ askovo do "手机相机夜景和续航"
 
 ## 四个核心能力
 
+### 先写产品推理主链
+
+```bash
+askovo do "家用摄像头夜间告警误报，想验证样机" --study ./camera-study
+askovo chain ./camera-study
+```
+
+`do` 会创建 `04-findings/product-reasoning.json`，把 **场景 → 用户 → 痛点 → 需求 → 特性 → 产品** 六个节点、推导理由、假设和证据引用显式写出来；`chain` 渲染可审阅的 Markdown。方法是支撑层，不替代产品推理；没有填完主链和 Design gate，不会启动真实采集。
+
 ### 1. 方法路由
 
 ```bash

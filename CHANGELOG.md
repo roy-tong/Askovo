@@ -5,6 +5,7 @@
 
 ### Added
 
+- **Product reasoning chain**: `do` scaffolds and `askovo chain` renders an explicit 场景→用户→痛点→需求→特性→产品 chain; the Design gate requires filled nodes, rationales, assumptions, and evidence links, and deliverables lead with the chain.
 - **Research integrity**: `validated` judgments and every cited evidence record must share a `context_key`; real collection now enforces the Design gate, `scope.allowed_sources`, and adapter enablement across CLI, MCP, and queue run.
 - **Collection contract**: raw source envelopes, normalized projections, canonical run manifests, platform-scoped ID/text-hash dedup, conflict reporting, and attempt-specific queue run IDs.
 - **Policy gates**: connector `policy_watch.recheck_by` now produces machine-enforced `review_expired` states in doctor, plan, and collection. Reddit has a limited 2026-10-30 review and a 2026-12-31 Devvit migration re-review deadline.
@@ -13,7 +14,7 @@
 
 ### Changed
 
-- **Canonical repository**: GitHub and raw-content URLs now use `roy-tong/askovo`; the pre-2.0 entries below retain their historical SURE names and commands. The remote rename and metadata update are external release steps.
+- **Canonical repository**: the GitHub repository is renamed to `roy-tong/askovo`, old URLs redirect, metadata/topics are updated, and README/raw-content URLs use the canonical name. Pre-2.0 entries below retain their historical SURE names and commands.
 - **CDP boundary**: limited to authorized visible pages on amazon/instagram/bilibili/weibo with loopback-only debugging, approved default-port HTTP(S) targets, no redirects, same-port WebSockets, bounded frames/responses, and handshake verification. X/YouTube use official APIs only. Collection run IDs are unique and writes refuse collisions.
 - **Queue reliability**: owner-checked completion, heartbeat renewal, lease-loss cancellation before collection/artifact writes, atomically reserved rate slots, and attempt-specific run IDs.
 - **Collection safety**: source-plan scaffolding now matches the audit schema; plan quotas allocate exact totals and all validation happens before workspace writes; next commands shell-quote untrusted text.

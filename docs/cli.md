@@ -17,6 +17,7 @@ askovo --help
 | `collect <study>` | 通过 design gate 后运行采集适配器/本地导出/CDP，写 raw、manifest 与 normalized | 0/1/2/3/4 |
 | `queue init/add/run/status/retry` | SQLite 队列、worker、重试、限速、断点续跑 | 0/1/2 |
 | `analyze <study>` | 归一化、去重、分布、候选主题、问题匹配 | 0/2 |
+| `chain <study>` | 生成/渲染“场景→用户→痛点→需求→特性→产品”推理链 | 0/2 |
 | `instruments <study>` | 生成访谈/观察/任务/感官/价格/Beta/安全工具包 | 0/2 |
 | `import <study> <file>` | 导入 JSONL/CSV/文本为证据 | 0/2 |
 | `codebook <study>` | 生成六类结论的编码本 | 0/2 |

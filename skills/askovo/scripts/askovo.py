@@ -517,6 +517,7 @@ def _study_paths(root: Path) -> dict[str, Path]:
         "sources": root / "01-sources" / "source-plan.csv",
         "evidence": root / "02-data" / "evidence.jsonl",
         "codebook": root / "03-codebook" / "codebook.csv",
+        "reasoning": root / "04-findings" / "product-reasoning.json",
         "judgments": root / "04-findings" / "demand-judgments.json",
         "audit_dir": root / "05-audit",
     }
@@ -1806,7 +1807,7 @@ def _check_decisions(
     paths: dict[str, Path],
     study: dict[str, Any] | None,
     evidence_by_id: dict[str, dict[str, Any]],
-) -> None:
+) -> list[Any]:
     if not paths["judgments"].is_file():
         audit.add(
             "demand_judgments",
@@ -1814,15 +1815,15 @@ def _check_decisions(
             "missing 04-findings/demand-judgments.json",
             "decision",
         )
-        return
+        return []
     try:
         judgments = _load_json(paths["judgments"])
     except (OSError, json.JSONDecodeError) as exc:
         audit.add("demand_judgments", "fail", f"cannot parse demand judgments: {exc}", "decision")
-        return
+        return []
     if not isinstance(judgments, list) or not judgments:
         audit.add("demand_judgments", "fail", "demand judgments must be a non-empty array", "decision")
-        return
+        return []
 
     errors: list[str] = []
     allowed_status = {"hypothesis", "needs-validation", "validated", "rejected", "deprioritized"}
@@ -1912,6 +1913,179 @@ def _check_decisions(
         ),
         "decision",
     )
+    return judgments
+
+
+def _check_product_reasoning(
+    audit: Audit,
+    paths: dict[str, Path],
+    study: dict[str, Any] | None,
+    evidence_by_id: dict[str, dict[str, Any]],
+    judgments: list[Any],
+    design_only: bool = False,
+) -> None:
+    """Check the product spine without pretending that evidence proves an inference."""
+    stage = "design" if design_only else "decision"
+    configured = isinstance(study, dict) and isinstance(study.get("product_reasoning"), dict)
+    if not paths["reasoning"].is_file():
+        if configured:
+            audit.add(
+                "product_reasoning",
+                "fail",
+                "missing 04-findings/product-reasoning.json",
+                stage,
+            )
+        else:
+            audit.add(
+                "product_reasoning",
+                "pass",
+                "legacy study without a product-reasoning contract; run `askovo chain STUDY` to adopt one",
+                stage,
+            )
+        return
+    try:
+        data = _load_json(paths["reasoning"])
+    except (OSError, json.JSONDecodeError) as exc:
+        audit.add("product_reasoning", "fail", f"cannot parse product reasoning: {exc}", stage)
+        return
+    if not isinstance(data, dict):
+        audit.add("product_reasoning", "fail", "product reasoning must be an object", stage)
+        return
+    audit.metrics["product_reasoning"] = sure_engine.product_reasoning_summary(data)
+    errors: list[str] = []
+    if data.get("flow") != list(sure_engine.REASONING_NODES):
+        errors.append("flow must be scene,user,pain,need,feature,product in that order")
+    chains = data.get("chains")
+    if not isinstance(chains, list) or not chains:
+        audit.add("product_reasoning", "fail", "chains must be a non-empty array", stage)
+        return
+
+    allowed_status = {"hypothesis", "needs-validation", "validated", "rejected", "deprioritized"}
+    allowed_confidence = {"low", "medium", "high"}
+    judgment_by_id = {
+        str(item.get("id")): item for item in judgments if isinstance(item, dict) and item.get("id")
+    }
+    require_counter = bool(
+        (study or {}).get("quality_gates", {}).get("require_counter_evidence_for_validated", True)
+    )
+    seen_chain_ids: set[str] = set()
+    for index, chain in enumerate(chains, start=1):
+        if not isinstance(chain, dict):
+            errors.append(f"chain {index} must be an object")
+            continue
+        chain_id = str(chain.get("id") or f"chain-{index}")
+        if chain_id in seen_chain_ids:
+            errors.append(f"{chain_id} duplicates a chain id")
+        seen_chain_ids.add(chain_id)
+        for field_name in ("id", "title", "status", "confidence", "next_test"):
+            if _is_missing(chain.get(field_name)):
+                errors.append(f"{chain_id} missing {field_name}")
+        if chain.get("status") not in allowed_status:
+            errors.append(f"{chain_id} has invalid status {chain.get('status')}")
+        if chain.get("confidence") not in allowed_confidence:
+            errors.append(f"{chain_id} has invalid confidence {chain.get('confidence')}")
+        for field_name in ("counter_evidence_ids", "gaps"):
+            if not isinstance(chain.get(field_name), list):
+                errors.append(f"{chain_id}.{field_name} must be an array")
+        nodes = chain.get("nodes")
+        if not isinstance(nodes, dict):
+            errors.append(f"{chain_id}.nodes must be an object")
+            continue
+
+        all_references: set[str] = set()
+        any_validated_node = False
+        for node_name in sure_engine.REASONING_NODES:
+            node = nodes.get(node_name)
+            prefix = f"{chain_id}.{node_name}"
+            if not isinstance(node, dict):
+                errors.append(f"{prefix} must be an object")
+                continue
+            for field_name in ("statement", "rationale", "status"):
+                if _is_missing(node.get(field_name)):
+                    errors.append(f"{prefix} missing {field_name}")
+            if node.get("status") not in allowed_status:
+                errors.append(f"{prefix} has invalid status {node.get('status')}")
+            for field_name in ("evidence_ids", "assumptions"):
+                if not isinstance(node.get(field_name), list):
+                    errors.append(f"{prefix}.{field_name} must be an array")
+            evidence_ids = node.get("evidence_ids") if isinstance(node.get("evidence_ids"), list) else []
+            all_references.update(str(value) for value in evidence_ids)
+            if node_name == "product":
+                for field_name in ("non_goals", "acceptance_criteria"):
+                    if not isinstance(node.get(field_name), list):
+                        errors.append(f"{prefix}.{field_name} must be an array")
+                    elif node.get("status") == "validated" and not node.get(field_name):
+                        errors.append(f"{prefix} validated requires non-empty {field_name}")
+            if node.get("status") != "validated":
+                continue
+            any_validated_node = True
+            accepted_levels = {
+                "scene": LEVELS - {"E4-"},
+                "user": LEVELS - {"E4-"},
+                "pain": {"E1", "E2"},
+                "need": {"E1", "E2"},
+                "feature": {"E3"},
+                "product": {"E3"},
+            }[node_name]
+            observed_levels = {
+                str(evidence_by_id[str(value)].get("evidence_level"))
+                for value in evidence_ids
+                if str(value) in evidence_by_id
+            }
+            if not observed_levels.intersection(accepted_levels):
+                errors.append(
+                    f"{prefix} validated lacks direct evidence at {', '.join(sorted(accepted_levels))}; "
+                    "a rationale is still required and is not proved by evidence volume"
+                )
+
+        counter_ids = chain.get("counter_evidence_ids") if isinstance(chain.get("counter_evidence_ids"), list) else []
+        all_references.update(str(value) for value in counter_ids)
+        if not design_only:
+            unknown = sorted(value for value in all_references if value not in evidence_by_id)
+            if unknown:
+                errors.append(f"{chain_id} references unknown evidence: " + ", ".join(unknown))
+
+        context_key = str(chain.get("context_key") or "").strip()
+        if (chain.get("status") == "validated" or any_validated_node) and not context_key:
+            errors.append(f"{chain_id} validated nodes require context_key")
+        if not design_only and context_key and (chain.get("status") == "validated" or any_validated_node):
+            mismatched = sorted(
+                value for value in all_references
+                if value in evidence_by_id
+                and str(evidence_by_id[value].get("context_key") or "").strip() != context_key
+            )
+            if mismatched:
+                errors.append(f"{chain_id} has evidence from another context_key: " + ", ".join(mismatched))
+
+        if chain.get("status") == "validated":
+            non_validated = [
+                node_name for node_name in sure_engine.REASONING_NODES
+                if not isinstance(nodes.get(node_name), dict)
+                or nodes[node_name].get("status") != "validated"
+            ]
+            if non_validated:
+                errors.append(f"{chain_id} validated has non-validated nodes: " + ", ".join(non_validated))
+            if require_counter and not counter_ids:
+                errors.append(f"{chain_id} validated lacks counter-evidence")
+            if not design_only:
+                judgment_id = str(chain.get("demand_judgment_id") or "").strip()
+                judgment = judgment_by_id.get(judgment_id)
+                if judgment is None:
+                    errors.append(f"{chain_id} validated must link a demand_judgment_id")
+                else:
+                    if judgment.get("status") != "validated":
+                        errors.append(f"{chain_id} linked demand judgment is not validated")
+                    if context_key and str(judgment.get("context_key") or "").strip() != context_key:
+                        errors.append(f"{chain_id} and linked demand judgment have different context_key values")
+
+    audit.add(
+        "product_reasoning",
+        "fail" if errors else "pass",
+        "; ".join(errors)
+        if errors
+        else f"{len(chains)} product chain(s) make every node and inference rationale explicit",
+        stage,
+    )
 
 
 def audit_study(root: Path, stage: str) -> Audit:
@@ -1920,11 +2094,13 @@ def audit_study(root: Path, stage: str) -> Audit:
     paths = _study_paths(root)
     study = _check_design(audit, paths)
     if stage == "design":
+        _check_product_reasoning(audit, paths, study, {}, [], design_only=True)
         return audit
     _, evidence_by_id = _check_evidence(audit, paths, study)
     if stage == "evidence":
         return audit
-    _check_decisions(audit, paths, study, evidence_by_id)
+    judgments = _check_decisions(audit, paths, study, evidence_by_id)
+    _check_product_reasoning(audit, paths, study, evidence_by_id, judgments)
     return audit
 
 
@@ -2192,7 +2368,10 @@ def _audit_next_actions(payload: dict[str, Any]) -> list[str]:
         if check_id.endswith("_source_design"):
             actions.append(f"补全 {check_id[:-14]} 的 data_rights_basis / retention_rule / terms_reviewed_at")
     if "evidence_records" in failed:
-        actions.append("按缺口补采，直到记录数与证据角色覆盖达到质量门槛")
+        actions.append("按产品推理节点的缺口补采，不要用无关数据量填补质量门槛")
+    if "product_reasoning" in failed:
+        detail = failed["product_reasoning"].get("detail", "")
+        actions.append("修复产品推理链的节点、推导理由或证据关联：" + detail)
     if "demand_judgments" in failed and not payload["claims"]:
         actions.append("补写 04-findings/demand-judgments.json，并为每条判断挂上证据 id")
     if not payload["claims"]:
@@ -2214,6 +2393,26 @@ def _render_audit_md(payload: dict[str, Any]) -> str:
     ]
     if payload.get("decision_question"):
         lines.extend(["## 要回答的决定", "", payload["decision_question"], ""])
+
+    reasoning = payload.get("product_reasoning") or {}
+    lines.extend(["## 产品推理主链", ""])
+    if reasoning.get("chains"):
+        lines.append(
+            f"- 推理链：{reasoning.get('chains', 0)} 条；已形成产品决策：{reasoning.get('decided', reasoning.get('validated', 0))} 条"
+        )
+        lines.append("")
+        lines.append("| 节点 | 已填节点 | 证据支持节点 | 有证据引用 |")
+        lines.append("| --- | --- | --- | --- |")
+        for node in sure_engine.REASONING_NODES:
+            item = reasoning.get("nodes", {}).get(node, {})
+            lines.append(
+                f"| {sure_engine.REASONING_NODE_LABELS[node]} | {item.get('total', 0)} | "
+                f"{item.get('validated', 0)} | {item.get('with_evidence', 0)} |"
+            )
+        lines.append("- 注意：节点有证据不等于推导成立；每条 incoming rationale 与假设仍需人工审查。")
+    else:
+        lines.append("尚未建立产品推理链；当前结果只是旧版需求证据审计。")
+    lines.append("")
 
     summary = payload["summary"]
     lines.extend(
@@ -2338,6 +2537,7 @@ def command_audit(args: argparse.Namespace) -> int:
 
     overclaims = [claim for claim in claims if claim["verdict"] == "exceeds_evidence"]
     status = "pass" if audit.status == "pass" and not overclaims else "fail"
+    reasoning_summary = audit.metrics.get("product_reasoning", {})
     summary = {
         "records": int(signals.get("record_count", 0) or 0),
         "duplicate_rate": float(signals.get("normalized_duplicate_rate", 0.0) or 0.0),
@@ -2346,6 +2546,8 @@ def command_audit(args: argparse.Namespace) -> int:
         "supported": sum(1 for claim in claims if claim["verdict"] == "supported"),
         "overclaims": len(overclaims),
         "open": sum(1 for claim in claims if claim["verdict"] == "open"),
+        "product_chains": int(reasoning_summary.get("chains", 0) or 0),
+        "validated_product_chains": int(reasoning_summary.get("validated", 0) or 0),
     }
     payload: dict[str, Any] = {
         "status": status,
@@ -2366,6 +2568,7 @@ def command_audit(args: argparse.Namespace) -> int:
         "checks": [item.as_dict() for item in audit.findings],
         "signals": signals,
         "claims": claims,
+        "product_reasoning": reasoning_summary,
         "summary": summary,
         "meaning": AUDIT_BOUNDARY,
     }
@@ -2542,7 +2745,15 @@ def _write_planned_source_plan(
         "cap_share",
         "access_status",
         "known_bias",
+        "reasoning_nodes",
     ]
+    reasoning_targets = {
+        "direct_solution": "feature;product",
+        "open_scene": "scene;user;pain;need",
+        "substitute_rejector": "pain;need;feature",
+        "post_purchase_support": "feature;product",
+        "control": "scene;user;pain",
+    }
     rows = []
     for platform in sorted(platform_quotas):
         quota = platform_quotas[platform]
@@ -2560,6 +2771,7 @@ def _write_planned_source_plan(
                     "cap_share": "0.40",
                     "access_status": "planned",
                     "known_bias": PLAN_PLATFORM_BIAS.get(platform, ""),
+                    "reasoning_nodes": reasoning_targets[role],
                 }
             )
     with source_plan_csv.open("w", encoding="utf-8", newline="") as handle:
@@ -3325,10 +3537,27 @@ def _render_report(
                 )
     lines.append("")
 
-    lines.append("## 2. 数据来源与采集")
+    lines.append("## 2. 产品推理主链")
     lines.append("")
-    lines.append("| 证据角色 | 来源平台 | 路线 | 目标量 | 访问状态 | 已知偏差 |")
-    lines.append("| --- | --- | --- | --- | --- | --- |")
+    reasoning_path = root / "04-findings" / "product-reasoning.json"
+    reasoning = None
+    if reasoning_path.is_file():
+        try:
+            loaded_reasoning = _load_json(reasoning_path)
+            if isinstance(loaded_reasoning, dict):
+                reasoning = loaded_reasoning
+        except (OSError, json.JSONDecodeError):
+            reasoning = None
+    if reasoning is not None:
+        lines.extend(sure_engine._product_chain_lines(reasoning))
+    else:
+        lines.append("尚未建立产品推理链；运行 `askovo chain STUDY`，不要用数据量替代产品推导。")
+        lines.append("")
+
+    lines.append("## 3. 数据来源与采集（服务推理缺口）")
+    lines.append("")
+    lines.append("| 证据角色 | 来源平台 | 路线 | 目标量 | 访问状态 | 已知偏差 | 服务节点 |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- |")
     source_plan_path = root / "01-sources" / "source-plan.csv"
     if source_plan_path.is_file():
         with source_plan_path.open(encoding="utf-8-sig", newline="") as handle:
@@ -3336,7 +3565,7 @@ def _render_report(
                 lines.append(
                     f"| {row.get('corpus_role', '')} | {row.get('source_family', '')} | "
                     f"{row.get('route_or_query', '')} | {row.get('target_records', '')} | "
-                    f"{row.get('access_status', '')} | {row.get('known_bias', '')} |"
+                    f"{row.get('access_status', '')} | {row.get('known_bias', '')} | {row.get('reasoning_nodes', '')} |"
                 )
     if manifests.get("runs"):
         lines.append("")
@@ -3844,8 +4073,14 @@ def build_parser() -> argparse.ArgumentParser:
     codebook_parser.add_argument("study_dir")
     codebook_parser.set_defaults(func=sure_engine.cli_codebook)
 
+    chain_parser = subparsers.add_parser(
+        "chain", help="scaffold and render the scene-user-pain-need-feature-product reasoning chain"
+    )
+    chain_parser.add_argument("study_dir")
+    chain_parser.set_defaults(func=sure_engine.cli_chain)
+
     deliver_parser = subparsers.add_parser(
-        "deliver", help="assemble a memo, report, PRD input or post-launch tracker"
+        "deliver", help="assemble a chain-led memo, product report, PRD input or post-launch tracker"
     )
     deliver_parser.add_argument("study_dir")
     deliver_parser.add_argument("--kind", choices=("memo", "report", "prd", "tracker"), default="memo")
@@ -3934,7 +4169,7 @@ def build_parser() -> argparse.ArgumentParser:
 CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "do", "domains",
     "methods", "catalog", "platforms", "collect", "analyze", "instruments", "import", "queue",
-    "codebook", "deliver", "doctor", "audit", "check", "connectors", "stage",
+    "codebook", "chain", "deliver", "doctor", "audit", "check", "connectors", "stage",
 }
 
 

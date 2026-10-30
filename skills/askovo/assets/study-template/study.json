@@ -2,6 +2,12 @@
   "study_id": "待填写",
   "title": "待填写",
   "method_version": "{{method_version}}",
+  "product_reasoning": {
+    "flow": ["scene", "user", "pain", "need", "feature", "product"],
+    "flow_label": "场景 → 用户 → 痛点 → 需求 → 特性 → 产品",
+    "primary_artifact": "04-findings/product-reasoning.json",
+    "principle": "先显式写出每个节点及推导理由，再针对薄弱节点收集和分析证据。"
+  },
   "decision": {
     "question": "待填写",
     "owner": "待填写",
