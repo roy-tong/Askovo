@@ -8,7 +8,7 @@ The reviewed [ImWhiteRabbit/KSInsights](https://github.com/ImWhiteRabbit/KSInsig
 
 The README also says the data is produced by a Kickstarter scraper. Kickstarter's current [Terms of Use](https://legal.kickstarter.com/policies/en/?name=terms-of-use) prohibit software or devices from crawling or spidering the site. The repository's MIT license does not resolve the collection route or platform-data reuse rights.
 
-The registry decision is `blocked`. Do not treat the repository as a current feed or copy its scraper into askovo.
+The registry decision is `blocked`. Do not treat the repository as a current feed or copy its scraper into Askovo.
 
 ## What the repository can still contribute
 
@@ -37,7 +37,7 @@ Campaign pages and creator updates are supply-side context. Public funding total
 - a pledge is conditional and may change;
 - a charged pledge is a realized transaction but not fulfilled use;
 - refund and fulfillment records require authorized, deidentified, or aggregate data;
-- private backer names, emails, addresses, payment data, and messages do not belong in askovo evidence.
+- private backer names, emails, addresses, payment data, and messages do not belong in Askovo evidence.
 
 ## Replacement sources
 

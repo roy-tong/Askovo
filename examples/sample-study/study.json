@@ -2,6 +2,16 @@
   "study_id": "synthetic-mobile-pet-check",
   "title": "Synthetic mobile pet-check study",
   "method_version": "2.0.1",
+  "product_reasoning_version": "2.0",
+  "product_reasoning": {
+    "flow": ["scene", "user", "pain", "need", "feature", "product", "business"],
+    "flow_label": "场景 → 用户 → 痛点 → 需求 → 特性 → 产品 → 商业",
+    "primary_artifact": "04-findings/product-reasoning.json",
+    "principle": "Evidence supports each product inference; it does not replace the inference."
+  },
+  "delivery": {
+    "audiences": ["product_manager", "user_researcher", "user_operations", "market_researcher", "market_analyst", "requirements_analyst", "business_analyst"]
+  },
   "decision": {
     "question": "Whether to run a two-week mobile home-check pilot for remote pet owners",
     "owner": "Illustrative product team",

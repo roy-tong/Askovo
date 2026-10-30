@@ -6,7 +6,7 @@ Use this reference when JD.com is proposed as a third-party research source. Rea
 
 The reviewed candidate [2274900/JD_comment_spider](https://github.com/2274900/JD_comment_spider) is MIT licensed but was last pushed in 2020. Its README describes direct requests to JD search and comment endpoints. It is too stale to serve as a reliable current connector, and the current [JD user agreement](https://help.jd.com/user/issue/945-4583.html) restricts unauthorized third-party tools and programs that obtain platform or user data.
 
-The registry decision is `blocked`. Do not run, modernize, or hide this collector behind a new askovo name unless a new access and data-rights review changes that decision.
+The registry decision is `blocked`. Do not run, modernize, or hide this collector behind a new Askovo name unless a new access and data-rights review changes that decision.
 
 ## What the repository can still contribute
 

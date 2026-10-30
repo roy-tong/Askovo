@@ -8,7 +8,7 @@ The scope is independent third-party research. Seller Central, Vendor Central, ä
 
 The review on 2026-08-27 did not find a supported live OSS connector for these four platform families.
 
-| Platform | GitHub project reviewed | askovo decision | What is still usable |
+| Platform | GitHub project reviewed | Askovo decision | What is still usable |
 | --- | --- | --- | --- |
 | Amazon | [AmazonReviews2023](https://github.com/hyp1231/AmazonReviews2023) | `historical_only` | Historical reviews and metadata through September 2023 after a separate dataset-rights review |
 | Amazon | [amazon-reviews GraphQL](https://github.com/ae9is/amazon-reviews) | `historical_only` | A self-hosted query layer over the same dataset; AGPL obligations apply |
@@ -27,7 +27,7 @@ Review four separate permissions:
 | Code license | May we fork and modify this repository? |
 | Platform access | Does the code use an official or otherwise authorized surface? |
 | Data rights | May this study retain and reuse reviews, identifiers, or campaign data? |
-| Claim eligibility | Does the record contain enough context for the intended askovo evidence level? |
+| Claim eligibility | Does the record contain enough context for the intended Askovo evidence level? |
 
 The Taobao candidate is MIT licensed but automates QR login and saves session cookies. That passes a code-license check and fails the access check. AmazonReviews2023 provides MIT-licensed processing code, but the dataset reuse basis still requires a separate decision.
 

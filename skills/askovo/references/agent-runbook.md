@@ -1,6 +1,6 @@
 # Agent execution runbook
 
-Use this runbook when an Agent must create files, execute a study, audit a corpus, or continue work left by another Agent. Read `data-contract.md` before writing evidence records.
+Use this runbook when an Agent must create files, execute a study, audit a corpus, or continue work left by another Agent. Read `product-reasoning.md` before creating findings and `data-contract.md` before writing evidence records. The product spine comes first; collection is always against a named chain gap.
 
 ## 1. Decide the entry point
 
@@ -8,16 +8,23 @@ Inspect the user's inputs before creating anything.
 
 | Available input | Start mode | First deliverable |
 | --- | --- | --- |
-| Only a product/category/question | Design | `study.json` + `01-sources/source-plan.csv` |
-| A research contract plus source access | Execute | Design check, then pilot collection manifest |
-| An existing corpus | Audit | Field/provenance inventory and evidence-stage check |
-| An audited corpus plus a decision question | Synthesize | `04-findings/demand-judgments.json` |
+| Only a product/category/question | Frame | `study.json` + `04-findings/product-reasoning.json` hypothesis canvas |
+| A passing Design contract plus source access | Execute | Pilot collection manifest for a named chain gap |
+| An existing corpus | Audit | Field/provenance inventory, evidence-stage check, and missing-chain diagnosis |
+| An audited corpus plus a decision question | Synthesize | Evidence → demand judgments → product/business reasoning → MRD/PRD/BRD |
 
 Do not ask the user to choose a mode when it follows from the available artifacts. State the inferred mode and proceed. Ask only when a missing decision boundary would materially change sources, privacy handling, or the product decision.
 
 ## 2. Create a study workspace
 
-When the host agent connects through MCP instead of the CLI, the same operations arrive as `askovo_plan`, `askovo_init`, `askovo_check`, `askovo_signals`, `askovo_report`, `askovo_connectors`, and `askovo_platform_map` tools (server: `scripts/askovo_mcp.py`). Tool results embed the CLI exit code: `1` means a failed gate and `3` means no feasible platform — both are research statuses to act on, not retryable errors.
+For a new product question, start with `do`, then render the chain:
+
+```bash
+python3 scripts/askovo.py do "AI 眼镜在海外社媒的用户不满与替代方案" --domain mobile --study /ABSOLUTE/PATH/TO/STUDY
+python3 scripts/askovo.py chain /ABSOLUTE/PATH/TO/STUDY
+```
+
+Fill all seven nodes as hypotheses before planning collection. Do not infer a feature from mention frequency, a product from a solution alone, or a business from interest. Market analysis → MRD, requirements analysis → PRD, business analysis → BRD. When the host agent connects through MCP instead of the CLI, the same operations arrive as `askovo_do`, `askovo_chain`, `askovo_plan`, `askovo_init`, `askovo_check`, `askovo_signals`, `askovo_report`, `askovo_deliver`, and `askovo_connectors` tools (server: `scripts/askovo_mcp.py`). Tool results embed the CLI exit code: `1` means a failed gate and `3` means no feasible platform — both are research statuses to act on, not retryable errors.
 
 When the user supplies a research goal, region, sample size, and platform types, use the intake command instead of assembling these by hand:
 
@@ -66,15 +73,17 @@ study/
 │   ├── codebook.csv
 │   └── gold-set.jsonl
 ├── 04-findings/
+│   ├── product-reasoning.json
 │   └── demand-judgments.json
-└── 05-audit/
+├── 05-audit/
+└── 06-report/
 ```
 
 Use these paths as the inter-Agent handoff contract. Do not invent parallel folders for the same artifact.
 
 ## 3. Complete and check the design
 
-Fill every placeholder in `study.json` and every configured evidence role in `source-plan.csv`.
+Fill every placeholder in `study.json`, all seven product/business reasoning nodes, and every configured evidence role in `source-plan.csv`. Each node needs a non-placeholder statement and incoming rationale; feature includes alternatives, product includes scope/non-goals, and business includes market boundary, segments, payer, pricing/cost hypotheses, market-estimate method, unit-economics inputs, metrics, and gate. Mark each route with the `reasoning_nodes` it supports. If the rationale is unknown, keep it open and design a falsification step rather than inventing a link.
 
 If a platform is planned, first run `askovo.py connectors --platform PLATFORM --include-blocked`. Read `open-source-connectors.md`, `connector-contract.md`, the matching shared adapter, and the platform reference. Copy the route template into `01-sources/`, enable its `study.json.source_adapters` block, and fill connector ID/revision/license, access basis, policy status, platform and data-rights review dates, data-rights basis, retention rule, hierarchy minimums, and concentration caps. Only `supported` and `historical_only` registry decisions may run. The generic source plan remains the stage-gate summary; the platform route matrix is the reproducible query manifest.
 
@@ -166,13 +175,21 @@ Status rules:
 | `rejected` | Direct rejection, failed behavior, or falsifier is met |
 | `deprioritized` | Evidence exists, but consequence, addressability, or strategic fit is insufficient |
 
-Run:
+## 7A. Write the product reasoning chain
+
+Create or update `04-findings/product-reasoning.json` after the evidence ledger and demand judgment. Link each chain with `demand_judgment_id + context_key` and use only the judgment's registered evidence subsets.
+
+Write a solution-neutral need, then explain why the candidate feature changes that outcome and why the selected capabilities form a bounded product. Add the business node: market boundary (geography/offer/time window/included/excluded), segments and payer, positioning and alternatives, revenue/pricing hypotheses, channels, costs, market-estimate method, unit-economics inputs, success metrics, business non-goals, and the G0–G2 gate. Include alternatives, acceptance conditions, assumptions, rival explanations, counter-evidence, human review, prioritization, and change log. `decided` records a product/business choice only; keep delivery, observed outcome, and causal states in `supporting_states` with their own references.
+
+Generate role documents from the same chain: `deliver --kind mrd`, `--kind prd`, and `--kind brd`. Market research/analysis feeds MRD; requirements research/analysis feeds PRD; business analysis feeds BRD. Unknown numbers stay null with gaps; never infer market size or unit economics from convenience-sample volume.
+
+Then run:
 
 ```bash
 python3 scripts/askovo.py check /ABSOLUTE/PATH/TO/STUDY --stage full --write-report
 ```
 
-If this check fails, report the failed gate and remediation. Do not relabel the judgment to make the validator pass unless the new status accurately reflects the evidence.
+If this check fails, report the failed gate and remediation. Do not relabel the judgment or product chain to make the validator pass unless the new status accurately reflects the evidence and reasoning.
 
 ## 8. Compute signals and assemble the report
 
@@ -198,7 +215,9 @@ Then assemble the research-status report:
 python3 scripts/askovo.py report /ABSOLUTE/PATH/TO/STUDY
 ```
 
-This writes `06-report/report.md` in Chinese, combining the study contract, source plan, manifest totals, signals, demand judgments, blocked routes, and interpretation boundaries. When the full check has not passed, the report keeps a visible failure banner and the conclusions stay framed as research status. Do not edit the report to remove the banner; pass the check or ship the status honestly.
+This writes `06-report/research-status.md` in Chinese, combining the product chain, study contract, source plan, manifest totals, signals, demand judgments, blocked routes, and interpretation boundaries. When the full check has not passed, the report keeps a visible failure banner and the conclusions stay framed as research status. Do not edit the report to remove the banner; pass the check or ship the status honestly.
+
+For role deliverables, use `deliver --kind report` for the combined product/business report, `--kind mrd` for market research/analysis, `--kind prd` for requirements research/analysis, `--kind brd` for business analysis, and `--kind ops` for user operations. These are views of the same chain, not new findings files. Do not copy a second market, requirement, product, or business truth into `insights.md` or a role report.
 
 ## 9. Handoff to another Agent
 
@@ -210,6 +229,9 @@ End every substantial run with a compact handoff containing:
 - blocked routes and why they were blocked;
 - for social sources, community/conversation/channel/video/thread concentration and refresh/deletion status;
 - hypotheses changed and the evidence that changed them;
+- chain/judgment IDs and statuses, weakest node or rationale, unresolved alternative explanations and counter-evidence;
+- business market boundary, pricing/cost/unit-economics gaps, resource gate, and MRD/PRD/BRD projection paths;
+- delivery/outcome/causal supporting states and any required release/metric/experiment references;
 - next action, exact file to edit, and stop condition.
 
 Do not hand off a prose summary without the artifact paths and last audit result.

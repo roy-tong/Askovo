@@ -1,11 +1,31 @@
 # Changelog
 
 
+## 2.1.0 — 2026-10-31
+
+### Added
+
+- **Product and business reasoning chain**: `do` scaffolds and `askovo chain` renders 场景→用户→痛点→需求→特性→产品→商业 for product managers, user researchers, user operations, and market/requirements/business analysis. Every node has statement/rationale/status/evidence/assumptions; features include alternatives, products include scope/non-goals, and business includes market boundary, segments, payer, price/cost/unit-economics inputs, metrics, and a resource gate. Legacy six-node chains stay readable; new studies scaffold schema 2.0 with supporting delivery/outcome/causal states, alternative explanations, prioritization, human review, and a change log.
+- **Three analysis workflows and projections**: market research/analysis → MRD, requirements research/analysis → PRD, business analysis → BRD. `deliver --kind mrd/prd/brd` renders these from one chain; BRD is the business analysis output, not a parallel workstream. Added role/responsibility and source-backed methodology coverage.
+- **Reasoning/evidence join and decision states**: chain nodes may cite only evidence registered in their linked demand judgment and context; business nodes use commercial/counter evidence. `decided` records a product/business choice; independent delivery/outcome/causal states require release/metric/experiment references and cannot be inferred from E3/E5.
+- **Role projections and methodology**: chain-led PM memo/report, UXR `research-status.md`, user-operations `user-ops.md`, business metrics in the tracker, and populated postlaunch tracking rows share one semantic source. Added researched methodology for five domains, senior UXR, user operations, and market/requirements/business analysis.
+- **Guides and templates**: new Chinese guides `docs/product-reasoning.md`（产品与商业推理主链）、`docs/product-methodology.md`、`docs/business-analysis.md` and the English skill reference `references/product-reasoning.md`; MRD/PRD/BRD and interview-kit templates are chain-led; the bundled sample study ships a filled seven-node chain.
+
+### Changed
+
+- **Canonical repository live**: the GitHub rename to `roy-tong/askovo` completed — old URLs redirect and metadata/topics are updated.
+- **Manifest text**: `askovo chain` help, the MCP `askovo_chain` description, and the `docs/cli.md` command table now cover all seven nodes and every public command.
+- **Packaging metadata**: description and keywords state the scene-to-business positioning for PM/research/ops/analysis roles.
+
+### Fixed
+
+- Validation: 119 tests pass on Python 3.9, including seven-node business, market-estimate discipline, MRD/BRD projections and legacy six-node compatibility; a dedicated 24-case product-reasoning suite was added. Wheel/sdist pass twine and isolated wheel smoke; Python 3.10–3.12 remain covered by the CI matrix.
+
+
 ## 2.0.1 — 2026-10-30
 
 ### Added
 
-- **Product reasoning chain**: `do` scaffolds and `askovo chain` renders an explicit 场景→用户→痛点→需求→特性→产品 chain; the Design gate requires filled nodes, rationales, assumptions, and evidence links, and deliverables lead with the chain.
 - **Research integrity**: `validated` judgments and every cited evidence record must share a `context_key`; real collection now enforces the Design gate, `scope.allowed_sources`, and adapter enablement across CLI, MCP, and queue run.
 - **Collection contract**: raw source envelopes, normalized projections, canonical run manifests, platform-scoped ID/text-hash dedup, conflict reporting, and attempt-specific queue run IDs.
 - **Policy gates**: connector `policy_watch.recheck_by` now produces machine-enforced `review_expired` states in doctor, plan, and collection. Reddit has a limited 2026-10-30 review and a 2026-12-31 Devvit migration re-review deadline.
@@ -14,7 +34,7 @@
 
 ### Changed
 
-- **Canonical repository**: the GitHub repository is renamed to `roy-tong/askovo`, old URLs redirect, metadata/topics are updated, and README/raw-content URLs use the canonical name. Pre-2.0 entries below retain their historical SURE names and commands.
+- **Canonical repository**: GitHub and raw-content URLs now use `roy-tong/askovo`; the pre-2.0 entries below retain their historical SURE names and commands. The remote rename and metadata update are external release steps.
 - **CDP boundary**: limited to authorized visible pages on amazon/instagram/bilibili/weibo with loopback-only debugging, approved default-port HTTP(S) targets, no redirects, same-port WebSockets, bounded frames/responses, and handshake verification. X/YouTube use official APIs only. Collection run IDs are unique and writes refuse collisions.
 - **Queue reliability**: owner-checked completion, heartbeat renewal, lease-loss cancellation before collection/artifact writes, atomically reserved rate slots, and attempt-specific run IDs.
 - **Collection safety**: source-plan scaffolding now matches the audit schema; plan quotas allocate exact totals and all validation happens before workspace writes; next commands shell-quote untrusted text.
@@ -32,8 +52,8 @@
 
 ## 2.0.0 — 2026-10-30
 
-- **Brand rename**: the product is now **askovo**; `askovo` is the CLI, Python package, Skill and MCP server. SURE (Structured User Research with Evidence) remains the underlying research engine (`sure_engine.py`), not the outward product name.
-- **Logo**: added `assets/brand/askovo-logo.png`; README uses the askovo wordmark and the line “Ask better. Decide with evidence.”
+- **Brand rename**: the product is now **Askovo**; `askovo` is the CLI, Python package, Skill and MCP server. SURE (Structured User Research with Evidence) remains the underlying research engine (`sure_engine.py`), not the outward product name.
+- **Logo**: added `assets/brand/askovo-logo.png`; README uses the Askovo wordmark and the line “Ask better. Decide with evidence.”
 - **Breaking surfaces**: `sure` / `sure-mcp` scripts and `sure_*` MCP tools are replaced by `askovo` / `askovo-mcp` and `askovo_*` tools. Old `sure` command is not installed by this package.
 - **Runtime**: `skills/askovo/scripts/askovo.py` (CLI) + `sure_engine.py` (research logic) + `askovo_mcp.py` (MCP). Wheel bundles the runtime under `askovo/runtime`.
 - **Env vars**: Reddit credentials are `ASKOVO_REDDIT_CLIENT_ID`, `ASKOVO_REDDIT_CLIENT_SECRET`, `ASKOVO_REDDIT_USER_AGENT`.

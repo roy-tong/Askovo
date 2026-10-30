@@ -2,6 +2,14 @@
 
 Use JSONL for full records and CSV/Parquet only as analysis projections. Preserve full source text in the raw or strict-master layer. The compact `02-data/evidence.jsonl` file used by the CLI is an evidence index: it may contain the full text, but it must always retain a stable reference back to the source record.
 
+## Product reasoning before evidence execution
+
+`04-findings/product-reasoning.json` owns the canonical `scene → user → pain → need → feature → product → business` semantics. It links to `demand-judgments.json` by `demand_judgment_id + context_key`; node evidence IDs must be subsets of that judgment's registered groups. Do not use normalized but ungraded platform records as chain evidence.
+
+The seven nodes require statement, incoming rationale, status, evidence IDs, and assumptions. Feature includes acceptance conditions and alternatives; product includes form, scope, non-goals, and acceptance criteria; business includes market boundary/geographies/time window/segments, payer, positioning, revenue/pricing, channels, competition, costs, market estimates, unit-economics inputs, metrics, and a resource gate. `decided` is a product/business choice record, not release, commercial success, or outcome proof. Delivery, observed outcome, and causal states remain orthogonal. Legacy six-node chains remain readable. See [product-reasoning.md](product-reasoning.md) for the full schema and decision rules.
+
+`source-plan.csv` may include `reasoning_nodes` (`scene;user;pain;need` etc.) so every collection route names the inference gap it serves. Data volume without a target node is not a research objective.
+
 ## Required by the CLI
 
 Every line in `02-data/evidence.jsonl` must contain these fields:

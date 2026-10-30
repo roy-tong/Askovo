@@ -1,6 +1,6 @@
-corpus_role,source_family,route_or_query,target_records,cap_share,access_status,known_bias
-direct_solution,,,0,0.40,planned,
-open_scene,,,0,0.40,planned,
-substitute_rejector,,,0,0.40,planned,
-post_purchase_support,,,0,0.40,planned,
-control,,,0,0.40,planned,
+corpus_role,source_family,route_or_query,target_records,cap_share,access_status,known_bias,reasoning_nodes
+direct_solution,,,0,0.40,planned,,feature;product
+open_scene,,,0,0.40,planned,,scene;user;pain;need
+substitute_rejector,,,0,0.40,planned,,pain;need;feature
+post_purchase_support,,,0,0.40,planned,,feature;product
+control,,,0,0.40,planned,,scene;user;pain

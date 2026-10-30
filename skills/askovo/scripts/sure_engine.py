@@ -57,7 +57,17 @@ STAGES = (
 )
 INTENTS = ("route", "plan", "instruments", "import", "sources", "collect", "analyze", "audit", "deliver")
 CLAIM_TYPES = ("need", "acceptance", "usability", "performance", "commercial", "safety")
-REASONING_NODES = ("scene", "user", "pain", "need", "feature", "product")
+DELIVERY_AUDIENCES = (
+    "product_manager",
+    "user_researcher",
+    "user_operations",
+    "market_researcher",
+    "market_analyst",
+    "requirements_analyst",
+    "business_analyst",
+)
+LEGACY_REASONING_NODES = ("scene", "user", "pain", "need", "feature", "product")
+REASONING_NODES = (*LEGACY_REASONING_NODES, "business")
 REASONING_NODE_LABELS = {
     "scene": "场景",
     "user": "用户",
@@ -65,15 +75,16 @@ REASONING_NODE_LABELS = {
     "need": "需求",
     "feature": "特性",
     "product": "产品",
+    "business": "商业",
 }
 REASONING_STAGE_FOCUS = {
     "discovery": ("scene", "user", "pain", "need"),
     "concept": ("need", "feature"),
     "prototype": ("feature", "product"),
     "validation": ("feature", "product"),
-    "pricing": ("need", "product"),
-    "prelaunch": ("feature", "product"),
-    "postlaunch": ("scene", "user", "pain", "need", "feature", "product"),
+    "pricing": ("product", "business"),
+    "prelaunch": ("product", "business"),
+    "postlaunch": REASONING_NODES,
     "audit": REASONING_NODES,
 }
 HIGH_RISK_FLAGS = {
@@ -312,7 +323,7 @@ def product_reasoning_contract(stage: str) -> dict[str, Any]:
     """Declare the product-facing spine; methods and sources only support it."""
     return {
         "flow": list(REASONING_NODES),
-        "flow_label": "场景 → 用户 → 痛点 → 需求 → 特性 → 产品",
+        "flow_label": "场景 → 用户 → 痛点 → 需求 → 特性 → 产品 → 商业",
         "focus": list(REASONING_STAGE_FOCUS.get(stage, REASONING_NODES)),
         "primary_artifact": "04-findings/product-reasoning.json",
         "principle": "先显式写出每个节点及推导理由，再针对薄弱节点收集和分析证据。",
@@ -430,11 +441,11 @@ def _risk_markdown(risks: list[dict[str, str]]) -> str:
 
 def route_markdown(route: dict[str, Any]) -> str:
     if route.get("status") == "needs_domain":
-        return "# askovo 路由\n\n需要先确认产品类型：\n\n" + "\n".join(
+        return "# Askovo 路由\n\n需要先确认产品类型：\n\n" + "\n".join(
             f"- `{item['domain']}` — {item['label']}" for item in route["domain_options"]
         ) + "\n"
     lines = [
-        "# askovo 路由结果",
+        "# Askovo 路由结果",
         "",
         f"- 原始需求：{route['query']}",
         f"- 产品类型：**{route['domain_label']}**（`{route['domain']}`，置信度 {route['confidence']}）",
@@ -504,8 +515,38 @@ def product_reasoning_template(title: str = "") -> dict[str, Any]:
     nodes["need"].update({"desired_outcome": "待填写", "constraints": [], "measure": "待填写"})
     nodes["feature"].update({"capability": "待填写", "acceptance_conditions": [], "alternatives_considered": []})
     nodes["product"].update({"form": "待填写", "scope": "待填写", "non_goals": [], "acceptance_criteria": []})
+    nodes["business"].update(
+        {
+            "market_definition": "待填写",
+            "geographies": [],
+            "time_window": "待填写",
+            "included_markets": [],
+            "excluded_markets": [],
+            "target_segment": "待填写",
+            "segments": [],
+            "payer": "待填写",
+            "positioning": "待填写",
+            "revenue_model": "待填写",
+            "pricing_hypothesis": "待填写",
+            "pricing": [],
+            "channels": [],
+            "competitive_alternatives": [],
+            "cost_drivers": [],
+            "market_estimates": [],
+            "unit_economics_inputs": [],
+            "success_metrics": [],
+            "non_goals": [],
+            "gate": {
+                "stage": "G0",
+                "decision": "hypothesis",
+                "owner": "待填写",
+                "resource_commitment": "待填写",
+                "revisit_trigger": "待填写",
+            },
+        }
+    )
     return {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "flow": list(REASONING_NODES),
         "chains": [
             {
@@ -515,8 +556,17 @@ def product_reasoning_template(title: str = "") -> dict[str, Any]:
                 "demand_judgment_id": "",
                 "status": "hypothesis",
                 "confidence": "low",
+                "supporting_states": {
+                    "delivery": {"status": "unplanned", "release_plan_ref": ""},
+                    "outcome": {"status": "unmeasured", "metric_refs": []},
+                    "causal": {"status": "not-claimed", "experiment_refs": []},
+                },
                 "nodes": nodes,
+                "alternative_explanations": [],
                 "counter_evidence_ids": [],
+                "human_review": {"status": "pending", "reviewer": "", "notes": "", "risk_acceptance": ""},
+                "prioritization": {"method": "", "factors": {}, "owner": "", "decided_at": "", "rationale": ""},
+                "change_log": [],
                 "gaps": ["待填写：当前最薄弱的推理节点或推导关系"],
                 "next_test": "待填写：能最大幅度降低当前推理不确定性的最小验证",
             }
@@ -558,6 +608,9 @@ def product_reasoning_summary(data: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(chains, list):
         chains = []
     by_status: dict[str, int] = {}
+    supporting_summary: dict[str, dict[str, int]] = {
+        "delivery": {}, "outcome": {}, "causal": {}
+    }
     node_summary = {
         node: {"total": 0, "validated": 0, "with_evidence": 0}
         for node in REASONING_NODES
@@ -567,6 +620,13 @@ def product_reasoning_summary(data: dict[str, Any] | None) -> dict[str, Any]:
             continue
         status = str(chain.get("status") or "unknown")
         by_status[status] = by_status.get(status, 0) + 1
+        states = chain.get("supporting_states", {})
+        if isinstance(states, dict):
+            for state_name in supporting_summary:
+                state_value = states.get(state_name, {})
+                if isinstance(state_value, dict) and state_value.get("status"):
+                    state_status = str(state_value["status"])
+                    supporting_summary[state_name][state_status] = supporting_summary[state_name].get(state_status, 0) + 1
         nodes = chain.get("nodes", {})
         if not isinstance(nodes, dict):
             continue
@@ -581,8 +641,9 @@ def product_reasoning_summary(data: dict[str, Any] | None) -> dict[str, Any]:
                 node_summary[node]["with_evidence"] += 1
     return {
         "chains": len(chains),
-        "validated": by_status.get("validated", 0),
+        "decided": by_status.get("decided", 0),
         "by_status": by_status,
+        "supporting_states": supporting_summary,
         "nodes": node_summary,
     }
 
@@ -591,9 +652,50 @@ def _markdown_cell(value: Any) -> str:
     return str(value or "—").replace("|", "\\|").replace("\n", " ")
 
 
+def _business_detail_lines(chain: dict[str, Any]) -> list[str]:
+    nodes = chain.get("nodes", {})
+    business = nodes.get("business", {}) if isinstance(nodes, dict) else {}
+    if not isinstance(business, dict) or not business:
+        return []
+    lines: list[str] = []
+    for field, label in (
+        ("market_definition", "市场定义"),
+        ("target_segment", "目标细分"),
+        ("payer", "付费者"),
+        ("positioning", "竞争定位"),
+        ("revenue_model", "收入模式"),
+        ("pricing_hypothesis", "价格假设"),
+    ):
+        if business.get(field):
+            lines.append(f"- {label}：{business[field]}")
+    for field, label in (
+        ("channels", "进入渠道"),
+        ("competitive_alternatives", "竞争与替代"),
+        ("cost_drivers", "成本驱动"),
+        ("market_estimates", "市场估计口径"),
+        ("unit_economics_inputs", "单位经济输入"),
+        ("success_metrics", "商业成功指标"),
+        ("non_goals", "商业非目标"),
+    ):
+        value = business.get(field, [])
+        if value:
+            lines.append(f"- {label}：{json.dumps(value, ensure_ascii=False)}")
+    gate = business.get("gate", {})
+    if isinstance(gate, dict) and gate:
+        lines.append(
+            f"- 商业门：`{gate.get('stage', 'G0')}` / `{gate.get('decision', 'hypothesis')}`；"
+            f"负责人：{gate.get('owner') or '待确认'}；资源承诺：{gate.get('resource_commitment') or '待确认'}；"
+            f"复审触发：{gate.get('revisit_trigger') or '待确认'}"
+        )
+    return lines
+
+
 def _product_chain_lines(data: dict[str, Any]) -> list[str]:
+    flow_value = data.get("flow")
+    flow = tuple(flow_value) if isinstance(flow_value, list) and flow_value else REASONING_NODES
+    flow_label = " → ".join(REASONING_NODE_LABELS[node] for node in flow)
     lines = [
-        "> 主链：场景 → 用户 → 痛点 → 需求 → 特性 → 产品。证据支撑推理，不替代推理。",
+        f"> 主链：{flow_label}。证据支撑推理，不替代推理。",
         "",
     ]
     chains = data.get("chains", [])
@@ -603,11 +705,19 @@ def _product_chain_lines(data: dict[str, Any]) -> list[str]:
     for chain in chains:
         if not isinstance(chain, dict):
             continue
+        states = chain.get("supporting_states", {})
+        state_labels = []
+        if isinstance(states, dict):
+            for key, label in (("delivery", "交付"), ("outcome", "结果"), ("causal", "因果")):
+                value = states.get(key, {})
+                if isinstance(value, dict) and value.get("status"):
+                    state_labels.append(f"{label} `{value['status']}`")
         lines.extend(
             [
                 f"### {chain.get('id', 'PR?')} · {chain.get('title', '未命名推理链')}",
                 "",
                 f"- 状态：`{chain.get('status', 'unknown')}`；置信度：`{chain.get('confidence', 'unknown')}`",
+                f"- 独立支撑状态：{'；'.join(state_labels) if state_labels else '未记录'}",
                 f"- 需求判断：`{chain.get('demand_judgment_id') or '未关联'}`；上下文：`{chain.get('context_key') or '未设置'}`",
                 "",
                 "| 节点 | 判断 | 为什么到这一步 | 状态 | 证据 |",
@@ -615,7 +725,7 @@ def _product_chain_lines(data: dict[str, Any]) -> list[str]:
             ]
         )
         nodes = chain.get("nodes", {})
-        for node in REASONING_NODES:
+        for node in flow:
             value = nodes.get(node, {}) if isinstance(nodes, dict) else {}
             if not isinstance(value, dict):
                 value = {}
@@ -625,7 +735,7 @@ def _product_chain_lines(data: dict[str, Any]) -> list[str]:
                 f"{_markdown_cell(value.get('rationale'))} | `{value.get('status', 'unknown')}` | "
                 f"{_markdown_cell(evidence)} |"
             )
-        for node in REASONING_NODES:
+        for node in flow:
             value = nodes.get(node, {}) if isinstance(nodes, dict) else {}
             if not isinstance(value, dict):
                 continue
@@ -640,9 +750,32 @@ def _product_chain_lines(data: dict[str, Any]) -> list[str]:
                 lines.append(f"- 产品非目标：{'；'.join(str(item) for item in non_goals)}")
             if acceptance:
                 lines.append(f"- 产品验收：{'；'.join(str(item) for item in acceptance)}")
+        lines.extend(_business_detail_lines(chain))
         counter = chain.get("counter_evidence_ids", [])
+        alternatives = chain.get("alternative_explanations", [])
+        review = chain.get("human_review", {})
         gaps = chain.get("gaps", [])
+        lines.append(f"- 替代解释：{'；'.join(str(item) for item in alternatives) if alternatives else '未记录'}")
         lines.append(f"- 反证：{', '.join(f'`{item}`' for item in counter) if counter else '未记录'}")
+        if isinstance(review, dict) and review:
+            lines.append(f"- 人工复核：`{review.get('status', 'pending')}`；{review.get('notes') or '尚无复核说明'}")
+            if review.get("risk_acceptance"):
+                lines.append(f"- 风险接受：{review['risk_acceptance']}")
+        prioritization = chain.get("prioritization", {})
+        if isinstance(prioritization, dict) and any(prioritization.values()):
+            lines.append(
+                f"- 优先级：方法 {prioritization.get('method') or '待确认'}；负责人 {prioritization.get('owner') or '待确认'}；"
+                f"理由 {prioritization.get('rationale') or '待确认'}；因素 "
+                f"{json.dumps(prioritization.get('factors', {}), ensure_ascii=False)}"
+            )
+        change_log = chain.get("change_log", [])
+        if isinstance(change_log, list) and change_log:
+            latest = change_log[-1] if isinstance(change_log[-1], dict) else {}
+            lines.append(
+                f"- 变更：{len(change_log)} 条；最近 {latest.get('id', '未编号')} "
+                f"{latest.get('base_version', '?')}→{latest.get('new_version', '?')}；"
+                f"投影同步 `{latest.get('projection_sync', 'pending')}`"
+            )
         lines.append(f"- 缺口：{'；'.join(str(item) for item in gaps) if gaps else '未记录'}")
         lines.append(f"- 下一验证：{chain.get('next_test') or '未记录'}")
         lines.append("")
@@ -685,7 +818,9 @@ def create_study(
         "method_version": VERSION,
         "product_domain": route["domain"],
         "lifecycle_stage": route["stage"],
+        "product_reasoning_version": "2.0",
         "product_reasoning": product_reasoning_contract(route["stage"]),
+        "delivery": {"audiences": list(DELIVERY_AUDIENCES)},
         "decision": {
             "question": route["query"],
             "owner": "待确认",
@@ -735,6 +870,7 @@ def create_study(
     for sub in ("01-sources/instruments", "01-sources/manifests", "02-data/raw", "03-codebook", "04-findings", "05-audit", "06-report"):
         (study_dir / sub).mkdir(parents=True, exist_ok=True)
     reasoning_scaffold = scaffold_product_reasoning(study_dir)
+    _write_if_missing(study_dir / "04-findings" / "demand-judgments.json", "[]\n")
 
     rows = [
         ["direct_solution", "prototype_test", "待设计：验证特性/产品节点及方案接受", 2, 0.40, "planned", "自选择/活跃用户偏差", "feature;product"],
@@ -1092,6 +1228,7 @@ def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str])
     record_id = str(raw.get("record_id") or raw.get("id") or f"{defaults['source_family']}-{index:04d}")
     record = {
         "record_id": record_id,
+        "context_key": str(raw.get("context_key") or ""),
         "user_role": str(raw.get("user_role") or raw.get("角色") or "unknown"),
         "scene_trigger": str(raw.get("scene_trigger") or raw.get("scene") or "unknown"),
         "task_outcome": str(raw.get("task_outcome") or raw.get("task") or "unknown"),
@@ -1241,6 +1378,169 @@ def _evidence_summary(study_dir: Path) -> dict[str, Any]:
     return {"count": len(records), "by_form": by_form, "by_claim": by_claim, "records": records}
 
 
+def _delivery_records(reasoning: dict[str, Any] | None, evidence: dict[str, Any]) -> list[dict[str, Any]]:
+    """Keep all chain-cited positive/negative records, then add context up to 20."""
+    records = evidence.get("records", [])
+    by_id = {str(record.get("record_id")): record for record in records}
+    ordered_ids: list[str] = []
+    chains = reasoning.get("chains", []) if isinstance(reasoning, dict) else []
+    for chain in chains if isinstance(chains, list) else []:
+        if not isinstance(chain, dict):
+            continue
+        nodes = chain.get("nodes", {})
+        for node_name in REASONING_NODES:
+            node = nodes.get(node_name, {}) if isinstance(nodes, dict) else {}
+            if isinstance(node, dict):
+                ordered_ids.extend(str(value) for value in node.get("evidence_ids", []))
+        ordered_ids.extend(str(value) for value in chain.get("counter_evidence_ids", []))
+    selected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record_id in ordered_ids:
+        if record_id in by_id and record_id not in seen:
+            selected.append(by_id[record_id])
+            seen.add(record_id)
+    for record in records:
+        record_id = str(record.get("record_id"))
+        if len(selected) >= 20:
+            break
+        if record_id not in seen:
+            selected.append(record)
+            seen.add(record_id)
+    return selected
+
+
+def _brd_decision_lines(data: dict[str, Any]) -> list[str]:
+    lines = ["## 2. BRD 商业决策", ""]
+    chains = data.get("chains", [])
+    for chain in chains if isinstance(chains, list) else []:
+        if not isinstance(chain, dict):
+            continue
+        nodes = chain.get("nodes", {})
+        business = nodes.get("business", {}) if isinstance(nodes, dict) else {}
+        if not isinstance(business, dict) or not business:
+            lines.append("商业节点尚未建立；先完成市场研究、需求分析和商业验证。")
+            continue
+        gate = business.get("gate", {}) if isinstance(business.get("gate"), dict) else {}
+        lines.extend(
+            [
+                f"### {chain.get('id', 'PR?')} · {business.get('statement', '待填写')}",
+                "",
+                f"- 产品→商业的推导：{business.get('rationale', '待填写')}",
+                f"- 商业门：`{gate.get('stage', 'G0')}` / `{gate.get('decision', 'hypothesis')}`",
+                f"- 决策人：{gate.get('owner') or '待确认'}；资源承诺：{gate.get('resource_commitment') or '待确认'}",
+                f"- 复审触发：{gate.get('revisit_trigger') or '待确认'}",
+                f"- 商业证据：{', '.join(f'`{item}`' for item in business.get('evidence_ids', [])) or '未记录'}",
+                f"- 需求判断：`{chain.get('demand_judgment_id') or '未关联'}`",
+                f"- 下一项商业/产品验证：{chain.get('next_test') or '待确认'}",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "BRD 的 Go/Kill/Hold/Recycle 或试点选择必须同时考虑用户价值、交付约束、市场证据、成本、资源和反证。",
+            "市场规模必须有独立抽样框与估计方法；竞品报价、讨论热度、付费意愿和合成样例都不能单独证明商业成立。",
+            "",
+        ]
+    )
+    return lines
+
+
+def _mrd_lines(data: dict[str, Any]) -> list[str]:
+    lines = ["## 2. MRD 市场研究与分析", ""]
+    chains = data.get("chains", [])
+    for chain in chains if isinstance(chains, list) else []:
+        if not isinstance(chain, dict):
+            continue
+        nodes = chain.get("nodes", {})
+        business = nodes.get("business", {}) if isinstance(nodes, dict) else {}
+        if not isinstance(business, dict) or not business:
+            lines.append("商业节点尚未建立；先完成市场研究、市场分析和 MRD 候选基线。")
+            continue
+        lines.extend(
+            [
+                f"### {chain.get('id', 'PR?')} 的市场边界与选择",
+                "",
+                f"- 市场定义：{business.get('market_definition') or '待填写'}",
+                f"- 地理范围：{json.dumps(business.get('geographies', []), ensure_ascii=False)}",
+                f"- 时间窗：{business.get('time_window') or '待填写'}",
+                f"- 纳入市场：{json.dumps(business.get('included_markets', []), ensure_ascii=False)}",
+                f"- 排除市场：{json.dumps(business.get('excluded_markets', []), ensure_ascii=False)}",
+                f"- 目标细分：{business.get('target_segment') or '待填写'}",
+                f"- 细分定义：{json.dumps(business.get('segments', []), ensure_ascii=False)}",
+                f"- 付费者：{business.get('payer') or '待填写'}",
+                f"- 竞争定位：{business.get('positioning') or '待填写'}",
+                f"- 竞争与替代：{json.dumps(business.get('competitive_alternatives', []), ensure_ascii=False)}",
+                f"- 渠道：{json.dumps(business.get('channels', []), ensure_ascii=False)}",
+                f"- 价格假设：{business.get('pricing_hypothesis') or '待填写'}",
+                f"- 价格口径：{json.dumps(business.get('pricing', []), ensure_ascii=False)}",
+                f"- 市场估计口径：{json.dumps(business.get('market_estimates', []), ensure_ascii=False)}",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "MRD 是商业节点中市场部分的候选基线与选择视图；它不证明用户需求、产品成功或精确市场规模。",
+            "所有数字必须带总体、抽样框、时间窗、单位、公式、来源和推断范围；未知保留为未知，不用 0 或假精确值补齐。",
+            "",
+        ]
+    )
+    return lines
+
+
+def _user_ops_lines(data: dict[str, Any]) -> list[str]:
+    """Project the same chain for lifecycle operations; never infer audience size."""
+    lines = [
+        "## 2. 用户运营投影",
+        "",
+        "| 推理链 | 场景/触发 | 用户与状态 | 痛点/替代语言 | 特性与产品 | 商业接口 |",
+        "|---|---|---|---|---|---|",
+    ]
+    chains = data.get("chains", [])
+    for chain in chains if isinstance(chains, list) else []:
+        if not isinstance(chain, dict):
+            continue
+        nodes = chain.get("nodes", {})
+        if not isinstance(nodes, dict):
+            continue
+        scene = nodes.get("scene", {})
+        user = nodes.get("user", {})
+        pain = nodes.get("pain", {})
+        feature = nodes.get("feature", {})
+        product = nodes.get("product", {})
+        business = nodes.get("business", {})
+        business_bits = []
+        if isinstance(business, dict):
+            if business.get("payer"):
+                business_bits.append(f"付费者：{business['payer']}")
+            if business.get("pricing_hypothesis"):
+                business_bits.append(f"价格：{business['pricing_hypothesis']}")
+            if business.get("channels"):
+                business_bits.append(f"渠道：{json.dumps(business['channels'], ensure_ascii=False)}")
+        lines.append(
+            f"| {chain.get('id', '')} | {_markdown_cell(scene.get('trigger') or scene.get('statement'))} | "
+            f"{_markdown_cell(str(user.get('role') or user.get('statement') or '') + ' / ' + str(user.get('state') or ''))} | "
+            f"{_markdown_cell(str(pain.get('statement') or '') + '；替代：' + str(pain.get('current_substitute') or ''))} | "
+            f"{_markdown_cell(str(feature.get('statement') or '') + ' / ' + str(product.get('statement') or ''))} | "
+            f"{_markdown_cell('；'.join(business_bits))} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## 3. 生命周期干预与回流",
+            "",
+            "| 环节 | 行为分群/分母 | 干预假设 | 成功与护栏 | 回流节点 |",
+            "|---|---|---|---|---|",
+            "| 激活/采用/留存/流失/召回（按项目选择） | 待填：真实行为队列，不能用评论记录数代替 | 待填：改变哪个场景或痛点 | 待填：成功指标、分母、投诉/退订/隐私护栏 | 待填：scene/user/pain/need/feature/product/business |",
+            "",
+            "- 反馈进入同一 `product-reasoning.json` 的节点、假设或反证；不另建运营结论真值。",
+            "- 卖点是主链的下游表达，不能反向替代用户需求和特性推导。",
+            "- 分群规模、转化和留存必须来自有分母的一方行为数据；公开反馈只提供语言和假设。",
+            "",
+        ]
+    )
+    return lines
+
+
 def deliver(study_dir: Path, kind: str = "memo") -> dict[str, Any]:
     study_dir = study_dir.resolve()
     study = load_json(study_dir / "study.json")
@@ -1255,10 +1555,45 @@ def deliver(study_dir: Path, kind: str = "memo") -> dict[str, Any]:
         path = out_dir / "postlaunch-tracker.csv"
         with path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle)
-            writer.writerow(["version", "metric", "numerator", "denominator", "window", "guardrail", "owner", "status", "note"])
+            writer.writerow(["version", "metric", "numerator", "denominator", "window", "guardrail", "owner", "status", "note", "chain_id", "node_id", "intervention_id", "learning", "next_action", "delivery_status", "outcome_status", "causal_status"])
+            owner = str((study.get("decision") or {}).get("owner") or "待确认")
+            chains = reasoning.get("chains", []) if isinstance(reasoning, dict) else []
+            for chain in chains if isinstance(chains, list) else []:
+                if not isinstance(chain, dict):
+                    continue
+                states = chain.get("supporting_states", {})
+                delivery_status = str(states.get("delivery", {}).get("status", "unplanned")) if isinstance(states, dict) else "unplanned"
+                outcome_status = str(states.get("outcome", {}).get("status", "unmeasured")) if isinstance(states, dict) else "unmeasured"
+                causal_status = str(states.get("causal", {}).get("status", "not-claimed")) if isinstance(states, dict) else "not-claimed"
+                nodes = chain.get("nodes", {})
+                if not isinstance(nodes, dict):
+                    continue
+                for node_name, field_name in (("feature", "acceptance_conditions"), ("product", "acceptance_criteria"), ("business", "success_metrics")):
+                    node = nodes.get(node_name, {})
+                    if not isinstance(node, dict):
+                        continue
+                    for criterion in node.get(field_name, []):
+                        numerator = ""
+                        denominator = ""
+                        window = ""
+                        guardrail = "反证：" + ",".join(str(item) for item in chain.get("counter_evidence_ids", []))
+                        note = node.get("statement", "")
+                        if node_name == "business" and isinstance(criterion, dict):
+                            numerator = str(criterion.get("numerator") or "")
+                            denominator = str(criterion.get("denominator") or "")
+                            window = str(criterion.get("window") or "")
+                            guardrail = str(criterion.get("guardrail") or guardrail)
+                            note = f"{criterion.get('definition', note)}；目标：{criterion.get('target', '待确认')}"
+                            criterion = str(criterion.get("metric_id") or criterion.get("definition") or "business_metric")
+                        writer.writerow([
+                            "planned", criterion, numerator, denominator, window,
+                            guardrail, owner, chain.get("status", "planned"), note,
+                            chain.get("id", ""), node_name, "", "", chain.get("next_test", ""),
+                            delivery_status, outcome_status, causal_status,
+                        ])
         return {"status": "written", "path": str(path), "kind": kind}
 
-    titles = {"memo": "决策备忘", "report": "研究报告", "prd": "PRD 输入"}
+    titles = {"memo": "决策备忘", "report": "产品推理报告", "mrd": "MRD 市场需求文档", "prd": "PRD 产品需求文档", "brd": "BRD 商业需求文档", "ops": "用户运营交付"}
     title = titles.get(kind, "交付物")
     lines = [
         f"# {title}：{study.get('title', '')}",
@@ -1277,31 +1612,42 @@ def deliver(study_dir: Path, kind: str = "memo") -> dict[str, Any]:
                 "",
             ]
         )
-    lines.extend(["## 1. 产品推理主链", ""])
+    lines.extend(["## 1. 产品与商业推理主链", ""])
     if reasoning is not None:
         lines.extend(_product_chain_lines(reasoning))
     else:
         lines.extend(
             [
-                "尚未建立 `04-findings/product-reasoning.json`。先补齐“场景 → 用户 → 痛点 → 需求 → 特性 → 产品”，再交付产品结论。",
+                "尚未建立 `04-findings/product-reasoning.json`。先补齐“场景 → 用户 → 痛点 → 需求 → 特性 → 产品 → 商业”，再交付产品与商业结论。",
+                "",
+            ]
+        )
+    if kind == "brd" and reasoning is not None:
+        lines.extend(_brd_decision_lines(reasoning))
+    elif kind == "mrd" and reasoning is not None:
+        lines.extend(_mrd_lines(reasoning))
+    elif kind == "ops" and reasoning is not None:
+        lines.extend(_user_ops_lines(reasoning))
+    else:
+        lines.extend(
+            [
+                "## 2. 产品决策",
+                "",
+                "- 建议（做/不做/调整哪个节点，必须对应上方推理链）：",
+                "- 适用条件与代价：",
+                "- 优先级依据（后果、替代成本、证据强度、战略匹配分别说明）：",
                 "",
             ]
         )
     lines.extend(
         [
-            "## 2. 产品决策",
-            "",
-            "- 建议（做/不做/调整哪个节点，必须对应上方推理链）：",
-            "- 适用条件与代价：",
-            "- 优先级依据（后果、替代成本、证据强度、战略匹配分别说明）：",
-            "",
-            "## 3. 支撑证据",
+            "## 支撑证据",
             "",
             "| 证据 | 类型 | 证据形式 | 说明 |",
             "|---|---|---|---|",
         ]
     )
-    for record in evidence["records"][:20]:
+    for record in _delivery_records(reasoning, evidence):
         basis = str(
             record.get("evidence_basis")
             or record.get("title")
@@ -1317,7 +1663,7 @@ def deliver(study_dir: Path, kind: str = "memo") -> dict[str, Any]:
     lines.extend(
         [
             "",
-            "## 4. 反证、缺口与下一步",
+            "## 反证、缺口与下一步",
             "",
             "- 缺口（按推理节点和推导关系列）：",
             "- 反证与替代解释：",
@@ -1335,7 +1681,8 @@ def deliver(study_dir: Path, kind: str = "memo") -> dict[str, Any]:
             "本交付物不证明总体比例、市场规模或因果；证据强度不替代需求到特性、特性到产品的推导理由；可用性、工程性能、商业与安全结论分别有各自证据要求。",
         ]
     )
-    path = out_dir / f"{kind}.md"
+    filename = "user-ops" if kind == "ops" else kind
+    path = out_dir / f"{filename}.md"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return {
         "status": "written",
@@ -1536,7 +1883,7 @@ def platform_fit(
 
 def platform_markdown(plan: dict[str, Any]) -> str:
     lines = [
-        "# askovo 平台雷达",
+        "# Askovo 平台雷达",
         "",
         f"- 需求：{plan['query']}",
         f"- 领域：`{plan.get('domain') or '未限定'}`；结论类型：{', '.join(plan['claim_types'])}",

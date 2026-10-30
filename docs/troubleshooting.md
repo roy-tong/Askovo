@@ -65,8 +65,12 @@ python3 -m pip install --force-reinstall /path/to/askovo-2.0.1-py3-none-any.whl
 - `scope.target_users`
 - `stopping_rules` / `restart_rules`
 - `source_adapters.*` 的 `data_rights_basis`、`retention_rule`、`terms_reviewed_at`
+- `product-reasoning.json` 缺失，或七节点的 `statement/rationale/status` 仍是占位符
+- 特性没有备选方案，或产品缺范围、非目标、验收（decided 时）
+- 商业节点缺市场边界、地理范围、时间窗、细分、价格/收入假设、成本、单位经济、成功指标或业务门
+- 市场规模数字缺总体、时间窗、单位、公式或来源
 
-按 `check` 输出的 `detail` 逐项补。
+先运行 `askovo chain ./study` 定位主链，再按 `check` 输出的 `detail` 逐项补。不要用更多采集量代替缺失的推导，也不要用市场规模或竞品报价填补商业缺口。
 
 ### evidence gate 不过
 
@@ -76,7 +80,7 @@ python3 -m pip install --force-reinstall /path/to/askovo-2.0.1-py3-none-any.whl
 - 主导来源占比超过 `max_source_family_share`
 - 来源族不在 `source-plan.csv` 中
 
-先补采，不要改门槛来“通过”。
+按主链最弱节点补采，不要改门槛来“通过”，也不要用无关平台数据凑量。
 
 ### decision gate 不过
 
@@ -84,6 +88,10 @@ python3 -m pip install --force-reinstall /path/to/askovo-2.0.1-py3-none-any.whl
 - 引用了不存在的 `record_id`
 - `validated` 缺少问题链、方案链、商业链或反证
 - `validated` 缺少 `context_key`，或引用证据的 `context_key` 与判断不一致；不要用不相关记录凑等级
+- chain 与 judgment 的 `demand_judgment_id/context_key` 不匹配，或一个 judgment 没有 chain
+- 节点引用了未在 linked judgment 登记的证据；先把证据登记到正确链条，不能只改主链文件
+- `decided` 缺反证、替代解释、七节点 validated 或 linked judgment validated
+- release-ready 没有 release_plan_ref、结果状态没有 metric_refs、因果结论没有 experiment_refs；E3/E5 不能替代这些独立状态
 
 ### audit 退出码 1，但 check 是 0
 
@@ -99,7 +107,7 @@ python3 -m pip install --force-reinstall /path/to/askovo-2.0.1-py3-none-any.whl
 
 ### `report` 顶部有失败横幅
 
-正常行为。报告只有在 `check --stage full` 通过后才会去掉横幅；未通过时它输出的是“研究状态”，不是结论。
+正常行为。`askovo report` 写 `06-report/research-status.md`，只有在 `check --stage full` 通过后才去掉横幅；未通过时输出的是研究状态，不是结论。产品报告由 `deliver --kind report` 写 `06-report/report.md`，两者不共用写入者。
 
 ### 报告里出现“待填写”
 
@@ -142,7 +150,7 @@ askovo mcp
 
 - Python 3.9–3.12；不使用 3.10+ 语法；
 - Windows 原生终端对 UTF-8 输出可能需要 `chcp 65001`；
-- 采集需要平台 API 资格，与 askovo 安装无关，见 [连接器](connectors.md)；
+- 采集需要平台 API 资格，与 Askovo 安装无关，见 [连接器](connectors.md)；
 - 所有命令不写入仓库外的路径，study 目录由你显式传入。
 
 ## 还是不通
@@ -268,7 +276,7 @@ CDP 只对 amazon、instagram、bilibili、weibo 的授权可见页面开放；X
 
 ### `challenge`
 
-页面出现验证码/机器人检查。askovo 会停止，不绕过；改用授权导出/官方 API/历史数据集。
+页面出现验证码/机器人检查。Askovo 会停止，不绕过；改用授权导出/官方 API/历史数据集。
 
 ## 队列
 

@@ -274,6 +274,7 @@ class AskvoCliTests(unittest.TestCase):
                 "02-data/evidence.jsonl",
                 "03-codebook/codebook.csv",
                 "04-findings/demand-judgments.json",
+                "04-findings/product-reasoning.json",
                 "01-sources/reddit-routes.csv",
                 "01-sources/youtube-routes.csv",
                 "01-sources/collection-manifest-template.json",
@@ -281,6 +282,11 @@ class AskvoCliTests(unittest.TestCase):
             ]
             self.assertTrue(all((target / path).exists() for path in expected))
             initialized_study = json.loads((target / "study.json").read_text(encoding="utf-8"))
+            self.assertEqual("2.0", initialized_study["product_reasoning_version"])
+            self.assertEqual(
+                ["product_manager", "user_researcher", "user_operations", "market_researcher", "market_analyst", "requirements_analyst", "business_analyst"],
+                initialized_study["delivery"]["audiences"],
+            )
             self.assertTrue(initialized_study["source_adapters"]["reddit"]["enabled"])
             self.assertTrue(initialized_study["source_adapters"]["youtube"]["enabled"])
             design_check = run_cli("check", str(target), "--stage", "design")
@@ -584,10 +590,11 @@ class PlanSignalsReportTests(unittest.TestCase):
             payload = json.loads(completed.stdout)
             self.assertEqual("pass", payload["audit_status"])
             self.assertEqual(1, payload["judgments"])
-            text = (target / "06-report/report.md").read_text(encoding="utf-8")
+            text = (target / "06-report/research-status.md").read_text(encoding="utf-8")
             self.assertIn("调研报告", text)
-            self.assertIn("## 3. 数据质量与关键信号", text)
-            self.assertIn("## 4. 需求判断", text)
+            self.assertIn("## 2. 产品与商业推理主链", text)
+            self.assertIn("## 4. 数据质量与关键信号", text)
+            self.assertIn("## 5. 需求判断", text)
             self.assertIn("禁止推断", text)
 
     def test_report_recomputes_stale_passing_artifacts(self) -> None:
@@ -600,7 +607,7 @@ class PlanSignalsReportTests(unittest.TestCase):
             completed = run_cli("report", str(target))
             self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
             self.assertEqual("fail", json.loads(completed.stdout)["audit_status"])
-            self.assertIn("未通过", (target / "06-report/report.md").read_text(encoding="utf-8"))
+            self.assertIn("未通过", (target / "06-report/research-status.md").read_text(encoding="utf-8"))
 
     def test_report_warns_when_full_check_fails(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -622,7 +629,7 @@ class PlanSignalsReportTests(unittest.TestCase):
             self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
             payload = json.loads(completed.stdout)
             self.assertEqual("fail", payload["audit_status"])
-            text = (target / "06-report/report.md").read_text(encoding="utf-8")
+            text = (target / "06-report/research-status.md").read_text(encoding="utf-8")
             self.assertIn("未通过", text)
             self.assertIn("研究状态输出", text)
 
@@ -750,7 +757,7 @@ class UnnamedExperienceTests(unittest.TestCase):
             run_cli("lexicon", str(target))
             completed = run_cli("report", str(target))
             self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
-            text = (target / "06-report/report.md").read_text(encoding="utf-8")
+            text = (target / "06-report/research-status.md").read_text(encoding="utf-8")
             self.assertIn("命名前研究信号", text)
             self.assertIn("需求化石", text)
 
@@ -766,7 +773,7 @@ class AuditTests(unittest.TestCase):
         expected = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
         completed = run_cli("--version")
         self.assertEqual(0, completed.returncode, completed.stderr)
-        self.assertEqual(f"askovo {expected}", completed.stdout.strip())
+        self.assertEqual(f"Askovo {expected}", completed.stdout.strip())
 
     def test_plan_records_current_method_version(self) -> None:
         target = Path(self._tmp.name) / "planned"
@@ -790,7 +797,7 @@ class AuditTests(unittest.TestCase):
     def test_demo_runs_bundled_sample_in_temp_dir(self) -> None:
         completed = run_cli("demo")
         self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
-        self.assertIn("askovo 审计", completed.stdout)
+        self.assertIn("Askovo 审计", completed.stdout)
         self.assertIn("pass", completed.stdout)
         self.assertFalse((ROOT / "examples/sample-study/05-audit/audit.json").exists())
 

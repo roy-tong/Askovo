@@ -1,6 +1,6 @@
 {
-  "schema_version": "1.0",
-  "flow": ["scene", "user", "pain", "need", "feature", "product"],
+  "schema_version": "2.0",
+  "flow": ["scene", "user", "pain", "need", "feature", "product", "business"],
   "chains": [
     {
       "id": "PR01",
@@ -9,6 +9,11 @@
       "demand_judgment_id": "",
       "status": "hypothesis",
       "confidence": "low",
+      "supporting_states": {
+        "delivery": {"status": "unplanned", "release_plan_ref": ""},
+        "outcome": {"status": "unmeasured", "metric_refs": []},
+        "causal": {"status": "not-claimed", "experiment_refs": []}
+      },
       "nodes": {
         "scene": {
           "statement": "待填写",
@@ -70,9 +75,46 @@
           "scope": "待填写",
           "non_goals": [],
           "acceptance_criteria": []
+        },
+        "business": {
+          "statement": "待填写",
+          "rationale": "待填写：为什么这个产品能形成值得验证的商业闭环",
+          "status": "hypothesis",
+          "evidence_ids": [],
+          "assumptions": [],
+          "market_definition": "待填写",
+          "target_segment": "待填写",
+          "payer": "待填写",
+          "positioning": "待填写",
+          "revenue_model": "待填写",
+          "pricing_hypothesis": "待填写",
+          "channels": [],
+          "competitive_alternatives": [],
+          "cost_drivers": [],
+          "market_estimates": [],
+          "unit_economics_inputs": [],
+          "success_metrics": [],
+          "non_goals": [],
+          "gate": {
+            "stage": "G0",
+            "decision": "hypothesis",
+            "owner": "待填写",
+            "resource_commitment": "待填写",
+            "revisit_trigger": "待填写"
+          }
         }
       },
+      "alternative_explanations": [],
       "counter_evidence_ids": [],
+      "human_review": {"status": "pending", "reviewer": "", "notes": "", "risk_acceptance": ""},
+      "prioritization": {
+        "method": "待填写：优先级方法",
+        "factors": {},
+        "owner": "待填写",
+        "decided_at": "待填写",
+        "rationale": "待填写"
+      },
+      "change_log": [],
       "gaps": ["待填写：当前最薄弱的推理节点或推导关系"],
       "next_test": "待填写：能最大幅度降低当前推理不确定性的最小验证"
     }

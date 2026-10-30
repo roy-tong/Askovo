@@ -18,7 +18,7 @@ The connector review and platform policies were checked on 2026-08-27. Review th
 
 Use `source_family=reddit`, `x`, or `youtube`. More communities, queries, channels, and videos improve coverage inside one platform. They do not create independent source families.
 
-## The OSS routes askovo supports
+## The OSS routes Askovo supports
 
 | Platform | Default open-source connector | Acquisition surface | Registry decision |
 | --- | --- | --- | --- |
@@ -49,7 +49,7 @@ An MIT license passes only the code gate. It says nothing about platform access 
 ### Design
 
 1. State the decision and prohibited inferences.
-2. Assign every route one askovo corpus role.
+2. Assign every route one Askovo corpus role.
 3. Select a non-blocked `connector_id` from the registry.
 4. Pin `connector_revision` and `connector_license`.
 5. Record `access_basis=official_api`, `terms_reviewed_at`, `data_rights_reviewed_at`, `data_rights_basis`, and the retention/deletion rule.
@@ -81,7 +81,7 @@ Choose `scale`, `revise`, `hold`, or `block`. Do not scale a route merely becaus
 Keep three layers separate:
 
 - raw source envelope: connector/run IDs, platform IDs, hierarchy, URL, query, timestamps, status, and text;
-- askovo interpretation: role, scene, task, substitute, friction, consequence, E-level, and evidence basis;
+- Askovo interpretation: role, scene, task, substitute, friction, consequence, E-level, and evidence basis;
 - coding provenance: rule/model, codebook version, confidence, and human-review state.
 
 One source item may be discovered by several routes. Store multiple route IDs; do not duplicate the evidence record.

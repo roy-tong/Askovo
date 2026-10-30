@@ -1,11 +1,11 @@
 {
   "schema_version": "1.0",
   "reviewed_at": "2026-10-30",
-  "scope": "Open-source GitHub projects that an independent third-party researcher could inspect, fork, or wrap for askovo studies.",
+  "scope": "Open-source GitHub projects that an independent third-party researcher could inspect, fork, or wrap for Askovo studies.",
   "decisions": {
     "supported": "May be selected after study-specific platform, privacy, retention, and data-rights review.",
     "historical_only": "May be selected only for the stated historical dataset; it is not a live-market connector.",
-    "blocked": "Kept as a reviewed negative example. The askovo CLI must not enable it."
+    "blocked": "Kept as a reviewed negative example. The Askovo CLI must not enable it."
   },
   "connectors": [
     {

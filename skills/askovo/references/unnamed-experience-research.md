@@ -6,9 +6,9 @@ This phase is enabled with `askovo.py plan --mode unnamed-experience`.
 
 ## Principle
 
-Demand for an unnamed experience leaves evidence that does not depend on product vocabulary: the words users invent, the things they already do to get the experience, the physical dimensions of the stimulus, and what adjacent disciplines have measured. Ground the study in those four signals first; keywords are an **output** of this phase, not an input.
+Demand for an unnamed experience leaves evidence that does not depend on product vocabulary: the words users invent, the things they already do to get the experience, the physical dimensions of the stimulus, and what adjacent disciplines have measured. Ground the study in those four evidence signals first; keywords are an **output** of this phase, not an input. First-principles disciplinary derivation is a fifth, separate reasoning aid for thin evidence spaces, not a fifth independent evidence signal.
 
-## The four grounding paths
+## The four evidence-grounding paths plus disciplinary derivation
 
 ### 1. Edge-language mining (边缘语言挖掘)
 
@@ -31,7 +31,7 @@ Operational steps:
 
 1. Search for behavior, not product: how people manufacture the experience today (improvised tools, household-object appropriation, workarounds, ritual hacks).
 2. For each behavior record: what experience it produces, what it costs (money, time, privacy, dignity, safety), what fails, and under which scene it is triggered.
-3. Map each fossil to the askovo demand unit — the substitute slot is the behavior itself; friction and consequence come from the DIY cost.
+3. Map each fossil to the Askovo demand unit — the substitute slot is the behavior itself; friction and consequence come from the DIY cost.
 4. Treat safety-hazard DIY (mains electricity, restraint, unsanitary improvisation) as elevated-priority evidence and as a design-safety input, not as a marketing signal.
 
 Claim boundary: a substitute fossil is E2 — observed substitute plus friction. It is the strongest pre-market demand signal in this method. It still does not show acceptance of *your* solution; that remains E3.
@@ -65,12 +65,18 @@ Claim boundary: literature anchors are E0 external context. They may shape hypot
 
 When the space is thin even in adjacent literature, derive from mechanism: the physics/physiology of the stimulus, the perceptual and hedonic machinery, and the economics of provision. The derivation must still terminate in observable, collectable behaviors or expressions — a derivation that cannot name what a user would do or say is not yet researchable.
 
+Claim boundary: this fifth component is a reasoning aid, not independent user-demand evidence. Its output remains a falsifiable hypothesis and cannot raise the evidence level of the four evidence-grounding paths.
+
 ## Outputs of this phase
 
 1. `01-sources/lexicon.csv` — seed terms from the paths above, each with type, path, definition, source anchor, expected signal, and status. Minimum design gate: at least 5 retained candidate terms across at least 2 grounding paths.
 2. `01-sources/experience-space.csv` — stimulus dimensions, ranges, and coverage marks (required when the psychophysical path is used).
 3. Scope boundary and prohibited inferences — what is in the experience space, what adjacent-but-different experiences are explicitly excluded, and what the lexicon cannot support claiming.
 4. Route design downstream: `plan` quotas and platform routes must draw their queries from the retained lexicon and the uncovered dimension regions, not from generic product words.
+
+These artifacts are supporting inputs to `04-findings/product-reasoning.json`, not a parallel product definition. Edge-language and experience-space mapping can support `scene.statement`, `scene.task_context`, and the rationale for entering a scene; substitute fossils can support `pain.current_substitute`, `pain.friction_cost`, and `pain.consequence`; directly observed desired outcomes, constraints, and measures can support the `need` node and `pain→need` rationale. Record the supported chain/node/edge and evidence IDs in the research handoff, then update the main chain only after human review.
+
+Grounding outputs do not by themselves establish `need→feature` or `feature→product`, do not prove solution acceptance or commercial behavior, and never set a chain to `decided`. A chain marked `decided` records a human product decision under the available evidence and constraints, not proof that the product has been validated.
 
 ## Evidence fields
 

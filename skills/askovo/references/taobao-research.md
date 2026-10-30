@@ -8,7 +8,7 @@ The reviewed candidate [l010306/taobao-review-playwright](https://github.com/l01
 
 That architecture passes the code-license gate and fails the access gate. Current [Tmall legal terms](https://terms.alicdn.com/legal-agreement/terms/suit_bu1_tmall/suit_bu1_tmall201801121425_43176.html) prohibit unauthorized robots, crawlers, automated programs, downloads, and simulated user operations. Alibaba's developer rules also prohibit obtaining platform data through crawlers without lawful API permission.
 
-The registry decision is `blocked`. Do not run the login module, store session cookies, or adapt its selectors for askovo collection.
+The registry decision is `blocked`. Do not run the login module, store session cookies, or adapt its selectors for Askovo collection.
 
 ## What the repository can still contribute
 

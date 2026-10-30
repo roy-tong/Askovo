@@ -38,15 +38,16 @@ SERVER_VERSION = askovo_cli.ASKOVO_VERSION
 DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 SUPPORTED_PROTOCOL_VERSIONS = {"2024-11-05", "2025-03-26", "2025-06-18"}
 SERVER_INSTRUCTIONS = (
-    "askovo product reasoning and evidence, deterministic surface for product managers, user "
-    "researchers and user operations. Start with askovo_route or askovo_do across software / "
-    "hardware / consumer / automotive / mobile. The primary spine is scene -> user -> pain -> "
-    "need -> feature -> product; collection and analysis only support weak nodes and inferences. "
+    "Askovo product and business reasoning, deterministic surface for product managers, user "
+    "researchers, user operations, market analysis, requirements analysis and business analysis. "
+    "Start with askovo_route or askovo_do across software / hardware / consumer / automotive / "
+    "mobile. The primary spine is scene -> user -> pain -> need -> feature -> product -> business; "
+    "collection and analysis only support weak nodes and inferences. "
     "(1) askovo_do scaffolds the study and product-reasoning.json; (2) askovo_chain renders the "
     "reasoning canvas; (3) askovo_platforms and askovo_collect gather permitted supporting "
-    "material; (4) askovo_analyze describes it; (5) askovo_audit checks product rationales, "
-    "evidence gates and per-claim verdicts; (6) askovo_deliver assembles chain-led memo, product "
-    "report, PRD input or tracker. Legacy text/platform planning remains available as "
+    "material; (4) askovo_analyze describes it; (5) askovo_audit checks product/business "
+    "rationales, evidence gates and per-claim verdicts; (6) askovo_deliver assembles chain-led "
+    "memo, MRD, PRD, BRD, ops or tracker. Legacy text/platform planning remains available as "
     "askovo_plan; askovo_check remains the low-level gate command. "
     "exit codes: 1 = failed gate or claim exceeding evidence, 3 = no feasible platform or "
     "adapter, 4 = safety/ethics gate not acknowledged. These are research statuses to report, "
@@ -293,8 +294,8 @@ def _build_codebook(arguments: dict[str, Any]) -> argparse.Namespace:
 
 def _build_deliver(arguments: dict[str, Any]) -> argparse.Namespace:
     kind = arguments.get("kind", "memo")
-    if kind not in ("memo", "report", "prd", "tracker"):
-        raise ValueError("kind must be memo, report, prd or tracker")
+    if kind not in ("memo", "report", "mrd", "prd", "brd", "ops", "tracker"):
+        raise ValueError("kind must be memo, report, mrd, prd, brd, ops or tracker")
     return _namespace(study_dir=_string(arguments.get("study_dir"), "study_dir"), kind=kind)
 
 
@@ -342,7 +343,7 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "askovo_plan",
         "description": (
-            "Turn a research goal, region, sample size, and platform types into an askovo study "
+            "Turn a research goal, region, sample size, and platform types into an Askovo study "
             "workspace: platform feasibility from the connector registry, sample quotas, scaled "
             "route targets, a feasibility report, and a collection task list. Exit code 3 means "
             "no requested platform has an enabled connector; report the gap instead of "
@@ -373,7 +374,7 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "askovo_init",
         "description": (
-            "Create an askovo study workspace from the bundled template with selected platform "
+            "Create an Askovo study workspace from the bundled template with selected platform "
             "route files. Use askovo_plan instead when the region and platform types are the input."
         ),
         "inputSchema": {
@@ -461,14 +462,14 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "askovo_report",
         "description": (
-            "Assemble the Chinese research-status report into 06-report/report.md from the study "
-            "contract, source plan, manifests, signals, judgments, and blocked routes."
+            "Assemble the Chinese research-status report into 06-report/research-status.md from the study "
+            "contract, product chain, source plan, manifests, signals, judgments, and blocked routes."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "study_dir": {"type": "string"},
-                "output": {"type": "string", "description": "report path; defaults to 06-report/report.md"},
+                "output": {"type": "string", "description": "report path; defaults to 06-report/research-status.md"},
             },
             "required": ["study_dir"],
         },
@@ -490,9 +491,9 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "askovo_route",
         "description": (
-            "Classify a research request into product domain (software/hardware/consumer/"
-            "automotive/mobile), lifecycle stage, intent, claim types, risk flags and a "
-            "recommended method pack. Read-only."
+            "Classify a request into product domain (software/hardware/consumer/"
+            "automotive/mobile), lifecycle stage, intent, claim types, risk flags, a "
+            "seven-node product/business reasoning flow and a recommended method pack. Read-only."
         ),
         "inputSchema": {
             "type": "object",
@@ -508,9 +509,9 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "askovo_do",
         "description": (
-            "The single entry point: route the request and scaffold a study with method choice, "
-            "research plan, evidence plan and instruments. Safety-gated requests return exit 4 "
-            "until a human acknowledges the review."
+            "The single entry point: route the request and scaffold a study with a seven-node "
+            "product/business reasoning canvas, method choice, research plan, evidence plan and "
+            "instruments. Safety-gated requests return exit 4 until a human acknowledges the review."
         ),
         "inputSchema": {
             "type": "object",
@@ -593,17 +594,17 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "askovo_chain",
-        "description": "Scaffold if needed and render the canonical scene-user-pain-need-feature-product reasoning chain; every node requires a rationale, not just evidence IDs.",
+        "description": "Scaffold if needed and render the canonical scene-user-pain-need-feature-product-business reasoning chain; every node requires a rationale, not just evidence IDs.",
         "inputSchema": {"type": "object", "properties": {"study_dir": {"type": "string"}}, "required": ["study_dir"]},
     },
     {
         "name": "askovo_deliver",
-        "description": "Assemble a chain-led decision memo, product report, PRD input or post-launch tracker from a study.",
+        "description": "Assemble a chain-led decision memo, product report, MRD, PRD, BRD, user-operations projection or post-launch tracker.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "study_dir": {"type": "string"},
-                "kind": {"enum": ["memo", "report", "prd", "tracker"], "default": "memo"},
+                "kind": {"enum": ["memo", "report", "mrd", "prd", "brd", "ops", "tracker"], "default": "memo"},
             },
             "required": ["study_dir"],
         },
@@ -818,7 +819,7 @@ def serve(stream_in: Any, stream_out: Any) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="askovo-mcp",
-        description="askovo product research MCP server (stdio, standard library only).",
+        description="Askovo product research MCP server (stdio, standard library only).",
     )
     parser.add_argument(
         "--tools", action="store_true", help="print the tool list as JSON and exit"

@@ -17,7 +17,7 @@ Failure at an earlier gate ends the review. Do not compensate for a failed acces
 
 ## Reviewed projects as of 2026-08-27
 
-| Platform | Repository | Registry decision | What it means for askovo |
+| Platform | Repository | Registry decision | What it means for Askovo |
 | --- | --- | --- | --- |
 | Reddit | [praw-dev/praw](https://github.com/praw-dev/praw) | `supported` | Default OSS client when the study has approved Reddit Data API access; register the API app by 2026-09-30 and re-review after the Devvit transition |
 | X | [tweepy/tweepy](https://github.com/tweepy/tweepy) | `supported` | Default OSS client for the official X API |
@@ -27,12 +27,12 @@ Failure at an earlier gate ends the review. Do not compensate for a failed acces
 | X | [JustAnotherArchivist/snscrape](https://github.com/JustAnotherArchivist/snscrape) | `blocked` | Non-API scraper; incompatible with current X guidance and stale for current X behavior |
 | X | [d60/twikit](https://github.com/d60/twikit) | `blocked` | Uses an internal API without an official API key; maintained code does not make the route permitted |
 | YouTube | [egbertbouman/youtube-comment-downloader](https://github.com/egbertbouman/youtube-comment-downloader) | `blocked` | Comment scraping without the YouTube Data API; current YouTube policy prohibits scraped YouTube data |
-| YouTube | [jdepoix/youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api) | `blocked` | Useful codebase, but the retrieval route is outside the official Data API and is not an askovo default |
+| YouTube | [jdepoix/youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api) | `blocked` | Useful codebase, but the retrieval route is outside the official Data API and is not an Askovo default |
 | JD | [2274900/JD_comment_spider](https://github.com/2274900/JD_comment_spider) | `blocked` | Old direct-endpoint scraper, not a maintained or policy-compatible current connector |
 | Taobao/Tmall | [l010306/taobao-review-playwright](https://github.com/l010306/taobao-review-playwright) | `blocked` | Automates QR login and saves session state; current platform rules prohibit unauthorized crawling and simulated use |
 | Kickstarter | [ImWhiteRabbit/KSInsights](https://github.com/ImWhiteRabbit/KSInsights) | `blocked` | Historical snapshots exist, but the feed stopped in 2025 and was produced by a crawler that conflicts with current Kickstarter terms |
 
-`blocked` does not mean the code is poor. It means this project cannot be selected as an askovo acquisition connector under the reviewed conditions. Keeping negative reviews in the registry prevents another Agent from rediscovering the repository and treating GitHub availability as permission.
+`blocked` does not mean the code is poor. It means this project cannot be selected as an Askovo acquisition connector under the reviewed conditions. Keeping negative reviews in the registry prevents another Agent from rediscovering the repository and treating GitHub availability as permission.
 
 ## Current platform conclusion
 
@@ -101,5 +101,5 @@ Do not overwrite an existing registry entry with a fork. Add a new entry with a 
 9. set `decision=supported` or `historical_only` only when all earlier gates pass;
 10. preserve the negative review if it remains blocked.
 
-Never copy GPL/AGPL code into the MIT askovo codebase without a license-compatible plan. A separate process or service boundary may still carry obligations and needs review.
+Never copy GPL/AGPL code into the MIT Askovo codebase without a license-compatible plan. A separate process or service boundary may still carry obligations and needs review.
 

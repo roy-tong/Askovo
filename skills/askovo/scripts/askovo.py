@@ -434,8 +434,8 @@ class Audit:
             "metrics": self.metrics,
             "checks": [item.as_dict() for item in self.findings],
             "meaning": (
-                "A pass confirms configured structural and evidence-chain gates only. "
-                "It does not prove prevalence, market size, or causal demand."
+                "A pass confirms configured structural, product-reasoning, and evidence-chain gates only. "
+                "It does not prove prevalence, market size, product success, release readiness, or causal demand."
             ),
         }
 
@@ -1953,14 +1953,20 @@ def _check_product_reasoning(
         return
     audit.metrics["product_reasoning"] = sure_engine.product_reasoning_summary(data)
     errors: list[str] = []
-    if data.get("flow") != list(sure_engine.REASONING_NODES):
-        errors.append("flow must be scene,user,pain,need,feature,product in that order")
+    flow_value = data.get("flow")
+    allowed_flows = (list(sure_engine.LEGACY_REASONING_NODES), list(sure_engine.REASONING_NODES))
+    if flow_value not in allowed_flows:
+        errors.append("flow must be the legacy six-node or current seven-node chain ending in business")
+        required_nodes = sure_engine.REASONING_NODES
+    else:
+        required_nodes = tuple(flow_value)
     chains = data.get("chains")
     if not isinstance(chains, list) or not chains:
         audit.add("product_reasoning", "fail", "chains must be a non-empty array", stage)
         return
 
-    allowed_status = {"hypothesis", "needs-validation", "validated", "rejected", "deprioritized"}
+    node_statuses = {"hypothesis", "needs-validation", "validated", "rejected", "deprioritized"}
+    chain_statuses = {"draft", "hypothesis", "needs-validation", "decided", "rejected", "deprioritized"}
     allowed_confidence = {"low", "medium", "high"}
     judgment_by_id = {
         str(item.get("id")): item for item in judgments if isinstance(item, dict) and item.get("id")
@@ -1969,6 +1975,7 @@ def _check_product_reasoning(
         (study or {}).get("quality_gates", {}).get("require_counter_evidence_for_validated", True)
     )
     seen_chain_ids: set[str] = set()
+    linked_judgment_ids: list[str] = []
     for index, chain in enumerate(chains, start=1):
         if not isinstance(chain, dict):
             errors.append(f"chain {index} must be an object")
@@ -1980,21 +1987,70 @@ def _check_product_reasoning(
         for field_name in ("id", "title", "status", "confidence", "next_test"):
             if _is_missing(chain.get(field_name)):
                 errors.append(f"{chain_id} missing {field_name}")
-        if chain.get("status") not in allowed_status:
+        if chain.get("status") not in chain_statuses:
             errors.append(f"{chain_id} has invalid status {chain.get('status')}")
         if chain.get("confidence") not in allowed_confidence:
             errors.append(f"{chain_id} has invalid confidence {chain.get('confidence')}")
-        for field_name in ("counter_evidence_ids", "gaps"):
+        for field_name in ("alternative_explanations", "counter_evidence_ids", "gaps"):
             if not isinstance(chain.get(field_name), list):
                 errors.append(f"{chain_id}.{field_name} must be an array")
+        if "human_review" in chain and not isinstance(chain.get("human_review"), dict):
+            errors.append(f"{chain_id}.human_review must be an object")
+        prioritization = chain.get("prioritization", {})
+        if not isinstance(prioritization, dict):
+            errors.append(f"{chain_id}.prioritization must be an object")
+            prioritization = {}
+        if chain.get("status") == "decided" and "business" in required_nodes:
+            for field_name in ("method", "owner", "rationale"):
+                if _is_missing(prioritization.get(field_name)):
+                    errors.append(f"{chain_id}.prioritization decided requires {field_name}")
+        if "change_log" in chain:
+            if not isinstance(chain.get("change_log"), list):
+                errors.append(f"{chain_id}.change_log must be an array")
+            else:
+                for entry in chain.get("change_log", []):
+                    if not isinstance(entry, dict):
+                        errors.append(f"{chain_id}.change_log entries must be objects")
+                        continue
+                    for field_name in ("id", "impact", "decision", "projection_sync"):
+                        if _is_missing(entry.get(field_name)):
+                            errors.append(f"{chain_id}.change_log requires {field_name}")
+        states = chain.get("supporting_states", {})
+        if not isinstance(states, dict):
+            errors.append(f"{chain_id}.supporting_states must be an object")
+            states = {}
+        state_rules = {
+            "delivery": ({"unplanned", "in-progress", "release-ready", "rolling-out", "paused", "rolled-back"}, "release_plan_ref"),
+            "outcome": ({"unmeasured", "observing", "positive-observed", "no-effect", "negative", "inconclusive"}, "metric_refs"),
+            "causal": ({"not-claimed", "supported", "refuted", "inconclusive"}, "experiment_refs"),
+        }
+        for state_name, (allowed, reference_field) in state_rules.items():
+            value = states.get(state_name, {})
+            if not isinstance(value, dict):
+                errors.append(f"{chain_id}.supporting_states.{state_name} must be an object")
+                continue
+            status = str(value.get("status") or "")
+            if status and status not in allowed:
+                errors.append(f"{chain_id}.{state_name} has invalid supporting status {status}")
+            needs_reference = (
+                state_name == "delivery" and status in {"release-ready", "rolling-out", "paused", "rolled-back"}
+            ) or (
+                state_name == "outcome" and status not in {"", "unmeasured"}
+            ) or (
+                state_name == "causal" and status in {"supported", "refuted"}
+            )
+            reference = value.get(reference_field)
+            if needs_reference and _is_missing(reference):
+                errors.append(f"{chain_id}.{state_name}.{status} requires {reference_field}")
         nodes = chain.get("nodes")
         if not isinstance(nodes, dict):
             errors.append(f"{chain_id}.nodes must be an object")
             continue
 
         all_references: set[str] = set()
+        node_references: dict[str, set[str]] = {}
         any_validated_node = False
-        for node_name in sure_engine.REASONING_NODES:
+        for node_name in required_nodes:
             node = nodes.get(node_name)
             prefix = f"{chain_id}.{node_name}"
             if not isinstance(node, dict):
@@ -2003,22 +2059,98 @@ def _check_product_reasoning(
             for field_name in ("statement", "rationale", "status"):
                 if _is_missing(node.get(field_name)):
                     errors.append(f"{prefix} missing {field_name}")
-            if node.get("status") not in allowed_status:
+            if node.get("status") not in node_statuses:
                 errors.append(f"{prefix} has invalid status {node.get('status')}")
             for field_name in ("evidence_ids", "assumptions"):
                 if not isinstance(node.get(field_name), list):
                     errors.append(f"{prefix}.{field_name} must be an array")
             evidence_ids = node.get("evidence_ids") if isinstance(node.get("evidence_ids"), list) else []
-            all_references.update(str(value) for value in evidence_ids)
-            if node_name == "product":
-                for field_name in ("non_goals", "acceptance_criteria"):
-                    if not isinstance(node.get(field_name), list):
-                        errors.append(f"{prefix}.{field_name} must be an array")
-                    elif node.get("status") == "validated" and not node.get(field_name):
-                        errors.append(f"{prefix} validated requires non-empty {field_name}")
+            node_references[node_name] = {str(value) for value in evidence_ids}
+            all_references.update(node_references[node_name])
             if node.get("status") != "validated":
                 continue
             any_validated_node = True
+            detail_fields = {
+                "scene": ("trigger", "environment", "task_context"),
+                "user": ("role", "state", "decision_role"),
+                "pain": ("current_substitute", "friction_cost", "consequence"),
+                "need": ("desired_outcome", "measure"),
+                "feature": ("capability",),
+                "product": ("form", "scope"),
+                "business": ("market_definition", "geographies", "time_window", "target_segment", "payer", "positioning", "revenue_model", "pricing_hypothesis"),
+            }[node_name]
+            for field_name in detail_fields:
+                if _is_missing(node.get(field_name)):
+                    errors.append(f"{prefix} validated requires {field_name}")
+            array_details = {
+                "need": ("constraints",),
+                "feature": ("acceptance_conditions", "alternatives_considered"),
+                "product": ("non_goals", "acceptance_criteria"),
+                "business": ("geographies", "segments", "pricing", "channels", "competitive_alternatives", "cost_drivers", "unit_economics_inputs", "success_metrics", "non_goals"),
+            }.get(node_name, ())
+            for field_name in array_details:
+                if not isinstance(node.get(field_name), list):
+                    errors.append(f"{prefix}.{field_name} must be an array")
+                elif node_name != "need" and not node.get(field_name):
+                    errors.append(f"{prefix} validated requires non-empty {field_name}")
+            if node_name == "business":
+                gate = node.get("gate")
+                if not isinstance(gate, dict):
+                    errors.append(f"{prefix}.gate must be an object")
+                else:
+                    for field_name in ("stage", "decision", "owner", "resource_commitment", "revisit_trigger"):
+                        if _is_missing(gate.get(field_name)):
+                            errors.append(f"{prefix}.gate requires {field_name}")
+                for segment in node.get("segments", []):
+                    if not isinstance(segment, dict):
+                        errors.append(f"{prefix}.segments entries must be objects")
+                        continue
+                    for field_name in ("id", "criteria", "user_refs", "payer", "evidence_ids"):
+                        if field_name not in segment or _is_missing(segment[field_name]):
+                            errors.append(f"{prefix}.segments requires {field_name}")
+                for price in node.get("pricing", []):
+                    if not isinstance(price, dict):
+                        errors.append(f"{prefix}.pricing entries must be objects")
+                        continue
+                    for field_name in ("model", "evidence_type", "evidence_ids"):
+                        if field_name not in price or _is_missing(price[field_name]):
+                            errors.append(f"{prefix}.pricing requires {field_name}")
+                for input_item in node.get("unit_economics_inputs", []):
+                    if not isinstance(input_item, dict):
+                        errors.append(f"{prefix}.unit_economics_inputs entries must be objects")
+                        continue
+                    for field_name in ("metric", "status"):
+                        if _is_missing(input_item.get(field_name)):
+                            errors.append(f"{prefix}.unit_economics_inputs requires {field_name}")
+                    if not _is_missing(input_item.get("value")) and (
+                        _is_missing(input_item.get("unit")) or _is_missing(input_item.get("source_ref"))
+                    ):
+                        errors.append(f"{prefix}.unit_economics_inputs requires unit and source_ref when value is present")
+                for metric in node.get("success_metrics", []):
+                    if not isinstance(metric, dict):
+                        errors.append(f"{prefix}.success_metrics entries must be objects")
+                        continue
+                    for field_name in ("metric_id", "definition", "denominator", "window", "guardrail"):
+                        if _is_missing(metric.get(field_name)):
+                            errors.append(f"{prefix}.success_metrics requires {field_name}")
+                estimates = node.get("market_estimates", [])
+                if not isinstance(estimates, list):
+                    errors.append(f"{prefix}.market_estimates must be an array")
+                else:
+                    for estimate in estimates:
+                        if not isinstance(estimate, dict):
+                            errors.append(f"{prefix}.market_estimates entries must be objects")
+                            continue
+                        for field_name in ("metric", "population_definition", "time_window", "unit", "method", "assumptions"):
+                            if field_name not in estimate or _is_missing(estimate[field_name]):
+                                errors.append(f"{prefix}.market_estimates requires {field_name}")
+                        if not _is_missing(estimate.get("value")):
+                            if _is_missing(estimate.get("source_ref")):
+                                errors.append(f"{prefix}.market_estimates with a value requires source_ref")
+                            if _is_missing(estimate.get("formula")):
+                                errors.append(f"{prefix}.market_estimates with a value requires formula")
+            if design_only:
+                continue
             accepted_levels = {
                 "scene": LEVELS - {"E4-"},
                 "user": LEVELS - {"E4-"},
@@ -2026,6 +2158,7 @@ def _check_product_reasoning(
                 "need": {"E1", "E2"},
                 "feature": {"E3"},
                 "product": {"E3"},
+                "business": {"E4+", "E5"},
             }[node_name]
             observed_levels = {
                 str(evidence_by_id[str(value)].get("evidence_level"))
@@ -2040,43 +2173,80 @@ def _check_product_reasoning(
 
         counter_ids = chain.get("counter_evidence_ids") if isinstance(chain.get("counter_evidence_ids"), list) else []
         all_references.update(str(value) for value in counter_ids)
+        context_key = str(chain.get("context_key") or "").strip()
+        if (chain.get("status") == "decided" or any_validated_node or all_references) and not context_key:
+            errors.append(f"{chain_id} evidence-backed or decided chains require context_key")
         if not design_only:
             unknown = sorted(value for value in all_references if value not in evidence_by_id)
             if unknown:
                 errors.append(f"{chain_id} references unknown evidence: " + ", ".join(unknown))
+            if context_key and (chain.get("status") == "decided" or any_validated_node):
+                mismatched = sorted(
+                    value for value in all_references
+                    if value in evidence_by_id
+                    and str(evidence_by_id[value].get("context_key") or "").strip() != context_key
+                )
+                if mismatched:
+                    errors.append(f"{chain_id} has evidence from another context_key: " + ", ".join(mismatched))
 
-        context_key = str(chain.get("context_key") or "").strip()
-        if (chain.get("status") == "validated" or any_validated_node) and not context_key:
-            errors.append(f"{chain_id} validated nodes require context_key")
-        if not design_only and context_key and (chain.get("status") == "validated" or any_validated_node):
-            mismatched = sorted(
-                value for value in all_references
-                if value in evidence_by_id
-                and str(evidence_by_id[value].get("context_key") or "").strip() != context_key
-            )
-            if mismatched:
-                errors.append(f"{chain_id} has evidence from another context_key: " + ", ".join(mismatched))
+            judgment_id = str(chain.get("demand_judgment_id") or "").strip()
+            judgment = judgment_by_id.get(judgment_id)
+            if judgment_id:
+                linked_judgment_ids.append(judgment_id)
+            if judgment is None:
+                if judgment_id or all_references or chain.get("status") == "decided":
+                    errors.append(f"{chain_id} must link an existing demand_judgment_id before citing evidence")
+            else:
+                if context_key and str(judgment.get("context_key") or "").strip() != context_key:
+                    errors.append(f"{chain_id} and linked demand judgment have different context_key values")
+                allowed_by_node = {
+                    "scene": set(judgment.get("problem_evidence_ids", [])) | set(judgment.get("counter_evidence_ids", [])),
+                    "user": set(judgment.get("problem_evidence_ids", [])) | set(judgment.get("counter_evidence_ids", [])),
+                    "pain": set(judgment.get("problem_evidence_ids", [])) | set(judgment.get("counter_evidence_ids", [])),
+                    "need": set(judgment.get("problem_evidence_ids", [])) | set(judgment.get("counter_evidence_ids", [])),
+                    "feature": set(judgment.get("solution_evidence_ids", [])) | set(judgment.get("counter_evidence_ids", [])),
+                    "product": set(judgment.get("solution_evidence_ids", []))
+                    | set(judgment.get("commercial_evidence_ids", []))
+                    | set(judgment.get("counter_evidence_ids", [])),
+                    "business": set(judgment.get("commercial_evidence_ids", []))
+                    | set(judgment.get("counter_evidence_ids", [])),
+                }
+                for node_name, references in node_references.items():
+                    escaped = sorted(references - {str(value) for value in allowed_by_node[node_name]})
+                    if escaped:
+                        errors.append(
+                            f"{chain_id}.{node_name} evidence is not registered in the linked demand judgment: "
+                            + ", ".join(escaped)
+                        )
+                unregistered_counter = sorted(
+                    {str(value) for value in counter_ids} - {str(value) for value in judgment.get("counter_evidence_ids", [])}
+                )
+                if unregistered_counter:
+                    errors.append(f"{chain_id} counter-evidence is not registered in the demand judgment: " + ", ".join(unregistered_counter))
+                if chain.get("status") == "decided" and judgment.get("status") != "validated":
+                    errors.append(f"{chain_id} decided requires a validated linked demand judgment")
 
-        if chain.get("status") == "validated":
+        if chain.get("status") == "decided":
             non_validated = [
-                node_name for node_name in sure_engine.REASONING_NODES
+                node_name for node_name in required_nodes
                 if not isinstance(nodes.get(node_name), dict)
                 or nodes[node_name].get("status") != "validated"
             ]
             if non_validated:
-                errors.append(f"{chain_id} validated has non-validated nodes: " + ", ".join(non_validated))
+                errors.append(f"{chain_id} decided has non-validated nodes: " + ", ".join(non_validated))
+            if not chain.get("alternative_explanations"):
+                errors.append(f"{chain_id} decided requires at least one alternative explanation")
             if require_counter and not counter_ids:
-                errors.append(f"{chain_id} validated lacks counter-evidence")
-            if not design_only:
-                judgment_id = str(chain.get("demand_judgment_id") or "").strip()
-                judgment = judgment_by_id.get(judgment_id)
-                if judgment is None:
-                    errors.append(f"{chain_id} validated must link a demand_judgment_id")
-                else:
-                    if judgment.get("status") != "validated":
-                        errors.append(f"{chain_id} linked demand judgment is not validated")
-                    if context_key and str(judgment.get("context_key") or "").strip() != context_key:
-                        errors.append(f"{chain_id} and linked demand judgment have different context_key values")
+                errors.append(f"{chain_id} decided lacks counter-evidence")
+
+    if not design_only:
+        duplicates = sorted({value for value in linked_judgment_ids if linked_judgment_ids.count(value) > 1})
+        if duplicates:
+            errors.append("demand judgments linked by more than one product chain: " + ", ".join(duplicates))
+        if configured:
+            missing_chains = sorted(set(judgment_by_id) - set(linked_judgment_ids))
+            if missing_chains:
+                errors.append("demand judgments missing a product chain: " + ", ".join(missing_chains))
 
     audit.add(
         "product_reasoning",
@@ -2141,7 +2311,7 @@ def _write_report(audit: Audit) -> tuple[Path, Path]:
     payload = audit.as_dict()
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     lines = [
-        "# askovo audit",
+        "# Askovo audit",
         "",
         f"- Status: **{audit.status}**",
         f"- Stage: `{audit.requested_stage}`",
@@ -2251,7 +2421,8 @@ CHAIN_RULES = (
     ("commercial", "commercial_evidence_ids", {"E4+", "E5"}),
 )
 AUDIT_BOUNDARY = (
-    "审计只回答「现有材料能支持到哪一级」：不证明需求真实存在、不估计总体比例、不替代人工复核。"
+    "审计检查产品推理是否断链、现有材料能支持到哪一级：不证明需求或产品成功，不估计总体比例，"
+    "不把方案接受当发布就绪，不把观察行为当因果，也不替代人工语义复核与专业签收。"
 )
 
 
@@ -2382,7 +2553,7 @@ def _audit_next_actions(payload: dict[str, Any]) -> list[str]:
 def _render_audit_md(payload: dict[str, Any]) -> str:
     verdict_zh = "可支持" if payload["status"] == "pass" else "不可支持（或超出证据）"
     lines = [
-        "# askovo 审计结论",
+        "# Askovo 审计结论",
         "",
         f"- 研究：`{payload['study_id']}` — {payload['study_title']}",
         f"- 方法版本：`{payload['method_version']}`"
@@ -2400,6 +2571,9 @@ def _render_audit_md(payload: dict[str, Any]) -> str:
         lines.append(
             f"- 推理链：{reasoning.get('chains', 0)} 条；已形成产品决策：{reasoning.get('decided', reasoning.get('validated', 0))} 条"
         )
+        supporting = reasoning.get("supporting_states", {})
+        if supporting:
+            lines.append("- 独立支撑状态：" + json.dumps(supporting, ensure_ascii=False))
         lines.append("")
         lines.append("| 节点 | 已填节点 | 证据支持节点 | 有证据引用 |")
         lines.append("| --- | --- | --- | --- |")
@@ -2547,7 +2721,7 @@ def command_audit(args: argparse.Namespace) -> int:
         "overclaims": len(overclaims),
         "open": sum(1 for claim in claims if claim["verdict"] == "open"),
         "product_chains": int(reasoning_summary.get("chains", 0) or 0),
-        "validated_product_chains": int(reasoning_summary.get("validated", 0) or 0),
+        "decided_product_chains": int(reasoning_summary.get("decided", 0) or 0),
     }
     payload: dict[str, Any] = {
         "status": status,
@@ -2583,7 +2757,7 @@ def command_audit(args: argparse.Namespace) -> int:
     if getattr(args, "json", False):
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
-        print(f"askovo 审计：{payload['study_id']} — {payload['status']}")
+        print(f"Askovo 审计：{payload['study_id']} — {payload['status']}")
         if payload.get("version_warning"):
             print(f"- 版本警告：{payload['version_warning']}")
         print(
@@ -3537,7 +3711,7 @@ def _render_report(
                 )
     lines.append("")
 
-    lines.append("## 2. 产品推理主链")
+    lines.append("## 2. 产品与商业推理主链")
     lines.append("")
     reasoning_path = root / "04-findings" / "product-reasoning.json"
     reasoning = None
@@ -3585,7 +3759,7 @@ def _render_report(
         lines.append("尚未记录任何采集 manifest；采集量数据缺失。")
     lines.append("")
 
-    lines.append("## 3. 数据质量与关键信号")
+    lines.append("## 4. 数据质量与关键信号")
     lines.append("")
     total = signals.get("record_count", 0)
     lines.append(
@@ -3697,7 +3871,7 @@ def _render_report(
             )
     lines.append("")
 
-    lines.append("## 4. 需求判断")
+    lines.append("## 5. 需求判断")
     lines.append("")
     if judgments:
         lines.append("| 编号 | 判断 | 状态 | 置信 | 问题/方案/商业/反证链 | 缺口 |")
@@ -3729,7 +3903,7 @@ def _render_report(
         lines.append("尚无需求判断；研究还未进入决策阶段。")
     lines.append("")
 
-    lines.append("## 5. 反证与缺口")
+    lines.append("## 6. 反证与缺口")
     lines.append("")
     blocked = []
     if feasibility and isinstance(feasibility.get("platforms"), list):
@@ -3762,7 +3936,7 @@ def _render_report(
             lines.append(f"- {item}")
     lines.append("")
 
-    lines.append("## 6. 结论边界")
+    lines.append("## 7. 结论边界")
     lines.append("")
     insights_path = root / "04-findings" / "insights.md"
     if insights_path.is_file():
@@ -3831,7 +4005,7 @@ def command_report(args: argparse.Namespace) -> int:
     report_text = _render_report(
         root, study, signals, manifests, audit_payload, judgments, feasibility
     )
-    output = Path(args.output) if args.output else root / "06-report" / "report.md"
+    output = Path(args.output) if args.output else root / "06-report" / "research-status.md"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(report_text, encoding="utf-8")
     print(
@@ -3893,7 +4067,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="askovo",
         description="One entry for software/hardware/consumer/automotive/mobile research: route, plan, collect, analyze, deliver.",
     )
-    parser.add_argument("--version", action="version", version=f"askovo {ASKOVO_VERSION}")
+    parser.add_argument("--version", action="version", version=f"Askovo {ASKOVO_VERSION}")
     subparsers = parser.add_subparsers(dest="command", required=True)
     init_parser = subparsers.add_parser("init", help="create a study workspace from the bundled template")
     init_parser.add_argument("study_dir")
@@ -3972,7 +4146,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     report_parser.add_argument("study_dir")
     report_parser.add_argument(
-        "--output", help="report path; defaults to 06-report/report.md"
+        "--output", help="report path; defaults to 06-report/research-status.md"
     )
     report_parser.set_defaults(func=command_report)
 
@@ -4074,16 +4248,16 @@ def build_parser() -> argparse.ArgumentParser:
     codebook_parser.set_defaults(func=sure_engine.cli_codebook)
 
     chain_parser = subparsers.add_parser(
-        "chain", help="scaffold and render the scene-user-pain-need-feature-product reasoning chain"
+        "chain", help="scaffold and render the scene-user-pain-need-feature-product-business reasoning chain"
     )
     chain_parser.add_argument("study_dir")
     chain_parser.set_defaults(func=sure_engine.cli_chain)
 
     deliver_parser = subparsers.add_parser(
-        "deliver", help="assemble a chain-led memo, product report, PRD input or post-launch tracker"
+        "deliver", help="assemble chain-led PM, PRD, BRD, user-operations and tracker deliverables"
     )
     deliver_parser.add_argument("study_dir")
-    deliver_parser.add_argument("--kind", choices=("memo", "report", "prd", "tracker"), default="memo")
+    deliver_parser.add_argument("--kind", choices=("memo", "report", "mrd", "prd", "brd", "ops", "tracker"), default="memo")
     deliver_parser.set_defaults(func=sure_engine.cli_deliver)
 
     queue_parser = subparsers.add_parser(

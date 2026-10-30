@@ -5,7 +5,7 @@
 0. Stage contract
 1. Research contract
 1A. Unnamed-experience grounding (frontier products)
-2. askovo unit of analysis
+2. Askovo unit of analysis
 3. Scenario-universe construction
 4. Sampling by evidence role
 4A. Platform source adapters and open-source connector gate
@@ -16,16 +16,24 @@
 9. Stopping rules
 10. Failure modes
 
+## Product reasoning comes before research execution
+
+The shared spine is `scene → user → pain → need → feature → product → business`. Build it as a hypothesis canvas in `04-findings/product-reasoning.json` before choosing collection volume or platforms. Each node needs a statement, incoming rationale, assumptions, status, and evidence references; feature also needs alternatives and acceptance conditions, product needs form/scope/non-goals/acceptance, and business needs market boundary, segments, payer, price/cost hypotheses, market-estimate method, unit-economics inputs, metrics, and a resource gate.
+
+Research answers a specific uncertainty in this chain. It does not replace the chain. `source-plan.csv.reasoning_nodes` identifies the nodes each route supports. Node evidence never proves an incoming rationale by itself. `decided` records a product/business choice, not release readiness, commercial success, or outcome proof; delivery, observed outcome, and causal states stay separate. Read [product-reasoning.md](product-reasoning.md) before creating or editing findings.
+
+Product managers own trade-offs and residual-risk decisions. User researchers own research design, evidence boundaries, and semantic challenge. User operations projects the same chain into behavioral cohorts, interventions, and feedback loops. Market research/analysis feeds MRD, requirements research/analysis feeds PRD, and business analysis feeds BRD. These roles share one artifact; they do not create competing market, product, or business truths.
+
 ## 0. Stage contract
 
 Treat the method as four gated stages. Every stage has a fixed input, artifact, and exit test.
 
 | Stage | Input | Work | Required artifact | Exit test |
 | --- | --- | --- | --- | --- |
-| Design | Decision question and solution boundary | Define hypotheses, falsifiers, scene universe, evidence roles, source routes, and quality gates | `study.json`, `01-sources/source-plan.csv` | `askovo.py check STUDY --stage design` passes |
-| Evidence | Passing design plus permitted source access or an existing corpus | Pilot, collect/import, normalize, deduplicate, code, and calibrate | `02-data/evidence.jsonl`, raw/views, codebook and gold set | `askovo.py check STUDY --stage evidence` passes |
-| Decision | Passing evidence stage | Link problem, solution, commercial, and counter-evidence to one role/scene/task | `04-findings/demand-judgments.json` | `askovo.py check STUDY --stage full` passes |
-| Product validation | Audited demand judgment | Interview, observe, prototype, price-test, pilot, or inspect authorized behavior data | Experiment record owned by the product team | Pre-declared success/failure threshold is met |
+| Design | Decision question and solution boundary | Draft the seven-node chain, rationales and alternatives; then define falsifiers, scene universe, evidence roles, source routes, and quality gates | `study.json`, `04-findings/product-reasoning.json`, `01-sources/source-plan.csv` | `askovo.py check STUDY --stage design` passes |
+| Evidence | Passing design plus permitted source access or an existing corpus | Pilot, collect/import, normalize, deduplicate, code, and calibrate against named chain gaps | `02-data/evidence.jsonl`, raw/views, codebook and gold set | `askovo.py check STUDY --stage evidence` passes |
+| Decision | Passing evidence stage | Link problem, solution, commercial, and counter-evidence to one role/scene/task; validate the seven-node product semantics and rationales | `04-findings/demand-judgments.json`, `04-findings/product-reasoning.json` | `askovo.py check STUDY --stage full` passes |
+| Product/business validation | Audited demand judgment and business node | Interview, observe, prototype, price-test, paid pilot, or inspect authorized behavior data | Experiment/business record owned by the accountable team, with MRD/PRD/BRD projections kept in sync | Pre-declared product and commercial thresholds are met separately |
 
 The CLI checks structure, configured coverage, duplicates, concentration, and evidence-chain eligibility. It does not certify population representativeness or the truth of a claim.
 
@@ -58,11 +66,13 @@ Use a question map with five layers:
 
 When the studied experience has no settled vocabulary, keyword-driven sampling silently studies the adjacent named market instead. Run the grounding phase before route design: mine edge-language proto-words, excavate DIY/appropriation behaviors (E2 demand fossils — the hardest pre-market evidence), map the stimulus's psychophysical dimensions to find coverage white space, and anchor cross-domain analogies (CT pleasant touch, vibration pleasantness, ASMR) as E0 context only, plus first-principles derivation where literature is thin. The phase outputs a seed lexicon (`01-sources/lexicon.csv`, design-gated at ≥5 terms across ≥2 grounding paths) and the scope boundary; downstream queries must derive from them. Audit stock-corpus sufficiency per term with `askovo.py lexicon` before sizing new collection — insufficiency is a collection instruction, not a gate to loosen. Full method: [unnamed-experience-research.md](unnamed-experience-research.md).
 
-## 2. askovo unit of analysis
+## 2. Askovo unit of analysis
 
-Represent a high-value record as:
+Represent a high-value **evidence** record as:
 
 `role → trigger/scene → task/outcome → substitute → friction → consequence → solution response → commercial behavior`
+
+This is the observation unit, not the product reasoning chain. Use it to support the seven-node chain; do not mistake `solution response` for a derived feature or a complete product definition.
 
 Keep roles non-exclusive. In business contexts, separate end user, influencer, purchaser, IT/security reviewer, budget owner, and beneficiary. In consumer contexts, distinguish buyer, owner, active user, lapsed user, returner, and bystander.
 

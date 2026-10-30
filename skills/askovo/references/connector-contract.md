@@ -1,6 +1,6 @@
 # Connector contract
 
-Use this contract when wrapping, forking, or replacing an open-source acquisition project. askovo does not require upstream projects to share one implementation language. It requires every run to produce the same audit trail.
+Use this contract when wrapping, forking, or replacing an open-source acquisition project. Askovo does not require upstream projects to share one implementation language. It requires every run to produce the same audit trail.
 
 ## Required run artifacts
 
@@ -85,7 +85,7 @@ Every platform-derived evidence record must retain:
 - the route/query metadata needed to reproduce the sample;
 - completeness and content status.
 
-The evidence record adds askovo fields such as user role, scene, task, substitute, friction, consequence, corpus role, evidence level, and evidence basis. Connector output alone is never a demand judgment.
+The evidence record adds Askovo fields such as user role, scene, task, substitute, friction, consequence, corpus role, evidence level, and evidence basis. Connector output alone is never a demand judgment.
 
 ## Adapter behavior
 
@@ -106,7 +106,7 @@ A compliant wrapper must:
 
 Prefer a thin wrapper around an installed, pinned dependency. Do not copy the upstream repository into the Skill. Keep:
 
-- the askovo adapter and schemas under this repository's MIT license;
+- the Askovo adapter and schemas under this repository's MIT license;
 - the upstream dependency under its own license;
 - the exact upstream revision in the registry and manifest;
 - transformation tests using synthetic fixtures, not redistributed platform content.

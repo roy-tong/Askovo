@@ -11,22 +11,29 @@ askovo --help
 
 | 命令 | 用途 | 退出码 |
 |---|---|---|
-| `do "<需求>"` | **单入口**：路由 + 生成研究计划、方法选择、证据计划、工具包 | 0/2/4 |
+| `do "<需求>"` | **单入口**：路由 + 创建主链画布、研究计划、证据计划与工具包 | 0/2/4 |
 | `route "<需求>"` | 只路由，不写文件 | 0/2 |
 | `platforms "<需求>"` | 平台雷达：数据在哪、能否合规拿到、能证明什么 | 0/2 |
 | `collect <study>` | 通过 design gate 后运行采集适配器/本地导出/CDP，写 raw、manifest 与 normalized | 0/1/2/3/4 |
 | `queue init/add/run/status/retry` | SQLite 队列、worker、重试、限速、断点续跑 | 0/1/2 |
 | `analyze <study>` | 归一化、去重、分布、候选主题、问题匹配 | 0/2 |
-| `chain <study>` | 生成/渲染“场景→用户→痛点→需求→特性→产品”推理链 | 0/2 |
+| `chain <study>` | 生成/渲染“场景→用户→痛点→需求→特性→产品→商业”推理链 | 0/2 |
 | `instruments <study>` | 生成访谈/观察/任务/感官/价格/Beta/安全工具包 | 0/2 |
 | `import <study> <file>` | 导入 JSONL/CSV/文本为证据 | 0/2 |
 | `codebook <study>` | 生成六类结论的编码本 | 0/2 |
-| `deliver <study>` | memo / report / PRD 输入 / tracker | 0/2 |
+| `deliver <study>` | 主链 memo / 总 report / MRD / PRD / BRD / 运营 ops / tracker | 0/2 |
+| `report <study>` | 中文研究状态报告（UXR 视角）→ `06-report/research-status.md` | 0/2 |
+| `signals <study>` | 从 evidence.jsonl 计算确定性语料信号 | 0/2 |
+| `lexicon <study>` | 未命名体验模式：词表产出与充分性检查 | 0/1/2 |
+| `init <study_dir>` | 从模板创建研究工作区（`do` 之外的支撑入口） | 0/2 |
 | `methods` | 按领域与阶段列方法 | 0/2 |
 | `domains` | 列五个研究包 | 0 |
 | `catalog` | 列方法目录 | 0 |
-| `audit` | 旧版需求研究门禁与逐条判断 | 0/1/2 |
-| `plan` | 旧版平台可行性/配额计划 | 0/2/3 |
+| `connectors` | 列开源连接器评审决策（含 blocked 及原因） | 0/2 |
+| `check <study>` | 单阶段门检查（design/evidence/decision/full） | 0/1/2 |
+| `audit` | 主链、证据与逐条需求判断的统一审计 | 0/1/2 |
+| `plan` | 支撑入口：平台可行性、配额与补证路线 | 0/2/3 |
+| `stage <name>` | 转发到 `scripts/stages/` 数据集流水线工具 | 0/1/2 |
 | `doctor` | 运行时、目录、研究包、平台目录、版本自检 | 0/1 |
 | `demo` | 内置样例 | 0/1/2 |
 
@@ -61,7 +68,15 @@ askovo route "SaaS 订阅留存下降" --json
 askovo route "座舱语音接管" --domain automotive --stage validation
 ```
 
-输出：domain、stage、intent、risk_flags、safety_gate、recommended_methods、alternatives、decisions、deliverables、platform_preview、next_commands。
+输出：`product_reasoning`（七节点、当前阶段焦点、主链产物），以及 domain、stage、intent、risk_flags、safety_gate、recommended_methods、alternatives、decisions、deliverables、platform_preview、next_commands。主链先展示，方法与平台是支撑层。
+
+## chain
+
+```bash
+askovo chain ./study
+```
+
+如果缺少 `04-findings/product-reasoning.json` 则创建假设画布，随后渲染 `06-report/product-reasoning.md`。它不会从一句 query 或高频词自动编造七节点。每个节点需要 statement、incoming rationale、status、evidence_ids、assumptions；商业节点还需要市场边界、细分、价格、成本、单位经济、指标和业务门。`decided` 是产品/商业选择，不是发布、商业成功或因果证明。旧六节点文件仍可读取。完整规则见[产品推理主链](product-reasoning.md)。
 
 ## platforms
 
@@ -149,20 +164,28 @@ askovo instruments ./study
 
 按所选方法生成：访谈提纲、观察表、任务脚本、概念测试、感官/HUT 协议、价格问卷、Beta 协议、现场/驾驶协议、测试矩阵、RMA 表、货架测试、无障碍检查、专家审阅、授权说明。已存在的文件不覆盖。
 
-## import / codebook / deliver
+## import / codebook / deliver / report
 
 ```bash
 askovo import ./study interviews.jsonl --source-family interview --claim-type need
 askovo codebook ./study
 askovo deliver ./study --kind memo
+askovo report ./study
 ```
 
 `deliver --kind`：
 
-- `memo` 决策 memo
-- `report` 研究报告
-- `prd` PRD 输入
-- `tracker` 上市/复测 tracker CSV
+- `memo`：产品/商业决策 memo；
+- `report`：产品与商业推理总报告，写 `06-report/report.md`；
+- `mrd`：市场研究与分析投影，写 `06-report/mrd.md`；
+- `prd`：需求研究与分析后的特性、产品范围、非目标和验收，写 `06-report/prd.md`；
+- `brd`：商业分析投影，包含市场、收入、成本、单位经济、指标和业务门，写 `06-report/brd.md`；
+- `ops`：场景×用户分群、痛点/异议和运营回流，写 `06-report/user-ops.md`；
+- `tracker`：从特性/产品验收和商业成功指标生成带 chain/node ID 的跟踪行，写 `06-report/postlaunch-tracker.csv`。
+
+`askovo report` 是用研支撑报告，写 `06-report/research-status.md`；它不与产品/商业 `deliver --kind report` 共用文件。所有交付都从同一七节点主链渲染，不另建语义真值。MRD、PRD、BRD 分别对应市场研究/分析、需求研究/分析、商业分析三条工作流，不是三个平行事实库。
+
+`check --stage design/evidence/full` 分别检查设计、证据和完整决策结构；`audit` 另输出逐条需求判断 verdict。返回 1 是合法研究状态，应修复主链/证据缺口或明确下一步，不能绕过。
 
 ## 机器可读
 

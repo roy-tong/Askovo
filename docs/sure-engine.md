@@ -1,38 +1,50 @@
 # SURE 引擎
 
-**askovo 是对外产品；SURE 是底层研究引擎。**
+**Askovo 是对外产品；SURE 是底层研究与证据支撑引擎。**
 
-## SURE 是什么
+## 产品主链在哪里
 
-SURE = **Structured User Research with Evidence**。
+askovo 面向五域产品经理、用户研究与用户运营，以及市场、需求、商业分析职责，主工作是：
 
-它不是一个独立安装的产品，也不是第二个 CLI。它是 `askovo` 背后的研究逻辑层：
+> **场景 → 用户 → 痛点 → 需求 → 特性 → 产品 → 商业**
 
-- 判断产品领域、生命周期阶段、研究意图与风险；
-- 从 32 个方法中选出“能回答当前问题、且证据形式匹配”的方法；
-- 定义六类结论（need / acceptance / usability / performance / commercial / safety）各自能证明什么、不能证明什么；
-- 约束证据形式、证据等级、反幸存者偏差、停止规则与安全门；
-- 决定“记录数不是用户数”“便利样本不能推断总体”等边界。
+主链语义保存在 `04-findings/product-reasoning.json`。产品经理用它做全链取舍和风险接受；用户研究定位证据与推理缺口；用户运营做行为分群、干预和回流；市场分析充实商业节点的市场部分并产出 MRD；需求分析维护优先级、验收和追溯并产出 PRD；商业分析形成单位经济与资源门并产出 BRD。
 
-## askovo 是什么
+SURE 不替代这条产品与商业推理链，也不从数据自动推导产品或商业。它负责让主链中的判断知道：**现有证据能支持到哪里、下一步怎样补证、哪些话不能说。**
 
-askovo 是用户看到的产品层：
+## SURE 负责什么
 
-- 一条命令 `askovo "<需求>"`；
+SURE = **Structured User Research with Evidence**。它不是独立安装的产品，也不是第二个 CLI，而是 Askovo 背后的研究逻辑层：
+
+- 判断产品领域、生命周期、研究意图与风险；
+- 从最弱主链节点或推导关系出发，选择证据形式匹配的方法；
+- 定义 need / acceptance / usability / performance / commercial / safety 六类结论的边界；
+- 约束证据形式、E0–E5、来源覆盖、反证、停止规则与安全门；
+- 连接主链和需求判断，检查断链、孤儿证据、上下文错配与推理缺失；
+- 区分方案接受、交付质量、上线结果、商业结果和因果效果，防止相互冒名顶替；
+- 约束市场规模、价格、交易和单位经济的口径，不让竞品报价或付费意愿冒充商业成立；
+- 坚持“记录数不是用户数”“便利样本不能推断总体”“完整主链不等于产品/商业成功”。
+
+代码中的主链脚手架和共享渲染由 SURE 引擎提供；结构审计由统一 CLI 门控执行；语义判断仍由 Agent 与人完成。
+
+## Askovo 负责什么
+
+- 一条命令 `askovo "<业务问题>"`；
+- 主链工作区与五域路由；
 - CLI、Skill、MCP 三个入口共用同一套行为；
-- 平台雷达、采集、分析、队列、CDP、交付物；
-- 把 SURE 的研究判断变成产品经理/用户研究员可以直接使用的交付。
+- 平台雷达、采集、描述性分析、队列、CDP 和证据台账；
+- 面向产品经理、用户研究、用户运营、市场分析、需求分析和商业分析的投影与 MRD/PRD/BRD 交付。
 
 ## 代码位置
 
 ```text
-skills/askovo/scripts/sure_engine.py   # SURE 研究引擎
-skills/askovo/scripts/askovo.py        # askovo CLI 入口
+skills/askovo/scripts/sure_engine.py   # SURE 支撑引擎、主链脚手架与共享渲染
+skills/askovo/scripts/askovo.py        # askovo CLI、统一结构/证据/推理门
 skills/askovo/scripts/askovo_mcp.py    # askovo MCP 外壳
 ```
 
-不要为 SURE 单独安装、单独起服务或 fork 一套协议。`askovo` 的 CLI/Skill/MCP 都调用同一个 `sure_engine.py`；这样研究判断不会在三个入口之间漂移。
+不要为 SURE 单独安装、单独起服务或 fork 一套协议。五类领域也只改变方法、证据、安全与验收参数，不改变主链 schema。
 
 ## 一句话
 
-> **askovo 负责“让研究可用”，SURE 负责“让研究可信”。**
+> **Askovo 负责“从用户推理到产品与商业”，SURE 负责“让推理有据、证据有界”。**

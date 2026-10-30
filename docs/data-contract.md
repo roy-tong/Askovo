@@ -8,7 +8,7 @@ askovo 的所有判断都建立在文件契约上。目录固定、字段可追�
 study/
 ├── study.json                    决策、范围、假设、门槛、连接器配置
 ├── 01-sources/
-│   ├── source-plan.csv           证据角色 × 来源 × 路线 × 目标量
+│   ├── source-plan.csv           推理节点 × 证据角色 × 来源 × 路线 × 目标量
 │   ├── feasibility.json          plan 生成：平台可行性、配额、准入前提
 │   ├── tasks.md                  plan 生成：采集任务
 │   ├── *-routes.csv              平台路线模板
@@ -22,7 +22,7 @@ study/
 │   ├── codebook.csv              编码表
 │   └── gold-set.jsonl            人工金标（用于校准）
 ├── 04-findings/
-│   ├── product-reasoning.json    场景→用户→痛点→需求→特性→产品推理链
+│   ├── product-reasoning.json    场景→用户→痛点→需求→特性→产品→商业推理链
 │   ├── signals.json              signals 生成
 │   ├── demand-judgments.json     需求判断台账
 │   └── lexicon-yield.json        命名前研究产物
@@ -32,14 +32,40 @@ study/
 │   ├── latest.json               check --write-report 生成
 │   └── latest.md
 └── 06-report/
-    └── report.md                 report 生成
+    ├── report.md                 deliver --kind report：产品与商业推理报告
+    ├── research-status.md        report：用户研究状态与证据缺口
+    ├── product-reasoning.md      chain：主链可读投影
+    ├── mrd.md                    deliver --kind mrd：市场研究与分析投影
+    ├── prd.md                    deliver --kind prd：需求研究与分析投影
+    ├── brd.md                    deliver --kind brd：商业分析投影
+    ├── user-ops.md               deliver --kind ops：用户运营投影
+    └── postlaunch-tracker.csv    deliver --kind tracker：验收与回流跟踪
 ```
 
 生成物（`05-audit/latest.*`、`06-report/`、`04-findings/signals.json`）不应提交到代码仓库。
 
 ## product-reasoning.json
 
-`do` 自动创建、`askovo chain` 渲染的产品推理主链。每个 chain 固定按 `scene → user → pain → need → feature → product` 排列，每个节点必须包含：
+`do` 自动创建、`askovo chain` 渲染的产品与商业推理主链，是七段产品与商业语义的机器真值。每个新 chain 固定按 `scene → user → pain → need → feature → product → business` 排列；旧版六节点 chain 仍可读取。
+
+chain 字段：
+
+| 字段 | 说明 |
+|---|---|
+| `id` / `title` | 价值线程标识与标题 |
+| `demand_judgment_id` / `context_key` | 与需求判断精确连接；引用证据时必须一致 |
+| `status` | `draft` / `hypothesis` / `needs-validation` / `decided` / `rejected` / `deprioritized` |
+| `confidence` | `low` / `medium` / `high`，不是统计置信度 |
+| `supporting_states` | 独立的 delivery / outcome / causal 状态及 release、metric、experiment 引用 |
+| `nodes` | 下述七节点对象 |
+| `alternative_explanations` | 其他解释或替代方案；decided 至少一条 |
+| `counter_evidence_ids` | 已在需求判断登记的反证子集 |
+| `human_review` | 语义复核、复核人、说明、风险接受；不是自动认证 |
+| `prioritization` | 需求优先级方法、因素、负责人、日期和理由 |
+| `change_log` | 变更依据、受影响引用、影响、决策和投影同步状态 |
+| `gaps` / `next_test` | 当前缺口与下一项最能改变决策的验证 |
+
+每个节点必须包含：
 
 - `statement`：这一节点的明确判断；
 - `rationale`：为什么由上一节点推导到这一节点；
@@ -47,7 +73,13 @@ study/
 - `evidence_ids`：直接支撑该节点的证据；
 - `assumptions`：尚未验证的推理假设。
 
-`validated` 节点需要对应等级的直接证据；`validated` chain 还要求所有节点已验证、关联同一 `context_key` 的 validated 需求判断，并记录反证。证据支持推理，不能替代需求到特性、特性到产品的推导理由。
+专属字段：scene 使用 `trigger/environment/task_context`；user 使用 `role/state/decision_role`；pain 使用 `current_substitute/friction_cost/consequence`；need 使用 `desired_outcome/constraints/measure`；feature 使用 `capability/acceptance_conditions/alternatives_considered`；product 使用 `form/scope/non_goals/acceptance_criteria`。
+
+business 使用 `market_definition`、`geographies`、`time_window`、`included_markets`、`excluded_markets`、`target_segment`、`segments`、`payer`、`positioning`、`revenue_model`、`pricing_hypothesis`、`pricing`、`channels`、`competitive_alternatives`、`cost_drivers`、`market_estimates`、`unit_economics_inputs`、`success_metrics`、`non_goals` 和 `gate`。市场规模条目必须有总体定义、时间窗、单位、方法、假设；有数值时还要有公式和来源。价格、支付意愿、交易与续约分层记录，未知保留 `null` 并登记缺口。
+
+节点证据必须是 linked judgment 已登记证据的子集：scene/user/pain/need 只能引用 problem 或 counter；feature 只能引用 solution 或 counter；product 只能引用 solution、commercial 或 counter；business 只能引用 commercial 或 counter。节点 validated 还需满足对应 E-level；decided chain 要求七节点 validated、linked judgment validated、反证与替代解释齐全，并要求商业门与优先级记录。
+
+`decided` 只记录当前产品/商业选择，不表示发布就绪、实验因果或商业成功。完整语义见[产品推理主链](product-reasoning.md)。
 
 ## study.json
 
@@ -58,6 +90,14 @@ study/
   "study_id": "ai-glasses-2026",
   "title": "AI 眼镜用户不满",
   "method_version": "2.0.1",
+  "product_reasoning_version": "2.0",
+  "product_reasoning": {
+    "flow": ["scene", "user", "pain", "need", "feature", "product", "business"],
+    "primary_artifact": "04-findings/product-reasoning.json"
+  },
+  "delivery": {
+    "audiences": ["product_manager", "user_researcher", "user_operations", "market_researcher", "market_analyst", "requirements_analyst", "business_analyst"]
+  },
   "decision": {
     "question": "是否值得为远程协作做一款新品",
     "owner": "产品负责人",

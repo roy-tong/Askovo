@@ -4,7 +4,7 @@ Use this reference when an independent third party studies historical Amazon rev
 
 ## No supported live OSS connector
 
-The 2026-08-27 review did not find a maintained, licensed, policy-compatible GitHub connector for live third-party Amazon review research. askovo does not replace this gap with a seller API, commercial provider, proxy service, CAPTCHA bypass, or browser scraper.
+The 2026-08-27 review did not find a maintained, licensed, policy-compatible GitHub connector for live third-party Amazon review research. Askovo does not replace this gap with a seller API, commercial provider, proxy service, CAPTCHA bypass, or browser scraper.
 
 The supported open-source route is historical only:
 
@@ -50,7 +50,7 @@ The published dataset includes review fields such as `rating`, `title`, `text`, 
 
 Map them without inventing missing signals:
 
-| Dataset field | askovo use |
+| Dataset field | Askovo use |
 | --- | --- |
 | `asin` | `commerce_variant_id`; preserve the exact reviewed item |
 | `parent_asin` | `commerce_product_id`; use for product-family grouping |

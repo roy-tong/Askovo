@@ -32,6 +32,7 @@ one entry:
   "<需求>"           shorthand for `do`: route + scaffold in one line
   do "<需求>"        route product domain/stage/method and scaffold a study
   route "<需求>"     route only, no writes
+  chain <study>       render the scene-user-pain-need-feature-product-business chain
   platforms "<需求>" rank platforms by data availability and access
 
 research:
@@ -40,13 +41,14 @@ research:
   analyze <study>      normalize, dedup and describe collected material
   import <study> <file> import interviews/CSV/JSONL/text
   codebook <study>     scaffold claim-type codebook
-  deliver <study>      memo / report / PRD input / post-launch tracker
-  audit <study>        gates + signals + per-claim verdicts
-  plan <study>         legacy platform/feasibility plan
+  deliver <study>      memo / report / MRD / PRD / BRD / user ops / tracker
+  report <study>       write the user-research status projection
+  audit <study>        product/business chain gates + signals + per-claim verdicts
+  plan <study>         supporting platform/feasibility plan
   demo                 run the bundled offline sample
   doctor               check runtime, catalog, packs and version
   mcp                  start the MCP stdio server
-  --version            print the askovo version
+  --version            print the Askovo version
 """
 
 
@@ -85,7 +87,7 @@ def main() -> int:
     argv = sys.argv[1:]
 
     if argv[:1] in (["--version"], ["-V"]):
-        print(f"askovo {__version__}")
+        print(f"Askovo {__version__}")
         return 0
 
     if not argv:

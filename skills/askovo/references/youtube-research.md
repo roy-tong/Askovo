@@ -8,7 +8,7 @@ The reviewed connector is [googleapis/google-api-python-client](https://github.c
 
 The Data API can support video search, channel/video metadata, comment threads, and replies. It is not a general public transcript-download API.
 
-[YouTube's Developer Policies](https://developers.google.com/youtube/terms/developer-policies) prohibit directly or indirectly scraping YouTube applications or obtaining scraped YouTube data. askovo therefore blocks:
+[YouTube's Developer Policies](https://developers.google.com/youtube/terms/developer-policies) prohibit directly or indirectly scraping YouTube applications or obtaining scraped YouTube data. Askovo therefore blocks:
 
 - [youtube-comment-downloader](https://github.com/egbertbouman/youtube-comment-downloader), despite its active maintenance and MIT license;
 - [youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api), despite its useful interface and MIT license.

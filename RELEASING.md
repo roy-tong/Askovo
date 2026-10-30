@@ -1,4 +1,4 @@
-# 发布 askovo
+# 发布 Askovo
 
 本文件描述正式发布流程。代码通过测试不等于已经发布；GitHub 仓库元数据、Release、PyPI 和私密漏洞报告都需要在对应平台核验。
 
@@ -8,7 +8,7 @@
 
 1. 在 GitHub 将 `roy-tong/user-demand-research` 重命名为 `roy-tong/askovo`，不要新建一个没有历史的空仓库替代。
 2. 确认旧 URL 会重定向，且以下地址全部可用：仓库页、raw logo、CI badge、Issues、Security Advisories。
-3. 将 About 改为 askovo 的产品描述；SURE 只描述为底层研究引擎。更新 Topics、Homepage 和个人官网 `llms.txt` 中的旧链接。
+3. 将 About 改为 Askovo 的产品描述；SURE 只描述为底层研究引擎。更新 Topics、Homepage 和个人官网 `llms.txt` 中的旧链接。
 4. 启用 Private Vulnerability Reporting，并实际确认 `security/advisories/new` 可用。
 5. 迁移后更新本地 remote；使用仓库实际采用的 SSH alias 或 HTTPS，不要盲目覆盖其他机器的认证配置。
 

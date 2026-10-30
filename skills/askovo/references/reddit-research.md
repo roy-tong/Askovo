@@ -18,7 +18,7 @@ Reddit's 2026 announcement on the [future of the public Data API](https://www.re
 - New self-service API access is closed under the Responsible Builder Policy; new access requires an approval request, so a study without existing approved credentials cannot assume Reddit is available — treat it as an access gap in the source plan, not a reason to switch tools.
 - The stated long-term direction is migration to the Reddit Developer Platform (Devvit), with a [migration guide](https://developers.reddit.com/docs/guides/migrate/public-api) published and migration-program participants committing by 2026-12-31.
 
-The registry pins `recheck_by: 2026-09-30` for this connector. Do not read "PRAW still works today" as "anyone can obtain access today", and do not let the transition push the study toward a blocked non-API route.
+The registry currently pins `recheck_by: 2026-12-31` for the Devvit migration re-review. The earlier **2026-09-30** date was the registration deadline for existing Data API apps, not the current registry re-review date. Do not read "PRAW still works today" as "anyone can obtain access today", and do not let the transition push the study toward a blocked non-API route.
 
 ## Adapter config
 
@@ -74,7 +74,7 @@ Use multiple sorts deliberately. `new` is closer to a recent baseline; `relevanc
 
 The independence unit is usually the thread or unique author-thread combination, not each comment. A long thread can contain useful disagreement, but fifty comments under one post are not fifty independent market confirmations.
 
-Required Reddit provenance in every askovo evidence record:
+Required Reddit provenance in every Askovo evidence record:
 
 ```text
 collection_run_id

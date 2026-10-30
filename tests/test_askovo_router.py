@@ -49,10 +49,17 @@ def complete_design(target: Path, sources: list[str]) -> None:
         reasoning = json.loads(reasoning_path.read_text(encoding="utf-8"))
         for chain in reasoning.get("chains", []):
             chain["title"] = "Synthetic product reasoning"
+            chain["status"] = "hypothesis"
+            chain["context_key"] = ""
+            chain["demand_judgment_id"] = ""
+            chain["counter_evidence_ids"] = []
+            chain["gaps"] = ["Synthetic reasoning gap"]
             chain["next_test"] = "Run a synthetic validation"
             for node_name, node in chain.get("nodes", {}).items():
                 node["statement"] = f"Synthetic {node_name} statement"
                 node["rationale"] = f"Synthetic rationale for {node_name}"
+                node["status"] = "hypothesis"
+                node["evidence_ids"] = []
         reasoning_path.write_text(json.dumps(reasoning), encoding="utf-8")
 
 
@@ -133,6 +140,12 @@ class RouterTests(unittest.TestCase):
             payload = json.loads(completed.stdout)
             self.assertEqual("hardware", payload["domain"])
             self.assertTrue((target / "study.json").is_file())
+            created_study = json.loads((target / "study.json").read_text(encoding="utf-8"))
+            self.assertEqual("2.0", created_study["product_reasoning_version"])
+            self.assertEqual(
+                ["product_manager", "user_researcher", "user_operations", "market_researcher", "market_analyst", "requirements_analyst", "business_analyst"],
+                created_study["delivery"]["audiences"],
+            )
             self.assertTrue((target / "01-sources/research-plan.md").is_file())
             self.assertTrue((target / "method-choice.json").is_file())
             self.assertTrue((target / "01-sources/platform-plan.json").is_file())
@@ -143,7 +156,7 @@ class RouterTests(unittest.TestCase):
             self.assertTrue(reasoning_path.is_file())
             reasoning = json.loads(reasoning_path.read_text(encoding="utf-8"))
             self.assertEqual(
-                ["scene", "user", "pain", "need", "feature", "product"],
+                ["scene", "user", "pain", "need", "feature", "product", "business"],
                 reasoning["flow"],
             )
             chain = run_cli("chain", str(target))
