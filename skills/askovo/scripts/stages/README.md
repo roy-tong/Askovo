@@ -136,7 +136,7 @@ python3 audit_workbook.py score \
   python3 skills/askovo/scripts/askovo.py stage audit-workbook sample --input data/processed/feedback_labeled.jsonl.gz
   ```
 
-- 接线建议（未实现，留给后续版本）：若要把 label/build 提升为一等子命令（`askovo.py label <dir>`），推荐的接线是在 `askovo.py` 里解析出 `<dir>` 后映射到 `data/raw → data/processed` 的默认路径、`config/taxonomy.json` 缺省值，再以同样的薄壳方式转发；`askovo_mcp.py` 可按需包装 `askovo_stage` 工具。做这件事时注意保持"打标=候选发现、证据=人工金标"的分层不被稀释。
+- 一等子命令（已实现）：`askovo.py label <dir>` / `askovo.py build <dir>` 解析出 `<dir>` 后映射到 `data/raw → data/processed` 的默认路径与 `config/taxonomy.json` 缺省值，显式传参优先，其余参数原样透传（相对路径相对 `<dir>` 解析）；`askovo_mcp.py` 提供 `askovo_stage` 工具包装全量转发器。分层纪律不变："打标=候选发现、证据=人工金标"不被稀释。
 
 ## 5. 纪律与边界（继承源项目与仓库约定）
 

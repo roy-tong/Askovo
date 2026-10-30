@@ -113,6 +113,17 @@ askovo check ./study --stage full
 
 `mrd.md`、`prd.md`、`brd.md` 都从同一主链渲染。`chain decided` 只记录当前产品/商业选择；`delivery`、`outcome`、`causal` 仍是独立状态。
 
+### 商业节点的两个支撑命令
+
+```bash
+askovo economics ./study                     # 单位经济投影 → 06-report/unit-economics.md
+askovo psm ./study --input pricing.csv --currency CNY   # 价格敏感度 → 06-report/pricing-psm.md
+```
+
+- `economics` 只做确定性算术：数值、单位匹配、带 source_ref 的输入才进入计算；null=未知不是零；"成本类"合计按名称匹配仅作指示。它是算术检查与补证清单，不是商业证明。
+- `psm` 计算四问交点（PMC/OPP/IDP/PME）与可接受区间；**陈述意向≠付费行为**，结果不能直接作为商业节点 validated 证据，竞品标价也不是自有定价证据。
+- 两个输出都回写主链的 `pricing`/`unit_economics_inputs`/`gaps` 之后再进入 BRD，不另建商业真值。
+
 ## 8. 方法来源
 
 - [AMA：marketing research 定义](https://www.ama.org/the-definition-of-marketing-what-is-marketing/)

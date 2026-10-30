@@ -473,6 +473,22 @@ def _load_connector_registry() -> dict[str, Any]:
     return value
 
 
+def _connector_platform_choices() -> tuple:
+    """Platform filter values for `connectors`, derived from the registry itself."""
+    try:
+        registry = _load_connector_registry()
+        platforms = sorted(
+            {
+                str(item["platform"])
+                for item in registry["connectors"]
+                if isinstance(item, dict) and not _is_missing(item.get("platform"))
+            }
+        )
+    except (OSError, json.JSONDecodeError, ValueError):
+        platforms = ["amazon", "jd", "kickstarter", "reddit", "taobao", "x", "youtube"]
+    return tuple(platforms)
+
+
 def _connector_index() -> dict[str, dict[str, Any]]:
     registry = _load_connector_registry()
     result: dict[str, dict[str, Any]] = {}
@@ -4056,10 +4072,82 @@ def command_stage(args: argparse.Namespace) -> int:
         return 2
     script = STAGES_DIR / f"{stage.replace('-', '_')}.py"
     if not script.exists():
-        print(json.dumps({"status": "error", "missing_script": str(script)}, ensure_ascii=False))
+        print(json.dumps({"status": "error", "missing_script": str(script)}), ensure_ascii=False)
         return 2
-    completed = subprocess.run([sys.executable, str(script)] + list(args.stage_args))
+    return _run_stage_script([sys.executable, str(script)] + list(args.stage_args), None)
+
+
+def _run_stage_script(argv: list, cwd) -> int:
+    """Run a stages/ script, re-emitting its output through print/stderr.
+
+    Capturing matters under MCP: the server redirects Python-level stdout,
+    so a child writing straight to fd 1 would corrupt the JSON-RPC stream.
+    """
+    completed = subprocess.run(argv, cwd=cwd, capture_output=True, text=True)
+    if completed.stdout:
+        print(completed.stdout.rstrip())
+    if completed.stderr:
+        print(completed.stderr.rstrip(), file=sys.stderr)
     return int(completed.returncode)
+
+
+def _run_stage_project(
+    script_name: str, project_dir: Path, passthrough: list, defaults: dict
+) -> int:
+    """Forward to a stages/ script with project-relative defaults (thin shell).
+
+    First-class wiring for ``askovo label/build <dir>``: the analysis project
+    dir maps to ``data/raw -> data/processed`` paths plus a
+    ``config/taxonomy.json`` default; any flag the caller passed explicitly
+    wins over the default. Relative paths in extra args resolve against the
+    project dir (the child runs with ``cwd=project_dir``).
+    """
+    if not project_dir.is_dir():
+        print(f"analysis project directory not found: {project_dir}", file=sys.stderr)
+        return 2
+    script = STAGES_DIR / script_name
+    if not script.exists():
+        print(json.dumps({"status": "error", "missing_script": str(script)}), ensure_ascii=False)
+        return 2
+    provided = set()
+    for token in passthrough:
+        if token.startswith("--"):
+            provided.add(token.split("=", 1)[0])
+    if "--taxonomy" not in provided and not (project_dir / "config" / "taxonomy.json").is_file():
+        print(
+            f"missing {project_dir / 'config' / 'taxonomy.json'}; adapt "
+            "scripts/stages/taxonomy.example.json into config/taxonomy.json for this project first",
+            file=sys.stderr,
+        )
+        return 2
+    argv = [sys.executable, str(script)]
+    for flag, value in defaults.items():
+        if flag not in provided:
+            argv += [flag, value]
+    argv += list(passthrough)
+    return _run_stage_script(argv, str(project_dir))
+
+
+def command_label(args: argparse.Namespace) -> int:
+    project_dir = Path(args.project_dir).resolve()
+    defaults = {
+        "--taxonomy": str(project_dir / "config" / "taxonomy.json"),
+        "--raw-dir": str(project_dir / "data" / "raw"),
+        "--out": str(project_dir / "data" / "processed" / "feedback_labeled.jsonl.gz"),
+        "--summary": str(project_dir / "data" / "processed" / "label_summary.json"),
+    }
+    return _run_stage_project("label_feedback.py", project_dir, list(args.stage_args), defaults)
+
+
+def command_build(args: argparse.Namespace) -> int:
+    project_dir = Path(args.project_dir).resolve()
+    defaults = {
+        "--taxonomy": str(project_dir / "config" / "taxonomy.json"),
+        "--raw-dir": str(project_dir / "data" / "raw"),
+        "--out": str(project_dir / "data" / "processed" / "feedback_primary.jsonl.gz"),
+        "--summary": str(project_dir / "data" / "processed" / "primary_summary.json"),
+    }
+    return _run_stage_project("build_primary_dataset.py", project_dir, list(args.stage_args), defaults)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -4253,6 +4341,22 @@ def build_parser() -> argparse.ArgumentParser:
     chain_parser.add_argument("study_dir")
     chain_parser.set_defaults(func=sure_engine.cli_chain)
 
+    economics_parser = subparsers.add_parser(
+        "economics",
+        help="project the business node's unit economics (arithmetic projection; null means unknown, never zero)",
+    )
+    economics_parser.add_argument("study_dir")
+    economics_parser.set_defaults(func=sure_engine.cli_economics)
+
+    psm_parser = subparsers.add_parser(
+        "psm",
+        help="van Westendorp price-sensitivity projection from a four-question CSV (stated intent, not paid behavior)",
+    )
+    psm_parser.add_argument("study_dir")
+    psm_parser.add_argument("--input", required=True, help="CSV with too_cheap/cheap/expensive/too_expensive columns")
+    psm_parser.add_argument("--currency", default="未注明币种", help="currency label for the report only")
+    psm_parser.set_defaults(func=sure_engine.cli_psm)
+
     deliver_parser = subparsers.add_parser(
         "deliver", help="assemble chain-led PM, PRD, BRD, user-operations and tracker deliverables"
     )
@@ -4316,7 +4420,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     connector_parser.add_argument(
         "--platform",
-        choices=("reddit", "x", "youtube", "amazon", "jd", "taobao", "kickstarter"),
+        choices=_connector_platform_choices(),
     )
     connector_parser.add_argument(
         "--include-blocked",
@@ -4337,13 +4441,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     stage_parser.add_argument("stage_args", nargs=argparse.REMAINDER)
     stage_parser.set_defaults(func=command_stage)
+
+    label_parser = subparsers.add_parser(
+        "label",
+        help="rule-label the raw records of an analysis project (label_feedback stage); "
+        "labels are candidate discovery, never gold evidence",
+    )
+    label_parser.add_argument("project_dir", help="analysis project dir with config/taxonomy.json and data/raw")
+    label_parser.add_argument("stage_args", nargs=argparse.REMAINDER)
+    label_parser.set_defaults(func=command_label)
+
+    build_parser = subparsers.add_parser(
+        "build",
+        help="build the primary analysis dataset of an analysis project (build-primary-dataset stage)",
+    )
+    build_parser.add_argument("project_dir", help="analysis project dir with config/taxonomy.json and data/raw")
+    build_parser.add_argument("stage_args", nargs=argparse.REMAINDER)
+    build_parser.set_defaults(func=command_build)
     return parser
 
 
 CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "do", "domains",
     "methods", "catalog", "platforms", "collect", "analyze", "instruments", "import", "queue",
-    "codebook", "chain", "deliver", "doctor", "audit", "check", "connectors", "stage",
+    "codebook", "chain", "economics", "psm", "deliver", "doctor", "audit", "check", "connectors",
+    "stage", "label", "build",
 }
 
 

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "reviewed_at": "2026-10-30",
+  "reviewed_at": "2026-10-31",
   "scope": "Open-source GitHub projects that an independent third-party researcher could inspect, fork, or wrap for Askovo studies.",
   "decisions": {
     "supported": "May be selected after study-specific platform, privacy, retention, and data-rights review.",
@@ -18,9 +18,16 @@
       "last_push_at_review": "2026-08-24",
       "tier": "official_api_client",
       "decision": "supported",
-      "allowed_access_bases": ["official_api"],
+      "allowed_access_bases": [
+        "official_api"
+      ],
       "acquisition_mechanism": "Reddit Data API through OAuth",
-      "usable_scope": ["submissions", "comments", "thread hierarchy", "subreddit routes"],
+      "usable_scope": [
+        "submissions",
+        "comments",
+        "thread hierarchy",
+        "subreddit routes"
+      ],
       "limits": [
         "Requires Reddit-approved API access and an identifiable user agent.",
         "Commercial use or research beyond permitted limits may require a separate agreement.",
@@ -50,9 +57,17 @@
       "last_push_at_review": "2026-07-02",
       "tier": "official_api_client",
       "decision": "supported",
-      "allowed_access_bases": ["official_api"],
+      "allowed_access_bases": [
+        "official_api"
+      ],
       "acquisition_mechanism": "X API",
-      "usable_scope": ["post search", "conversation IDs", "replies", "quotes", "reposts"],
+      "usable_scope": [
+        "post search",
+        "conversation IDs",
+        "replies",
+        "quotes",
+        "reposts"
+      ],
       "limits": [
         "Requires an X API tier that covers the intended search window and volume.",
         "Deletion, redistribution, privacy, and restricted-use rules still apply.",
@@ -70,9 +85,16 @@
       "last_push_at_review": "2026-08-26",
       "tier": "official_api_client",
       "decision": "supported",
-      "allowed_access_bases": ["official_api"],
+      "allowed_access_bases": [
+        "official_api"
+      ],
       "acquisition_mechanism": "YouTube Data API through Google's discovery client",
-      "usable_scope": ["video search", "channel metadata", "comment threads", "replies"],
+      "usable_scope": [
+        "video search",
+        "channel metadata",
+        "comment threads",
+        "replies"
+      ],
       "limits": [
         "Requires a Google Cloud project and YouTube Data API quota.",
         "API data refresh, deletion, display, privacy, and storage rules still apply.",
@@ -90,9 +112,18 @@
       "last_push_at_review": "2025-03-11",
       "tier": "historical_dataset_code",
       "decision": "historical_only",
-      "allowed_access_bases": ["historical_dataset"],
+      "allowed_access_bases": [
+        "historical_dataset"
+      ],
       "acquisition_mechanism": "Processing code for the McAuley Lab Amazon Reviews 2023 dataset",
-      "usable_scope": ["reviews through September 2023", "ASIN and parent ASIN", "rating", "verified purchase", "helpfulness", "item metadata"],
+      "usable_scope": [
+        "reviews through September 2023",
+        "ASIN and parent ASIN",
+        "rating",
+        "verified purchase",
+        "helpfulness",
+        "item metadata"
+      ],
       "limits": [
         "This is a historical dataset, not a live Amazon connector.",
         "The GitHub repository's MIT license covers its code; the dataset's reuse basis must be reviewed separately.",
@@ -111,9 +142,14 @@
       "last_push_at_review": "2024-07-08",
       "tier": "historical_dataset_service",
       "decision": "historical_only",
-      "allowed_access_bases": ["historical_dataset"],
+      "allowed_access_bases": [
+        "historical_dataset"
+      ],
       "acquisition_mechanism": "Self-hosted GraphQL service over Amazon Reviews 2023",
-      "usable_scope": ["review lookup by ASIN", "normalized historical review service"],
+      "usable_scope": [
+        "review lookup by ASIN",
+        "normalized historical review service"
+      ],
       "limits": [
         "It adds a query service but no newer data than the underlying historical dataset.",
         "AGPL obligations must be reviewed before modification or network deployment.",
@@ -255,6 +291,111 @@
         "The repository's MIT license does not resolve platform-data provenance or reuse rights."
       ],
       "policy_url": "https://legal.kickstarter.com/policies/en/?name=terms-of-use"
+    },
+    {
+      "id": "hackernews-api",
+      "platform": "hackernews",
+      "upstream_repo": "HackerNews/API",
+      "upstream_url": "https://github.com/HackerNews/API",
+      "reviewed_revision": "8a0528f538bca407c2ceeeefc9bee48bdb99c1c8",
+      "license": "MIT",
+      "last_push_at_review": "2025-01-01",
+      "tier": "official_api",
+      "decision": "supported",
+      "allowed_access_bases": [
+        "official_api"
+      ],
+      "acquisition_mechanism": "Official Firebase API with the public Algolia search mirror",
+      "usable_scope": [
+        "stories",
+        "comments",
+        "item hierarchy",
+        "keyword search via Algolia"
+      ],
+      "limits": [
+        "Read access needs no account, but the endpoints are rate-limited and intended for light use.",
+        "Population is Hacker News itself: technical, early-adopter, English-language skew; it cannot represent general consumers.",
+        "Deleted or flagged items may be absent; ranking affects which comments a study sees first."
+      ],
+      "policy_url": "https://github.com/HackerNews/API"
+    },
+    {
+      "id": "google-play-scraper",
+      "platform": "google_play",
+      "upstream_repo": "facundoolano/google-play-scraper",
+      "upstream_url": "https://github.com/facundoolano/google-play-scraper",
+      "reviewed_revision": "27d6af082e95e94486d46ec62cc6ec580d164475",
+      "license": "MIT",
+      "last_push_at_review": "2026-10-17",
+      "tier": "unofficial_scraper",
+      "decision": "blocked",
+      "allowed_access_bases": [],
+      "acquisition_mechanism": "Undocumented Google Play store web endpoints (no official review API)",
+      "usable_scope": [],
+      "limits": [
+        "Google publishes no general Play review API; the library automates undocumented store endpoints, outside the automated-access allowances in Google's terms.",
+        "Actively maintained MIT code does not make the route permitted. Play review acquisition stays on authorized exports (Play Console) or licensed providers."
+      ],
+      "policy_url": "https://play.google.com/about/play-terms.html"
+    },
+    {
+      "id": "app-store-scraper",
+      "platform": "app_store",
+      "upstream_repo": "facundoolano/app-store-scraper",
+      "upstream_url": "https://github.com/facundoolano/app-store-scraper",
+      "reviewed_revision": "05d59c110240104901fa47622f64a7c6ed841a3b",
+      "license": "MIT",
+      "last_push_at_review": "2025-07-27",
+      "tier": "unofficial_scraper",
+      "decision": "blocked",
+      "allowed_access_bases": [],
+      "acquisition_mechanism": "iTunes lookup plus undocumented amp-api.apps.apple.com review endpoints",
+      "usable_scope": [],
+      "limits": [
+        "Review retrieval depends on an undocumented Apple endpoint; the documented iTunes Search API terms restrict retention and caching.",
+        "App Store review acquisition stays on App Store Connect (own app only), authorized exports, or licensed providers."
+      ],
+      "policy_url": "https://developer.apple.com/legal/itunes-search-api-terms-of-use/"
+    },
+    {
+      "id": "weibo-search",
+      "platform": "weibo",
+      "upstream_repo": "dataabc/weibo-search",
+      "upstream_url": "https://github.com/dataabc/weibo-search",
+      "reviewed_revision": "b4535b71d36ae61d13ab0083a18a152914f14ba7",
+      "license": "None",
+      "last_push_at_review": "2026-06-05",
+      "tier": "unofficial_scraper",
+      "decision": "blocked",
+      "allowed_access_bases": [],
+      "acquisition_mechanism": "Weibo web/mobile page scraping for keyword search results",
+      "usable_scope": [],
+      "limits": [
+        "Fails the code gate first: the repository declares no recognized license, so reuse rights are unclear.",
+        "Weibo's service terms prohibit unauthorized automated collection; CN data and personal-information laws add compliance exposure.",
+        "Weibo stays on authorized exports or the CDP authorized-visible-page exception with its own gates."
+      ],
+      "policy_url": "https://weibo.com/terv"
+    },
+    {
+      "id": "bilibili-api-collect",
+      "platform": "bilibili",
+      "upstream_repo": "SocialSisterYi/bilibili-API-collect",
+      "upstream_url": "https://github.com/SocialSisterYi/bilibili-API-collect",
+      "reviewed_revision": "4c00347d4f3494318903eeb11fb00d7b9c1f8c68",
+      "license": "None",
+      "last_push_at_review": "2026-01-30",
+      "tier": "unofficial_scraper",
+      "decision": "blocked",
+      "allowed_access_bases": [],
+      "acquisition_mechanism": "Reverse-engineered, undocumented Bilibili client endpoints (documentation project)",
+      "usable_scope": [],
+      "limits": [
+        "The repository was archived with a deprecated default branch after the maintainer received a legal notice in January 2026.",
+        "Bilibili's user agreement prohibits reverse engineering and unauthorized interface access; community mirrors do not change the route.",
+        "Bilibili stays on authorized exports or the CDP authorized-visible-page exception with its own gates."
+      ],
+      "policy_url": "https://www.bilibili.com/blackboard/account-useragreement.html"
     }
   ]
 }

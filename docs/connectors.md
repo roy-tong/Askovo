@@ -66,19 +66,24 @@ askovo platforms "家用摄像头夜间告警的用户抱怨" --domain hardware 
 | Reddit | [PRAW](https://github.com/praw-dev/praw) | `supported` | 只走获准的 Reddit Data API；现有应用需完成 2026-09-30 登记，新申请走审批；复核用途、速率、保留与删除 |
 | X | [Tweepy](https://github.com/tweepy/tweepy) | `supported` | 只走官方 X API；API 层级必须覆盖检索窗口与规模 |
 | YouTube | [Google API Python Client](https://github.com/googleapis/google-api-python-client) | `supported` | 只走 YouTube Data API；记录配额、刷新与删除规则 |
+| Hacker News | [HackerNews/API](https://github.com/HackerNews/API) | `supported` | 官方 Firebase API（或公开 Algolia 检索镜像）；读取免账号，须声明技术圈层偏差 |
 | Amazon | [AmazonReviews2023](https://github.com/hyp1231/AmazonReviews2023) | `historical_only` | 只能研究截至 2023-09 的历史评论；代码许可与数据使用权分开复核 |
 
 ## 被阻断的路线（保留为负面审查）
 
 - X：`snscrape`、`twikit`
 - YouTube：免 API 的评论/字幕抓取器
+- Google Play：`google-play-scraper`（无官方评论 API，商店条款不允许该自动化路线；用 Play Console 导出或授权服务商）
+- App Store：`app-store-scraper`（评论来自未公开的 Apple 端点；用 App Store Connect 自有应用导出、授权导出或授权服务商）
+- B 站：`bilibili-API-collect`（逆向接口文档，2026-01 维护者收到律师函后归档；镜像不改变路线；CDP 授权可见页例外不变）
+- 微博：`weibo-search` 等（无声明许可证 + 平台条款禁止未授权自动采集；CDP 授权可见页例外不变）
 - 京东：陈旧评论爬虫
 - 淘宝/天猫：依赖扫码登录的 Playwright 爬虫
 - Kickstarter：由爬虫生成且已停止更新的数据仓库
 
 保留它们的原因：避免其他 Agent 再次搜索后误判为可用方案。
 
-目前没有可作为默认能力的 Amazon 实时评论、京东、淘宝/天猫、Kickstarter 第三方开源连接器。CLI 会让这些路线保持失败或阻断状态，**不会悄悄换成商业服务、卖家接口、登录态、内部接口或浏览器自动化**。
+目前没有可作为默认能力的 Amazon 实时评论、应用商店评论、京东、淘宝/天猫、Kickstarter 第三方开源连接器。CLI 会让这些路线保持失败或阻断状态，**不会悄悄换成商业服务、卖家接口、登录态、内部接口或浏览器自动化**。
 
 ## 查看清单
 

@@ -1,6 +1,25 @@
 # Changelog
 
 
+## 2.2.0 — 2026-10-31
+
+### Added
+
+- **First-class dataset stages**: `askovo label <dir>` / `askovo build <dir>` map an analysis project to `config/taxonomy.json` plus `data/raw → data/processed` defaults; explicitly passed flags win and everything else is passed through verbatim. MCP gains the `askovo_stage` forwarder. The layering is unchanged: rule labels are candidate discovery, evidence still requires human gold review.
+- **Business-node support commands**: `askovo economics` renders a deterministic unit-economics projection (numeric, unit-matched, source-referenced inputs only; cost-like sums are name-based and labeled indicative; null means unknown, never zero) and `askovo psm --input <csv>` renders a van Westendorp price-sensitivity projection (PMC/OPP/IDP/PME plus the acceptable range, with invalid-ordering rows rejected). PSM is stated intent, not paid behavior; neither output validates the business node by itself. Both are exposed as MCP tools (`askovo_economics`, `askovo_psm`).
+- **Connector registry expansion (2026-10-31 review)**: five new pinned decisions — `HackerNews/API` supported (official API); `google-play-scraper`, `app-store-scraper` (undocumented store/amp-api endpoints), `bilibili-API-collect` (archived after the 2026-01 legal notice to the maintainer), and `dataabc/weibo-search` (no declared license, terms-prohibited route) all blocked with reasons. `connectors --platform` choices now derive from the registry itself; app-store reviews are documented as export/licensed-provider only.
+- **Automated release workflow**: pushing a `v*` tag — or a `release/vX.Y.Z` recovery branch for an already-published tag — builds wheel/sdist from the exact tag, runs `twine check` plus isolated-venv smoke, and creates the GitHub Release with CHANGELOG notes and SHA-256 checksums.
+
+### Fixed
+
+- Version single-sourcing: the sample study's `method_version` follows `VERSION` again; the CI gate had failed on every push since the 2.1.0 bump.
+- The MCP stage forwarder now captures child-process output instead of letting it corrupt the JSON-RPC stream.
+
+### Validation
+
+- 135 tests pass on Python 3.9, covering first-class stages, unit-economics/PSM projections, the expanded registry, and the existing gates.
+
+
 ## 2.1.0 — 2026-10-31
 
 ### Added

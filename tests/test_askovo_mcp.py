@@ -240,6 +240,44 @@ class AskvoMcpServerTests(unittest.TestCase):
         )
         self.assertEqual(-32602, responses[0]["error"]["code"])
 
+    def test_stage_tool_forwards_and_validates(self) -> None:
+        responses = run_mcp(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "askovo_stage",
+                    "arguments": {"stage": "label-feedback", "args": ["--help"]},
+                },
+            },
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "askovo_stage", "arguments": {"stage": "no-such-stage"}},
+            },
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "askovo_stage",
+                    "arguments": {"stage": "audit-workbook", "args": "label-feedback"},
+                },
+            },
+        )
+        by_id = {response.get("id"): response for response in responses}
+        help_call = tool_payload(by_id[1])
+        self.assertEqual(0, help_call["exit_code"])
+        unknown = tool_payload(by_id[2])
+        self.assertEqual(2, unknown["exit_code"])
+        self.assertEqual("error", unknown["result"]["status"])
+        bad_args = by_id[3].get("error")
+        self.assertIsNotNone(bad_args)
+        self.assertEqual(-32602, bad_args["code"])
+        self.assertIn("array of strings", bad_args["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

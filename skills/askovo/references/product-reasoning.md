@@ -148,6 +148,8 @@ Discovery and delivery may run in parallel. Launch does not end discovery. These
 
 Projection mapping: **market research/analysis → MRD**, **requirements research/analysis → PRD**, **business analysis → BRD**. These are views of one chain, not three fact stores. Market estimates require population/boundary, time window, unit, formula, source, and inference scope; payment evidence distinguishes list price, stated intent, preorder, paid transaction, and renewal. Unknown values stay null with gaps, never zero.
 
+Business-node support commands: `askovo economics` renders a deterministic unit-economics projection (numeric, unit-matched, source-referenced inputs only; "cost-like" sums are name-based and indicative; arithmetic check, never commercial proof) and `askovo psm --input <csv>` renders a van Westendorp price-sensitivity projection (PMC/OPP/IDP/PME plus the acceptable range). PSM answers are stated intent, not paid behavior; neither output validates the business node by itself. Write findings back into `pricing`/`unit_economics_inputs`/`gaps`; do not create a second business truth in the reports.
+
 ## Role projections
 
 - Product manager: full chain, trade-offs, alternatives, MVP scope, non-goals, acceptance, business gate, residual risk, and final sign-off.

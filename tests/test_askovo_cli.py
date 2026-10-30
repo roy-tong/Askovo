@@ -437,6 +437,30 @@ class AskvoCliTests(unittest.TestCase):
             [item["id"] for item in json.loads(reviewed.stdout)["connectors"]],
         )
 
+    def test_new_registry_platforms_expose_their_decisions(self) -> None:
+        supported = run_cli("connectors", "--platform", "hackernews")
+        self.assertEqual(0, supported.returncode, supported.stdout + supported.stderr)
+        self.assertEqual(
+            ["hackernews-api"], [item["id"] for item in json.loads(supported.stdout)["connectors"]]
+        )
+
+        hidden = run_cli("connectors", "--platform", "google_play")
+        self.assertEqual(0, hidden.returncode, hidden.stdout + hidden.stderr)
+        self.assertEqual(0, json.loads(hidden.stdout)["count"])
+
+        reviewed = run_cli("connectors", "--platform", "google_play", "--include-blocked")
+        self.assertEqual(0, reviewed.returncode, reviewed.stdout + reviewed.stderr)
+        payload = json.loads(reviewed.stdout)["connectors"]
+        self.assertEqual({"google-play-scraper"}, {item["id"] for item in payload})
+        self.assertEqual("blocked", payload[0]["decision"])
+
+        bilibili = run_cli("connectors", "--platform", "bilibili", "--include-blocked")
+        self.assertEqual(0, bilibili.returncode, bilibili.stdout + bilibili.stderr)
+        self.assertEqual(
+            ["bilibili-api-collect"],
+            [item["id"] for item in json.loads(bilibili.stdout)["connectors"]],
+        )
+
 
 class PlanSignalsReportTests(unittest.TestCase):
     def test_plan_overseas_study_allocates_quotas_and_tasks(self) -> None:
@@ -848,6 +872,79 @@ class AuditTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn('"{{method_version}}"', template)
         self.assertNotIn("askovo 1.6", template)
+
+
+class StageProjectCommandsTests(unittest.TestCase):
+    """First-class label/build wiring: <dir> defaults, explicit-flag override, error paths."""
+
+    def setUp(self) -> None:
+        self.project = Path(tempfile.mkdtemp(prefix="askovo-stage-"))
+        self.addCleanup(shutil.rmtree, self.project, ignore_errors=True)
+        (self.project / "config").mkdir()
+        shutil.copyfile(
+            ROOT / "skills/askovo/scripts/stages/taxonomy.example.json",
+            self.project / "config" / "taxonomy.json",
+        )
+        raw = self.project / "data" / "raw"
+        raw.mkdir(parents=True)
+        records = [
+            {
+                "record_id": "r1",
+                "platform": "reddit",
+                "text": "The battery dies too fast during travel navigation",
+                "author": "u1",
+                "created_utc": 1700000000,
+            },
+            {
+                "record_id": "r2",
+                "platform": "reddit",
+                "text": "Comfortable fit and clear captions for accessibility",
+                "author": "u2",
+                "created_utc": 1700000100,
+            },
+        ]
+        (raw / "batch.jsonl").write_text(
+            "\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n",
+            encoding="utf-8",
+        )
+
+    def test_label_uses_project_defaults(self) -> None:
+        completed = run_cli("label", str(self.project))
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        self.assertTrue((self.project / "data/processed/feedback_labeled.jsonl.gz").is_file())
+        self.assertTrue((self.project / "data/processed/label_summary.json").is_file())
+
+    def test_explicit_flags_override_project_defaults(self) -> None:
+        completed = run_cli(
+            "label",
+            str(self.project),
+            "--out",
+            "exports/custom.jsonl.gz",
+            "--summary",
+            "exports/custom_summary.json",
+        )
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        self.assertTrue((self.project / "exports/custom.jsonl.gz").is_file())
+        self.assertFalse((self.project / "data/processed/feedback_labeled.jsonl.gz").exists())
+
+    def test_build_writes_primary_dataset_defaults(self) -> None:
+        completed = run_cli(
+            "build", str(self.project), "--min-quality", "0.3", "--min-relevance", "0.1"
+        )
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        self.assertTrue((self.project / "data/processed/feedback_primary.jsonl.gz").is_file())
+        self.assertTrue((self.project / "data/processed/primary_summary.json").is_file())
+
+    def test_missing_taxonomy_is_a_usage_error(self) -> None:
+        (self.project / "config" / "taxonomy.json").unlink()
+        completed = run_cli("label", str(self.project))
+        self.assertEqual(2, completed.returncode)
+        self.assertIn("taxonomy", completed.stderr)
+
+    def test_missing_project_dir_is_a_usage_error(self) -> None:
+        completed = run_cli("build", str(self.project / "nowhere"))
+        self.assertEqual(2, completed.returncode)
+        self.assertIn("not found", completed.stderr)
 
 
 if __name__ == "__main__":

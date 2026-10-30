@@ -1541,6 +1541,299 @@ def _user_ops_lines(data: dict[str, Any]) -> list[str]:
     return lines
 
 
+COST_NAME_PATTERN = re.compile(r"cost|费用|成本", re.IGNORECASE)
+
+
+def _numeric_business_value(value: Any) -> float | None:
+    """Return a float when the value is a real number; null/text stay unknown, never zero."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip().replace(",", ""))
+        except ValueError:
+            return None
+    return None
+
+
+def _chain_economics_section(chain: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
+    """Deterministic arithmetic projection of one chain's business node.
+
+    Aggregation rules stay explicit: computation happens only for numeric
+    pricing amounts and unit-matched numeric inputs with a source reference;
+    "cost-like" grouping is name-based and labeled as indicative. null means
+    unknown, never zero; no causal or commercial proof is claimed.
+    """
+    business = (chain.get("nodes") or {}).get("business") or {}
+    lines: list[str] = []
+    stats = {
+        "id": str(chain.get("id") or "chain"),
+        "title": str(chain.get("title") or ""),
+        "prices": 0,
+        "unit_matched_inputs": 0,
+        "unknown_inputs": 0,
+        "provenance_warnings": 0,
+        "computed": False,
+    }
+    lines.append(f"## {stats['id']} — {stats['title'] or '（未命名）'}")
+    lines.append("")
+    lines.append(f"- 收入模型：{business.get('revenue_model') or '未填写'}")
+    lines.append(f"- 定价假设：{business.get('pricing_hypothesis') or '未填写'}")
+    lines.append("")
+
+    prices = []
+    for entry in business.get("pricing") or []:
+        if not isinstance(entry, dict):
+            continue
+        amount = _numeric_business_value(entry.get("amount"))
+        ev = ", ".join(str(x) for x in entry.get("evidence_ids") or [])
+        lines.append(
+            f"- 定价：{entry.get('model') or '未命名'} = "
+            f"{entry.get('amount') if entry.get('amount') is not None else '未知'} "
+            f"{entry.get('currency') or ''}/{entry.get('unit') or '单位未注明'}"
+            f"（{entry.get('term') or '期限未注明'}；证据：{ev or '无'}）"
+        )
+        if amount is not None and amount > 0:
+            prices.append((entry, amount))
+    stats["prices"] = len(prices)
+    lines.append("")
+
+    inputs = [item for item in business.get("unit_economics_inputs") or [] if isinstance(item, dict)]
+    known: list[tuple[dict[str, Any], float]] = []
+    unknown: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for item in inputs:
+        value = _numeric_business_value(item.get("value"))
+        has_source = bool(str(item.get("source_ref") or "").strip())
+        if value is None:
+            unknown.append(item)
+            continue
+        if not has_source:
+            warnings.append(f"{item.get('metric') or '未命名'}：数值 {value} 缺少 source_ref，不进入计算")
+            unknown.append(item)
+            continue
+        known.append((item, value))
+    stats["unknown_inputs"] = len(unknown)
+    stats["provenance_warnings"] = len(warnings)
+
+    lines.append("### 单位经济输入（带来源的数值才可计算）")
+    lines.append("")
+    lines.append("| 输入 | 数值 | 单位 | 来源 |")
+    lines.append("|---|---|---|---|")
+    for item, value in known:
+        lines.append(
+            f"| {item.get('metric') or '未命名'} | {value:g} | {item.get('unit') or '未注明'} | "
+            f"{item.get('source_ref') or ''} |"
+        )
+    for item in unknown:
+        shown = item.get("value") if item.get("value") is not None else "未知（null 不是 0）"
+        lines.append(f"| {item.get('metric') or '未命名'} | {shown} | {item.get('unit') or '未注明'} | 未知/缺来源 |")
+    lines.append("")
+
+    for entry, amount in prices:
+        unit = str(entry.get("unit") or "").strip()
+        matched = [(item, value) for item, value in known if str(item.get("unit") or "").strip() == unit]
+        stats["unit_matched_inputs"] += len(matched)
+        model = entry.get("model") or "定价"
+        lines.append(f"### 计算：{model}（{amount:g} / {unit or '单位未注明'}）")
+        lines.append("")
+        if not matched:
+            lines.append(f"- 没有单位匹配（unit = “{unit or '未注明'}”）且带来源的数值输入；无法进行任何算术。")
+            lines.append("")
+            continue
+        cost_like = [
+            (item, value)
+            for item, value in matched
+            if COST_NAME_PATTERN.search(str(item.get("metric") or "")) or COST_NAME_PATTERN.search(str(item.get("status") or ""))
+        ]
+        for item, value in matched:
+            delta = amount - value
+            multiple = amount / value if value else None
+            multiple_text = f"；{multiple:.2f}×" if multiple is not None else ""
+            lines.append(
+                f"- {item.get('metric') or '未命名'}：{amount:g} − {value:g} = {delta:g}（单位 {unit or '未注明'}）{multiple_text}"
+            )
+        if cost_like:
+            cost_sum = sum(value for _, value in cost_like)
+            margin = (amount - cost_sum) / amount * 100 if amount else None
+            names = "、".join(str(item.get("metric")) for item, _ in cost_like)
+            lines.append("")
+            lines.append(f"- 指示性成本类合计（仅按名称匹配“cost/成本/费用”：{names}）：{cost_sum:g}")
+            if margin is not None:
+                lines.append(f"- 指示性毛利：{amount:g} − {cost_sum:g} = {amount - cost_sum:g}（{margin:.1f}%）")
+            lines.append("- 上述合计依赖输入命名与单位一致，不构成成本口径核验；财务评审独立进行。")
+            stats["computed"] = True
+        lines.append("")
+
+    if warnings:
+        lines.append("### 来源缺口")
+        lines.append("")
+        lines.extend(f"- {text}" for text in warnings)
+        lines.append("")
+    lines.append("---")
+    lines.append("")
+    return lines, stats
+
+
+def unit_economics_report(reasoning: dict[str, Any], title: str) -> tuple[str, dict[str, Any]]:
+    """Render the unit-economics projection for every chain with a business node."""
+    chains = [c for c in reasoning.get("chains", []) if isinstance(c, dict)]
+    sections: list[str] = []
+    stats: list[dict[str, Any]] = []
+    for chain in chains:
+        if not isinstance(chain.get("nodes") or {}, dict):
+            continue
+        if "business" not in (chain.get("nodes") or {}):
+            continue
+        section, chain_stats = _chain_economics_section(chain)
+        sections.extend(section)
+        stats.append(chain_stats)
+    lines = [
+        "# 单位经济投影（Unit Economics Projection）",
+        "",
+        f"> 来自产品与商业推理主链「{title}」的确定性算术投影。",
+        "> 只对 business 节点中带来源引用、单位匹配的数值输入做计算；null 表示未知，不是零。",
+        "> 本投影不构成商业证明、发布就绪或因果结论；E4/E5 商业证据、财务评审与人工决策保持独立。",
+        "",
+    ]
+    if not sections:
+        lines.append("（当前没有包含商业节点的 chain；`askovo chain` 脚手架后填写 business 节点。）")
+        lines.append("")
+    lines.extend(sections)
+    return "\n".join(lines), {"chains": stats}
+
+
+PSM_COLUMN_ALIASES: dict[str, str] = {
+    "too_cheap": "too_cheap", "toocheap": "too_cheap", "太便宜": "too_cheap",
+    "cheap": "cheap", "便宜": "cheap",
+    "expensive": "expensive", "贵": "expensive",
+    "too_expensive": "too_expensive", "tooexpensive": "too_expensive", "太贵": "too_expensive",
+}
+
+
+def _parse_psm_rows(csv_path: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Parse a van Westendorp CSV into valid rows and rejected rows."""
+    valid: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    with csv_path.open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        raw_fields = [(str(f or "").strip()) for f in (reader.fieldnames or [])]
+        mapping = {PSM_COLUMN_ALIASES.get(f.lower(), f.lower()): f for f in raw_fields}
+        missing = [key for key in ("too_cheap", "cheap", "expensive", "too_expensive") if key not in mapping]
+        if missing:
+            raise ValueError(f"PSM CSV 缺少列：{', '.join(missing)}（需要 too_cheap/cheap/expensive/too_expensive）")
+        for index, row in enumerate(reader, start=2):
+            respondent = str(row.get(mapping.get("respondent_id") or mapping.get("id") or "") or f"row{index}").strip()
+            values: dict[str, float] = {}
+            broken = False
+            for key in ("too_cheap", "cheap", "expensive", "too_expensive"):
+                number = _numeric_business_value(row.get(mapping[key]))
+                if number is None or number < 0:
+                    rejected.append({"respondent": respondent, "reason": f"{key} 非数值"})
+                    broken = True
+                    break
+                values[key] = number
+            if broken:
+                continue
+            if not (values["too_cheap"] <= values["cheap"] <= values["expensive"] <= values["too_expensive"]):
+                rejected.append({"respondent": respondent, "reason": "四价排序不满足 太便宜≤便宜≤贵≤太贵"})
+                continue
+            values["respondent"] = respondent
+            valid.append(values)
+    return valid, rejected
+
+
+def _psm_intersections(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compute van Westendorp curve intersections on the observed price grid."""
+    count = len(rows)
+    grid = sorted({row[key] for row in rows for key in ("too_cheap", "cheap", "expensive", "too_expensive")})
+
+    def share_at_or_above(key: str, price: float) -> float:
+        return sum(1 for row in rows if row[key] >= price) / count
+
+    def share_at_or_below(key: str, price: float) -> float:
+        return sum(1 for row in rows if row[key] <= price) / count
+
+    curves = {
+        "too_cheap": lambda p: share_at_or_above("too_cheap", p),
+        "cheap": lambda p: share_at_or_above("cheap", p),
+        "expensive": lambda p: share_at_or_below("expensive", p),
+        "too_expensive": lambda p: share_at_or_below("too_expensive", p),
+    }
+
+    def crossing(first: str, second: str) -> float | None:
+        """Interpolate across the sign change, spanning any zero plateau in between."""
+        last_positive: tuple[float, float] | None = None
+        last_negative: tuple[float, float] | None = None
+        for price in grid:
+            difference = curves[first](price) - curves[second](price)
+            if difference > 0:
+                if last_negative is not None:
+                    base, base_diff = last_negative
+                    return base + (price - base) * (base_diff / (base_diff - difference))
+                last_positive = (price, difference)
+            elif difference < 0:
+                if last_positive is not None:
+                    base, base_diff = last_positive
+                    return base + (price - base) * (base_diff / (base_diff - difference))
+                last_negative = (price, difference)
+        return None
+
+    return {
+        "n": count,
+        "pmc": crossing("too_cheap", "expensive"),
+        "opp": crossing("too_cheap", "too_expensive"),
+        "idp": crossing("cheap", "expensive"),
+        "pme": crossing("cheap", "too_expensive"),
+    }
+
+
+def psm_report(csv_path: Path, currency: str) -> tuple[str, dict[str, Any]]:
+    """Van Westendorp price-sensitivity projection with explicit intent boundaries."""
+    valid, rejected = _parse_psm_rows(csv_path)
+    result: dict[str, Any] = {"valid_rows": len(valid), "rejected_rows": len(rejected)}
+    lines = [
+        "# 价格敏感度（van Westendorp PSM）投影",
+        "",
+        "> 四问口径：太便宜 / 便宜 / 贵 / 太贵。交点由样本累积分布线性插值得出。",
+        "> PSM 是陈述意向，不是付费行为：结果不能直接作为商业节点 validated 证据（E4/E5 需一方付费证据），",
+        "> 竞品标价也不是自有定价证据。样本代表性、购买意向偏差与货币口径需人工评审。",
+        "",
+        f"- 输入：{csv_path.name}；有效 {len(valid)} 行，剔除 {len(rejected)} 行",
+        f"- 币种标注：{currency}",
+        "",
+    ]
+    if rejected:
+        lines.append("### 剔除行（最多列 10 条）")
+        lines.append("")
+        lines.extend(f"- {item['respondent']}：{item['reason']}" for item in rejected[:10])
+        lines.append("")
+    if valid:
+        points = _psm_intersections(valid)
+        result["intersections"] = points
+        labels = {
+            "pmc": "PMC 边际廉价点（too_cheap × expensive）",
+            "opp": "OPP 最优价格点（too_cheap × too_expensive）",
+            "idp": "IDP 无差异价格点（cheap × expensive）",
+            "pme": "PME 边际昂贵点（cheap × too_expensive）",
+        }
+        lines.append("### 交点")
+        lines.append("")
+        for key, label in labels.items():
+            value = points[key]
+            lines.append(f"- {label}：{value:.2f} {currency}" if value is not None else f"- {label}：无交点")
+        if points["pmc"] is not None and points["pme"] is not None and points["pmc"] < points["pme"]:
+            lines.append(f"- 可接受价格区间（PMC, PME）：{points['pmc']:.2f} – {points['pme']:.2f} {currency}")
+        lines.append("")
+    else:
+        result["intersections"] = None
+        lines.append("（没有有效行，无法计算交点。）")
+        lines.append("")
+    return "\n".join(lines), result
+
+
 def deliver(study_dir: Path, kind: str = "memo") -> dict[str, Any]:
     study_dir = study_dir.resolve()
     study = load_json(study_dir / "study.json")
@@ -3444,6 +3737,69 @@ def cli_codebook(args: Any) -> int:
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cli_economics(args: Any) -> int:
+    """Project the business node's unit economics; arithmetic only, never proof."""
+    try:
+        study_dir = Path(args.study_dir).resolve()
+        reasoning = load_product_reasoning(study_dir)
+        if reasoning is None:
+            raise ValueError(
+                f"missing {study_dir / '04-findings/product-reasoning.json'}; run askovo chain first"
+            )
+        study = load_json(study_dir / "study.json") if (study_dir / "study.json").is_file() else {}
+        title = str(study.get("title") or "产品推理链") if isinstance(study, dict) else "产品推理链"
+        markdown, stats = unit_economics_report(reasoning, title)
+        report = study_dir / "06-report" / "unit-economics.md"
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(markdown, encoding="utf-8")
+        result = {
+            "status": "rendered",
+            "chain_file": str(study_dir / "04-findings/product-reasoning.json"),
+            "report": str(report),
+            "chains": stats["chains"],
+            "boundary": "算术投影，不构成商业证明；null 表示未知；来源缺口需补证后重算",
+        }
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cli_psm(args: Any) -> int:
+    """Van Westendorp PSM projection from a four-question CSV export."""
+    csv_path = Path(args.input)
+    if not csv_path.is_file():
+        print(f"PSM input not found: {csv_path}", file=sys.stderr)
+        return 2
+    try:
+        study_dir = Path(args.study_dir).resolve()
+        currency = str(getattr(args, "currency", "") or "未注明币种")
+        markdown, stats = psm_report(csv_path, currency)
+        report = study_dir / "06-report" / "pricing-psm.md"
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(markdown, encoding="utf-8")
+        result = {
+            "status": "rendered",
+            "report": str(report),
+            "valid_rows": stats["valid_rows"],
+            "rejected_rows": stats["rejected_rows"],
+            "intersections": stats.get("intersections"),
+            "boundary": "陈述意向投影，不是付费行为证据；不能直接 validated 商业节点",
+        }
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    points = result.get("intersections") or {}
+    computable = [key for key in ("pmc", "opp", "idp", "pme") if points.get(key) is not None]
+    if result["valid_rows"] < 2 or not computable:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print("insufficient valid rows or no computable intersection; check the CSV and sample design", file=sys.stderr)
+        return 1
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 

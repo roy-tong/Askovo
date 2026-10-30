@@ -277,6 +277,31 @@ def _build_queue_status(arguments: dict[str, Any]) -> argparse.Namespace:
     return _namespace(study_dir=_string(arguments.get("study_dir"), "study_dir"))
 
 
+def _build_stage(arguments: dict[str, Any]) -> argparse.Namespace:
+    args_value = arguments.get("args", [])
+    if not isinstance(args_value, list) or not all(isinstance(item, str) for item in args_value):
+        raise ValueError("args must be an array of strings when provided")
+    return _namespace(
+        stage_name=_string(arguments.get("stage"), "stage"),
+        stage_args=list(args_value),
+    )
+
+
+def _build_economics(arguments: dict[str, Any]) -> argparse.Namespace:
+    return _namespace(study_dir=_string(arguments.get("study_dir"), "study_dir"))
+
+
+def _build_psm(arguments: dict[str, Any]) -> argparse.Namespace:
+    currency = arguments.get("currency", "未注明币种")
+    if not isinstance(currency, str):
+        raise ValueError("currency must be a string when provided")
+    return _namespace(
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        input=_string(arguments.get("input"), "input"),
+        currency=currency,
+    )
+
+
 def _build_analyze(arguments: dict[str, Any]) -> argparse.Namespace:
     return _namespace(
         study_dir=_string(arguments.get("study_dir"), "study_dir"),
@@ -665,6 +690,46 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {"type": "object", "properties": {"study_dir": {"type": "string"}}, "required": ["study_dir"]},
     },
     {
+        "name": "askovo_stage",
+        "description": (
+            "Forward to a consolidated dataset-pipeline stage script (label-feedback, "
+            "build-primary-dataset, audit-workbook, ...). Rule labels are candidate discovery; "
+            "evidence still requires human gold review."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "stage": {"type": "string", "enum": list(askovo_cli.STAGE_COMMANDS)},
+                "args": {"type": "array", "items": {"type": "string"}, "default": []},
+            },
+            "required": ["stage"],
+        },
+    },
+    {
+        "name": "askovo_economics",
+        "description": (
+            "Project the business node's unit economics: arithmetic over numeric, unit-matched, "
+            "source-referenced inputs only. null means unknown, never zero; not commercial proof."
+        ),
+        "inputSchema": {"type": "object", "properties": {"study_dir": {"type": "string"}}, "required": ["study_dir"]},
+    },
+    {
+        "name": "askovo_psm",
+        "description": (
+            "Van Westendorp price-sensitivity projection from a four-question CSV "
+            "(too_cheap/cheap/expensive/too_expensive). Stated intent, not paid behavior evidence."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "study_dir": {"type": "string"},
+                "input": {"type": "string", "description": "CSV file path"},
+                "currency": {"type": "string"},
+            },
+            "required": ["study_dir", "input"],
+        },
+    },
+    {
         "name": "askovo_platform_map",
         "description": (
             "Show how regions (cn/overseas/global) and platform types resolve to platforms and "
@@ -697,6 +762,9 @@ TOOL_BUILDERS = {
     "askovo_lexicon": (askovo_cli.command_lexicon, _build_lexicon),
     "askovo_report": (askovo_cli.command_report, _build_report),
     "askovo_connectors": (askovo_cli.command_connectors, _build_connectors),
+    "askovo_stage": (askovo_cli.command_stage, _build_stage),
+    "askovo_economics": (askovo_cli.sure_engine.cli_economics, _build_economics),
+    "askovo_psm": (askovo_cli.sure_engine.cli_psm, _build_psm),
 }
 
 

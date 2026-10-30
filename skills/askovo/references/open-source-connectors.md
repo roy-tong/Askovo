@@ -15,19 +15,24 @@ The registry covers acquisition code, not research conclusions. A repository may
 
 Failure at an earlier gate ends the review. Do not compensate for a failed access gate with a stronger parser or a permissive code license.
 
-## Reviewed projects as of 2026-08-27
+## Reviewed projects as of 2026-10-31
 
 | Platform | Repository | Registry decision | What it means for Askovo |
 | --- | --- | --- | --- |
 | Reddit | [praw-dev/praw](https://github.com/praw-dev/praw) | `supported` | Default OSS client when the study has approved Reddit Data API access; register the API app by 2026-09-30 and re-review after the Devvit transition |
 | X | [tweepy/tweepy](https://github.com/tweepy/tweepy) | `supported` | Default OSS client for the official X API |
 | YouTube | [googleapis/google-api-python-client](https://github.com/googleapis/google-api-python-client) | `supported` | Default OSS client for YouTube Data API search, metadata, and comment threads |
+| Hacker News | [HackerNews/API](https://github.com/HackerNews/API) | `supported` | Official Firebase API (plus the public Algolia search mirror); no account needed for reads, technical-audience skew must be stated |
 | Amazon | [hyp1231/AmazonReviews2023](https://github.com/hyp1231/AmazonReviews2023) | `historical_only` | Historical review analysis through September 2023; no current live signal |
 | Amazon | [ae9is/amazon-reviews](https://github.com/ae9is/amazon-reviews) | `historical_only` | Self-hosted GraphQL layer over the same historical dataset; AGPL review required |
 | X | [JustAnotherArchivist/snscrape](https://github.com/JustAnotherArchivist/snscrape) | `blocked` | Non-API scraper; incompatible with current X guidance and stale for current X behavior |
 | X | [d60/twikit](https://github.com/d60/twikit) | `blocked` | Uses an internal API without an official API key; maintained code does not make the route permitted |
 | YouTube | [egbertbouman/youtube-comment-downloader](https://github.com/egbertbouman/youtube-comment-downloader) | `blocked` | Comment scraping without the YouTube Data API; current YouTube policy prohibits scraped YouTube data |
 | YouTube | [jdepoix/youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api) | `blocked` | Useful codebase, but the retrieval route is outside the official Data API and is not an Askovo default |
+| Google Play | [facundoolano/google-play-scraper](https://github.com/facundoolano/google-play-scraper) | `blocked` | Actively maintained MIT scraper, but Google publishes no Play review API and the store terms do not permit this automated route; use Play Console exports or licensed providers |
+| App Store | [facundoolano/app-store-scraper](https://github.com/facundoolano/app-store-scraper) | `blocked` | Reviews come from an undocumented Apple endpoint; documented iTunes Search terms restrict retention. Use App Store Connect (own app), authorized exports, or licensed providers |
+| Bilibili | [SocialSisterYi/bilibili-API-collect](https://github.com/SocialSisterYi/bilibili-API-collect) | `blocked` | Reverse-engineered endpoint documentation, archived after a January 2026 legal notice to the maintainer; mirrors do not change the route. CDP authorized visible pages remain the exception |
+| Weibo | [dataabc/weibo-search](https://github.com/dataabc/weibo-search) | `blocked` | No declared license (code gate) and Weibo terms prohibit unauthorized automated collection. CDP authorized visible pages remain the exception |
 | JD | [2274900/JD_comment_spider](https://github.com/2274900/JD_comment_spider) | `blocked` | Old direct-endpoint scraper, not a maintained or policy-compatible current connector |
 | Taobao/Tmall | [l010306/taobao-review-playwright](https://github.com/l010306/taobao-review-playwright) | `blocked` | Automates QR login and saves session state; current platform rules prohibit unauthorized crawling and simulated use |
 | Kickstarter | [ImWhiteRabbit/KSInsights](https://github.com/ImWhiteRabbit/KSInsights) | `blocked` | Historical snapshots exist, but the feed stopped in 2025 and was produced by a crawler that conflicts with current Kickstarter terms |
@@ -41,8 +46,13 @@ Failure at an earlier gate ends the review. Do not compensate for a failed acces
 - Reddit: PRAW on approved Reddit Data API access.
 - X: Tweepy on the official X API.
 - YouTube: Google's Python API client on the YouTube Data API.
+- Hacker News: the official Firebase API (or the public Algolia mirror) for stories and comments; no third-party scraper needed.
 
 These clients solve transport and object handling. They do not solve route design, representativeness, retention, deletion, or evidence coding.
+
+### App-store reviews have no open connector route
+
+Google Play and the App Store publish no general public review API. Both dominant OSS scrapers are blocked at the access gate: `google-play-scraper` automates undocumented store endpoints, and `app-store-scraper` reads reviews from an undocumented Apple endpoint while the documented iTunes Search terms restrict retention. For store reviews, an Askovo study uses Play Console / App Store Connect exports (own app), licensed providers, or records a gap. A missing route stays a gap.
 
 Reddit's 2026 [public Data API plan](https://www.reddit.com/r/redditdev/comments/1vgbm9c/our_plans_for_the_future_of_reddits_public_data/) keeps PRAW valid for studies that already hold approved access, but existing apps must be registered by 2026-09-30, new self-service access is closed pending approval, and the long-term direction is the Developer Platform (Devvit). A study without approved Reddit credentials records a Reddit access gap; it does not downgrade to a blocked non-API route. Re-review the Reddit entry after 2026-09-30.
 

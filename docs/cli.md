@@ -18,6 +18,8 @@ askovo --help
 | `queue init/add/run/status/retry` | SQLite 队列、worker、重试、限速、断点续跑 | 0/1/2 |
 | `analyze <study>` | 归一化、去重、分布、候选主题、问题匹配 | 0/2 |
 | `chain <study>` | 生成/渲染“场景→用户→痛点→需求→特性→产品→商业”推理链 | 0/2 |
+| `economics <study>` | business 节点单位经济投影（算术投影，null=未知） | 0/2 |
+| `psm <study> --input <csv>` | van Westendorp 价格敏感度四问分析 | 0/1/2 |
 | `instruments <study>` | 生成访谈/观察/任务/感官/价格/Beta/安全工具包 | 0/2 |
 | `import <study> <file>` | 导入 JSONL/CSV/文本为证据 | 0/2 |
 | `codebook <study>` | 生成六类结论的编码本 | 0/2 |
@@ -34,6 +36,8 @@ askovo --help
 | `audit` | 主链、证据与逐条需求判断的统一审计 | 0/1/2 |
 | `plan` | 支撑入口：平台可行性、配额与补证路线 | 0/2/3 |
 | `stage <name>` | 转发到 `scripts/stages/` 数据集流水线工具 | 0/1/2 |
+| `label <dir>` | 一等命令：对分析项目 raw 记录做规则打标（候选发现，非金标证据） | 0/1/2 |
+| `build <dir>` | 一等命令：从 raw 记录构建主分析数据集（含反证 control 桶） | 0/1/2 |
 | `doctor` | 运行时、目录、研究包、平台目录、版本自检 | 0/1 |
 | `demo` | 内置样例 | 0/1/2 |
 
@@ -186,6 +190,27 @@ askovo report ./study
 `askovo report` 是用研支撑报告，写 `06-report/research-status.md`；它不与产品/商业 `deliver --kind report` 共用文件。所有交付都从同一七节点主链渲染，不另建语义真值。MRD、PRD、BRD 分别对应市场研究/分析、需求研究/分析、商业分析三条工作流，不是三个平行事实库。
 
 `check --stage design/evidence/full` 分别检查设计、证据和完整决策结构；`audit` 另输出逐条需求判断 verdict。返回 1 是合法研究状态，应修复主链/证据缺口或明确下一步，不能绕过。
+
+## label / build / stage（数据集流水线）
+
+```bash
+askovo label ./analysis-project                 # 规则打标 → data/processed/feedback_labeled.jsonl.gz
+askovo build ./analysis-project --min-quality 0.4  # 主数据集 → data/processed/feedback_primary.jsonl.gz
+askovo stage audit-workbook sample --input data/processed/feedback_labeled.jsonl.gz
+```
+
+`label`/`build` 是 `scripts/stages/` 数据集工具的一等入口：`<dir>` 是分析项目目录（与研究工作区两回事），自动映射 `config/taxonomy.json`、`data/raw → data/processed` 缺省路径，显式传参优先，其余参数原样透传。分层不变：**规则打标=候选发现，证据=人工金标（audit-workbook 抽检 + gold-set）**，打标结果不自动升级为证据。`stage <name>` 仍是全量转发器；MCP 侧对应 `askovo_stage` 工具。
+
+## economics / psm（商业节点支撑）
+
+```bash
+askovo economics ./study
+askovo psm ./study --input pricing-survey.csv --currency CNY
+```
+
+`economics` 从 business 节点的 `pricing` 与 `unit_economics_inputs` 做确定性算术投影，写 `06-report/unit-economics.md`：只对**数值、单位匹配、带 source_ref** 的输入计算；“成本类”合计仅按名称匹配（cost/成本/费用）作为指示性结果；null 表示未知不是零；缺来源的数值列出缺口不进入计算。它是算术检查，不是商业证明——E4/E5 商业证据、财务评审与人工决策独立进行。
+
+`psm` 读取四问 CSV（列名 `too_cheap/cheap/expensive/too_expensive`，也接受 太便宜/便宜/贵/太贵），剔除“太便宜≤便宜≤贵≤太贵”不成立的行，计算 PMC/OPP/IDP/PME 交点与可接受区间，写 `06-report/pricing-psm.md`。**PSM 是陈述意向，不是付费行为**：结果不能直接作为商业节点 validated 证据，竞品标价也不是自有定价证据。问卷可用 `instruments` 的价格工具包生成。
 
 ## 机器可读
 
