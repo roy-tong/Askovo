@@ -64,8 +64,8 @@ shasum -a 256 dist/*
 ## 5. 发布 GitHub Release 与分发物
 
 1. 在候选提交上创建一次 annotated tag：`git tag -a vX.Y.Z -m 'askovo vX.Y.Z'`。
-2. 推送提交和 tag，等待对应 CI 全绿。
-3. 创建 GitHub Release，使用人类可读的 CHANGELOG 摘要，上传已验证的 wheel/sdist 和 SHA-256 校验值。
+2. 推送提交和 tag，等待对应 CI 全绿。tag 推送会自动触发 `.github/workflows/release.yml`：从该 tag 检出、构建 wheel/sdist、`twine check`、隔离 venv 冒烟、从 CHANGELOG 提取该版本小节生成 Release 说明并附 SHA-256 校验值，然后创建 GitHub Release 并上传产物。
+3. 若某个已公开 tag 当年没有生成 Release（workflow 尚未存在的旧版本），不要移动 tag：推送一个指向包含 release.yml 提交的 `release/vX.Y.Z` 分支即可为旧 tag 补建 Release；成功后可删除该分支。
 4. 实测 Release 页面和产物下载，不以“tag 存在”代替 Release 核验。
 
 PyPI 是可延后但不得虚假宣传的分发渠道。若发布 PyPI，使用 Trusted Publishing 或维护者凭据，先核对项目名归属，再上传同一批已验证产物；随后从干净的源码树外环境执行 `pipx install askovo` 和 `askovo demo`，此时才能把安装文档改成 PyPI 命令。
