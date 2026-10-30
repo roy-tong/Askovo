@@ -224,3 +224,25 @@ study/
 | `boundary` | 描述性统计、不可推断总体/因果 |
 
 分析结果只用于发现候选主题与缺口，不替代编码、证据分级和人工判断。
+
+## queue.db（v1.14 采集队列）
+
+`01-sources/queue.db` 是 SQLite 队列：
+
+| 表 | 字段/用途 |
+|---|---|
+| `jobs` | id、platform、query、limit、fixture/cdp_url/url/ack_terms、status、attempts、max_attempts、next_at、lease_until、worker_id、last_error、record_count |
+| `rate_state` | platform、next_at；用于跨 worker 的按平台限速 |
+
+状态：`pending` → `running` → `done` / `retry` → `failed`。租约过期的 `running` 会被回收；`retry` 按指数退避。`queue status` 输出按状态/平台的计数与最近错误。
+
+## CDP manifest 字段
+
+CDP 采集额外记录：
+
+- `adapter: cdp`
+- `access_basis: cdp_authorized_visible_page`
+- `auth: user_browser_session`
+- `source_url`、`cdp_base`
+- `terms_note`：可见页面、无挑战绕过、平台条款可能限制
+- 命中挑战页时返回 `status: challenge`，不写入记录

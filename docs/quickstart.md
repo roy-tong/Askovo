@@ -125,6 +125,31 @@ sure analyze ./cam-study --question "夜间误报"
 
 这是描述性分析，不证明总体比例或因果。深入编码与判断仍由 Skill/研究员完成。
 
+## 可选：CDP 与队列
+
+**CDP（仅授权可见页面）**
+
+```bash
+sure collect ./cam-study --platform amazon --query "night alert" \
+  --cdp-url http://127.0.0.1:9222 \
+  --url "https://www.amazon.com/product-reviews/B0..." \
+  --ack-terms
+```
+
+需要 Chrome 以 `--remote-debugging-port=9222` 启动，且使用本人已登录 profile。命中验证码/挑战页会停止，不绕过。
+
+**队列（并发/断点/限速）**
+
+```bash
+sure queue init ./cam-study
+sure queue add ./cam-study --platform reddit --query "night alert" --limit 100
+sure queue add ./cam-study --platform github --query "camera alert" --limit 100
+sure queue run ./cam-study --workers 4
+sure queue status ./cam-study
+```
+
+失败任务会退避重试；worker 崩溃后租约过期自动回收；`queue retry` 可把 failed 重新入队。
+
 ## 第六步：编码与交付
 
 ```bash

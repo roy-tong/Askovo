@@ -1,6 +1,17 @@
 # Changelog
 
 
+## 1.14.0 — 2026-10-30
+
+- **CDP transport**: minimal stdlib WebSocket client for Chrome DevTools Protocol; `collect --cdp-url --url --ack-terms` captures only visible page text from an authorized browser session. Challenge/robot pages stop the run. Enabled for amazon, instagram, x, youtube, bilibili and weibo; blocked platforms remain blocked.
+- **Durable queue**: SQLite-backed jobs with leases, worker pool, retries/backoff, expired-lease recovery, per-platform rate limiting and persisted status. Commands: `sure queue init/add/run/status/retry`.
+- **Concurrency fixes**: unique run IDs per job, cross-process append lock, dedup under lock, CDP row dedup.
+- **Packaging**: wheel now bundles the runtime (`skills/` assets, templates and sample) under `sure_research/runtime`; `sure` and `sure-mcp` work after a normal wheel install, not only editable.
+- **MCP**: `sure_queue_add/run/status`; `sure_collect` gains `cdp_url`, `url`, `ack_terms`.
+- **Docs**: CDP terms boundary, queue operations, 23 platforms/sources.
+- Tests: 55 (queue concurrency/retry/lease, CDP frame/terms gate, plus v1.13 router/platform suites).
+
+
 ## 1.13.0 — 2026-10-30
 
 - **Single entry**: `sure "<request>"` (bare shorthand) or `sure do "<request>"` routes software / hardware / consumer / automotive / mobile requests to a method pack, lifecycle stage, claim types, risk gate and platform preview; `route` is read-only. No per-domain installs or forked protocols.

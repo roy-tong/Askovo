@@ -7,18 +7,32 @@ Standard library only. Python 3.9+.
 """
 from __future__ import annotations
 
+import base64
 import csv
 import hashlib
+import os
+import socket
+import struct
 import json
 import re
 import shutil
+import sqlite3
 import sys
+import threading
+import time
+import uuid
+from contextlib import contextmanager
 import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows fallback
+    fcntl = None
 
 HERE = Path(__file__).resolve().parent
 SKILL_ROOT = HERE.parent
@@ -55,6 +69,7 @@ HIGH_RISK_FLAGS = {
 def _read_version() -> str:
     for candidate in (
         Path(__file__).resolve().parents[3] / "VERSION",
+        Path(__file__).resolve().parents[2] / "VERSION",
         Path(__file__).resolve().parents[1] / "VERSION",
     ):
         try:
@@ -1230,6 +1245,7 @@ def platform_fit(
             "limits": platform.get("limits", []),
             "bias": platform.get("bias", []),
             "adapter": platform.get("adapter", "none"),
+            "cdp": bool(platform.get("cdp")),
             "notes": platform.get("notes", ""),
         }
         if decision == "blocked":
@@ -1283,8 +1299,9 @@ def platform_markdown(plan: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _run_id(platform: str) -> str:
-    return f"{platform}-{datetime.now().strftime('%Y%m%dT%H%M%S')}"
+def _run_id(platform: str, token: str | None = None) -> str:
+    suffix = token or uuid.uuid4().hex[:6]
+    return f"{platform}-{datetime.now().strftime('%Y%m%dT%H%M%S')}-{suffix}"
 
 
 def _hash_author(value: str) -> str:
@@ -1320,6 +1337,23 @@ def _normalize_platform_record(raw: dict[str, Any], platform: str, run_id: str, 
     }
 
 
+@contextmanager
+def _locked_file(lock_path: Path):
+    """Cross-process lock for append-only normalized/evidence files."""
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = lock_path.open("a+")
+    try:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
+
+
 def _write_run(study_dir: Path, platform: str, run_id: str, records: list[dict[str, Any]], manifest: dict[str, Any]) -> dict[str, Any]:
     raw_dir = study_dir / "02-data" / "raw" / platform
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -1328,22 +1362,23 @@ def _write_run(study_dir: Path, platform: str, run_id: str, records: list[dict[s
         for record in records:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     normalized_path = study_dir / "02-data" / "normalized.jsonl"
-    existing: set[str] = set()
-    if normalized_path.is_file():
-        for line in normalized_path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                try:
-                    existing.add(str(json.loads(line).get("record_id")))
-                except json.JSONDecodeError:
-                    continue
     added = 0
-    with normalized_path.open("a", encoding="utf-8") as handle:
-        for record in records:
-            if record["record_id"] in existing:
-                continue
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-            existing.add(record["record_id"])
-            added += 1
+    with _locked_file(normalized_path.with_suffix(".lock")):
+        existing: set[str] = set()
+        if normalized_path.is_file():
+            for line in normalized_path.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    try:
+                        existing.add(str(json.loads(line).get("record_id")))
+                    except json.JSONDecodeError:
+                        continue
+        with normalized_path.open("a", encoding="utf-8") as handle:
+            for record in records:
+                if record["record_id"] in existing:
+                    continue
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+                existing.add(record["record_id"])
+                added += 1
     manifest = dict(manifest)
     manifest.update({"run_id": run_id, "requested": manifest.get("requested", 0), "reached": len(records), "written": added, "raw_file": str(raw_path)})
     manifest_dir = study_dir / "01-sources" / "manifests"
@@ -1453,6 +1488,290 @@ def _collect_reddit(query: str, limit: int) -> list[dict[str, Any]]:
     return records
 
 
+# ---------------------------------------------------------------------------
+# CDP transport: authorized visible pages only. No challenge bypass.
+
+
+class _WebSocket:
+    """Minimal RFC6455 client for Chrome DevTools Protocol (ws:// only)."""
+
+    def __init__(self, url: str, timeout: float = 30):
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme != "ws":
+            raise ValueError(f"only ws:// CDP endpoints are supported: {url}")
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or 80
+        path = parsed.path or "/"
+        if parsed.query:
+            path += "?" + parsed.query
+        self.sock = socket.create_connection((host, port), timeout=timeout)
+        key = base64.b64encode(os.urandom(16)).decode()
+        request = (
+            f"GET {path} HTTP/1.1\r\n"
+            f"Host: {host}:{port}\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\n"
+            "Sec-WebSocket-Version: 13\r\n\r\n"
+        )
+        self.sock.sendall(request.encode())
+        response = b""
+        while b"\r\n\r\n" not in response:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                raise ConnectionError("CDP websocket handshake closed")
+            response += chunk
+        status = response.split(b"\r\n", 1)[0]
+        if b" 101 " not in status:
+            raise ConnectionError(f"CDP websocket handshake failed: {status.decode(errors='ignore')}")
+
+    def _read_exact(self, size: int) -> bytes:
+        data = b""
+        while len(data) < size:
+            chunk = self.sock.recv(size - len(data))
+            if not chunk:
+                raise ConnectionError("CDP websocket closed")
+            data += chunk
+        return data
+
+    def _send_frame(self, opcode: int, payload: bytes) -> None:
+        header = bytearray([0x80 | opcode])
+        length = len(payload)
+        if length < 126:
+            header.append(0x80 | length)
+        elif length < 65536:
+            header.append(0x80 | 126)
+            header += struct.pack("!H", length)
+        else:
+            header.append(0x80 | 127)
+            header += struct.pack("!Q", length)
+        mask = os.urandom(4)
+        masked = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
+        self.sock.sendall(bytes(header) + mask + masked)
+
+    def send_text(self, text: str) -> None:
+        self._send_frame(0x1, text.encode("utf-8"))
+
+    def recv_text(self) -> str:
+        buffer = bytearray()
+        while True:
+            first, second = self._read_exact(2)
+            fin = bool(first & 0x80)
+            opcode = first & 0x0F
+            masked = bool(second & 0x80)
+            length = second & 0x7F
+            if length == 126:
+                length = struct.unpack("!H", self._read_exact(2))[0]
+            elif length == 127:
+                length = struct.unpack("!Q", self._read_exact(8))[0]
+            mask = self._read_exact(4) if masked else b""
+            payload = self._read_exact(length) if length else b""
+            if masked:
+                payload = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
+            if opcode == 0x8:
+                raise ConnectionError("CDP websocket closed by peer")
+            if opcode == 0x9:
+                self._send_frame(0xA, payload)
+                continue
+            if opcode in (0x1, 0x2):
+                buffer = bytearray(payload)
+            elif opcode == 0x0:
+                buffer.extend(payload)
+            else:
+                continue
+            if fin:
+                return bytes(buffer).decode("utf-8", errors="replace")
+
+    def close(self) -> None:
+        try:
+            self._send_frame(0x8, b"")
+        except OSError:
+            pass
+        finally:
+            try:
+                self.sock.close()
+            except OSError:
+                pass
+
+
+class CDPClient:
+    def __init__(self, ws: _WebSocket):
+        self.ws = ws
+        self.next_id = 0
+
+    def call(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        self.next_id += 1
+        message_id = self.next_id
+        self.ws.send_text(json.dumps({"id": message_id, "method": method, "params": params or {}}))
+        while True:
+            message = json.loads(self.ws.recv_text())
+            if message.get("id") != message_id:
+                continue
+            if "error" in message:
+                raise RuntimeError(f"CDP {method} failed: {message['error']}")
+            return message.get("result") or {}
+
+    def evaluate(self, expression: str) -> Any:
+        result = self.call(
+            "Runtime.evaluate",
+            {"expression": expression, "returnByValue": True, "awaitPromise": True},
+        )
+        return (result.get("result") or {}).get("value")
+
+    def close(self) -> None:
+        self.ws.close()
+
+
+def cdp_new_page(cdp_base: str, url: str) -> str:
+    base = cdp_base.rstrip("/")
+    target = f"{base}/json/new?{urllib.parse.quote(url, safe='')}"
+    request = urllib.request.Request(target, method="PUT")
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code not in (404, 405):
+            raise
+        with urllib.request.urlopen(target, timeout=15) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    ws_url = payload.get("webSocketDebuggerUrl")
+    if not ws_url:
+        raise RuntimeError("CDP did not return a page websocket URL")
+    return str(ws_url)
+
+
+CDP_EXTRACTOR = r"""
+(() => {
+  const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
+  const bodyText = clean(document.body ? document.body.innerText : "");
+  if (/Robot Check|Enter the characters|验证码|异常流量|not a robot/i.test(bodyText)) {
+    return {error: "challenge_page"};
+  }
+  const reviews = Array.from(document.querySelectorAll('[data-hook="review"], article, [role="article"], .review'));
+  const rows = [];
+  for (const node of reviews) {
+    const pick = (sel) => clean((node.querySelector(sel) || {}).innerText || "");
+    const title = pick('[data-hook="review-title"]') || pick("h2, h3") || "";
+    const body = pick('[data-hook="review-body"]') || pick("p") || "";
+    const text = clean([title, body].filter(Boolean).join("\n"));
+    if (text.length < 35) continue;
+    const rating = pick('[data-hook="review-star-rating"]') || pick('[class*="a-icon-alt"]') || "";
+    const date = pick('[data-hook="review-date"]') || pick("time") || "";
+    const author = pick('.a-profile-name') || pick('[data-hook="review-author"]') || "";
+    const link = node.querySelector('a[href*="/review"], a[href*="/product-reviews"], a[href]');
+    rows.push({
+      title: title,
+      text: text,
+      rating: rating,
+      created_at: date,
+      author: author,
+      source_url: link ? new URL(link.getAttribute("href"), location.href).href : location.href,
+      page_url: location.href
+    });
+  }
+  if (!rows.length && bodyText.length > 80) {
+    rows.push({title: document.title, text: bodyText.slice(0, 8000), rating: "", created_at: "", author: "", source_url: location.href, page_url: location.href});
+  }
+  return {rows: rows, page_title: document.title};
+})()
+"""
+
+
+def collect_cdp(
+    study_dir: Path,
+    platform: str,
+    query: str,
+    url: str,
+    cdp_base: str,
+    ack_terms: bool,
+    limit: int = 50,
+    scrolls: int = 5,
+    wait_seconds: float = 2.5,
+) -> dict[str, Any]:
+    if not ack_terms:
+        return {
+            "status": "terms_required",
+            "platform": platform,
+            "reason": "CDP visible-page collection needs explicit --ack-terms and an authorized session",
+        }
+    entry = platform_index().get(platform)
+    if not entry or not entry.get("cdp"):
+        return {
+            "status": "cdp_not_allowed",
+            "platform": platform,
+            "reason": "CDP is only enabled for platforms with authorized visible pages (amazon/instagram/x/youtube/bilibili/weibo)",
+        }
+    if not url:
+        return {"status": "error", "platform": platform, "reason": "CDP requires --url"}
+    ws_url = cdp_new_page(cdp_base, url)
+    client = CDPClient(_WebSocket(ws_url))
+    rows: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    try:
+        client.call("Runtime.enable")
+        time.sleep(max(0.5, wait_seconds))
+        for _ in range(max(0, scrolls) + 1):
+            value = client.evaluate(CDP_EXTRACTOR)
+            if isinstance(value, dict) and value.get("error") == "challenge_page":
+                return {
+                    "status": "challenge",
+                    "platform": platform,
+                    "reason": "page shows a challenge/robot check; stop and use an authorized export instead",
+                }
+            if isinstance(value, dict) and isinstance(value.get("rows"), list):
+                for row in value["rows"]:
+                    key = hashlib.sha256(
+                        (str(row.get("source_url", "")) + str(row.get("text", ""))[:500]).encode()
+                    ).hexdigest()
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+                    rows.append(row)
+                    if len(rows) >= limit:
+                        break
+            if len(rows) >= limit:
+                break
+            client.evaluate("window.scrollBy(0, Math.max(700, Math.floor(window.innerHeight * 0.85)))")
+            time.sleep(max(0.4, wait_seconds / 2))
+    finally:
+        client.close()
+    raw_records = [
+        {
+            "id": f"{platform}:{hashlib.sha256((row.get('source_url','') + row.get('text','')[:500]).encode()).hexdigest()[:16]}",
+            "title": row.get("title") or "",
+            "text": row.get("text") or "",
+            "url": row.get("source_url") or url,
+            "author": row.get("author") or "",
+            "created_at": row.get("created_at") or "",
+            "context": "cdp_visible_page",
+            "rating": row.get("rating") or "",
+            "claim_type": "need",
+            "evidence_form": "self_report",
+        }
+        for row in rows[:limit]
+    ]
+    run_id = _run_id(platform, "cdp")
+    normalized = [_normalize_platform_record(raw, platform, run_id, query) for raw in raw_records]
+    manifest = {
+        "platform": platform,
+        "query": query,
+        "limit": limit,
+        "adapter": "cdp",
+        "access_basis": "cdp_authorized_visible_page",
+        "auth": "user_browser_session",
+        "started_at": now(),
+        "finished_at": now(),
+        "requested": limit,
+        "source_url": url,
+        "cdp_base": cdp_base,
+        "limits": entry.get("limits", []),
+        "bias": entry.get("bias", []),
+        "terms_note": "visible page text only; no challenge bypass; platform terms may still restrict collection",
+    }
+    written = _write_run(study_dir, platform, run_id, normalized, manifest)
+    return {"status": "collected", "platform": platform, "transport": "cdp", "records": len(normalized), **written}
+
+
 def collect_platform(
     study_dir: Path,
     platform: str,
@@ -1460,6 +1779,10 @@ def collect_platform(
     limit: int = 100,
     dry_run: bool = False,
     fixture: Path | None = None,
+    run_id: str | None = None,
+    cdp_url: str | None = None,
+    url: str | None = None,
+    ack_terms: bool = False,
 ) -> dict[str, Any]:
     study_dir = study_dir.resolve()
     if not (study_dir / "study.json").is_file():
@@ -1475,7 +1798,7 @@ def collect_platform(
             "reason": entry.get("notes", "blocked by platform policy"),
             "alternatives": [item["id"] for item in platform_index().values() if item.get("decision") == "supported"][:5],
         }
-    run_id = _run_id(platform)
+    run_id = run_id or _run_id(platform)
     plan = {
         "platform": platform,
         "query": query,
@@ -1487,8 +1810,15 @@ def collect_platform(
         "run_id": run_id,
         "dry_run": dry_run,
     }
+    if cdp_url:
+        plan["transport"] = "cdp"
+        plan["adapter"] = "cdp"
+        plan["url"] = url
+        plan["ack_terms"] = ack_terms
     if dry_run:
         return {"status": "planned", **plan, "next": f"sure collect {study_dir} --platform {platform} --query {query!r} --limit {limit}"}
+    if cdp_url:
+        return collect_cdp(study_dir, platform, query, url or "", cdp_url, ack_terms, limit)
     if fixture:
         raw_records: list[dict[str, Any]] = []
         suffix = fixture.suffix.lower()
@@ -1663,14 +1993,20 @@ def cli_collect(args: Any) -> int:
             limit=args.limit,
             dry_run=args.dry_run,
             fixture=Path(args.fixture) if args.fixture else None,
+            cdp_url=args.cdp_url,
+            url=args.url,
+            ack_terms=args.ack_terms,
         )
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, json.JSONDecodeError, RuntimeError, ConnectionError, urllib.error.URLError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    if result.get("status") == "blocked":
-        return 3
-    if result.get("status") in ("adapter_unavailable", "error"):
+    status = result.get("status")
+    if status == "terms_required":
+        return 4
+    if status == "cdp_not_allowed":
+        return 4
+    if status in ("blocked", "adapter_unavailable", "error", "challenge"):
         return 3
     return 0
 
@@ -1682,6 +2018,333 @@ def cli_analyze(args: Any) -> int:
         print(str(exc), file=sys.stderr)
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Durable collection queue: SQLite leases, workers, retry, rate limits
+
+
+QUEUE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    platform TEXT NOT NULL,
+    query TEXT NOT NULL,
+    limit_n INTEGER NOT NULL DEFAULT 100,
+    fixture TEXT,
+    cdp_url TEXT,
+    url TEXT,
+    ack_terms INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 3,
+    next_at REAL NOT NULL DEFAULT 0,
+    lease_until REAL NOT NULL DEFAULT 0,
+    worker_id TEXT,
+    last_error TEXT,
+    record_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS jobs_status_next ON jobs(status, next_at);
+CREATE TABLE IF NOT EXISTS rate_state (
+    platform TEXT PRIMARY KEY,
+    next_at REAL NOT NULL DEFAULT 0
+);
+"""
+
+
+class QueueStore:
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+
+    def _connect(self) -> sqlite3.Connection:
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(self.db_path), timeout=30, isolation_level=None)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+        return conn
+
+    def init(self) -> None:
+        with self._connect() as conn:
+            conn.executescript(QUEUE_SCHEMA)
+
+    def add(
+        self,
+        platform: str,
+        query: str,
+        limit: int = 100,
+        fixture: Path | None = None,
+        cdp_url: str | None = None,
+        url: str | None = None,
+        ack_terms: bool = False,
+        max_attempts: int = 3,
+    ) -> str:
+        job_id = uuid.uuid4().hex[:12]
+        stamp = now()
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO jobs (id, platform, query, limit_n, fixture, cdp_url, url, ack_terms, max_attempts, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    job_id, platform, query, limit,
+                    str(fixture) if fixture else None,
+                    cdp_url, url, 1 if ack_terms else 0, max_attempts, stamp, stamp,
+                ),
+            )
+        return job_id
+
+    def lease(self, worker_id: str, lease_seconds: float = 300) -> dict[str, Any] | None:
+        now_ts = time.time()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = conn.execute(
+                    "SELECT * FROM jobs WHERE "
+                    "(status IN ('pending','retry') AND next_at <= ?) "
+                    "OR (status = 'running' AND lease_until < ?) "
+                    "ORDER BY created_at LIMIT 1",
+                    (now_ts, now_ts),
+                ).fetchone()
+                if row is None:
+                    conn.execute("COMMIT")
+                    return None
+                conn.execute(
+                    "UPDATE jobs SET status='running', worker_id=?, lease_until=?, attempts=attempts+1, updated_at=? WHERE id=?",
+                    (worker_id, now_ts + lease_seconds, now(), row["id"]),
+                )
+                conn.execute("COMMIT")
+                result = dict(row)
+                result["attempts"] = int(result["attempts"]) + 1
+                return result
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+
+    def complete(self, job_id: str, records: int) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE jobs SET status='done', record_count=?, lease_until=0, updated_at=? WHERE id=?",
+                (records, now(), job_id),
+            )
+
+    def fail(self, job_id: str, error: str, attempts: int, max_attempts: int = 3) -> None:
+        stamp = now()
+        with self._connect() as conn:
+            if attempts >= max_attempts:
+                conn.execute(
+                    "UPDATE jobs SET status='failed', last_error=?, lease_until=0, updated_at=? WHERE id=?",
+                    (error[:2000], stamp, job_id),
+                )
+            else:
+                delay = min(300, 5 * (2 ** max(0, attempts - 1)))
+                conn.execute(
+                    "UPDATE jobs SET status='retry', last_error=?, next_at=?, lease_until=0, updated_at=? WHERE id=?",
+                    (error[:2000], time.time() + delay, stamp, job_id),
+                )
+
+    def retry_failed(self) -> int:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE jobs SET status='pending', attempts=0, next_at=0, last_error=NULL, updated_at=? WHERE status='failed'",
+                (now(),),
+            )
+            return int(cursor.rowcount or 0)
+
+    def acquire_rate(self, platform: str, min_interval: float) -> float:
+        if min_interval <= 0:
+            return 0.0
+        now_ts = time.time()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = conn.execute("SELECT next_at FROM rate_state WHERE platform=?", (platform,)).fetchone()
+                if row is None:
+                    conn.execute("INSERT INTO rate_state (platform, next_at) VALUES (?, ?)", (platform, now_ts + min_interval))
+                    wait = 0.0
+                elif row["next_at"] <= now_ts:
+                    conn.execute("UPDATE rate_state SET next_at=? WHERE platform=?", (now_ts + min_interval, platform))
+                    wait = 0.0
+                else:
+                    wait = float(row["next_at"] - now_ts)
+                conn.execute("COMMIT")
+                return wait
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+
+    def has_work(self) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM jobs WHERE status IN ('pending','retry','running')"
+            ).fetchone()
+            return bool(row and row["n"])
+
+    def status(self) -> dict[str, Any]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT status, platform, COUNT(*) AS n, SUM(record_count) AS records FROM jobs GROUP BY status, platform ORDER BY status, platform"
+            ).fetchall()
+            recent = conn.execute(
+                "SELECT id, platform, status, attempts, last_error, updated_at FROM jobs WHERE last_error IS NOT NULL ORDER BY updated_at DESC LIMIT 5"
+            ).fetchall()
+        return {
+            "db": str(self.db_path),
+            "counts": [dict(row) for row in rows],
+            "recent_errors": [dict(row) for row in recent],
+            "has_work": self.has_work(),
+        }
+
+
+DEFAULT_RATE_SECONDS = {"github": 6.0, "reddit": 2.0}
+
+
+def _rate_for(platform: str, override: float | None) -> float:
+    if override is not None:
+        return override
+    return DEFAULT_RATE_SECONDS.get(platform, 5.0)
+
+
+def run_queue(
+    study_dir: Path,
+    workers: int = 2,
+    min_interval: float | None = None,
+    lease_seconds: float = 300,
+) -> dict[str, Any]:
+    study_dir = study_dir.resolve()
+    store = QueueStore(study_dir / "01-sources" / "queue.db")
+    store.init()
+    summary = {"workers": workers, "leased": 0, "done": 0, "failed": 0, "records": 0}
+    lock = threading.Lock()
+
+    def worker(worker_id: str) -> None:
+        while True:
+            job = store.lease(worker_id, lease_seconds)
+            if job is None:
+                if not store.has_work():
+                    return
+                time.sleep(0.5)
+                continue
+            with lock:
+                summary["leased"] += 1
+            wait = store.acquire_rate(job["platform"], _rate_for(job["platform"], min_interval))
+            if wait > 0:
+                time.sleep(wait)
+            try:
+                result = collect_platform(
+                    study_dir,
+                    job["platform"],
+                    job["query"],
+                    limit=int(job["limit_n"]),
+                    fixture=Path(job["fixture"]) if job["fixture"] else None,
+                    run_id=f"job-{job['id']}",
+                    cdp_url=job["cdp_url"],
+                    url=job["url"],
+                    ack_terms=bool(job["ack_terms"]),
+                )
+                status = result.get("status")
+                if status == "collected":
+                    records = int(result.get("records", 0))
+                    store.complete(job["id"], records)
+                    with lock:
+                        summary["done"] += 1
+                        summary["records"] += records
+                else:
+                    store.fail(job["id"], json.dumps(result, ensure_ascii=False), int(job["attempts"]), int(job["max_attempts"]))
+                    with lock:
+                        summary["failed"] += 1
+            except Exception as exc:  # keep the queue alive; record the failure
+                store.fail(job["id"], f"{type(exc).__name__}: {exc}", int(job["attempts"]), int(job["max_attempts"]))
+                with lock:
+                    summary["failed"] += 1
+
+    threads = [threading.Thread(target=worker, args=(f"worker-{index+1}",), daemon=False) for index in range(max(1, workers))]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    summary["status"] = store.status()
+    return summary
+
+
+def queue_add(
+    study_dir: Path,
+    platform: str,
+    query: str,
+    limit: int = 100,
+    fixture: Path | None = None,
+    cdp_url: str | None = None,
+    url: str | None = None,
+    ack_terms: bool = False,
+    max_attempts: int = 3,
+) -> dict[str, Any]:
+    store = QueueStore(study_dir.resolve() / "01-sources" / "queue.db")
+    store.init()
+    job_id = store.add(platform, query, limit, fixture, cdp_url, url, ack_terms, max_attempts)
+    return {"status": "queued", "job_id": job_id, "db": str(store.db_path)}
+
+
+def cli_queue_init(args: Any) -> int:
+    store = QueueStore(Path(args.study_dir).resolve() / "01-sources" / "queue.db")
+    store.init()
+    print(json.dumps({"status": "initialized", "db": str(store.db_path)}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cli_queue_add(args: Any) -> int:
+    try:
+        result = queue_add(
+            Path(args.study_dir),
+            args.platform,
+            args.query,
+            limit=args.limit,
+            fixture=Path(args.fixture) if args.fixture else None,
+            cdp_url=args.cdp_url,
+            url=args.url,
+            ack_terms=args.ack_terms,
+            max_attempts=args.max_attempts,
+        )
+    except (OSError, ValueError, sqlite3.Error) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cli_queue_run(args: Any) -> int:
+    try:
+        summary = run_queue(
+            Path(args.study_dir),
+            workers=args.workers,
+            min_interval=args.min_interval,
+            lease_seconds=args.lease_seconds,
+        )
+    except (OSError, ValueError, sqlite3.Error) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0 if summary["failed"] == 0 else 1
+
+
+def cli_queue_status(args: Any) -> int:
+    store = QueueStore(Path(args.study_dir).resolve() / "01-sources" / "queue.db")
+    if not store.db_path.is_file():
+        print(f"queue not found: {store.db_path}; run `sure queue init` first", file=sys.stderr)
+        return 2
+    store.init()
+    print(json.dumps(store.status(), ensure_ascii=False, indent=2))
+    return 0
+
+
+def cli_queue_retry(args: Any) -> int:
+    store = QueueStore(Path(args.study_dir).resolve() / "01-sources" / "queue.db")
+    if not store.db_path.is_file():
+        print(f"queue not found: {store.db_path}", file=sys.stderr)
+        return 2
+    store.init()
+    count = store.retry_failed()
+    print(json.dumps({"status": "retried", "count": count}, ensure_ascii=False, indent=2))
     return 0
 
 

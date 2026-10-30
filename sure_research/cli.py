@@ -11,11 +11,21 @@ from pathlib import Path
 
 from . import __version__
 
-ROOT = Path(__file__).resolve().parent.parent
-SKILL = ROOT / "skills" / "user-demand-research"
+PACKAGE_DIR = Path(__file__).resolve().parent
+ROOT = PACKAGE_DIR.parent
+
+
+def _runtime_root() -> Path:
+    packaged = PACKAGE_DIR / "runtime"
+    if (packaged / "scripts" / "sure.py").is_file():
+        return packaged
+    return ROOT / "skills" / "user-demand-research"
+
+
+SKILL = _runtime_root()
 CLI = SKILL / "scripts" / "sure.py"
 MCP = SKILL / "scripts" / "sure_mcp.py"
-VERSION_FILE = ROOT / "VERSION"
+VERSION_FILE = PACKAGE_DIR / "VERSION" if (PACKAGE_DIR / "VERSION").is_file() else ROOT / "VERSION"
 
 USAGE = """usage: sure <command> [options]
 
@@ -58,7 +68,10 @@ def _doctor() -> int:
         ("VERSION", file_version == __version__, f"{__version__} (file: {file_version})"),
         ("sure.py", CLI.is_file(), str(CLI)),
         ("sure_mcp.py", MCP.is_file(), str(MCP)),
-        ("sample-study", (ROOT / "examples" / "sample-study" / "study.json").is_file(), ""),
+        ("sample-study", any(
+            (path / "examples" / "sample-study" / "study.json").is_file()
+            for path in (SKILL, ROOT)
+        ), ""),
         ("connector-registry", (SKILL / "assets" / "open-source-connectors.json").is_file(), ""),
         ("method-catalog", (SKILL / "assets" / "method-catalog.json").is_file(), ""),
         ("domain-packs", len(list((SKILL / "assets" / "domain-packs").glob("*.json"))) == 5, ""),

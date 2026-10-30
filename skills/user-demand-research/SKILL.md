@@ -33,6 +33,11 @@ sure deliver <study> --kind memo             # deliverable
 
 **Analysis rule**: `sure analyze` is descriptive (counts, dedup, time/platform distribution, candidate terms, matching excerpts). It does not prove prevalence, causality or demand. Deep coding, evidence grading and claim judgments remain with the Skill and a human reviewer.
 
+**Queue rule**: use `sure queue add/run` for multi-job work. Jobs are leased, retried with backoff, rate-limited per platform and resumable after a worker crash. Do not bypass a failed job by raising concurrency or lowering limits without recording why.
+
+**CDP rule**: CDP captures only visible text from a browser session the user is authorized to use. Require explicit `--ack-terms`; stop on challenge pages; never bypass CAPTCHA, robot checks, login walls, or platform controls. CDP is currently limited to amazon, instagram, x, youtube, bilibili and weibo; blocked platforms stay blocked. Platform terms may still prohibit automation; the human decides whether to proceed.
+
+
 ## Select the mode from available artifacts
 
 | What the user has | Mode | First output |

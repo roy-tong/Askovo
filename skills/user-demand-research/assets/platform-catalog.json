@@ -121,7 +121,8 @@
         "Reposts are distribution, not demand",
         "Bot/spam contamination"
       ],
-      "notes": "只走官方 API 与付费层级；不得用浏览器自动化或内部接口。"
+      "notes": "只走官方 API 与付费层级；不得用浏览器自动化或内部接口。",
+      "cdp": true
     },
     {
       "id": "youtube",
@@ -162,7 +163,8 @@
         "Comment ranking bias",
         "Video performance confounds"
       ],
-      "notes": "Official YouTube Data API；评论/元数据按配额采集，字幕与转写需权利确认。"
+      "notes": "Official YouTube Data API；评论/元数据按配额采集，字幕与转写需权利确认。",
+      "cdp": true
     },
     {
       "id": "instagram",
@@ -201,7 +203,8 @@
         "Hashtag sampling bias",
         "Deleted content missing"
       ],
-      "notes": "仅用授权创作者/企业导出或符合资格的 Meta Content Library；不做公开批量抓取。"
+      "notes": "仅用授权创作者/企业导出或符合资格的 Meta Content Library；不做公开批量抓取。",
+      "cdp": true
     },
     {
       "id": "tiktok",
@@ -280,7 +283,8 @@
         "Incentivized reviews",
         "Survivorship and listing changes"
       ],
-      "notes": "优先 Amazon Reviews 2023 历史数据集或授权导出；实时评论不做未授权抓取。"
+      "notes": "优先 Amazon Reviews 2023 历史数据集或授权导出；实时评论不做未授权抓取。",
+      "cdp": true
     },
     {
       "id": "app_store",
@@ -459,7 +463,8 @@
         "Creator/audience skew",
         "Danmaku context loss"
       ],
-      "notes": "现有转写管线仅处理本地/授权素材；平台批量采集需合规评估。"
+      "notes": "现有转写管线仅处理本地/授权素材；平台批量采集需合规评估。",
+      "cdp": true
     },
     {
       "id": "zhihu",
@@ -831,6 +836,47 @@
         "Lab-vs-field gap"
       ],
       "notes": "作为工程/安全证据引用；SURE 不生成认证结论。"
+    },
+    {
+      "id": "weibo",
+      "name": "微博",
+      "domains": [
+        "consumer",
+        "software",
+        "automotive",
+        "mobile"
+      ],
+      "data_types": [
+        "posts",
+        "comments",
+        "reposts"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance",
+        "commercial"
+      ],
+      "access_modes": [
+        "authorized_export",
+        "cdp_visible_page"
+      ],
+      "auth": "user_browser_session",
+      "bulk": "limited",
+      "freshness": "high",
+      "decision": "limited",
+      "adapter": "cdp",
+      "cdp": true,
+      "limits": [
+        "No general public bulk API",
+        "Logged-in search needed",
+        "Scraping/automation may violate terms"
+      ],
+      "bias": [
+        "Public-post reach bias",
+        "Reposts are distribution, not demand",
+        "Entertainment skew"
+      ],
+      "notes": "仅授权可见页面或导出；不做挑战页/验证码绕过。"
     }
   ]
 }

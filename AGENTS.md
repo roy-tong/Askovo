@@ -9,10 +9,10 @@ User Demand Research (SURE) ships three surfaces over one behavior: an Agent Ski
 ## Layout
 
 - `skills/user-demand-research/` — the shippable skill: `SKILL.md`, `references/`, `assets/` (method catalog, five domain packs, platform catalog, connector registry, platform map), `scripts/` (`sure.py`, `sure_kit.py`, `validate_study.py`, `sure_mcp.py`).
-- `sure_research/` — thin packaging entry (`sure`, `sure-mcp`); stage 1 is editable-install only, the runtime stays under `skills/`.
+- `sure_research/` — packaging entry (`sure`, `sure-mcp`); the wheel build copies the runtime into `sure_research/runtime` so PyPI installs are self-contained.
 - `docs/` — human-facing Chinese docs; keep in sync with README and the CLI.
 - `examples/sample-study/` — synthetic, no-network sample used by tests and the README quickstart.
-- `tests/` — `unittest` suites for CLI, router, platform planning, collection/analysis and MCP.
+- `tests/` — `unittest` suites for CLI, router, platform planning, queue concurrency/retry/lease, CDP framing/terms, collection/analysis and MCP.
 - `VERSION` — single version source; never hardcode a version elsewhere.
 
 ## Working rules

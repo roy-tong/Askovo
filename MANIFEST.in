@@ -1,0 +1,7 @@
+include VERSION
+include README.md
+include LICENSE
+recursive-include skills/user-demand-research *
+recursive-include examples/sample-study *
+recursive-include docs *
+recursive-include tests *

@@ -7,7 +7,7 @@ SURE 是 Agent 原生的研究与交付助手：说一句业务问题，它判�
 [![Agent Skill](https://img.shields.io/badge/Agent_Skill-user--demand--research-111111)](skills/user-demand-research/SKILL.md)
 [![CI](https://github.com/roy-tong/user-demand-research/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/user-demand-research/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-![Version](https://img.shields.io/badge/version-1.13.0-orange)
+![Version](https://img.shields.io/badge/version-1.14.0-orange)
 
 ## 30 秒证明它能工作
 
@@ -59,7 +59,7 @@ sure methods --domain automotive --stage validation
 sure platforms "家用摄像头夜间告警的用户抱怨" --domain hardware --bulk
 ```
 
-回答“数据在哪个平台、能不能合规拿到、能证明什么”。内置 22 类平台/来源，包括 GitHub、Reddit、X、YouTube、Instagram、TikTok、Amazon、App Store、Google Play、Hacker News、Stack Overflow、Bilibili、知乎、小红书、京东、淘宝、Kickstarter，以及访谈、问卷、工单、遥测、实验室报告。
+回答“数据在哪个平台、能不能合规拿到、能证明什么”。内置 23 类平台/来源，包括 GitHub、Reddit、X、YouTube、Instagram、TikTok、Amazon、App Store、Google Play、Hacker News、Stack Overflow、Bilibili、微博、知乎、小红书、京东、淘宝、Kickstarter，以及访谈、问卷、工单、遥测、实验室报告。
 
 平台结论分三档：`supported`、`limited`、`blocked`。Instagram/Amazon 等没有通用批量接口的，会明确要求授权导出/研究 API/历史数据集，不做未授权抓取。
 
@@ -78,6 +78,36 @@ sure analyze ./study --question "夜间误报"
 - 每次采集写 manifest：平台、查询、配额、访问依据、条数、限制、偏差
 - 规模化按查询/时间/子版块分片，多次 run，按 `record_id` 跨 run 去重
 - `analyze` 做归一化、去重、平台/时间/结论类型分布、高频候选主题与问题匹配片段；**描述性统计，不证明总体或因果**
+
+### CDP：授权可见页面
+
+```bash
+# 先启动一个带调试端口的 Chrome，并用你本人已登录的 profile
+# /Applications/Google Chrome.app/Contents/MacOS/Google Chrome #   --remote-debugging-port=9222 --user-data-dir=/tmp/sure-profile
+
+sure collect ./study --platform amazon --query "night alert" \
+  --cdp-url http://127.0.0.1:9222 \
+  --url "https://www.amazon.com/product-reviews/B0..." \
+  --ack-terms
+```
+
+- 只抓当前页面**可见文本**；不绕过验证码/挑战页，不伪造指纹；
+- `--ack-terms` 必须由人确认：平台条款、账号授权、数据用途与保留；
+- 当前仅对 amazon、instagram、x、youtube、bilibili、weibo 开放；blocked 平台仍不开放；
+- 命中挑战页立即停止，manifest 记录 `challenge`。
+
+### 队列：并发、断点、限速
+
+```bash
+sure queue init ./study
+sure queue add ./study --platform reddit --query "night alert" --limit 100
+sure queue add ./study --platform github --query "camera alert" --limit 100
+sure queue run ./study --workers 4
+sure queue status ./study
+sure queue retry ./study
+```
+
+SQLite 租约 + 多 worker；进程崩溃后租约过期自动回收；失败退避重试；按平台限速；每次 job 独立 manifest 与 raw。适用于单机多进程/多 worker；跨机器共享需要外部队列（未内置）。
 
 ### 4. 交付
 

@@ -2185,9 +2185,18 @@ def _render_audit_md(payload: dict[str, Any]) -> str:
 
 def command_demo(args: argparse.Namespace) -> int:
     """Run the bundled synthetic sample in a temporary directory."""
-    source = Path(__file__).resolve().parents[3] / "examples" / "sample-study"
-    if not source.is_dir():
-        print(f"bundled sample not found at {source}", file=sys.stderr)
+    source = next(
+        (
+            candidate for candidate in (
+                Path(__file__).resolve().parents[3] / "examples" / "sample-study",
+                Path(__file__).resolve().parents[1] / "examples" / "sample-study",
+            )
+            if candidate.is_dir()
+        ),
+        None,
+    )
+    if source is None:
+        print("bundled sample not found in this installation", file=sys.stderr)
         return 2
     with tempfile.TemporaryDirectory() as tmp:
         target = Path(tmp) / "sample-study"
@@ -3702,6 +3711,9 @@ def build_parser() -> argparse.ArgumentParser:
     collect_parser.add_argument("--limit", type=int, default=100)
     collect_parser.add_argument("--dry-run", action="store_true")
     collect_parser.add_argument("--fixture", help="local JSONL/CSV fixture for offline collection")
+    collect_parser.add_argument("--cdp-url", help="Chrome DevTools endpoint, e.g. http://127.0.0.1:9222")
+    collect_parser.add_argument("--url", help="authorized visible page URL for CDP")
+    collect_parser.add_argument("--ack-terms", action="store_true", help="acknowledge platform terms and authorized session")
     collect_parser.set_defaults(func=sure_kit.cli_collect)
 
     analyze_parser = subparsers.add_parser(
@@ -3738,6 +3750,37 @@ def build_parser() -> argparse.ArgumentParser:
     deliver_parser.add_argument("study_dir")
     deliver_parser.add_argument("--kind", choices=("memo", "report", "prd", "tracker"), default="memo")
     deliver_parser.set_defaults(func=sure_kit.cli_deliver)
+
+    queue_parser = subparsers.add_parser(
+        "queue", help="durable collection queue: init/add/run/status/retry"
+    )
+    queue_sub = queue_parser.add_subparsers(dest="queue_command", required=True)
+    queue_init = queue_sub.add_parser("init", help="create the SQLite queue")
+    queue_init.add_argument("study_dir")
+    queue_init.set_defaults(func=sure_kit.cli_queue_init)
+    queue_add = queue_sub.add_parser("add", help="enqueue a collection job")
+    queue_add.add_argument("study_dir")
+    queue_add.add_argument("--platform", required=True)
+    queue_add.add_argument("--query", required=True)
+    queue_add.add_argument("--limit", type=int, default=100)
+    queue_add.add_argument("--fixture")
+    queue_add.add_argument("--cdp-url")
+    queue_add.add_argument("--url", help="CDP target page URL")
+    queue_add.add_argument("--ack-terms", action="store_true")
+    queue_add.add_argument("--max-attempts", type=int, default=3)
+    queue_add.set_defaults(func=sure_kit.cli_queue_add)
+    queue_run = queue_sub.add_parser("run", help="run workers until the queue drains")
+    queue_run.add_argument("study_dir")
+    queue_run.add_argument("--workers", type=int, default=2)
+    queue_run.add_argument("--min-interval", type=float, default=None, help="override per-platform seconds")
+    queue_run.add_argument("--lease-seconds", type=float, default=300)
+    queue_run.set_defaults(func=sure_kit.cli_queue_run)
+    queue_status = queue_sub.add_parser("status", help="show queue counts and recent errors")
+    queue_status.add_argument("study_dir")
+    queue_status.set_defaults(func=sure_kit.cli_queue_status)
+    queue_retry = queue_sub.add_parser("retry", help="move failed jobs back to pending")
+    queue_retry.add_argument("study_dir")
+    queue_retry.set_defaults(func=sure_kit.cli_queue_retry)
 
     doctor_parser = subparsers.add_parser("doctor", help="check catalog, packs, method refs and version")
     doctor_parser.set_defaults(func=sure_kit.cli_doctor)
@@ -3790,7 +3833,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "do", "domains",
-    "methods", "catalog", "platforms", "collect", "analyze", "instruments", "import",
+    "methods", "catalog", "platforms", "collect", "analyze", "instruments", "import", "queue",
     "codebook", "deliver", "doctor", "audit", "check", "connectors", "stage",
 }
 

@@ -14,7 +14,8 @@ sure --help
 | `do "<需求>"` | **单入口**：路由 + 生成研究计划、方法选择、证据计划、工具包 | 0/2/4 |
 | `route "<需求>"` | 只路由，不写文件 | 0/2 |
 | `platforms "<需求>"` | 平台雷达：数据在哪、能否合规拿到、能证明什么 | 0/2 |
-| `collect <study>` | 运行采集适配器/本地导出，写 manifest 与 normalized | 0/2/3 |
+| `collect <study>` | 运行采集适配器/本地导出/CDP，写 manifest 与 normalized | 0/2/3/4 |
+| `queue init/add/run/status/retry` | SQLite 队列、worker、重试、限速、断点续跑 | 0/1/2 |
 | `analyze <study>` | 归一化、去重、分布、候选主题、问题匹配 | 0/2 |
 | `instruments <study>` | 生成访谈/观察/任务/感官/价格/Beta/安全工具包 | 0/2 |
 | `import <study> <file>` | 导入 JSONL/CSV/文本为证据 | 0/2 |
@@ -36,7 +37,7 @@ sure --help
 | 1 | 证据或命题门禁未过（合法研究状态） |
 | 2 | 用法、数据或环境错误 |
 | 3 | 没有可行平台/适配器，必须报告缺口 |
-| 4 | 安全/伦理门未通过，禁止进入执行 |
+| 4 | 安全/伦理门未通过，或 CDP 条款未确认，禁止进入执行 |
 
 ## do
 
@@ -77,6 +78,8 @@ sure collect ./study --platform github --query "camera motion alert" --limit 100
 sure collect ./study --platform reddit --query "night alert" --limit 100
 sure collect ./study --platform reddit --query "night alert" --limit 100 --fixture export.jsonl
 sure collect ./study --platform github --query "..." --dry-run
+sure collect ./study --platform amazon --query "night alert" \
+  --cdp-url http://127.0.0.1:9222 --url "https://www.amazon.com/product-reviews/B0..." --ack-terms
 ```
 
 - GitHub：官方 Search API；`GITHUB_TOKEN` 可选。
@@ -85,6 +88,42 @@ sure collect ./study --platform github --query "..." --dry-run
 - 其他平台没有内置适配器时返回 `3`，并给出导入/授权导出路径。
 - `blocked` 平台直接返回 `3`，不提供绕过方式。
 - 每次采集写 `01-sources/manifests/<run_id>.json`，原始记录写 `02-data/raw/<platform>/`，归一化记录追加 `02-data/normalized.jsonl`。
+
+### CDP（授权可见页面）
+
+```bash
+sure collect ./study --platform amazon --query "night alert" \
+  --cdp-url http://127.0.0.1:9222 \
+  --url "https://www.amazon.com/product-reviews/B0..." \
+  --ack-terms
+```
+
+- 需要 Chrome 以 `--remote-debugging-port=9222` 启动，且使用你本人已登录的 profile；
+- 只抓当前页面可见文本；命中验证码/机器人检查立即停止；
+- `--ack-terms` 是人工确认平台条款、账号授权、用途与保留；没有它返回 `4`；
+- 仅 amazon/instagram/x/youtube/bilibili/weibo 开放；blocked 平台不开放；
+- 不伪造指纹、不绕验证码、不做无限翻页。
+
+## queue
+
+```bash
+sure queue init ./study
+sure queue add ./study --platform reddit --query "night alert" --limit 100
+sure queue add ./study --platform github --query "camera alert" --limit 100 --max-attempts 3
+sure queue add ./study --platform amazon --query "night" --cdp-url http://127.0.0.1:9222 --url "..." --ack-terms
+sure queue run ./study --workers 4
+sure queue status ./study
+sure queue retry ./study
+```
+
+队列是 SQLite（`01-sources/queue.db`）：
+
+- `jobs`：平台、查询、配额、fixture/CDP 参数、尝试次数、租约、错误；
+- worker 用租约抢占，崩溃后租约过期自动回收；
+- 失败按 5s/10s/20s… 退避重试，超过 `max_attempts` 标 failed；
+- 按平台限速（默认 GitHub 6s、Reddit 2s、其他 5s），可用 `--min-interval` 覆盖；
+- 每个 job 独立 run id、raw 文件与 manifest；`normalized.jsonl` 跨进程加锁去重；
+- 单机多进程/多 worker 可用；跨机器共享 SQLite 不可靠，需要外部队列。
 
 ## analyze
 

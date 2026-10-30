@@ -236,4 +236,50 @@ export SURE_REDDIT_USER_AGENT="sure-research/1.13 by <you>"
 
 ### MCP 看不到 `sure_route` / `sure_do`
 
-运行 `sure --version`，应为 1.13.0 或更高；`sure mcp` 应返回 19 个工具。旧版本需重新安装。
+运行 `sure --version`，应为 1.14.0 或更高；`sure mcp` 应返回 22 个工具。旧版本需重新安装。
+
+## CDP
+
+### `terms_required` / 退出码 4
+
+CDP 需要显式确认：
+
+```bash
+sure collect ./study --platform amazon --query "..." \
+  --cdp-url http://127.0.0.1:9222 --url "https://..." --ack-terms
+```
+
+`--ack-terms` 表示你已确认平台条款、账号授权、数据用途与保留。Agent 不应替用户加。
+
+### `cdp_not_allowed`
+
+CDP 只对 amazon、instagram、x、youtube、bilibili、weibo 开放；其他平台走官方 API、授权导出或本地数据集。
+
+### CDP 连接失败
+
+- Chrome 是否以 `--remote-debugging-port=9222` 启动；
+- `curl http://127.0.0.1:9222/json/version` 是否返回浏览器信息；
+- 是否使用了正确的 `--user-data-dir`（Chrome 136+ 默认 profile 会忽略调试端口）；
+- 页面是否要求登录：CDP 使用你当前浏览器的登录态，但不会替你登录。
+
+### `challenge`
+
+页面出现验证码/机器人检查。SURE 会停止，不绕过；改用授权导出/官方 API/历史数据集。
+
+## 队列
+
+### 任务一直 `retry`
+
+`queue status` 看 `last_error`。常见原因：fixture 路径不存在、平台认证失败、CDP 连接失败。修复外部条件后 `queue retry` 再 `queue run`。
+
+### worker 崩溃后任务卡在 `running`
+
+租约（默认 300 秒）过期后，下一次 `queue run` 会自动回收；也可等待或 `queue retry`（只重置 failed，不重置 running）。
+
+### 并发写坏 `normalized.jsonl`
+
+v1.14 起使用 cross-process lock 与锁内去重；如果仍看到重复，检查是否运行了旧版本（`sure --version`）。
+
+### 想跨机器跑
+
+当前队列是单机 SQLite；跨机器共享 SQLite 不可靠。需要外部队列/对象存储适配器，未内置。

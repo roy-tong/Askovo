@@ -236,7 +236,37 @@ def _build_collect(arguments: dict[str, Any]) -> argparse.Namespace:
         limit=limit,
         dry_run=bool(arguments.get("dry_run", True)),
         fixture=_optional_string(arguments, "fixture"),
+        cdp_url=_optional_string(arguments, "cdp_url"),
+        url=_optional_string(arguments, "url"),
+        ack_terms=bool(arguments.get("ack_terms", False)),
     )
+
+
+def _build_queue_add(arguments: dict[str, Any]) -> argparse.Namespace:
+    return _namespace(
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        platform=_string(arguments.get("platform"), "platform"),
+        query=_string(arguments.get("query"), "query"),
+        limit=int(arguments.get("limit", 100)),
+        fixture=_optional_string(arguments, "fixture"),
+        cdp_url=_optional_string(arguments, "cdp_url"),
+        url=_optional_string(arguments, "url"),
+        ack_terms=bool(arguments.get("ack_terms", False)),
+        max_attempts=int(arguments.get("max_attempts", 3)),
+    )
+
+
+def _build_queue_run(arguments: dict[str, Any]) -> argparse.Namespace:
+    return _namespace(
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        workers=int(arguments.get("workers", 2)),
+        min_interval=arguments.get("min_interval"),
+        lease_seconds=float(arguments.get("lease_seconds", 300)),
+    )
+
+
+def _build_queue_status(arguments: dict[str, Any]) -> argparse.Namespace:
+    return _namespace(study_dir=_string(arguments.get("study_dir"), "study_dir"))
 
 
 def _build_analyze(arguments: dict[str, Any]) -> argparse.Namespace:
@@ -522,6 +552,9 @@ TOOLS: list[dict[str, Any]] = [
                 "limit": {"type": "integer", "minimum": 1, "default": 100},
                 "dry_run": {"type": "boolean", "default": True},
                 "fixture": {"type": "string", "description": "local JSONL/CSV for offline collection"},
+                "cdp_url": {"type": "string", "description": "Chrome DevTools endpoint, e.g. http://127.0.0.1:9222"},
+                "url": {"type": "string", "description": "authorized visible page URL for CDP"},
+                "ack_terms": {"type": "boolean", "default": False},
             },
             "required": ["study_dir", "platform", "query"],
         },
@@ -581,6 +614,44 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "sure_queue_add",
+        "description": "Enqueue a durable collection job. Supports fixtures, CDP visible pages (ack_terms required), retries.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "study_dir": {"type": "string"},
+                "platform": {"type": "string"},
+                "query": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "default": 100},
+                "fixture": {"type": "string"},
+                "cdp_url": {"type": "string"},
+                "url": {"type": "string"},
+                "ack_terms": {"type": "boolean", "default": False},
+                "max_attempts": {"type": "integer", "minimum": 1, "default": 3},
+            },
+            "required": ["study_dir", "platform", "query"],
+        },
+    },
+    {
+        "name": "sure_queue_run",
+        "description": "Run the durable queue with N workers, leases, retries and per-platform rate limits until it drains.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "study_dir": {"type": "string"},
+                "workers": {"type": "integer", "minimum": 1, "default": 2},
+                "min_interval": {"type": "number", "description": "override per-platform seconds; 0 for tests"},
+                "lease_seconds": {"type": "number", "default": 300},
+            },
+            "required": ["study_dir"],
+        },
+    },
+    {
+        "name": "sure_queue_status",
+        "description": "Show queue counts, records and recent errors.",
+        "inputSchema": {"type": "object", "properties": {"study_dir": {"type": "string"}}, "required": ["study_dir"]},
+    },
+    {
         "name": "sure_platform_map",
         "description": (
             "Show how regions (cn/overseas/global) and platform types resolve to platforms and "
@@ -601,6 +672,9 @@ TOOL_BUILDERS = {
     "sure_deliver": (sure.sure_kit.cli_deliver, _build_deliver),
     "sure_methods": (sure.sure_kit.cli_methods, _build_methods),
     "sure_domains": (sure.sure_kit.cli_domains, _build_domains),
+    "sure_queue_add": (sure.sure_kit.cli_queue_add, _build_queue_add),
+    "sure_queue_run": (sure.sure_kit.cli_queue_run, _build_queue_run),
+    "sure_queue_status": (sure.sure_kit.cli_queue_status, _build_queue_status),
     "sure_plan": (sure.command_plan, _build_plan),
     "sure_init": (sure.command_init, _build_init),
     "sure_check": (sure.command_check, _build_check),

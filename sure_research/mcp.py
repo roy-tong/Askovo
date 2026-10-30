@@ -5,8 +5,10 @@ import runpy
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-MCP = ROOT / "skills" / "user-demand-research" / "scripts" / "sure_mcp.py"
+PACKAGE_DIR = Path(__file__).resolve().parent
+ROOT = PACKAGE_DIR.parent
+PACKAGED = PACKAGE_DIR / "runtime" / "scripts" / "sure_mcp.py"
+MCP = PACKAGED if PACKAGED.is_file() else ROOT / "skills" / "user-demand-research" / "scripts" / "sure_mcp.py"
 
 
 def main() -> None:
