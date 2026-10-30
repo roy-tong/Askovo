@@ -13,6 +13,8 @@ askovo 是面向**软件、硬件、消费品、汽车、手机**五类产品经
 
 数据收集、描述性分析、访谈、实验、证据分级和平台连接都只是支撑步骤：它们用于验证某个节点或推导关系，不能代替产品与商业推理本身。
 
+AI 研究工具的产出，每一句听起来都同样自信——有据的和编的看起来一样，签字的人看不出哪句能信。askovo 给每条结论标证据等级（E0–E5）；结论超出证据时，`askovo audit` 直接说出来，退出码 1 可以进 CI。
+
 [![Agent Skill](https://img.shields.io/badge/Agent_Skill-Askovo-111111)](skills/askovo/SKILL.md)
 [![CI](https://github.com/roy-tong/askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/askovo/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
@@ -20,9 +22,7 @@ askovo 是面向**软件、硬件、消费品、汽车、手机**五类产品经
 ## 30 秒证明它能工作
 
 ```bash
-git clone https://github.com/roy-tong/askovo.git
-cd askovo
-pipx install --editable .
+pipx install git+https://github.com/roy-tong/askovo.git
 askovo do "家用摄像头夜间告警误报，想验证样机" --dry-run
 askovo demo
 ```
