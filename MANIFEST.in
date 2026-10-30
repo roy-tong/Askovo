@@ -1,7 +1,8 @@
 include VERSION
 include README.md
 include LICENSE
-recursive-include skills/user-demand-research *
+recursive-include skills/askovo *
 recursive-include examples/sample-study *
 recursive-include docs *
+recursive-include assets *
 recursive-include tests *

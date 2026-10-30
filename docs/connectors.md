@@ -1,11 +1,11 @@
 # 平台与连接器
 
-SURE 先判断**数据在哪个平台、能不能合规拿到、拿到后能证明什么**，再谈采集。
+askovo 先判断**数据在哪个平台、能不能合规拿到、拿到后能证明什么**，再谈采集。
 
 ## 平台雷达
 
 ```bash
-sure platforms "家用摄像头夜间告警的用户抱怨" --domain hardware --bulk
+askovo platforms "家用摄像头夜间告警的用户抱怨" --domain hardware --bulk
 ```
 
 内置 23 类平台/来源：GitHub、Reddit、X、YouTube、Instagram、TikTok、Amazon、App Store、Google Play、Hacker News、Stack Overflow、Bilibili、微博、知乎、小红书、京东、淘宝、Kickstarter，以及访谈、问卷、工单、遥测、实验室报告。
@@ -25,14 +25,14 @@ sure platforms "家用摄像头夜间告警的用户抱怨" --domain hardware --
 
 - `supported`：有官方 API、第一方数据或合规历史数据集；
 - `limited`：需要授权、研究资格、合作方或历史数据，批量能力有限；
-- `blocked`：没有合规批量通道；SURE 只接受授权导出或人工整理，不做未授权抓取。
+- `blocked`：没有合规批量通道；askovo 只接受授权导出或人工整理，不做未授权抓取。
 
 ### 当前内置采集适配器
 
 | 平台 | 通道 | 环境变量 |
 |---|---|---|
 | GitHub | 官方 Search API | `GITHUB_TOKEN`（可选，提高限额） |
-| Reddit | 官方 Data API | `SURE_REDDIT_CLIENT_ID` / `SURE_REDDIT_CLIENT_SECRET` / `SURE_REDDIT_USER_AGENT` |
+| Reddit | 官方 Data API | `ASKOVO_REDDIT_CLIENT_ID` / `ASKOVO_REDDIT_CLIENT_SECRET` / `ASKOVO_REDDIT_USER_AGENT` |
 | 本地 fixture/授权导出 | JSONL/CSV | — |
 
 其他平台（Instagram、Amazon、X、TikTok、App Store 等）当前没有内置批量适配器，`collect` 会返回 `3` 并给出导入/授权导出路径。原因不是“技术做不到”，而是没有合规的通用批量接口。
@@ -83,8 +83,8 @@ sure platforms "家用摄像头夜间告警的用户抱怨" --domain hardware --
 ## 查看清单
 
 ```bash
-sure connectors
-sure connectors --platform x --include-blocked
+askovo connectors
+askovo connectors --platform x --include-blocked
 ```
 
 输出是 JSON，包含每个连接器的 `decision`、`license`、`reviewed_revision`、`access_basis`、`limits` 与 `prerequisites`。
@@ -114,9 +114,9 @@ Reddit 的 2026 公共 Data API 过渡会改变研究访问方式：现有应用
 
 详细规则见：
 
-- [开源连接器审查](../skills/user-demand-research/references/open-source-connectors.md)
-- [连接器输出合同](../skills/user-demand-research/references/connector-contract.md)
-- 平台细则：[Reddit](../skills/user-demand-research/references/reddit-research.md) · [X](../skills/user-demand-research/references/x-research.md) · [YouTube](../skills/user-demand-research/references/youtube-research.md) · [Amazon](../skills/user-demand-research/references/amazon-research.md) · [京东](../skills/user-demand-research/references/jd-research.md) · [淘宝](../skills/user-demand-research/references/taobao-research.md) · [Kickstarter](../skills/user-demand-research/references/kickstarter-research.md)
+- [开源连接器审查](../skills/askovo/references/open-source-connectors.md)
+- [连接器输出合同](../skills/askovo/references/connector-contract.md)
+- 平台细则：[Reddit](../skills/askovo/references/reddit-research.md) · [X](../skills/askovo/references/x-research.md) · [YouTube](../skills/askovo/references/youtube-research.md) · [Amazon](../skills/askovo/references/amazon-research.md) · [京东](../skills/askovo/references/jd-research.md) · [淘宝](../skills/askovo/references/taobao-research.md) · [Kickstarter](../skills/askovo/references/kickstarter-research.md)
 
 ## 规模化采集
 
@@ -128,14 +128,14 @@ Reddit 的 2026 公共 Data API 过渡会改变研究访问方式：现有应用
 - 跨 run 的重复记录在 `normalized.jsonl` 按 `record_id` 去重。
 - 先小样 pilot，估算有效产出、重复率与边际新主题，再放量；不要用“条数”替代代表性。
 
-当前 CLI 是单进程、配额受限的采集器；大规模并行需要外部 worker/队列，SURE 负责计划、manifest、去重与证据口径，不把并发伪装成研究质量。
+当前 CLI 是单进程、配额受限的采集器；大规模并行需要外部 worker/队列，askovo 负责计划、manifest、去重与证据口径，不把并发伪装成研究质量。
 
 ## CDP 受限传输层
 
 对于没有通用批量 API、但你可以用本人浏览器合法查看的页面，提供 CDP（Chrome DevTools Protocol）传输：
 
 ```bash
-sure collect ./study --platform amazon --query "night alert" \
+askovo collect ./study --platform amazon --query "night alert" \
   --cdp-url http://127.0.0.1:9222 \
   --url "https://www.amazon.com/product-reviews/B0..." \
   --ack-terms
@@ -148,6 +148,6 @@ sure collect ./study --platform amazon --query "night alert" \
 - 不伪造指纹、不用代理池、不做无限翻页；
 - `--ack-terms` 必须由人确认平台条款、账号授权、数据用途与保留；
 - 当前开放：amazon、instagram、x、youtube、bilibili、weibo；blocked 平台（小红书/知乎/京东/淘宝/Kickstarter）仍不开放；
-- 平台条款可能仍然禁止自动化采集；SURE 只提供技术通道和留痕，不替用户承担合规判断。
+- 平台条款可能仍然禁止自动化采集；askovo 只提供技术通道和留痕，不替用户承担合规判断。
 
 适配器与传输是两回事：GitHub/Reddit 走官方 API；Amazon/Instagram 等优先授权导出/历史数据集，CDP 是受限兜底；本地 fixture 永远可用（授权导出）。

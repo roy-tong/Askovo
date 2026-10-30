@@ -1,10 +1,10 @@
 # CLI 参考
 
-`sure` 只有一个入口。所有产品类型、方法、采集与分析能力都从同一行命令路由，不需要为软件/硬件/消费/汽车/手机分别安装。
+`askovo` 只有一个入口。所有产品类型、方法、采集与分析能力都从同一行命令路由，不需要为软件/硬件/消费/汽车/手机分别安装。
 
 ```bash
-sure --version
-sure --help
+askovo --version
+askovo --help
 ```
 
 ## 命令总览
@@ -42,13 +42,13 @@ sure --help
 ## do
 
 ```bash
-sure do "家用摄像头夜间告警误报，想验证样机"
-sure do "手机相机夜景和续航" --study ./phone-study
-sure do "汽车开放道路接管测试" --ack-risk
+askovo do "家用摄像头夜间告警误报，想验证样机"
+askovo do "手机相机夜景和续航" --study ./phone-study
+askovo do "汽车开放道路接管测试" --ack-risk
 ```
 
 - 自动识别产品领域、阶段、意图与风险。
-- 默认创建 `./sure-<domain>-<stage>`；`--study` 指定路径。
+- 默认创建 `./askovo-<domain>-<stage>`；`--study` 指定路径。
 - `--dry-run` 只输出路由，不写文件。
 - 检测到道路试验、摄入/皮肤接触、儿童、敏感数据等风险时返回 `4`；只有负责人完成审查后加 `--ack-risk` 才生成计划。
 - `--domain/--stage/--intent` 可覆盖自动识别。
@@ -56,8 +56,8 @@ sure do "汽车开放道路接管测试" --ack-risk
 ## route
 
 ```bash
-sure route "SaaS 订阅留存下降" --json
-sure route "座舱语音接管" --domain automotive --stage validation
+askovo route "SaaS 订阅留存下降" --json
+askovo route "座舱语音接管" --domain automotive --stage validation
 ```
 
 输出：domain、stage、intent、risk_flags、safety_gate、recommended_methods、alternatives、decisions、deliverables、platform_preview、next_commands。
@@ -65,8 +65,8 @@ sure route "座舱语音接管" --domain automotive --stage validation
 ## platforms
 
 ```bash
-sure platforms "家用摄像头夜间告警的用户抱怨" --domain hardware --bulk
-sure platforms "SaaS 用户在 GitHub 和论坛上的抱怨" --domain software --claim-type need
+askovo platforms "家用摄像头夜间告警的用户抱怨" --domain hardware --bulk
+askovo platforms "SaaS 用户在 GitHub 和论坛上的抱怨" --domain software --claim-type need
 ```
 
 输出推荐平台、适配分、访问方式、批量能力、限制、偏差，以及不可直接采集的平台与原因。`--bulk` 优先支持批量的来源。
@@ -74,16 +74,16 @@ sure platforms "SaaS 用户在 GitHub 和论坛上的抱怨" --domain software -
 ## collect
 
 ```bash
-sure collect ./study --platform github --query "camera motion alert" --limit 100
-sure collect ./study --platform reddit --query "night alert" --limit 100
-sure collect ./study --platform reddit --query "night alert" --limit 100 --fixture export.jsonl
-sure collect ./study --platform github --query "..." --dry-run
-sure collect ./study --platform amazon --query "night alert" \
+askovo collect ./study --platform github --query "camera motion alert" --limit 100
+askovo collect ./study --platform reddit --query "night alert" --limit 100
+askovo collect ./study --platform reddit --query "night alert" --limit 100 --fixture export.jsonl
+askovo collect ./study --platform github --query "..." --dry-run
+askovo collect ./study --platform amazon --query "night alert" \
   --cdp-url http://127.0.0.1:9222 --url "https://www.amazon.com/product-reviews/B0..." --ack-terms
 ```
 
 - GitHub：官方 Search API；`GITHUB_TOKEN` 可选。
-- Reddit：官方 Data API；需要 `SURE_REDDIT_CLIENT_ID`、`SURE_REDDIT_CLIENT_SECRET`、可选 `SURE_REDDIT_USER_AGENT`。
+- Reddit：官方 Data API；需要 `ASKOVO_REDDIT_CLIENT_ID`、`ASKOVO_REDDIT_CLIENT_SECRET`、可选 `ASKOVO_REDDIT_USER_AGENT`。
 - `--fixture`：离线 JSONL/CSV，用于授权导出、历史数据集和测试。
 - 其他平台没有内置适配器时返回 `3`，并给出导入/授权导出路径。
 - `blocked` 平台直接返回 `3`，不提供绕过方式。
@@ -92,7 +92,7 @@ sure collect ./study --platform amazon --query "night alert" \
 ### CDP（授权可见页面）
 
 ```bash
-sure collect ./study --platform amazon --query "night alert" \
+askovo collect ./study --platform amazon --query "night alert" \
   --cdp-url http://127.0.0.1:9222 \
   --url "https://www.amazon.com/product-reviews/B0..." \
   --ack-terms
@@ -107,13 +107,13 @@ sure collect ./study --platform amazon --query "night alert" \
 ## queue
 
 ```bash
-sure queue init ./study
-sure queue add ./study --platform reddit --query "night alert" --limit 100
-sure queue add ./study --platform github --query "camera alert" --limit 100 --max-attempts 3
-sure queue add ./study --platform amazon --query "night" --cdp-url http://127.0.0.1:9222 --url "..." --ack-terms
-sure queue run ./study --workers 4
-sure queue status ./study
-sure queue retry ./study
+askovo queue init ./study
+askovo queue add ./study --platform reddit --query "night alert" --limit 100
+askovo queue add ./study --platform github --query "camera alert" --limit 100 --max-attempts 3
+askovo queue add ./study --platform amazon --query "night" --cdp-url http://127.0.0.1:9222 --url "..." --ack-terms
+askovo queue run ./study --workers 4
+askovo queue status ./study
+askovo queue retry ./study
 ```
 
 队列是 SQLite（`01-sources/queue.db`）：
@@ -128,7 +128,7 @@ sure queue retry ./study
 ## analyze
 
 ```bash
-sure analyze ./study --question "夜间误报"
+askovo analyze ./study --question "夜间误报"
 ```
 
 输出 `04-findings/analysis.json` 与 `analysis.md`：
@@ -141,7 +141,7 @@ sure analyze ./study --question "夜间误报"
 ## instruments
 
 ```bash
-sure instruments ./study
+askovo instruments ./study
 ```
 
 按所选方法生成：访谈提纲、观察表、任务脚本、概念测试、感官/HUT 协议、价格问卷、Beta 协议、现场/驾驶协议、测试矩阵、RMA 表、货架测试、无障碍检查、专家审阅、授权说明。已存在的文件不覆盖。
@@ -149,9 +149,9 @@ sure instruments ./study
 ## import / codebook / deliver
 
 ```bash
-sure import ./study interviews.jsonl --source-family interview --claim-type need
-sure codebook ./study
-sure deliver ./study --kind memo
+askovo import ./study interviews.jsonl --source-family interview --claim-type need
+askovo codebook ./study
+askovo deliver ./study --kind memo
 ```
 
 `deliver --kind`：
@@ -166,8 +166,8 @@ sure deliver ./study --kind memo
 所有命令输出 JSON 或 Markdown；错误写 stderr。适合：
 
 ```bash
-sure route "手机相机续航" --json | jq '.recommended_methods[].id'
-sure platforms "..." --json | jq '.recommended[] | {id, decision, bulk}'
+askovo route "手机相机续航" --json | jq '.recommended_methods[].id'
+askovo platforms "..." --json | jq '.recommended[] | {id, decision, bulk}'
 ```
 
 ## 环境变量
@@ -175,7 +175,7 @@ sure platforms "..." --json | jq '.recommended[] | {id, decision, bulk}'
 | 变量 | 用途 |
 |---|---|
 | `GITHUB_TOKEN` | 提高 GitHub API 限额；公开数据可不填 |
-| `SURE_REDDIT_CLIENT_ID` / `SURE_REDDIT_CLIENT_SECRET` | Reddit 官方 Data API |
-| `SURE_REDDIT_USER_AGENT` | Reddit 要求的可识别 User-Agent |
+| `ASKOVO_REDDIT_CLIENT_ID` / `ASKOVO_REDDIT_CLIENT_SECRET` | Reddit 官方 Data API |
+| `ASKOVO_REDDIT_USER_AGENT` | Reddit 要求的可识别 User-Agent |
 
 所有平台采集必须遵守平台条款、速率限制、数据权利与保留规则。没有合规通道时只接受授权导出/历史数据集。

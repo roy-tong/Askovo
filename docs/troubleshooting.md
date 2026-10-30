@@ -2,11 +2,11 @@
 
 ## 安装
 
-### `sure: command not found`
+### `askovo: command not found`
 
-- `pipx install sure-research` 后确认 `~/.local/bin` 在 `PATH`；
-- 源码安装用 `.venv/bin/sure`，或先 `source .venv/bin/activate`；
-- 不要直接 `python3 skills/.../sure.py` 当作日常入口，它不暴露 `--version` 之外的包行为。
+- `pipx install askovo` 后确认 `~/.local/bin` 在 `PATH`；
+- 源码安装用 `.venv/bin/askovo`，或先 `source .venv/bin/activate`；
+- 不要直接 `python3 skills/askovo/scripts/askovo.py` 当作日常入口，它不暴露 `--version` 之外的包行为。
 
 ### `pip install -e .` 失败
 
@@ -20,12 +20,12 @@ python3 -m venv .venv
 
 若仍失败，检查 `pyproject.toml` 是否在仓库根、`VERSION` 文件是否存在。
 
-### `sure: runtime not found`
+### `askovo: runtime not found`
 
-说明 `sure_research` 找到了，但仓库里的 `skills/user-demand-research/scripts/sure.py` 不在预期位置。阶段 1 的包装依赖 editable 安装；重新执行：
+说明 `askovo` 找到了，但仓库里的 `skills/askovo/scripts/askovo.py` 不在预期位置。阶段 1 的包装依赖 editable 安装；重新执行：
 
 ```bash
-pipx install --editable /path/to/user-demand-research
+pipx install --editable /path/to/askovo
 ```
 
 ## 版本
@@ -33,7 +33,7 @@ pipx install --editable /path/to/user-demand-research
 ### 审计报告出现版本警告
 
 ```text
-- 方法版本：`SURE 1.6`（⚠ study records SURE 1.6; current runtime is 1.12.0）
+- 方法版本：`askovo 1.6`（⚠ study records askovo 1.6; current runtime is 2.0.0）
 ```
 
 说明 study 是旧版本创建的。处理方式：
@@ -42,13 +42,13 @@ pipx install --editable /path/to/user-demand-research
 - 旧研究：把 `study.json` 的 `method_version` 改成当前版本，并在变更记录里注明；
 - 不要忽略这条警告——审计链依赖版本可追溯。
 
-### `sure --version` 与 `VERSION` 不一致
+### `askovo --version` 与 `VERSION` 不一致
 
 `doctor` 会同时显示包版本与 `VERSION` 文件版本。不一致说明安装的是旧包：
 
 ```bash
-sure doctor
-pipx reinstall sure-research
+askovo doctor
+pipx reinstall askovo
 ```
 
 ## 门禁
@@ -106,46 +106,46 @@ pipx reinstall sure-research
 ### 客户端连不上
 
 ```bash
-sure mcp
+askovo mcp
 ```
 
-应该是一个等待 stdin 的进程。若命令立即退出，先跑 `sure doctor`。
+应该是一个等待 stdin 的进程。若命令立即退出，先跑 `askovo doctor`。
 
 配置示例：
 
 ```json
 {
   "mcpServers": {
-    "sure-research": {
-      "command": "sure",
+    "askovo": {
+      "command": "askovo",
       "args": ["mcp"]
     }
   }
 }
 ```
 
-如果客户端不支持 `sure` 在 PATH 中，写绝对路径：
+如果客户端不支持 `askovo` 在 PATH 中，写绝对路径：
 
 ```json
-{"command": "/Users/you/.local/bin/sure", "args": ["mcp"]}
+{"command": "/Users/you/.local/bin/askovo", "args": ["mcp"]}
 ```
 
-### `tools/list` 里没有 `sure_audit`
+### `tools/list` 里没有 `askovo_audit`
 
-说明运行的是旧版本。`sure --version` 应为 1.12.0 或更高；`pipx reinstall sure-research`。
+说明运行的是旧版本。`askovo --version` 应为 2.0.0 或更高；`pipx reinstall askovo`。
 
 ## 平台与编码
 
 - Python 3.9–3.12；不使用 3.10+ 语法；
 - Windows 原生终端对 UTF-8 输出可能需要 `chcp 65001`；
-- 采集需要平台 API 资格，与 SURE 安装无关，见 [连接器](connectors.md)；
+- 采集需要平台 API 资格，与 askovo 安装无关，见 [连接器](connectors.md)；
 - 所有命令不写入仓库外的路径，study 目录由你显式传入。
 
 ## 还是不通
 
 带上三样东西提 issue：
 
-1. `sure --version` 与 `sure doctor` 输出；
+1. `askovo --version` 与 `askovo doctor` 输出；
 2. 复现命令（去掉凭据与真实数据）；
 3. `05-audit/audit.json` 里相关的 `checks` 片段。
 
@@ -156,17 +156,17 @@ sure mcp
 没有识别出产品类型。加显式领域：
 
 ```bash
-sure do "..." --domain software|hardware|consumer|automotive|mobile
+askovo do "..." --domain software|hardware|consumer|automotive|mobile
 ```
 
-也可以先跑 `sure domains` 看五个研究包。
+也可以先跑 `askovo domains` 看五个研究包。
 
 ### 阶段识别不符合预期
 
 用 `--stage` 覆盖：
 
 ```bash
-sure do "..." --stage discovery|concept|prototype|validation|pricing|prelaunch|postlaunch|audit
+askovo do "..." --stage discovery|concept|prototype|validation|pricing|prelaunch|postlaunch|audit
 ```
 
 典型误区：“验证某方向值不值得做”应走 discovery；“验证原型是否达到发布门槛”才是 validation。
@@ -192,8 +192,8 @@ Agent 不应自行加 `--ack-risk`。
 该平台没有内置批量适配器。改用：
 
 ```bash
-sure collect ./study --platform amazon --fixture amazon-export.jsonl --query "..."
-sure import ./study export.csv --source-family amazon
+askovo collect ./study --platform amazon --fixture amazon-export.jsonl --query "..."
+askovo import ./study export.csv --source-family amazon
 ```
 
 或使用平台官方/授权 API；不要换成未授权抓取。
@@ -211,9 +211,9 @@ sure import ./study export.csv --source-family amazon
 需要已批准的 Reddit Data API 应用：
 
 ```bash
-export SURE_REDDIT_CLIENT_ID=...
-export SURE_REDDIT_CLIENT_SECRET=...
-export SURE_REDDIT_USER_AGENT="sure-research/1.13 by <you>"
+export ASKOVO_REDDIT_CLIENT_ID=...
+export ASKOVO_REDDIT_CLIENT_SECRET=...
+export ASKOVO_REDDIT_USER_AGENT="askovo/2.0 by <you>"
 ```
 
 ### 采集成功但 `analyze` 没有数据
@@ -234,9 +234,9 @@ export SURE_REDDIT_USER_AGENT="sure-research/1.13 by <you>"
 
 这是模板骨架。先补 `study.json` 的决策/假设/证伪/样本理由，导入证据，再重新生成；`deliver` 不会替你做结论。
 
-### MCP 看不到 `sure_route` / `sure_do`
+### MCP 看不到 `askovo_route` / `askovo_do`
 
-运行 `sure --version`，应为 1.14.0 或更高；`sure mcp` 应返回 22 个工具。旧版本需重新安装。
+运行 `askovo --version`，应为 2.0.0 或更高；`askovo mcp` 应返回 22 个工具。旧版本需重新安装。
 
 ## CDP
 
@@ -245,7 +245,7 @@ export SURE_REDDIT_USER_AGENT="sure-research/1.13 by <you>"
 CDP 需要显式确认：
 
 ```bash
-sure collect ./study --platform amazon --query "..." \
+askovo collect ./study --platform amazon --query "..." \
   --cdp-url http://127.0.0.1:9222 --url "https://..." --ack-terms
 ```
 
@@ -264,7 +264,7 @@ CDP 只对 amazon、instagram、x、youtube、bilibili、weibo 开放；其他�
 
 ### `challenge`
 
-页面出现验证码/机器人检查。SURE 会停止，不绕过；改用授权导出/官方 API/历史数据集。
+页面出现验证码/机器人检查。askovo 会停止，不绕过；改用授权导出/官方 API/历史数据集。
 
 ## 队列
 
@@ -278,7 +278,7 @@ CDP 只对 amazon、instagram、x、youtube、bilibili、weibo 开放；其他�
 
 ### 并发写坏 `normalized.jsonl`
 
-v1.14 起使用 cross-process lock 与锁内去重；如果仍看到重复，检查是否运行了旧版本（`sure --version`）。
+从 1.14 起使用 cross-process lock 与锁内去重；如果仍看到重复，检查是否运行了旧版本（`askovo --version`）。
 
 ### 想跨机器跑
 

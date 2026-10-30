@@ -1,6 +1,6 @@
 # 数据契约
 
-SURE 的所有判断都建立在文件契约上。目录固定、字段可追溯，才能被 `audit` 和下游复用。
+askovo 的所有判断都建立在文件契约上。目录固定、字段可追溯，才能被 `audit` 和下游复用。
 
 ## 目录
 
@@ -44,7 +44,7 @@ study/
 {
   "study_id": "ai-glasses-2026",
   "title": "AI 眼镜用户不满",
-  "method_version": "1.12.0",
+  "method_version": "2.0.0",
   "decision": {
     "question": "是否值得为远程协作做一款新品",
     "owner": "产品负责人",
@@ -124,11 +124,11 @@ study/
 | `gaps` | 已知缺口 |
 | `next_test` | 最便宜的补证 |
 
-`sure audit` 会逐条核对引用是否存在、链条是否闭合；声称 `validated` 但缺链的会标为 `exceeds_evidence`。
+`askovo audit` 会逐条核对引用是否存在、链条是否闭合；声称 `validated` 但缺链的会标为 `exceeds_evidence`。
 
 ## signals.json
 
-由 `sure signals` 生成，包含：
+由 `askovo signals` 生成，包含：
 
 - `record_count`、`unique_record_ids`、`normalized_duplicate_rate`
 - `evidence_levels`、`corpus_roles`、`role_level_matrix`
@@ -139,7 +139,7 @@ study/
 
 ## audit.json
 
-由 `sure audit` 生成，关键字段：
+由 `askovo audit` 生成，关键字段：
 
 | 字段 | 说明 |
 | --- | --- |
@@ -151,7 +151,7 @@ study/
 | `next_actions[]` | 按优先级排序的补证动作 |
 | `version_warning` | study 记录的版本与当前运行时不一致时的警告 |
 
-完整 schema 与字段级约束见 [../skills/user-demand-research/references/data-contract.md](../skills/user-demand-research/references/data-contract.md)。
+完整 schema 与字段级约束见 [../skills/askovo/references/data-contract.md](../skills/askovo/references/data-contract.md)。
 
 ## route.json（v1.13 单入口路由）
 
@@ -171,7 +171,7 @@ study/
 | `platform_preview` | 平台适配分、可用性、批量能力 |
 | `next_commands` | 下一步命令 |
 
-`sure do` 还会写 `01-sources/platform-plan.json`，保存推荐平台、适配分、访问方式、限制与阻断平台。
+`askovo do` 还会写 `01-sources/platform-plan.json`，保存推荐平台、适配分、访问方式、限制与阻断平台。
 
 ## platform-catalog 与 platform manifest
 

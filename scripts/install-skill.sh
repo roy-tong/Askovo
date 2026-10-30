@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the SURE skill into a local agent skills directory.
+# Install the askovo skill into a local agent skills directory.
 #
 #   bash scripts/install-skill.sh                 # ~/.agents/skills
 #   bash scripts/install-skill.sh ~/.codex/skills
@@ -8,9 +8,9 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SOURCE="$REPO_ROOT/skills/user-demand-research"
+SOURCE="$REPO_ROOT/skills/askovo"
 TARGET_ROOT="${1:-$HOME/.agents/skills}"
-TARGET="$TARGET_ROOT/user-demand-research"
+TARGET="$TARGET_ROOT/askovo"
 
 if [[ ! -f "$SOURCE/SKILL.md" ]]; then
   echo "error: skill not found at $SOURCE" >&2
@@ -36,6 +36,6 @@ ln -s "$SOURCE" "$TARGET"
 echo "installed: $TARGET -> $SOURCE"
 echo
 echo "next:"
-echo "  sure --version"
-echo "  sure demo"
-echo "  ask your agent: 使用 \$user-demand-research，先跑 sure \"<需求>\" 路由"
+echo "  askovo --version"
+echo "  askovo demo"
+echo "  ask your agent: 使用 \$askovo，先跑 askovo \"<需求>\" 路由"

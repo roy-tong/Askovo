@@ -1,0 +1,4 @@
+interface:
+  display_name: "askovo"
+  short_description: "Build auditable demand evidence and decisions"
+  default_prompt: "Use $askovo to create a stage-gated study for this product decision, including the source plan, evidence rules, audit checks, and next falsification test. For any platform source, select only a non-blocked GitHub OSS connector from the registry, pin its revision, write the access and data-rights basis, and apply the platform hierarchy gates."

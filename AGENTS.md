@@ -1,16 +1,17 @@
 # AGENTS.md
 
-Instructions for coding agents working inside this repository. If you arrived as a research-execution agent (a user asked you to run a demand study), the capability entry is [`skills/user-demand-research/SKILL.md`](skills/user-demand-research/SKILL.md) — read that instead of editing code.
+Instructions for coding agents working inside this repository. If you arrived as a research-execution agent (a user asked you to run a demand study), the capability entry is [`skills/askovo/SKILL.md`](skills/askovo/SKILL.md) — read that instead of editing code.
 
 ## What this repository is
 
-User Demand Research (SURE) ships three surfaces over one behavior: an Agent Skill (research judgment and protocol), a deterministic CLI (`sure.py`), and a stdlib-only MCP server (`sure_mcp.py`). Do not fork behavior between the three: CLI commands are the source of truth; the Skill holds judgment rules; the MCP server only wraps CLI command functions.
+askovo ships three surfaces over one behavior: an Agent Skill (research judgment and protocol), a deterministic CLI (`askovo.py`), and a stdlib-only MCP server (`askovo_mcp.py`). Do not fork behavior between the three: CLI commands are the source of truth; the SURE engine (`sure_engine.py`) holds the research logic; the MCP server only wraps CLI command functions.
 
 ## Layout
 
-- `skills/user-demand-research/` — the shippable skill: `SKILL.md`, `references/`, `assets/` (method catalog, five domain packs, platform catalog, connector registry, platform map), `scripts/` (`sure.py`, `sure_kit.py`, `validate_study.py`, `sure_mcp.py`).
-- `sure_research/` — packaging entry (`sure`, `sure-mcp`); the wheel build copies the runtime into `sure_research/runtime` so PyPI installs are self-contained.
-- `docs/` — human-facing Chinese docs; keep in sync with README and the CLI.
+- `skills/askovo/` — the shippable skill: `SKILL.md`, `references/`, `assets/` (method catalog, five domain packs, platform catalog, connector registry, platform map), `scripts/` (`askovo.py`, `sure_engine.py`, `validate_study.py`, `askovo_mcp.py`).
+- `askovo/` — packaging entry (`askovo`, `askovo-mcp`); the wheel build copies the runtime into `askovo/runtime` so PyPI installs are self-contained.
+- `docs/` — human-facing Chinese docs; keep in sync with README and the CLI. `docs/sure-engine.md` is the SURE engine boundary.
+- `assets/brand/` — askovo wordmark and 600px README preview.
 - `examples/sample-study/` — synthetic, no-network sample used by tests and the README quickstart.
 - `tests/` — `unittest` suites for CLI, router, platform planning, queue concurrency/retry/lease, CDP framing/terms, collection/analysis and MCP.
 - `VERSION` — single version source; never hardcode a version elsewhere.
@@ -18,7 +19,8 @@ User Demand Research (SURE) ships three surfaces over one behavior: an Agent Ski
 ## Working rules
 
 - Python standard library only, and keep compatibility with Python 3.9 (the local floor) through 3.12 (CI). No `match` statements; keep `from __future__ import annotations`.
-- One entry only: new domains/methods go into `assets/domain-packs/` and `assets/method-catalog.json`, never into a new CLI/skill per domain. `sure do` is the public entry; `sure_kit.py` owns routing and scaffolding.
+- One entry only: new domains/methods go into `assets/domain-packs/` and `assets/method-catalog.json`, never into a new CLI/skill per domain. `askovo do` is the public entry; `sure_engine.py` owns routing and scaffolding.
+- Brand boundary: **askovo is the product** (CLI/Skill/MCP/package); **SURE is the research engine** (`sure_engine.py`, docs). Do not reintroduce `sure` as a public command or tool prefix.
 - Run the full suite before any commit: `python3 -m unittest discover -s tests`.
 - Never commit study outputs: `05-audit/latest.*`, `06-report/`, generated studies, credentials, or collected platform content. The sample study is synthetic by design.
 - Registry changes (`assets/open-source-connectors.json`, `assets/platform-catalog.json`) must state access mode, license/terms, bulk capability, bias and the reason; blocked entries stay deliberately negative. Update the catalog date and add a CHANGELOG line.

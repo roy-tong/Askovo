@@ -9,27 +9,27 @@
 ## 安装一次
 
 ```bash
-git clone https://github.com/roy-tong/user-demand-research.git
-cd user-demand-research
+git clone https://github.com/roy-tong/askovo.git
+cd askovo
 python3 -m venv .venv
 .venv/bin/pip install -U pip
 .venv/bin/pip install -e .
-.venv/bin/sure --version
+.venv/bin/askovo --version
 ```
 
 或：
 
 ```bash
 pipx install --editable .
-sure --version
+askovo --version
 ```
 
-不需要为不同产品类型安装不同 skill/CLI；同一个 `sure` 路由五类产品。
+不需要为不同产品类型安装不同 skill/CLI；同一个 `askovo` 路由五类产品。
 
 ## 第一步：路由一个需求
 
 ```bash
-sure do "家用摄像头夜间告警误报，想验证样机" --dry-run
+askovo do "家用摄像头夜间告警误报，想验证样机" --dry-run
 ```
 
 输出会说明：
@@ -44,7 +44,7 @@ sure do "家用摄像头夜间告警误报，想验证样机" --dry-run
 ## 第二步：生成研究计划与工具包
 
 ```bash
-sure do "家用摄像头夜间告警误报，想验证样机" --study ./cam-study
+askovo do "家用摄像头夜间告警误报，想验证样机" --study ./cam-study
 ```
 
 生成：
@@ -65,7 +65,7 @@ method-choice.json
 ## 第三步：判断数据在哪
 
 ```bash
-sure platforms "家用摄像头夜间告警的用户抱怨" --domain hardware --bulk
+askovo platforms "家用摄像头夜间告警的用户抱怨" --domain hardware --bulk
 ```
 
 输出平台适配分、访问方式、批量能力、限制与偏差。注意：
@@ -81,28 +81,28 @@ sure platforms "家用摄像头夜间告警的用户抱怨" --domain hardware --
 **GitHub（官方 API）**
 
 ```bash
-sure collect ./cam-study --platform github --query "camera motion alert" --limit 100
+askovo collect ./cam-study --platform github --query "camera motion alert" --limit 100
 ```
 
 **Reddit（官方 Data API）**
 
 ```bash
-export SURE_REDDIT_CLIENT_ID=...
-export SURE_REDDIT_CLIENT_SECRET=...
-sure collect ./cam-study --platform reddit --query "night alert" --limit 100
+export ASKOVO_REDDIT_CLIENT_ID=...
+export ASKOVO_REDDIT_CLIENT_SECRET=...
+askovo collect ./cam-study --platform reddit --query "night alert" --limit 100
 ```
 
 **授权导出/历史数据集**
 
 ```bash
-sure collect ./cam-study --platform reddit --fixture export.jsonl --query "night alert" --limit 1000
-sure import ./cam-study interviews.jsonl --source-family interview
+askovo collect ./cam-study --platform reddit --fixture export.jsonl --query "night alert" --limit 1000
+askovo import ./cam-study interviews.jsonl --source-family interview
 ```
 
 **其他平台**
 
 ```bash
-sure collect ./cam-study --platform instagram --query "..." --dry-run
+askovo collect ./cam-study --platform instagram --query "..." --dry-run
 ```
 
 若没有内置适配器，返回 `3` 并给出授权导出/本地数据集路径；不会做未授权抓取。
@@ -118,7 +118,7 @@ sure collect ./cam-study --platform instagram --query "..." --dry-run
 ## 第五步：分析
 
 ```bash
-sure analyze ./cam-study --question "夜间误报"
+askovo analyze ./cam-study --question "夜间误报"
 ```
 
 输出 `04-findings/analysis.json` / `analysis.md`：平台/时间/结论类型分布、高频候选主题、问题匹配片段。
@@ -130,7 +130,7 @@ sure analyze ./cam-study --question "夜间误报"
 **CDP（仅授权可见页面）**
 
 ```bash
-sure collect ./cam-study --platform amazon --query "night alert" \
+askovo collect ./cam-study --platform amazon --query "night alert" \
   --cdp-url http://127.0.0.1:9222 \
   --url "https://www.amazon.com/product-reviews/B0..." \
   --ack-terms
@@ -141,11 +141,11 @@ sure collect ./cam-study --platform amazon --query "night alert" \
 **队列（并发/断点/限速）**
 
 ```bash
-sure queue init ./cam-study
-sure queue add ./cam-study --platform reddit --query "night alert" --limit 100
-sure queue add ./cam-study --platform github --query "camera alert" --limit 100
-sure queue run ./cam-study --workers 4
-sure queue status ./cam-study
+askovo queue init ./cam-study
+askovo queue add ./cam-study --platform reddit --query "night alert" --limit 100
+askovo queue add ./cam-study --platform github --query "camera alert" --limit 100
+askovo queue run ./cam-study --workers 4
+askovo queue status ./cam-study
 ```
 
 失败任务会退避重试；worker 崩溃后租约过期自动回收；`queue retry` 可把 failed 重新入队。
@@ -153,10 +153,10 @@ sure queue status ./cam-study
 ## 第六步：编码与交付
 
 ```bash
-sure codebook ./cam-study
-sure deliver ./cam-study --kind memo
-sure deliver ./cam-study --kind prd
-sure deliver ./cam-study --kind tracker
+askovo codebook ./cam-study
+askovo deliver ./cam-study --kind memo
+askovo deliver ./cam-study --kind prd
+askovo deliver ./cam-study --kind tracker
 ```
 
 产物在 `06-report/`：
@@ -171,7 +171,7 @@ sure deliver ./cam-study --kind tracker
 ## 完整链路
 
 ```text
-sure do → 补 study.json → instruments → collect/import
+askovo do → 补 study.json → instruments → collect/import
 → analyze → codebook → deliver → 人审签收 → 上市/复测
 ```
 
