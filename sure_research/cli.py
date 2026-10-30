@@ -19,16 +19,25 @@ VERSION_FILE = ROOT / "VERSION"
 
 USAGE = """usage: sure <command> [options]
 
-commands:
-  audit <study>    gates + signals + per-claim verdicts (start here)
-  plan <study>     create a study workspace from a goal
-  report <study>   assemble the research-status report
-  demo             run the bundled offline sample
-  doctor           check the local runtime
-  mcp              start the MCP stdio server
-  --version        print the SURE version
+one entry:
+  "<需求>"           shorthand for `do`: route + scaffold in one line
+  do "<需求>"        route product domain/stage/method and scaffold a study
+  route "<需求>"     route only, no writes
+  platforms "<需求>" rank platforms by data availability and access
 
-see also: check / signals / lexicon / connectors / stage
+research:
+  instruments <study>  generate interview/observation/test kits
+  collect <study>      run a supported collector or plan an export
+  analyze <study>      normalize, dedup and describe collected material
+  import <study> <file> import interviews/CSV/JSONL/text
+  codebook <study>     scaffold claim-type codebook
+  deliver <study>      memo / report / PRD input / post-launch tracker
+  audit <study>        gates + signals + per-claim verdicts
+  plan <study>         legacy platform/feasibility plan
+  demo                 run the bundled offline sample
+  doctor               check runtime, catalog, packs and version
+  mcp                  start the MCP stdio server
+  --version            print the SURE version
 """
 
 
@@ -51,6 +60,9 @@ def _doctor() -> int:
         ("sure_mcp.py", MCP.is_file(), str(MCP)),
         ("sample-study", (ROOT / "examples" / "sample-study" / "study.json").is_file(), ""),
         ("connector-registry", (SKILL / "assets" / "open-source-connectors.json").is_file(), ""),
+        ("method-catalog", (SKILL / "assets" / "method-catalog.json").is_file(), ""),
+        ("domain-packs", len(list((SKILL / "assets" / "domain-packs").glob("*.json"))) == 5, ""),
+        ("platform-catalog", (SKILL / "assets" / "platform-catalog.json").is_file(), ""),
     ]
     for name, ok, detail in checks:
         print(f"[{'ok' if ok else 'FAIL'}] {name} {detail}".rstrip())

@@ -38,4 +38,4 @@ echo
 echo "next:"
 echo "  sure --version"
 echo "  sure demo"
-echo "  ask your agent: 使用 \$user-demand-research 审计 ./study"
+echo "  ask your agent: 使用 \$user-demand-research，先跑 sure \"<需求>\" 路由"

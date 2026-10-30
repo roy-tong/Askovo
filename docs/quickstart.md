@@ -3,136 +3,156 @@
 ## 环境
 
 - Python 3.9+
-- 无需第三方依赖（核心 CLI 与 MCP 都是标准库）
-- 平台采集需要对应 API 的访问资格，见 [连接器](connectors.md)
+- 核心 CLI 与 MCP 无第三方依赖
+- 平台采集需要对应官方 API/授权导出，见 [平台与连接器](connectors.md)
 
-## 安装
-
-### CLI
-
-当前版本从源码安装（PyPI 包尚未发布）：
+## 安装一次
 
 ```bash
 git clone https://github.com/roy-tong/user-demand-research.git
 cd user-demand-research
+python3 -m venv .venv
+.venv/bin/pip install -U pip
+.venv/bin/pip install -e .
+.venv/bin/sure --version
+```
+
+或：
+
+```bash
 pipx install --editable .
 sure --version
 ```
 
-或使用 venv：
+不需要为不同产品类型安装不同 skill/CLI；同一个 `sure` 路由五类产品。
+
+## 第一步：路由一个需求
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -U pip setuptools wheel
-.venv/bin/pip install -e .
-.venv/bin/sure demo
+sure do "家用摄像头夜间告警误报，想验证样机" --dry-run
 ```
 
-> macOS 自带 Python 3.9 的 pip 是 21.2，直接 `pip install -e .` 会失败；先升级 pip。
+输出会说明：
 
-### Agent Skill
+- 产品类型：硬件
+- 阶段：需求发现/原型/验证等
+- 方法：现场观察、原型任务、Beta/遥测等
+- 风险：是否需要 S0
+- 平台预判：Reddit、YouTube、工单、访谈等
+- 下一步命令
+
+## 第二步：生成研究计划与工具包
 
 ```bash
-bash scripts/install-skill.sh                 # 默认 ~/.agents/skills
-bash scripts/install-skill.sh ~/.codex/skills
+sure do "家用摄像头夜间告警误报，想验证样机" --study ./cam-study
 ```
 
-### MCP
-
-```bash
-sure mcp
-```
-
-客户端配置：
-
-```json
-{
-  "mcpServers": {
-    "sure-research": {
-      "command": "sure",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-## 第一步：跑 demo
-
-```bash
-sure demo
-```
-
-它复制内置合成样例到临时目录，跑完整审计。预期：
+生成：
 
 ```text
-SURE 审计：synthetic-mobile-pet-check — pass
-- 记录 7 条；重复率 0.0%；主导来源 42.9%
-- 判断 1 条：可支持 1、超出证据 0、未定 0
+study.json                 决策、方法、风险、证据计划
+route.json / route.md      路由依据
+01-sources/research-plan.md
+01-sources/evidence-plan.json
+01-sources/source-plan.csv
+01-sources/platform-plan.json  平台适配、访问方式、限制
+01-sources/instruments/    访谈/观察/任务/Beta/授权等
+method-choice.json
 ```
 
-不联网、不采集、不调用模型。它只证明运行时可用，不证明样例里的需求真实存在。
+补全 `study.json` 的决策、选项、截止日、假设、证伪条件、样本理由与停止规则。
 
-## 第二步：审计现有材料
-
-前提：材料已经按 [数据契约](data-contract.md) 整理成 study 目录。
+## 第三步：判断数据在哪
 
 ```bash
-sure audit ./my-study
+sure platforms "家用摄像头夜间告警的用户抱怨" --domain hardware --bulk
 ```
 
-输出：
+输出平台适配分、访问方式、批量能力、限制与偏差。注意：
+
+- `supported`：官方 API/第一方/合规数据集；
+- `limited`：需授权、研究资格或历史数据；
+- `blocked`：没有合规批量通道（如未经授权的 Instagram/小红书/JD/淘宝抓取）。
+
+平台可用不等于样本代表总体。
+
+## 第四步：采集/导入
+
+**GitHub（官方 API）**
+
+```bash
+sure collect ./cam-study --platform github --query "camera motion alert" --limit 100
+```
+
+**Reddit（官方 Data API）**
+
+```bash
+export SURE_REDDIT_CLIENT_ID=...
+export SURE_REDDIT_CLIENT_SECRET=...
+sure collect ./cam-study --platform reddit --query "night alert" --limit 100
+```
+
+**授权导出/历史数据集**
+
+```bash
+sure collect ./cam-study --platform reddit --fixture export.jsonl --query "night alert" --limit 1000
+sure import ./cam-study interviews.jsonl --source-family interview
+```
+
+**其他平台**
+
+```bash
+sure collect ./cam-study --platform instagram --query "..." --dry-run
+```
+
+若没有内置适配器，返回 `3` 并给出授权导出/本地数据集路径；不会做未授权抓取。
+
+每次采集写：
 
 ```text
-05-audit/audit.json   机器可读：checks、signals、每条 claim 的 verdict
-05-audit/audit.md     一页结论：能支持什么、缺什么、下一步
+01-sources/manifests/<run_id>.json
+02-data/raw/<platform>/<run_id>.jsonl
+02-data/normalized.jsonl
 ```
 
-只看一条：
+## 第五步：分析
 
 ```bash
-sure audit ./my-study --claim "付费意愿"
+sure analyze ./cam-study --question "夜间误报"
 ```
 
-退出码：
+输出 `04-findings/analysis.json` / `analysis.md`：平台/时间/结论类型分布、高频候选主题、问题匹配片段。
 
-| 码 | 含义 |
-| --- | --- |
-| 0 | 门禁通过，且没有超出证据的判断 |
-| 1 | 门禁未过，或存在 `validated` 但证据不足的判断 |
-| 2 | 用法错误（目录、参数、claim 不匹配） |
+这是描述性分析，不证明总体比例或因果。深入编码与判断仍由 Skill/研究员完成。
 
-## 第三步：规划一个新研究
+## 第六步：编码与交付
 
 ```bash
-sure plan ./my-study \
-  --goal "AI 眼镜在海外社媒的用户不满与替代方案" \
-  --region overseas \
-  --sample-size 100000 \
-  --platform-types forum,social,video
+sure codebook ./cam-study
+sure deliver ./cam-study --kind memo
+sure deliver ./cam-study --kind prd
+sure deliver ./cam-study --kind tracker
 ```
 
-产出：
+产物在 `06-report/`：
 
-- `study.json`：决策、范围、假设、质量门槛、连接器配置
-- `01-sources/feasibility.json`：每个平台的可行性、配额、准入前提
-- `01-sources/tasks.md`：采集任务清单
-- `01-sources/*-routes.csv`：平台路线模板
+- `memo.md` 决策备忘
+- `report.md` 研究报告
+- `prd.md` PRD 输入
+- `postlaunch-tracker.csv` 上市/复测跟踪
 
-若没有任何可用平台，退出码 `3`，并列出缺口。不要换成登录态或商业接口。
+未签收前都标“草稿”；结论必须能回链到证据 id。
 
-## 完整研究
+## 完整链路
 
 ```text
-plan → 补全 design 契约 → check --stage design
-     → 采集并写 manifest → check --stage evidence
-     → signals → 写 demand-judgments → check --stage decision
-     → report
+sure do → 补 study.json → instruments → collect/import
+→ analyze → codebook → deliver → 人审签收 → 上市/复测
 ```
-
-每一步的产物与门槛见 [数据契约](data-contract.md) 和 [三种模式](modes.md)。
 
 ## 下一步
 
-- 不知道选哪种用法：[三种模式](modes.md)
-- 看不懂门禁报错：[故障排查](troubleshooting.md)
-- 要让 Agent 跑：[SKILL.md](../skills/user-demand-research/SKILL.md)
+- 五类产品方法：[modes.md](modes.md)
+- 六类结论与边界：[concepts.md](concepts.md)
+- 命令与退出码：[cli.md](cli.md)
+- 平台访问与限制：[connectors.md](connectors.md)

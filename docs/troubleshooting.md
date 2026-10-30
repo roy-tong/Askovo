@@ -148,3 +148,92 @@ sure mcp
 1. `sure --version` 与 `sure doctor` 输出；
 2. 复现命令（去掉凭据与真实数据）；
 3. `05-audit/audit.json` 里相关的 `checks` 片段。
+
+## 路由
+
+### `needs_domain` / 退出码 2
+
+没有识别出产品类型。加显式领域：
+
+```bash
+sure do "..." --domain software|hardware|consumer|automotive|mobile
+```
+
+也可以先跑 `sure domains` 看五个研究包。
+
+### 阶段识别不符合预期
+
+用 `--stage` 覆盖：
+
+```bash
+sure do "..." --stage discovery|concept|prototype|validation|pricing|prelaunch|postlaunch|audit
+```
+
+典型误区：“验证某方向值不值得做”应走 discovery；“验证原型是否达到发布门槛”才是 validation。
+
+### 退出码 4
+
+检测到高风险研究（道路测试、摄入/皮肤接触、儿童、敏感数据、生产日志、破坏性测试等）。这不是错误，是 S0 门：
+
+1. 由负责人完成安全/伦理审查与授权；
+2. 记录审查人与限制；
+3. 追加 `--ack-risk` 生成计划。
+
+Agent 不应自行加 `--ack-risk`。
+
+## 平台与采集
+
+### `platforms` 推荐了不相关平台
+
+用 `--domain` 限定；平台目录会按领域、结论类型、评论/价格信号和批量要求打分。推荐分不表示数据质量，读 `limits` 与 `bias`。
+
+### `collect` 返回 3 / `adapter_unavailable`
+
+该平台没有内置批量适配器。改用：
+
+```bash
+sure collect ./study --platform amazon --fixture amazon-export.jsonl --query "..."
+sure import ./study export.csv --source-family amazon
+```
+
+或使用平台官方/授权 API；不要换成未授权抓取。
+
+### `collect` 返回 3 / `blocked`
+
+平台没有合规批量通道（如小红书、知乎、京东、淘宝、Kickstarter）。只能使用授权导出或人工整理。
+
+### GitHub 403 / rate limit
+
+设置 `GITHUB_TOKEN`，或降低 `--limit`。公共搜索 API 未认证限额很低。
+
+### Reddit 认证失败
+
+需要已批准的 Reddit Data API 应用：
+
+```bash
+export SURE_REDDIT_CLIENT_ID=...
+export SURE_REDDIT_CLIENT_SECRET=...
+export SURE_REDDIT_USER_AGENT="sure-research/1.13 by <you>"
+```
+
+### 采集成功但 `analyze` 没有数据
+
+检查 `02-data/normalized.jsonl` 是否存在、记录是否非空；`collect` 会写该文件，`import` 写 `evidence.jsonl`，`analyze` 会合并两者。
+
+### 采集后 `deliver` 没有证据
+
+`deliver` 合并 `evidence.jsonl` 与 `normalized.jsonl`；若仍为 0，查看 `02-data/` 与 manifest 的 `written` 字段。
+
+## 分析与交付
+
+### 高频词不是结论
+
+`analyze` 输出的是候选主题与描述性分布，不证明总体、因果或需求强度。需要编码、证据分级和人工判断。
+
+### 交付物全是“待补”
+
+这是模板骨架。先补 `study.json` 的决策/假设/证伪/样本理由，导入证据，再重新生成；`deliver` 不会替你做结论。
+
+### MCP 看不到 `sure_route` / `sure_do`
+
+运行 `sure --version`，应为 1.13.0 或更高；`sure mcp` 应返回 19 个工具。旧版本需重新安装。

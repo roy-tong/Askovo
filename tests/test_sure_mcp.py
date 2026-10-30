@@ -69,6 +69,8 @@ class SureMcpServerTests(unittest.TestCase):
         self.assertIn("sure_report", tool_names)
         self.assertIn("sure_lexicon", tool_names)
         self.assertIn("sure_audit", tool_names)
+        for name in ("sure_route", "sure_do", "sure_platforms", "sure_collect", "sure_analyze"):
+            self.assertIn(name, tool_names)
 
         connectors = tool_payload(by_id[3])
         self.assertEqual(0, connectors["exit_code"])
@@ -79,6 +81,51 @@ class SureMcpServerTests(unittest.TestCase):
         self.assertEqual(
             "supported", platform_map["result"]["platforms"]["reddit"]["registry_decision"]
         )
+
+
+
+    def test_single_entry_route_and_platform_plan_through_mcp(self) -> None:
+        responses = run_mcp(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "sure_route",
+                    "arguments": {"need": "手机相机夜景和续航"},
+                },
+            },
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "sure_do",
+                    "arguments": {"need": "手机相机夜景和续航", "dry_run": True},
+                },
+            },
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "sure_platforms",
+                    "arguments": {"need": "手机相机夜景的用户抱怨", "domain": "mobile", "bulk": True},
+                },
+            },
+        )
+        by_id = {response.get("id"): response for response in responses}
+        routed = tool_payload(by_id[1])
+        self.assertEqual(0, routed["exit_code"])
+        self.assertEqual("mobile", routed["result"]["domain"])
+        self.assertIn("recommended_methods", routed["result"])
+        dry = tool_payload(by_id[2])
+        self.assertEqual(0, dry["exit_code"])
+        self.assertEqual("mobile", dry["result"]["domain"])
+        platforms = tool_payload(by_id[3])
+        self.assertEqual(0, platforms["exit_code"])
+        ids = [item["id"] for item in platforms["result"]["recommended"]]
+        self.assertIn("reddit", ids)
 
     def test_plan_then_check_through_mcp_tools(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

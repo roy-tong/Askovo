@@ -22,6 +22,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+import sure_kit  # noqa: E402
+
 
 def _read_version() -> str:
     """Single source of truth: <repo>/VERSION, shared by CLI, MCP, and packaging."""
@@ -3547,7 +3553,7 @@ def command_stage(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sure",
-        description="Initialize and audit a SURE user-demand research study.",
+        description="One entry for software/hardware/consumer/automotive/mobile research: route, plan, collect, analyze, deliver.",
     )
     parser.add_argument("--version", action="version", version=f"sure {SURE_VERSION}")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -3637,6 +3643,105 @@ def build_parser() -> argparse.ArgumentParser:
     )
     demo_parser.set_defaults(func=command_demo)
 
+    route_parser = subparsers.add_parser(
+        "route", help="detect product domain, stage, intent and risk from a request"
+    )
+    route_parser.add_argument("need", help="natural-language research request")
+    route_parser.add_argument("--domain", choices=tuple(sure_kit.domain_packs().keys()))
+    route_parser.add_argument("--stage", choices=sure_kit.STAGES)
+    route_parser.add_argument("--intent", choices=sure_kit.INTENTS)
+    route_parser.add_argument("--json", action="store_true")
+    route_parser.set_defaults(func=sure_kit.cli_route)
+
+    do_parser = subparsers.add_parser(
+        "do", help="route and scaffold a study in one step (the single entry point)"
+    )
+    do_parser.add_argument("need", help="natural-language research request")
+    do_parser.add_argument("--study", help="workspace path; defaults to ./sure-<domain>-<stage>")
+    do_parser.add_argument("--domain", choices=tuple(sure_kit.domain_packs().keys()))
+    do_parser.add_argument("--stage", choices=sure_kit.STAGES)
+    do_parser.add_argument("--intent", choices=sure_kit.INTENTS)
+    do_parser.add_argument("--dry-run", action="store_true", help="route only; write nothing")
+    do_parser.add_argument("--ack-risk", action="store_true", help="acknowledge safety/ethics review")
+    do_parser.add_argument("--force", action="store_true")
+    do_parser.add_argument("--json", action="store_true")
+    do_parser.set_defaults(func=sure_kit.cli_do)
+
+    domains_parser = subparsers.add_parser("domains", help="list product research packs")
+    domains_parser.add_argument("--json", action="store_true")
+    domains_parser.set_defaults(func=sure_kit.cli_domains)
+
+    methods_parser = subparsers.add_parser("methods", help="list methods for a domain and stage")
+    methods_parser.add_argument("--domain", required=True, choices=tuple(sure_kit.domain_packs().keys()))
+    methods_parser.add_argument("--stage", choices=sure_kit.STAGES)
+    methods_parser.add_argument("--json", action="store_true")
+    methods_parser.set_defaults(func=sure_kit.cli_methods)
+
+    catalog_parser = subparsers.add_parser("catalog", help="show the method catalog")
+    catalog_parser.add_argument("--domain", choices=tuple(sure_kit.domain_packs().keys()))
+    catalog_parser.add_argument("--stage", choices=sure_kit.STAGES)
+    catalog_parser.add_argument("--json", action="store_true")
+    catalog_parser.set_defaults(func=sure_kit.cli_catalog)
+
+    platforms_parser = subparsers.add_parser(
+        "platforms", help="rank platforms by data availability, access mode and evidence fit"
+    )
+    platforms_parser.add_argument("need", help="research question or data request")
+    platforms_parser.add_argument("--domain", choices=tuple(sure_kit.domain_packs().keys()))
+    platforms_parser.add_argument("--claim-type", action="append", choices=sure_kit.CLAIM_TYPES)
+    platforms_parser.add_argument("--bulk", action="store_true", help="prefer platforms with bulk access")
+    platforms_parser.add_argument("--json", action="store_true")
+    platforms_parser.set_defaults(func=sure_kit.cli_platforms)
+
+    collect_parser = subparsers.add_parser(
+        "collect", help="run a platform collector with quota, manifest and dedup"
+    )
+    collect_parser.add_argument("study_dir")
+    collect_parser.add_argument("--platform", required=True)
+    collect_parser.add_argument("--query", required=True)
+    collect_parser.add_argument("--limit", type=int, default=100)
+    collect_parser.add_argument("--dry-run", action="store_true")
+    collect_parser.add_argument("--fixture", help="local JSONL/CSV fixture for offline collection")
+    collect_parser.set_defaults(func=sure_kit.cli_collect)
+
+    analyze_parser = subparsers.add_parser(
+        "analyze", help="normalize, dedup and describe collected material"
+    )
+    analyze_parser.add_argument("study_dir")
+    analyze_parser.add_argument("--question", help="optional question to match quotes against")
+    analyze_parser.set_defaults(func=sure_kit.cli_analyze)
+
+    instruments_parser = subparsers.add_parser(
+        "instruments", help="generate interview/observation/test instruments for a study"
+    )
+    instruments_parser.add_argument("study_dir")
+    instruments_parser.set_defaults(func=sure_kit.cli_instruments)
+
+    import_parser = subparsers.add_parser(
+        "import", help="import interviews, CSV, JSONL or text as evidence"
+    )
+    import_parser.add_argument("study_dir")
+    import_parser.add_argument("file")
+    import_parser.add_argument("--source-family", default="imported")
+    import_parser.add_argument("--evidence-form", default="self_report")
+    import_parser.add_argument("--claim-type", default="need", choices=sure_kit.CLAIM_TYPES)
+    import_parser.add_argument("--method-id", default="imported")
+    import_parser.set_defaults(func=sure_kit.cli_import)
+
+    codebook_parser = subparsers.add_parser("codebook", help="scaffold a claim-type codebook")
+    codebook_parser.add_argument("study_dir")
+    codebook_parser.set_defaults(func=sure_kit.cli_codebook)
+
+    deliver_parser = subparsers.add_parser(
+        "deliver", help="assemble a memo, report, PRD input or post-launch tracker"
+    )
+    deliver_parser.add_argument("study_dir")
+    deliver_parser.add_argument("--kind", choices=("memo", "report", "prd", "tracker"), default="memo")
+    deliver_parser.set_defaults(func=sure_kit.cli_deliver)
+
+    doctor_parser = subparsers.add_parser("doctor", help="check catalog, packs, method refs and version")
+    doctor_parser.set_defaults(func=sure_kit.cli_doctor)
+
     audit_parser = subparsers.add_parser(
         "audit",
         help="audit a study and explain what the evidence can support (gates + signals + claim verdicts)",
@@ -3683,8 +3788,20 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+CLI_COMMANDS = {
+    "init", "plan", "signals", "lexicon", "report", "demo", "route", "do", "domains",
+    "methods", "catalog", "platforms", "collect", "analyze", "instruments", "import",
+    "codebook", "deliver", "doctor", "audit", "check", "connectors", "stage",
+}
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    raw = list(sys.argv[1:] if argv is None else argv)
+    if raw and not raw[0].startswith("-") and raw[0] not in CLI_COMMANDS:
+        # Bare natural-language request: route it through `do`.
+        if any("\u4e00" <= char <= "\u9fff" for char in raw[0]):
+            raw = ["do", *raw]
+    args = build_parser().parse_args(raw)
     return int(args.func(args))
 
 

@@ -1,0 +1,216 @@
+{
+  "schema_version": "1.0",
+  "domain": "consumer",
+  "label": "消费品 / 食品饮料 / 美妆个护 / 家居日用品",
+  "keywords": [
+    "消费品",
+    "食品",
+    "饮料",
+    "口味",
+    "包装",
+    "货架",
+    "复购",
+    "感官",
+    "美妆",
+    "护肤",
+    "香",
+    "洗护",
+    "试吃",
+    "试喝",
+    "快消",
+    "保质期",
+    "宣称",
+    "instagram",
+    "小红书",
+    "tiktok",
+    "零食"
+  ],
+  "roles": [
+    "购买者",
+    "使用者",
+    "家庭成员",
+    "弃用者",
+    "渠道/店员"
+  ],
+  "default_stage": "discovery",
+  "stages": {
+    "discovery": {
+      "label": "需求发现",
+      "methods": [
+        "survey-ua",
+        "contextual-inquiry",
+        "diary-study",
+        "discovery-interview"
+      ],
+      "decisions": [
+        "品类进入、使用场合与购买频次",
+        "替代行为与未满足任务"
+      ],
+      "deliverables": [
+        "U&A",
+        "场景地图",
+        "需求缺口"
+      ]
+    },
+    "concept": {
+      "label": "概念与包装",
+      "methods": [
+        "concept-test",
+        "packaging-test",
+        "shelf-test",
+        "maxdiff"
+      ],
+      "decisions": [
+        "概念/包装/宣称是否被理解",
+        "卖点优先级与货架发现"
+      ],
+      "deliverables": [
+        "概念报告",
+        "包装测试",
+        "卖点排序"
+      ]
+    },
+    "prototype": {
+      "label": "产品测试",
+      "methods": [
+        "clt",
+        "concept-test",
+        "packaging-test"
+      ],
+      "decisions": [
+        "受控条件下的喜好/辨别",
+        "样品间可感知差异"
+      ],
+      "deliverables": [
+        "CLT 方案",
+        "感官/喜好报告"
+      ]
+    },
+    "validation": {
+      "label": "家庭使用与复购",
+      "methods": [
+        "hut",
+        "clt",
+        "shelf-test"
+      ],
+      "decisions": [
+        "真实使用、消耗、弃用",
+        "长期喜好与使用摩擦"
+      ],
+      "deliverables": [
+        "HUT 报告",
+        "使用日记",
+        "复购计划"
+      ]
+    },
+    "pricing": {
+      "label": "价格与促销",
+      "methods": [
+        "pricing-vw",
+        "pricing-gg",
+        "conjoint",
+        "price-promo-test"
+      ],
+      "decisions": [
+        "可接受价格带、申报需求曲线",
+        "价格×规格×渠道组合"
+      ],
+      "deliverables": [
+        "价格 memo",
+        "促销实验"
+      ]
+    },
+    "prelaunch": {
+      "label": "上市前",
+      "methods": [
+        "panel-repeat",
+        "price-promo-test",
+        "shelf-test"
+      ],
+      "decisions": [
+        "首购与复购是否分离",
+        "试销与渠道准备"
+      ],
+      "deliverables": [
+        "试销方案",
+        "复购跟踪",
+        "上市检查单"
+      ]
+    },
+    "postlaunch": {
+      "label": "上市后",
+      "methods": [
+        "panel-repeat",
+        "rma-review"
+      ],
+      "decisions": [
+        "真实复购、渗透与转换",
+        "客诉/退货与批次问题"
+      ],
+      "deliverables": [
+        "复购队列",
+        "客诉分析",
+        "复判计划"
+      ]
+    },
+    "audit": {
+      "label": "现有材料审计",
+      "methods": [
+        "expert-review",
+        "panel-repeat"
+      ],
+      "decisions": [
+        "是否用喜好/意愿替代复购",
+        "样本与分母是否支持结论"
+      ],
+      "deliverables": [
+        "审计备忘",
+        "补证计划"
+      ]
+    }
+  },
+  "evidence_plan": [
+    {
+      "role": "目标消费者",
+      "target": "覆盖购买者与使用者",
+      "forms": [
+        "self_report",
+        "observation"
+      ]
+    },
+    {
+      "role": "家庭/长期使用",
+      "target": "覆盖至少一个购买周期",
+      "forms": [
+        "self_report",
+        "product_interaction"
+      ]
+    },
+    {
+      "role": "弃用/不买",
+      "target": "覆盖反例与非用户",
+      "forms": [
+        "self_report"
+      ]
+    }
+  ],
+  "claim_boundaries": [
+    "喜欢/偏好不等于复购或销量",
+    "购买意愿不等于真实购买",
+    "CLT 不外推家庭长期使用",
+    "感官喜好不等于安全/功效",
+    "免费样品继续使用不等于复购"
+  ],
+  "risk_notes": [
+    "摄入/皮肤接触/过敏/儿童/标签宣称需 S0 审查",
+    "保质期/稳定性/微生物/包材相容性由适用实验室与法规流程确认",
+    "盲测需控制顺序、携带、疲劳与品牌信息"
+  ],
+  "sources": [
+    "ISO 11136",
+    "ISO 11930",
+    "ASTM E1958",
+    "ASTM E2454",
+    "ESOMAR"
+  ]
+}

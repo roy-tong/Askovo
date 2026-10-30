@@ -152,3 +152,75 @@ study/
 | `version_warning` | study 记录的版本与当前运行时不一致时的警告 |
 
 完整 schema 与字段级约束见 [../skills/user-demand-research/references/data-contract.md](../skills/user-demand-research/references/data-contract.md)。
+
+## route.json（v1.13 单入口路由）
+
+`study.json` 之外单独保存，便于审计“为什么选这个方法”：
+
+| 字段 | 说明 |
+|---|---|
+| `query` | 原始需求 |
+| `domain` / `domain_label` | software/hardware/consumer/automotive/mobile |
+| `stage` / `stage_label` | discovery…audit |
+| `intent` | route/plan/instruments/sources/collect/analyze/audit/deliver |
+| `confidence` / `domain_scores` | 路由置信度与各领域命中分 |
+| `risk_flags` | flag + 命中词 |
+| `safety_gate` | `clear` / `review` |
+| `recommended_methods` | 方法、证据形式、不能证明什么 |
+| `alternatives` | 替代方法及不首选原因 |
+| `platform_preview` | 平台适配分、可用性、批量能力 |
+| `next_commands` | 下一步命令 |
+
+`sure do` 还会写 `01-sources/platform-plan.json`，保存推荐平台、适配分、访问方式、限制与阻断平台。
+
+## platform-catalog 与 platform manifest
+
+`assets/platform-catalog.json` 记录平台可用性：
+
+- `access_modes`：official_api / authorized_export / historical_dataset / first_party / research_api / licensed_provider
+- `auth`、`bulk`、`freshness`
+- `decision`：supported / limited / blocked
+- `limits`、`bias`、`notes`
+
+每次采集写 `01-sources/manifests/<run_id>.json`：
+
+| 字段 | 说明 |
+|---|---|
+| `run_id` / `platform` / `query` | 运行标识 |
+| `adapter` / `access_basis` / `auth` | 用了什么通道 |
+| `requested` / `reached` / `written` | 配额与产出 |
+| `raw_file` | 原始记录路径 |
+| `limits` / `bias` | 本次已知限制 |
+| `started_at` / `finished_at` | 运行时间 |
+
+## normalized.jsonl（跨平台归一化）
+
+`02-data/normalized.jsonl` 一行一条，最小字段：
+
+| 字段 | 说明 |
+|---|---|
+| `record_id` | 平台前缀稳定 id，如 `github:123`、`reddit:abc` |
+| `platform` | 平台 id |
+| `source_url` / `author_hash` | 引用与去标识作者 |
+| `created_at` / `collected_at` | 原始时间/采集时间 |
+| `title` / `text` / `rating` | 内容 |
+| `query` / `run_id` | 来源查询与运行 |
+| `source_family` / `evidence_form` / `claim_type` | 证据归类 |
+| `normalized_text_hash` | 去重键 |
+| `language` | 语言（未知写 unknown） |
+
+`import` 的 `02-data/evidence.jsonl` 与归一化记录可以并存；交付与分析会按 `record_id` 去重合并。
+
+## analysis.json（跨平台描述性分析）
+
+| 字段 | 说明 |
+|---|---|
+| `records` | 去重后记录数 |
+| `by_platform` / `by_claim_type` / `by_evidence_form` | 分布 |
+| `by_month` | 时间分布 |
+| `avg_text_length` | 平均长度 |
+| `top_terms` | 高频候选主题（不是结论） |
+| `question_matches` | 与问题匹配的片段 |
+| `boundary` | 描述性统计、不可推断总体/因果 |
+
+分析结果只用于发现候选主题与缺口，不替代编码、证据分级和人工判断。

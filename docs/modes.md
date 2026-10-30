@@ -1,122 +1,103 @@
-# 三种模式
+# 五类产品研究包
 
-SURE 的深度是选项，不是门槛。先判断你手上有什么，再选模式。
+SURE 用同一套入口覆盖五类产品，但每类产品的验证对象、证据形式和安全边界不同。`sure do` 会自动选择；本页说明每类在地图上怎么落。
 
-## 快速选择
+## 总览
 
-| 你手上有什么 | 模式 | 第一条命令 | 首值时间 |
-| --- | --- | --- | --- |
-| 已有一批材料，想知道能否支持某个决定 | Quick Audit | `sure audit <study>` | 10 分钟 |
-| 还没有材料，想设计一个能过审的研究 | Design | `sure plan <study> …` | 1 小时 |
-| 要跑完整研究，产出报告与商业文档 | Full Study | `sure plan` → 采集 → `sure report` | 1–2 周 |
-| 前沿体验，用户还叫不出名字 | Unnamed Experience | `sure plan --mode unnamed-experience` | 2–3 小时 |
+| 产品 | 主要验证对象 | 典型方法 | 不能替代 |
+|---|---|---|---|
+| 软件/SaaS/App | 任务、工作流、采用、留存、付费 | 访谈、现场观察、形成性/总结性可用性、Beta、A/B、队列 | 访谈态度≠真实使用；活跃≠需求 |
+| 硬件/IoT/消费电子 | 场景、安装、学习、维护、可靠性、生命周期 | 现场观察、looks-like/works-like、EVT/DVT/PVT、现场试用、RMA | 台架通过≠用户价值；Beta≠认证 |
+| 消费品 | 感官、包装、价格、使用习惯、复购 | U&A、概念/包装/货架、CLT/HUT、价格促销、panel | 一次喜欢≠复购；意愿≠销量 |
+| 汽车/座舱/ADAS | 配置、HMI、误用、分心、接管、真实使用 | 诊所、模拟器、封闭场地、道路、自然驾驶、OTA | 诊所/模拟器≠道路安全；用户试验≠认证 |
+| 手机/平板/可穿戴 | 握持、系统任务、影像/续航/信号、生态、售后 | 属性取舍、盲测、实拍/外场、实验室、Beta、遥测、RMA | 跑分≠体验；精选样张≠日常 |
 
-## Quick Audit
+## 软件 / SaaS / App
 
-**适合**：产品经理、研究员、投资人手上已有访谈、评论、工单，需要回答“这些能不能支持我要做的决定”。
+**生命周期与方法**
 
-**输入**：一个按 [数据契约](data-contract.md) 整理的 study 目录。
+| 阶段 | 方法 |
+|---|---|
+| discovery | 关键事件访谈、情境访查、日记、工单/日志三角验证 |
+| concept | 概念测试、可点击原型、Concierge/Wizard-of-Oz、真实承诺 |
+| prototype | 形成性任务测试、任务分析、无障碍 |
+| validation | Beta、总结性基准、A/B、队列/漏斗 |
+| pricing | VW/GG/联合分析 + 付费试点 |
+| prelaunch | Beta、无障碍、专家红队 |
+| postlaunch | 队列、遥测、A/B、流失访谈 |
+| audit | 专家审阅、行为分析复核 |
 
-```bash
-sure audit ./study
-sure audit ./study --claim "用户愿意付费"
-```
+**必须分开**：需求证据（真实问题与替代成本）与可用性证据（特定任务能否完成）。SUS/UMUX-Lite 是感知可用性，不是需求或付费；SEQ 是单任务难度；A/B 只回答已测指标的增量因果。
 
-**输出**：
+## 硬件 / IoT / 消费电子
 
-- `05-audit/audit.json`：门禁结果、信号、每条判断的 `verdict`
-- `05-audit/audit.md`：一页结论
+| 阶段 | 方法 |
+|---|---|
+| discovery | 家庭/工作现场观察、日记、替代行为 |
+| concept | 外观/CMF、握持/够取、概念测试 |
+| prototype | looks-like / works-like / 整合样机任务 |
+| validation | EVT 形成性任务、DVT 说明/误用/现场试用、PVT 批次 |
+| pricing | 配置联合分析、价格研究 |
+| prelaunch | Beta、RMA 预案、实验室 |
+| postlaunch | 遥测、RMA、维修、复购 |
+| audit | 专家审阅、售后复核 |
 
-**判断的三种结果**：
+**硬门**：EVT/DVT/PVT 是工程与体验门，不是需求证据；Beta/认证/抽检不能互相替代；涉及市电、锂电、高温、运动件、激光/射频、化学品先做工程风险审查。
 
-| verdict | 含义 | 下一步 |
-| --- | --- | --- |
-| `supported` | 声称 `validated`，且三条链 + 反证齐全 | 可以引用，但仍要读边界 |
-| `exceeds_evidence` | 声称 `validated`，但缺链或反证 | 降级为 `needs-validation`，或补证 |
-| `open` | `hypothesis` / `needs-validation`，尚未声称结论 | 按 `next_test` 补证 |
+## 消费品
 
-**停止规则**：出现 `exceeds_evidence` 时，不要把它写进对外结论；先降级或补证。
+| 阶段 | 方法 |
+|---|---|
+| discovery | U&A、家庭/购物观察、shop-along、日记 |
+| concept | 概念、包装/宣称、货架、MaxDiff |
+| prototype | CLT、概念/包装测试 |
+| validation | HUT/iHUT、消费者喜好、长期使用 |
+| pricing | VW/GG/联合分析、价格促销实验 |
+| prelaunch | 小区域试销、panel 复购、货架 |
+| postlaunch | panel 复购、客诉/退货 |
+| audit | 专家审阅、复购复核 |
 
-## Design
+**两条感官线**：训练评价员的**分析型感官**回答“有没有差异、差异在哪”；普通消费者的**喜好测试**回答“喜欢不喜欢”。喜欢≠性能/功效/安全；CLT 不外推家庭长期使用；免费样品继续使用≠复购。
 
-**适合**：研究还没开始，需要先证明这个研究做得成。
+## 汽车 / 座舱 / ADAS
 
-```bash
-sure plan ./study \
-  --goal "…" --region overseas --sample-size 100000 \
-  --platform-types forum,social,video
-```
+| 环境 | 能回答 | 不能替代 |
+|---|---|---|
+| 购前深访/配置 | JTBD、场景、配置/价格取舍 | 意向≠销量 |
+| 静态诊所 | 造型、空间、上下车、配置理解 | 停车≠行车分心 |
+| 动态诊所 | 驾乘坐、噪声、操控感知 | 受控路线≠全部交通 |
+| 停车实车/台架 | HMI、可达、视野、学习、误用 | ≠真实驾驶负荷 |
+| 模拟器 | 可重复 HMI 比较、分心、接管 | ≠真实事故率 |
+| 封闭场地 | 真车操控、低速空间、受控 ADAS | 零事件≠安全 |
+| 实际道路 | 后期低风险生态验证 | 不得故意制造危险 |
+| 自然驾驶 | 日常使用、暴露、误用、近失 | 相关≠因果 |
+| OTA/App | 灰度、日志、崩溃、留存 | 不能替代工程 V&V |
 
-**输出**：
+**安全边界**：ISO 26262 处理故障行为，ISO 21448/SOTIF 处理预期功能不足；用户研究可发现危险与误用，不能宣称通过认证、SOTIF 达标或 NCAP 等级。
 
-- 决策问题、范围、假设与证伪条件（需补全）
-- 平台可行性、配额、连接器 revision、准入前提
-- 采集任务清单与路线模板
+## 手机 / 平板 / 可穿戴
 
-补全设计契约后：
+| 对象 | 方法 |
+|---|---|
+| 购前卖点 | 深访/日记、MaxDiff/联合分析、配置取舍 |
+| 握持/佩戴/系统 | 手型/姿势任务、新手/熟手、辅助技术 |
+| 相机 | 同场景实拍、失败率、盲评 |
+| 续航/发热/充电 | 实验室曲线 + 真实一天日记 |
+| 信号/定位 | 同路线/运营商/时段外场 |
+| 音视频 | 客观测量 + 盲听 |
+| 耐用性 | 受控跌落/老化/批次 |
+| 系统更新 | 同机前后/分批 holdout |
+| 家庭/通勤 | 日记、断连、弃用原因 |
+| 上市后 | 遥测、退换/维修、复购 |
 
-```bash
-sure check ./study --stage design
-```
+**特殊人群**：儿童需监护与适龄同意；老年/残障用户早期参与；WCAG/扫描不能替代真实任务与辅助技术实操。
 
-**停止规则**：design gate 不过，不开始采集。不要用“先采了再说”绕过。
+## 选错阶段的代价
 
-## Full Study
+- 把“验证”（validation）当“发现”（discovery）：容易只验证已有方案，不发现真正问题；
+- 把“可用性”当“需求”：做出好用但没人需要的东西；
+- 把“工程性能”当“体验”：指标达标但用户不用；
+- 把“购买意愿”当“商业”：上线后没有复购；
+- 把“诊所/模拟器”当“道路安全”：把相对比较写成安全结论。
 
-**适合**：需要可交付的研究结论，可能要写 BRD/MRD/PRD。
-
-```text
-plan → design gate → 采集（写 manifest）→ evidence gate
-     → signals → demand-judgments → decision gate → report
-```
-
-| 阶段 | 命令 | 通过条件 |
-| --- | --- | --- |
-| 设计 | `check --stage design` | 决策、假设、证伪、来源计划、adapter 审查字段齐 |
-| 证据 | `check --stage evidence` | 记录数、角色覆盖、重复率、来源集中度达标 |
-| 决策 | `check --stage decision` | 判断结构完整、引用可追溯、`validated` 有链 |
-| 全量 | `audit` | 以上全过，且无 `exceeds_evidence` |
-
-**产出**：
-
-- `04-findings/signals.json`：确定性语料信号
-- `04-findings/demand-judgments.json`：判断台账
-- `06-report/report.md`：研究状态报告
-- `05-audit/audit.md`：审计结论
-
-报告未通过全量检查时，顶部会保留失败横幅，结论只能停留在“研究状态”。
-
-## Unnamed Experience
-
-**适合**：前沿产品，用户还没有稳定词汇（例如一种尚未被命名的体感体验）。
-
-```bash
-sure plan ./study --mode unnamed-experience \
-  --goal "一种尚未被产品化的体感体验" --region cn \
-  --sample-size 50000 --platform-types forum,social
-```
-
-它会先做 grounding：边缘语言、替代行为考古、心理物理维度、跨域文献锚点，产出词表与研究范围，再设计关键词路线。
-
-```bash
-sure lexicon ./study --min-per-term 20
-```
-
-退出码 `1` 表示存量语料不足，是采集指令，不是错误。
-
-## 停止规则（所有模式）
-
-1. **采集前**：design gate 未过，不采集。
-2. **跨来源合并前**：来源角色、时间窗、语言不一致时，先说明，不直接合并。
-3. **下结论前**：出现 `exceeds_evidence`，先降级或补证。
-4. **遇到阻断平台**：不换登录态、商业接口、内部接口或浏览器自动化；记录缺口。
-5. **证据不足时**：输出研究状态与修复计划，不输出自信的市场结论。
-
-## 交付物对照
-
-| 模式 | 最小交付 | 可选交付 |
-| --- | --- | --- |
-| Quick Audit | `audit.md` | 补证清单 |
-| Design | `study.json` + `feasibility.json` + `tasks.md` | 研究方案一页纸 |
-| Full Study | `report.md` + `signals.json` + `audit.md` | BRD/MRD/PRD |
-| Unnamed | `lexicon.csv` + `experience-space.csv` | 命名候选与验证计划 |
+`route` 输出里的 `alternatives` 和 `decisions` 就是为这些取舍准备的。

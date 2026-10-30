@@ -1,0 +1,1373 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-10-30",
+  "methods": [
+    {
+      "id": "discovery-interview",
+      "name": "深度访谈 / 关键事件访谈",
+      "applicable_domains": [
+        "software",
+        "hardware",
+        "consumer",
+        "automotive",
+        "mobile"
+      ],
+      "lifecycle": [
+        "discovery",
+        "postlaunch"
+      ],
+      "answers": [
+        "谁在什么场景遇到什么问题",
+        "现有替代方案与摩擦",
+        "什么证据会改变决定"
+      ],
+      "evidence_forms": [
+        "self_report"
+      ],
+      "supports": [
+        "need",
+        "acceptance"
+      ],
+      "does_not_support": [
+        "population_prevalence",
+        "performance",
+        "safety"
+      ],
+      "common_misreads": [
+        "把功能请求当需求",
+        "把受访者原话当总体比例",
+        "只访谈热心用户"
+      ],
+      "risk_flags": [],
+      "alternatives": [
+        "contextual-inquiry",
+        "diary-study"
+      ],
+      "source": "NN/g UX Research Cheat Sheet"
+    },
+    {
+      "id": "contextual-inquiry",
+      "name": "情境访查 / 现场观察",
+      "applicable_domains": [
+        "software",
+        "hardware",
+        "consumer",
+        "automotive",
+        "mobile"
+      ],
+      "lifecycle": [
+        "discovery",
+        "prototype"
+      ],
+      "answers": [
+        "真实工作流与环境约束",
+        "隐性 workaround 与中断",
+        "任务发生的物理/社会条件"
+      ],
+      "evidence_forms": [
+        "observation",
+        "self_report"
+      ],
+      "supports": [
+        "need",
+        "usability"
+      ],
+      "does_not_support": [
+        "population_prevalence",
+        "performance",
+        "safety"
+      ],
+      "common_misreads": [
+        "单次案例当普遍频率",
+        "研究者解释当用户事实",
+        "观察者效应未记录"
+      ],
+      "risk_flags": [
+        "home_recording",
+        "bystander_recording"
+      ],
+      "alternatives": [
+        "diary-study",
+        "discovery-interview"
+      ],
+      "source": "NN/g Contextual Inquiry"
+    },
+    {
+      "id": "diary-study",
+      "name": "日记研究",
+      "applicable_domains": [
+        "software",
+        "hardware",
+        "consumer",
+        "automotive",
+        "mobile"
+      ],
+      "lifecycle": [
+        "discovery",
+        "prelaunch",
+        "postlaunch"
+      ],
+      "answers": [
+        "偶发痛点与习惯",
+        "学习、维护、弃用过程",
+        "长期使用中的关键时刻"
+      ],
+      "evidence_forms": [
+        "self_report",
+        "observation"
+      ],
+      "supports": [
+        "need",
+        "usability"
+      ],
+      "does_not_support": [
+        "population_prevalence",
+        "performance"
+      ],
+      "common_misreads": [
+        "漏记等于没发生",
+        "记录负担改变行为",
+        "自述等于实测"
+      ],
+      "risk_flags": [
+        "home_recording",
+        "sensitive_data"
+      ],
+      "alternatives": [
+        "contextual-inquiry",
+        "beta-soak"
+      ],
+      "source": "NN/g Diary Studies"
+    },
+    {
+      "id": "survey-ua",
+      "name": "U&A / 使用与态度调查",
+      "applicable_domains": [
+        "consumer",
+        "software",
+        "mobile",
+        "automotive"
+      ],
+      "lifecycle": [
+        "discovery",
+        "postlaunch"
+      ],
+      "answers": [
+        "品类渗透、使用频次、场合与品牌组合",
+        "细分与需求缺口",
+        "总体分布（概率样本时）"
+      ],
+      "evidence_forms": [
+        "self_report"
+      ],
+      "supports": [
+        "need",
+        "commercial"
+      ],
+      "does_not_support": [
+        "performance",
+        "safety",
+        "causality"
+      ],
+      "common_misreads": [
+        "自述等于行为",
+        "非概率样本冒充总体精度",
+        "横截面相关当因果"
+      ],
+      "risk_flags": [],
+      "alternatives": [
+        "discovery-interview",
+        "diary-study"
+      ],
+      "source": "ESOMAR / 市场研究实践"
+    },
+    {
+      "id": "concept-test",
+      "name": "概念与方案测试",
+      "applicable_domains": [
+        "software",
+        "hardware",
+        "consumer",
+        "automotive",
+        "mobile"
+      ],
+      "lifecycle": [
+        "concept"
+      ],
+      "answers": [
+        "概念是否被理解",
+        "是否值得投入",
+        "与替代方案相比的取舍"
+      ],
+      "evidence_forms": [
+        "self_report",
+        "product_interaction"
+      ],
+      "supports": [
+        "acceptance",
+        "need"
+      ],
+      "does_not_support": [
+        "usability",
+        "performance",
+        "safety",
+        "commercial"
+      ],
+      "common_misreads": [
+        "喜欢概念等于喜欢实物",
+        "购买意愿等于销量",
+        "点击/报名等于需求成立"
+      ],
+      "risk_flags": [],
+      "alternatives": [
+        "prototype-usability",
+        "clinic-static"
+      ],
+      "source": "NN/g / 消费品概念测试实践"
+    },
+    {
+      "id": "packaging-test",
+      "name": "包装与宣称测试",
+      "applicable_domains": [
+        "consumer"
+      ],
+      "lifecycle": [
+        "concept",
+        "prototype"
+      ],
+      "answers": [
+        "包装识别、信息理解与误读",
+        "宣称是否被理解",
+        "货架发现与使用预期"
+      ],
+      "evidence_forms": [
+        "self_report",
+        "observation"
+      ],
+      "supports": [
+        "acceptance",
+        "usability"
+      ],
+      "does_not_support": [
+        "performance",
+        "safety",
+        "commercial"
+      ],
+      "common_misreads": [
+        "美观偏好等于货架发现",
+        "标签易懂等于合规",
+        "曝光顺序未平衡"
+      ],
+      "risk_flags": [
+        "skin_contact"
+      ],
+      "alternatives": [
+        "shelf-test",
+        "concept-test"
+      ],
+      "source": "ISO 11136 / 消费品研究实践"
+    },
+    {
+      "id": "prototype-usability",
+      "name": "原型任务与形成性可用性",
+      "applicable_domains": [
+        "software",
+        "hardware",
+        "consumer",
+        "automotive",
+        "mobile"
+      ],
+      "lifecycle": [
+        "prototype",
+        "validation"
+      ],
+      "answers": [
+        "任务能否完成",
+        "错误、学习与恢复",
+        "哪些障碍必须先修"
+      ],
+      "evidence_forms": [
+        "observation",
+        "product_interaction"
+      ],
+      "supports": [
+        "usability",
+        "acceptance"
+      ],
+      "does_not_support": [
+        "need",
+        "commercial",
+        "performance",
+        "safety"
+      ],
+      "common_misreads": [
+        "偏好等于可用",
+        "主持人救援仍算独立完成",
+        "小样本估算问题发生率"
+      ],
+      "risk_flags": [
+        "electrical_thermal",
+        "moving_parts"
+      ],
+      "alternatives": [
+        "task-analysis",
+        "beta-soak"
+      ],
+      "source": "ISO 9241-11 / NN/g"
+    },
+    {
+      "id": "task-analysis",
+      "name": "任务分析 / 卡片分类 / 树测试",
+      "applicable_domains": [
+        "software",
+        "hardware",
+        "mobile",
+        "automotive"
+      ],
+      "lifecycle": [
+        "discovery",
+        "prototype"
+      ],
+      "answers": [
+        "任务结构与信息架构",
+        "导航与分类是否可理解",
+        "关键路径与认知负担"
+      ],
+      "evidence_forms": [
+        "observation",
+        "self_report"
+      ],
+      "supports": [
+        "usability",
+        "need"
+      ],
+      "does_not_support": [
+        "commercial",
+        "performance",
+        "safety"
+      ],
+      "common_misreads": [
+        "分类偏好等于任务效率",
+        "结构清晰等于需求成立"
+      ],
+      "risk_flags": [],
+      "alternatives": [
+        "prototype-usability"
+      ],
+      "source": "NN/g / ISO 9241-210"
+    },
+    {
+      "id": "maxdiff",
+      "name": "MaxDiff / 最佳最差排序",
+      "applicable_domains": [
+        "software",
+        "consumer",
+        "automotive",
+        "mobile"
+      ],
+      "lifecycle": [
+        "concept",
+        "pricing"
+      ],
+      "answers": [
+        "功能/利益点相对优先级",
+        "配置与卖点排序",
+        "跨人群差异"
+      ],
+      "evidence_forms": [
+        "self_report"
+      ],
+      "supports": [
+        "acceptance",
+        "commercial"
+      ],
+      "does_not_support": [
+        "population_prevalence",
+        "commercial_actual"
+      ],
+      "common_misreads": [
+        "相对重要性等于绝对需求",
+        "样本与属性集变化不可直接比较"
+      ],
+      "risk_flags": [],
+      "alternatives": [
+        "conjoint",
+        "kano"
+      ],
+      "source": "Louviere et al. Best-Worst Scaling"
+    },
+    {
+      "id": "conjoint",
+      "name": "联合分析 / 离散选择实验",
+      "applicable_domains": [
+        "consumer",
+        "automotive",
+        "mobile",
+        "software"
+      ],
+      "lifecycle": [
+        "concept",
+        "pricing"
+      ],
+      "answers": [
+        "属性×价格取舍",
+        "配置包与份额情景",
+        "支付意愿（模型内）"
+      ],
+      "evidence_forms": [
+        "self_report"
+      ],
+      "supports": [
+        "acceptance",
+        "commercial"
+      ],
+      "does_not_support": [
+        "actual_sales",
+        "safety",
+        "performance"
+      ],
+      "common_misreads": [
+        "模型内 WTP 等于真实支付",
+        "属性/竞争集变化不可外推",
+        "忽略异质性与模型不确定"
+      ],
+      "risk_flags": [],
+      "alternatives": [
+        "maxdiff",
+        "pricing-vw"
+      ],
+      "source": "Green & Srinivasan 1971"
+    },
+    {
+      "id": "kano",
+      "name": "Kano 模型",
+      "applicable_domains": [
+        "software",
+        "consumer",
+        "mobile"
+      ],
+      "lifecycle": [
+        "concept"
+      ],
+      "answers": [
+        "功能是必备/期望/魅力",
+        "优先级与满意度非线性关系"
+      ],
+      "evidence_forms": [
+        "self_report"
+      ],
+      "supports": [
+        "acceptance"
+      ],
+      "does_not_support": [
+        "commercial",
+        "prevalence",
+        "causality"
+      ],
+      "common_misreads": [
+        "Kano 分类等于投入优先级",
+        "问卷措辞与样本影响分类"
+      ],
+      "risk_flags": [],
+      "alternatives": [
+        "maxdiff",
+        "concept-test"
+      ],
+      "source": "Kano 方法实践"
+    },
+    {
+      "id": "pricing-vw",
+      "name": "Van Westendorp 价格敏感度",
+      "applicable_domains": [
+        "software",
+        "consumer",
+        "mobile"
+      ],
+      "lifecycle": [
+        "pricing"
+      ],
+      "answers": [
+        "感知可接受价格带",
+        "价格异议区间"
+      ],
+      "evidence_forms": [
+        "self_report"
+      ],
+      "supports": [
+        "commercial"
+      ],
+      "does_not_support": [
+        "actual_sales",
+        "profit_optimum",
+        "elasticity"
+      ],
+      "common_misreads": [
+        "最优点等于利润最优",
+        "忽视竞争、成本与折扣",
+        "小样本插值不稳定"
+      ],
+      "risk_flags": [],
+      "alternatives": [
+        "pricing-gg",
+        "conjoint"
+      ],
+      "source": "Van Westendorp / pricesensitivitymeter"
+    },
+    {
+      "id": "pricing-gg",
+      "name": "Gabor-Granger 价格测试",
+      "applicable_domains": [
+        "software",
+        "consumer",
+        "mobile"
+      ],
+      "lifecycle": [
+        "pricing"
+      ],
+      "answers": [
+        "不同价格下的申报购买可能性",
+        "价格—需求曲线（声明性）"
+      ],
+      "evidence_forms": [
+        "self_report"
+      ],
+      "supports": [
+        "commercial"
+      ],
+      "does_not_support": [
+        "actual_sales",
+        "elasticity",
+        "profit_optimum"
+      ],
+      "common_misreads": [
+        "申报需求等于实际弹性",
+        "锚定与重复测量未控制"
+      ],
+      "risk_flags": [],
+      "alternatives": [
+        "pricing-vw",
+        "conjoint"
+      ],
+      "source": "Gabor & Granger"
+    },
+    {
+      "id": "clt",
+      "name": "CLT 受控地点测试",
+      "applicable_domains": [
+        "consumer"
+      ],
+      "lifecycle": [
+        "prototype",
+        "validation"
+      ],
+      "answers": [
+        "受控条件下的喜好/辨别/偏好",
+        "样品间可感知差异"
+      ],
+      "evidence_forms": [
+        "experiment",
+        "self_report"
+      ],
+      "supports": [
+        "acceptance",
+        "usability"
+      ],
+      "does_not_support": [
+        "performance",
+        "safety",
+        "commercial",
+        "population_prevalence"
+      ],
+      "common_misreads": [
+        "CLT 结果外推家庭长期使用",
+        "喜欢等于复购",
+        "未控制顺序与携带效应"
+      ],
+      "risk_flags": [
+        "food_ingest",
+        "skin_contact"
+      ],
+      "alternatives": [
+        "hut",
+        "concept-test"
+      ],
+      "source": "ISO 11136"
+    },
+    {
+      "id": "hut",
+      "name": "HUT / 家庭使用测试",
+      "applicable_domains": [
+        "consumer",
+        "hardware",
+        "mobile"
+      ],
+      "lifecycle": [
+        "validation",
+        "prelaunch"
+      ],
+      "answers": [
+        "真实环境中的采用、习惯、弃用",
+        "学习、维护与支持负担",
+        "长期使用中的摩擦"
+      ],
+      "evidence_forms": [
+        "self_report",
+        "observation",
+        "product_interaction"
+      ],
+      "supports": [
+        "acceptance",
+        "usability"
+      ],
+      "does_not_support": [
+        "performance",
+        "safety",
+        "population_prevalence",
+        "commercial_actual"
+      ],
+      "common_misreads": [
+        "短期新奇等于长期留存",
+        "免费样品继续使用等于复购",
+        "高配合度样本等于一般用户"
+      ],
+      "risk_flags": [
+        "home_recording",
+        "food_ingest",
+        "skin_contact"
+      ],
+      "alternatives": [
+        "diary-study",
+        "beta-soak"
+      ],
+      "source": "ISO 11136 / 消费品 HUT 实践"
+    },
+    {
+      "id": "beta-soak",
+      "name": "Beta / Soak / 现场试用",
+      "applicable_domains": [
+        "software",
+        "hardware",
+        "mobile",
+        "automotive"
+      ],
+      "lifecycle": [
+        "validation",
+        "prelaunch"
+      ],
+      "answers": [
+        "发布门槛是否达到",
+        "版本异常、兼容与支持负担",
+        "真实使用中的弃用原因"
+      ],
+      "evidence_forms": [
+        "observation",
+        "product_interaction",
+        "instrument_log",
+        "support_record"
+      ],
+      "supports": [
+        "usability",
+        "acceptance",
+        "commercial"
+      ],
+      "does_not_support": [
+        "performance",
+        "safety",
+        "population_prevalence"
+      ],
+      "common_misreads": [
+        "志愿者等于全量",
+        "无报告等于无问题",
+        "Beta 等于认证/可发布"
+      ],
+      "risk_flags": [
+        "production_logs",
+        "sensitive_data"
+      ],
+      "alternatives": [
+        "hut",
+        "telemetry-monitoring"
+      ],
+      "source": "软件 Beta / 硬件现场试用实践"
+    },
+    {
+      "id": "ab-test",
+      "name": "A/B 与受控实验",
+      "applicable_domains": [
+        "software",
+        "mobile"
+      ],
+      "lifecycle": [
+        "validation",
+        "postlaunch"
+      ],
+      "answers": [
+        "特定干预对行为指标的增量因果效果",
+        "发布护栏是否被突破"
+      ],
+      "evidence_forms": [
+        "experiment",
+        "instrument_log"
+      ],
+      "supports": [
+        "commercial",
+        "usability"
+      ],
+      "does_not_support": [
+        "need",
+        "prevalence",
+        "long_term",
+        "unmeasured_outcomes"
+      ],
+      "common_misreads": [
+        "显著等于值得上线",
+        "相关/队列差异当因果",
+        "窥视、污染与低功效未处理"
+      ],
+      "risk_flags": [
+        "production_logs",
+        "sensitive_data"
+      ],
+      "alternatives": [
+        "analytics-cohort"
+      ],
+      "source": "Kohavi et al. 在线实验实践"
+    },
+    {
+      "id": "analytics-cohort",
+      "name": "产品分析 / 漏斗 / 队列",
+      "applicable_domains": [
+        "software",
+        "mobile",
+        "automotive"
+      ],
+      "lifecycle": [
+        "validation",
+        "postlaunch"
+      ],
+      "answers": [
+        "哪里、何时、何人流失/回访/付费",
+        "版本与人群差异",
+        "待验证假设"
+      ],
+      "evidence_forms": [
+        "instrument_log",
+        "transaction"
+      ],
+      "supports": [
+        "commercial",
+        "usability"
+      ],
+      "does_not_support": [
+        "need",
+        "causality",
+        "why"
+      ],
+      "common_misreads": [
+        "相关等于因果",
+        "活跃等于价值",
+        "未成熟队列横比",
+        "事件定义未校验"
+      ],
+      "risk_flags": [
+        "production_logs",
+        "sensitive_data"
+      ],
+      "alternatives": [
+        "ab-test",
+        "discovery-interview"
+      ],
+      "source": "Amplitude 留存/漏斗解释"
+    },
+    {
+      "id": "telemetry-monitoring",
+      "name": "遥测 / 版本监控",
+      "applicable_domains": [
+        "hardware",
+        "mobile",
+        "automotive",
+        "software"
+      ],
+      "lifecycle": [
+        "prelaunch",
+        "postlaunch"
+      ],
+      "answers": [
+        "真实采用、版本异常、崩溃/功耗/连接问题",
+        "售后前兆与分群"
+      ],
+      "evidence_forms": [
+        "instrument_log"
+      ],
+      "supports": [
+        "performance",
+        "commercial"
+      ],
+      "does_not_support": [
+        "need",
+        "causality",
+        "safety"
+      ],
+      "common_misreads": [
+        "相关等于因果",
+        "无分母称故障率",
+        "遥测覆盖偏差未披露"
+      ],
+      "risk_flags": [
+        "production_logs",
+        "sensitive_data"
+      ],
+      "alternatives": [
+        "rma-review",
+        "analytics-cohort"
+      ],
+      "source": "Android vitals / Apple MetricKit"
+    },
+    {
+      "id": "rma-review",
+      "name": "退换 / RMA / 维修 / 工单复盘",
+      "applicable_domains": [
+        "hardware",
+        "consumer",
+        "mobile",
+        "automotive"
+      ],
+      "lifecycle": [
+        "prelaunch",
+        "postlaunch"
+      ],
+      "answers": [
+        "真实失效模式与服务成本",
+        "批次/渠道/使用时长差异",
+        "卖点落差"
+      ],
+      "evidence_forms": [
+        "transaction",
+        "support_record"
+      ],
+      "supports": [
+        "commercial",
+        "performance"
+      ],
+      "does_not_support": [
+        "need",
+        "safety",
+        "causality"
+      ],
+      "common_misreads": [
+        "投诉量等于故障率",
+        "维修原因等于购买动机",
+        "NFF 等于用户误用"
+      ],
+      "risk_flags": [
+        "sensitive_data"
+      ],
+      "alternatives": [
+        "telemetry-monitoring"
+      ],
+      "source": "CPSC Recall / 售后质量实践"
+    },
+    {
+      "id": "clinic-static",
+      "name": "静态诊所",
+      "applicable_domains": [
+        "consumer",
+        "automotive",
+        "hardware",
+        "mobile"
+      ],
+      "lifecycle": [
+        "concept",
+        "prototype"
+      ],
+      "answers": [
+        "外观、空间、上下车、储物、配置理解",
+        "静态偏好与取舍"
+      ],
+      "evidence_forms": [
+        "self_report",
+        "observation"
+      ],
+      "supports": [
+        "acceptance",
+        "need"
+      ],
+      "does_not_support": [
+        "usability",
+        "safety",
+        "performance"
+      ],
+      "common_misreads": [
+        "静态偏好等于动态体验",
+        "购买意向等于销量",
+        "样本代表总体"
+      ],
+      "risk_flags": [
+        "moving_parts",
+        "electrical_thermal"
+      ],
+      "alternatives": [
+        "clinic-dynamic",
+        "concept-test"
+      ],
+      "source": "汽车诊所研究实践"
+    },
+    {
+      "id": "clinic-dynamic",
+      "name": "动态诊所",
+      "applicable_domains": [
+        "automotive"
+      ],
+      "lifecycle": [
+        "concept",
+        "prototype"
+      ],
+      "answers": [
+        "驾乘坐、噪声、操控与功能感知",
+        "动态场景下的偏好"
+      ],
+      "evidence_forms": [
+        "self_report",
+        "observation"
+      ],
+      "supports": [
+        "acceptance",
+        "usability"
+      ],
+      "does_not_support": [
+        "safety",
+        "performance",
+        "population_prevalence"
+      ],
+      "common_misreads": [
+        "受控路线等于全部交通",
+        "偏好等于可用性",
+        "访谈干扰关键操作"
+      ],
+      "risk_flags": [
+        "road_test",
+        "moving_parts"
+      ],
+      "alternatives": [
+        "driving-simulator",
+        "closed-course"
+      ],
+      "source": "汽车动态诊所实践"
+    },
+    {
+      "id": "driving-simulator",
+      "name": "驾驶模拟器",
+      "applicable_domains": [
+        "automotive"
+      ],
+      "lifecycle": [
+        "validation"
+      ],
+      "answers": [
+        "可重复比较 HMI、分心、罕见事件与接管",
+        "相对设计判断"
+      ],
+      "evidence_forms": [
+        "experiment",
+        "observation",
+        "instrument_log"
+      ],
+      "supports": [
+        "usability",
+        "acceptance"
+      ],
+      "does_not_support": [
+        "real_accident_rate",
+        "road_safety",
+        "safety_certification"
+      ],
+      "common_misreads": [
+        "相对差异等于真实事故率",
+        "保真度限制未报告",
+        "模拟病影响结果"
+      ],
+      "risk_flags": [
+        "simulator_sickness"
+      ],
+      "alternatives": [
+        "closed-course",
+        "on-road"
+      ],
+      "source": "NHTSA / 汽车 Human Factors"
+    },
+    {
+      "id": "closed-course",
+      "name": "封闭场地试验",
+      "applicable_domains": [
+        "automotive"
+      ],
+      "lifecycle": [
+        "validation"
+      ],
+      "answers": [
+        "真实车辆轨迹、间距、低速空间/视野",
+        "受控 ADAS 人车交互"
+      ],
+      "evidence_forms": [
+        "observation",
+        "instrument_log"
+      ],
+      "supports": [
+        "usability",
+        "performance"
+      ],
+      "does_not_support": [
+        "open_traffic",
+        "real_accident_rate",
+        "safety_certification"
+      ],
+      "common_misreads": [
+        "零事件等于安全",
+        "场地结果外推全部交通",
+        "无社会车辆干扰"
+      ],
+      "risk_flags": [
+        "road_test",
+        "moving_parts"
+      ],
+      "alternatives": [
+        "driving-simulator",
+        "on-road"
+      ],
+      "source": "汽车场地试验实践"
+    },
+    {
+      "id": "on-road",
+      "name": "实际道路研究",
+      "applicable_domains": [
+        "automotive"
+      ],
+      "lifecycle": [
+        "validation",
+        "prelaunch"
+      ],
+      "answers": [
+        "后期真实路线/交通/网络下的集成体验",
+        "低风险任务与生态有效性"
+      ],
+      "evidence_forms": [
+        "observation",
+        "instrument_log"
+      ],
+      "supports": [
+        "usability",
+        "acceptance"
+      ],
+      "does_not_support": [
+        "safety_certification",
+        "real_accident_rate",
+        "population_prevalence"
+      ],
+      "common_misreads": [
+        "小样本零事件等于安全",
+        "故意制造危险接管",
+        "未审批/无安全员"
+      ],
+      "risk_flags": [
+        "road_test",
+        "bystander_recording"
+      ],
+      "alternatives": [
+        "closed-course",
+        "naturalistic-driving"
+      ],
+      "source": "NHTSA / 道路研究伦理"
+    },
+    {
+      "id": "naturalistic-driving",
+      "name": "自然驾驶研究（NDS）",
+      "applicable_domains": [
+        "automotive"
+      ],
+      "lifecycle": [
+        "prelaunch",
+        "postlaunch"
+      ],
+      "answers": [
+        "日常使用、暴露、学习、误用",
+        "事故/近失事件的统计关联"
+      ],
+      "evidence_forms": [
+        "observation",
+        "instrument_log"
+      ],
+      "supports": [
+        "usability",
+        "commercial",
+        "performance"
+      ],
+      "does_not_support": [
+        "causality",
+        "population_prevalence",
+        "safety_certification"
+      ],
+      "common_misreads": [
+        "相关等于因果",
+        "志愿者等于全体",
+        "近失等于事故"
+      ],
+      "risk_flags": [
+        "road_test",
+        "sensitive_data",
+        "bystander_recording"
+      ],
+      "alternatives": [
+        "telemetry-monitoring",
+        "on-road"
+      ],
+      "source": "SHRP2 NDS"
+    },
+    {
+      "id": "lab-bench",
+      "name": "台架 / 实验室 / 可靠性测试",
+      "applicable_domains": [
+        "hardware",
+        "mobile",
+        "automotive"
+      ],
+      "lifecycle": [
+        "prototype",
+        "validation",
+        "prelaunch"
+      ],
+      "answers": [
+        "明确协议下的性能、耐久、环境达标",
+        "根因与版本回归"
+      ],
+      "evidence_forms": [
+        "lab_report",
+        "instrument_log"
+      ],
+      "supports": [
+        "performance"
+      ],
+      "does_not_support": [
+        "need",
+        "usability",
+        "commercial",
+        "safety_certification"
+      ],
+      "common_misreads": [
+        "台架通过等于用户体验",
+        "跑分等于偏好",
+        "认证/安全结论未经资质流程"
+      ],
+      "risk_flags": [
+        "electrical_thermal",
+        "destructive_test"
+      ],
+      "alternatives": [
+        "prototype-usability",
+        "telemetry-monitoring"
+      ],
+      "source": "IEC / ISO / 实验室实践"
+    },
+    {
+      "id": "shelf-test",
+      "name": "货架 / 陈列测试",
+      "applicable_domains": [
+        "consumer"
+      ],
+      "lifecycle": [
+        "concept",
+        "validation"
+      ],
+      "answers": [
+        "发现率、查找时间、模拟选择",
+        "包装与陈列的货架效果"
+      ],
+      "evidence_forms": [
+        "observation",
+        "experiment"
+      ],
+      "supports": [
+        "usability",
+        "acceptance",
+        "commercial"
+      ],
+      "does_not_support": [
+        "actual_sales",
+        "population_prevalence"
+      ],
+      "common_misreads": [
+        "虚拟选择等于实销",
+        "位置与门店聚类未处理",
+        "价格/库存不一致"
+      ],
+      "risk_flags": [],
+      "alternatives": [
+        "packaging-test",
+        "price-promo-test"
+      ],
+      "source": "消费品货架研究实践"
+    },
+    {
+      "id": "price-promo-test",
+      "name": "价格 / 促销实验",
+      "applicable_domains": [
+        "consumer",
+        "software"
+      ],
+      "lifecycle": [
+        "pricing",
+        "postlaunch"
+      ],
+      "answers": [
+        "增量销量、毛利与蚕食",
+        "价格/促销/陈列组合效果"
+      ],
+      "evidence_forms": [
+        "experiment",
+        "transaction"
+      ],
+      "supports": [
+        "commercial"
+      ],
+      "does_not_support": [
+        "need",
+        "causality_outside_test",
+        "long_term"
+      ],
+      "common_misreads": [
+        "销量同增等于增量",
+        "兑换/进货等于真实需求",
+        "缺货与店周聚类未处理"
+      ],
+      "risk_flags": [],
+      "alternatives": [
+        "pricing-gg",
+        "ab-test"
+      ],
+      "source": "零售实验实践"
+    },
+    {
+      "id": "panel-repeat",
+      "name": "家庭 panel / 真实复购",
+      "applicable_domains": [
+        "consumer"
+      ],
+      "lifecycle": [
+        "prelaunch",
+        "postlaunch"
+      ],
+      "answers": [
+        "渗透、购买频次、复购与品牌转换",
+        "首购者在窗口内是否再次付费"
+      ],
+      "evidence_forms": [
+        "transaction",
+        "self_report"
+      ],
+      "supports": [
+        "commercial"
+      ],
+      "does_not_support": [
+        "need",
+        "causality",
+        "safety"
+      ],
+      "common_misreads": [
+        "首购等于复购",
+        "免费样品继续使用等于复购",
+        "panel 漏渠道/流失未处理"
+      ],
+      "risk_flags": [
+        "sensitive_data"
+      ],
+      "alternatives": [
+        "price-promo-test",
+        "rma-review"
+      ],
+      "source": "消费者 panel 研究实践"
+    },
+    {
+      "id": "accessibility-eval",
+      "name": "无障碍评估",
+      "applicable_domains": [
+        "software",
+        "mobile",
+        "automotive",
+        "hardware"
+      ],
+      "lifecycle": [
+        "prototype",
+        "validation",
+        "prelaunch"
+      ],
+      "answers": [
+        "残障/老年用户能否完成任务",
+        "辅助技术路径与阻断点"
+      ],
+      "evidence_forms": [
+        "observation",
+        "self_report"
+      ],
+      "supports": [
+        "usability"
+      ],
+      "does_not_support": [
+        "need",
+        "commercial",
+        "performance"
+      ],
+      "common_misreads": [
+        "自动扫描等于真实可用",
+        "只测一种残障",
+        "合规等于覆盖全部需求"
+      ],
+      "risk_flags": [],
+      "alternatives": [
+        "prototype-usability"
+      ],
+      "source": "W3C WAI / WCAG 2.2"
+    },
+    {
+      "id": "expert-review",
+      "name": "专家评审 / 红队审阅",
+      "applicable_domains": [
+        "software",
+        "hardware",
+        "consumer",
+        "automotive",
+        "mobile"
+      ],
+      "lifecycle": [
+        "audit",
+        "prelaunch"
+      ],
+      "answers": [
+        "证据是否支持结论",
+        "遗漏的反证、偏差与安全风险",
+        "交付物是否可复核"
+      ],
+      "evidence_forms": [
+        "self_report"
+      ],
+      "supports": [
+        "usability",
+        "acceptance"
+      ],
+      "does_not_support": [
+        "need",
+        "commercial",
+        "performance",
+        "safety"
+      ],
+      "common_misreads": [
+        "专家意见等于用户证据",
+        "评审通过等于验证通过"
+      ],
+      "risk_flags": [],
+      "alternatives": [
+        "prototype-usability",
+        "rma-review"
+      ],
+      "source": "NN/g Expert Review"
+    }
+  ]
+}

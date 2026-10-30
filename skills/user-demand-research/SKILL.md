@@ -1,6 +1,6 @@
 ---
 name: user-demand-research
-description: Design, execute, audit, or synthesize evidence-led user-demand research with the SURE protocol. Use for 用户研究、需求研究、场景研究、客户发现、Reddit/X/YouTube/Amazon/京东/淘宝/Kickstarter/评论/论坛/工单/访谈数据分析、JTBD、开源采集连接器审查、反幸存者偏差采样、付费意愿审计、研究计划生成、调研报告、批量反馈挖掘，或判断一批材料能否支持产品决策。Connects user roles, scenes, tasks, substitutes, frictions, consequences, solution acceptance, commercial behavior, counter-evidence, and E0–E5 evidence. Do not use for generic market sizing, invented personas, or treating feature mentions and frequency as demand.
+description: Design, execute, audit, or synthesize evidence-led user-demand research with the SURE protocol. Use for 软件/硬件/消费品/汽车/手机五类产品的用户研究、需求验证、可用性、价格、Beta、平台数据采集与分析；也用于 Reddit/X/YouTube/Instagram/Amazon/GitHub/评论/论坛/工单/访谈数据分析、JTBD、反幸存者偏差、付费意愿审计、研究计划、调研报告、批量反馈挖掘，或判断一批材料能否支持产品决策。Connects user roles, scenes, tasks, substitutes, frictions, consequences, solution acceptance, commercial behavior, counter-evidence, and E0–E5 evidence. Do not use for generic market sizing, invented personas, or treating feature mentions and frequency as demand.
 metadata:
   short-description: Build auditable user-demand evidence and decisions
 ---
@@ -12,6 +12,26 @@ Use SURE — Structured User Research with Evidence — to turn source material 
 The same deterministic operations are available as MCP tools via [scripts/sure_mcp.py](scripts/sure_mcp.py) for MCP-first agents; this Skill remains the source of judgment, mode selection, and safety boundaries regardless of the entry point.
 
 The same operations are exposed as the `sure` CLI (`sure audit`, `sure plan`) and as MCP tools via `sure mcp`. Examples below use `python3 scripts/sure.py` for a repo checkout; the installed CLI is equivalent, and `sure audit` is the recommended first call when the user already has material.
+
+## One entry, never separate installs
+
+There is **one** entry point. Do not ask the user to install software/hardware/consumer/automotive/mobile variants, and do not fork the protocol per domain:
+
+```bash
+sure "<business research request>"           # bare shorthand = do
+sure do "<business research request>"        # route + scaffold
+sure route "<request>" --json                # route only
+sure platforms "<request>" --domain …        # where data lives
+sure collect <study> --platform …            # collect/import
+sure analyze <study> --question …            # normalize/describe
+sure deliver <study> --kind memo             # deliverable
+```
+
+`sure do` detects product domain, lifecycle stage, intent and risk, then selects the method pack. If the domain is ambiguous, ask once: software / hardware / consumer / automotive / mobile. If the request is high-risk (road test, ingestion, skin contact, minors, sensitive data, production logs, destructive test), stop at S0 and require an explicit human acknowledgement; never add `--ack-risk` on the user's behalf.
+
+**Platform rule**: before promising data, run `sure platforms`. Classify each source as `supported`, `limited` or `blocked`. Never scrape a blocked platform, never substitute a login session/merchant API/internal endpoint, and never treat platform volume as population representativeness. Prefer official APIs, authorized exports or compliant historical datasets.
+
+**Analysis rule**: `sure analyze` is descriptive (counts, dedup, time/platform distribution, candidate terms, matching excerpts). It does not prove prevalence, causality or demand. Deep coding, evidence grading and claim judgments remain with the Skill and a human reviewer.
 
 ## Select the mode from available artifacts
 

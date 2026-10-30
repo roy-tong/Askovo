@@ -1,0 +1,210 @@
+{
+  "schema_version": "1.0",
+  "domain": "hardware",
+  "label": "硬件 / IoT / 消费电子",
+  "keywords": [
+    "硬件",
+    "设备",
+    "IoT",
+    "摄像头",
+    "机器人",
+    "样机",
+    "EVT",
+    "DVT",
+    "PVT",
+    "外壳",
+    "传感器",
+    "安装",
+    "续航",
+    "固件",
+    "试产",
+    "amazon",
+    "家电"
+  ],
+  "roles": [
+    "使用者",
+    "安装者",
+    "维护者",
+    "购买者",
+    "旁观者"
+  ],
+  "default_stage": "discovery",
+  "stages": {
+    "discovery": {
+      "label": "需求发现",
+      "methods": [
+        "contextual-inquiry",
+        "diary-study",
+        "discovery-interview"
+      ],
+      "decisions": [
+        "在什么空间/约束下使用",
+        "现有替代与维护成本",
+        "谁安装、谁维护"
+      ],
+      "deliverables": [
+        "现场图",
+        "任务流",
+        "需求假设"
+      ]
+    },
+    "concept": {
+      "label": "概念与工业设计",
+      "methods": [
+        "concept-test",
+        "prototype-usability",
+        "clinic-static"
+      ],
+      "decisions": [
+        "外观/CMF、尺寸、摆放与价格",
+        "概念是否可理解"
+      ],
+      "deliverables": [
+        "概念取舍矩阵",
+        "人机工程问题单",
+        "价格方案"
+      ]
+    },
+    "prototype": {
+      "label": "原型验证",
+      "methods": [
+        "prototype-usability",
+        "task-analysis",
+        "lab-bench"
+      ],
+      "decisions": [
+        "开箱/安装/学习/异常恢复/维护",
+        "哪些问题必须修"
+      ],
+      "deliverables": [
+        "任务问题单",
+        "样机偏差表",
+        "改版依据"
+      ]
+    },
+    "validation": {
+      "label": "工程与现场验证",
+      "methods": [
+        "lab-bench",
+        "beta-soak",
+        "telemetry-monitoring"
+      ],
+      "decisions": [
+        "工程性能是否达标",
+        "真实环境价值与支持负担"
+      ],
+      "deliverables": [
+        "测试矩阵",
+        "现场试用报告",
+        "版本问题单"
+      ]
+    },
+    "pricing": {
+      "label": "价格与配置",
+      "methods": [
+        "conjoint",
+        "pricing-vw"
+      ],
+      "decisions": [
+        "配置组合与价格取舍",
+        "可接受价格带"
+      ],
+      "deliverables": [
+        "配置研究",
+        "价格 memo"
+      ]
+    },
+    "prelaunch": {
+      "label": "试产与上市前",
+      "methods": [
+        "beta-soak",
+        "rma-review",
+        "lab-bench"
+      ],
+      "decisions": [
+        "PVT 批次一致性",
+        "包装/说明书/售后准备"
+      ],
+      "deliverables": [
+        "试产问题单",
+        "上市检查单",
+        "RMA 预案"
+      ]
+    },
+    "postlaunch": {
+      "label": "上市后",
+      "methods": [
+        "rma-review",
+        "telemetry-monitoring",
+        "discovery-interview"
+      ],
+      "decisions": [
+        "真实失效模式与服务成本",
+        "批次/渠道/使用时长差异"
+      ],
+      "deliverables": [
+        "RMA 分析",
+        "售后原因码",
+        "复测计划"
+      ]
+    },
+    "audit": {
+      "label": "现有材料审计",
+      "methods": [
+        "expert-review",
+        "rma-review"
+      ],
+      "decisions": [
+        "是否用台架/认证替代需求",
+        "版本与使用分母是否清楚"
+      ],
+      "deliverables": [
+        "审计备忘",
+        "补证计划"
+      ]
+    }
+  },
+  "evidence_plan": [
+    {
+      "role": "使用者",
+      "target": "覆盖核心任务与异常恢复",
+      "forms": [
+        "observation",
+        "self_report"
+      ]
+    },
+    {
+      "role": "安装者/维护者",
+      "target": "覆盖安装、清洁、耗材、维修",
+      "forms": [
+        "observation",
+        "support_record"
+      ]
+    },
+    {
+      "role": "退换/维修",
+      "target": "带销量/使用时长分母",
+      "forms": [
+        "transaction",
+        "support_record"
+      ]
+    }
+  ],
+  "claim_boundaries": [
+    "EVT/DVT/PVT 是工程门，不是需求证据",
+    "Beta/认证/抽检不能互相替代",
+    "喜欢外观不等于会用/会买",
+    "投诉量不等于故障率"
+  ],
+  "risk_notes": [
+    "市电/锂电/高温/运动件/激光/射频需工程风险审查",
+    "未认证样机限制场景，禁止诱导误用",
+    "家庭/工作观察需参与者与旁观者许可"
+  ],
+  "sources": [
+    "ISO 9241-210",
+    "Formlabs EVT/DVT/PVT",
+    "FDA Human Factors",
+    "NIST IR 8259A"
+  ]
+}

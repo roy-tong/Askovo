@@ -1,22 +1,26 @@
 # User Demand Research (SURE)
 
-> Turn a research goal, region, sample size, and platform types into an auditable demand-research study: resolve platforms against a reviewed GitHub open-source connector registry, plan quotas and collection tasks, compute deterministic corpus signals, and assemble a research-status report. Evidence is graded E0–E5 with counter-evidence gates; records are never users; convenience samples never support prevalence or market-size claims.
+> One `sure` entry routes software / hardware / consumer / automotive / mobile research to a method pack, lifecycle stage, platform plan, research instruments, collection manifest, descriptive analysis and a signed-off deliverable. Six claim types (need, acceptance, usability, performance, commercial, safety) never substitute for one another; records are never users; convenience samples never support prevalence or market-size claims.
 
 Stable raw base: https://raw.githubusercontent.com/roy-tong/user-demand-research/main/
 
 ## Start here
 
 - [Agent Skill — judgment and protocol](skills/user-demand-research/SKILL.md): mode selection, evidence grading, demand-judgment gates, claim discipline, stop rules, safety boundaries. Read this before running a study.
-- Use `sure audit <study>` when the user already has a corpus; it returns `supported` / `exceeds_evidence` / `open` per demand judgment.
+- Start with `sure do "<request>" --dry-run`; it returns domain, stage, methods, risk gate and platform preview.
+- Use `sure platforms` before promising data; classify sources as supported / limited / blocked.
+- Use `sure audit <study>` when the user already has a corpus; it returns per-claim verdicts.
 - [Agent runbook](skills/user-demand-research/references/agent-runbook.md): file-level execution steps, stage gates, and inter-agent handoff format.
 - [README quickstart](README.md): 30-second sample check and the plan → collect → signals → report walkthrough (Chinese).
 
 ## Interfaces
 
 - Install: `pipx install sure-research` (CLI) or `bash scripts/install-skill.sh` (Skill). Version lives in `VERSION`.
-- [CLI sure.py](skills/user-demand-research/scripts/sure.py): `audit` (recommended first call: gates + signals + per-claim verdicts), `plan`, `init`, `check`, `signals`, `lexicon`, `report`, `connectors`, plus the thin `stage` forwarder. Standard library only; Python 3.9+.
+- [CLI sure.py](skills/user-demand-research/scripts/sure.py): `do` (single entry), `route`, `platforms`, `collect`, `analyze`, `instruments`, `import`, `codebook`, `deliver`, plus legacy `audit/plan/check/signals/lexicon/report/connectors`. Standard library only; Python 3.9+.
+- [Method catalog](skills/user-demand-research/assets/method-catalog.json) and [domain packs](skills/user-demand-research/assets/domain-packs/): 32 methods across five product types.
+- [Platform catalog](skills/user-demand-research/assets/platform-catalog.json): 22 platforms/sources with access mode, bulk capability, bias and legal limits.
 - [Human docs](docs/README.md): quickstart, concepts, modes, CLI reference, data contract, connectors, troubleshooting.
-- [MCP server sure_mcp.py](skills/user-demand-research/scripts/sure_mcp.py): stdio JSON-RPC, same commands as tools (`sure_plan`, `sure_init`, `sure_check`, `sure_signals`, `sure_report`, `sure_connectors`, `sure_platform_map`). Registration snippets are in the README's "三种接入方式" section.
+- [MCP server sure_mcp.py](skills/user-demand-research/scripts/sure_mcp.py): stdio JSON-RPC, same commands as tools (`sure_route`, `sure_do`, `sure_platforms`, `sure_collect`, `sure_analyze`, `sure_deliver`, plus legacy tools).
 - [Connector registry](skills/user-demand-research/assets/open-source-connectors.json): machine-readable decisions (`supported` / `historical_only` / `blocked`) with pinned commits, licenses, access bases, and the Reddit 2026-09-30 policy watch.
 - [Platform map](skills/user-demand-research/assets/platform-map.json): how regions (cn / overseas / global) and platform types (forum, social, video, ecommerce, crowdfunding) resolve to platforms.
 - [Collected toolbox connectors/](skills/user-demand-research/scripts/connectors/README.md): first-party collection/cleaning scripts consolidated from finished research projects (legacy Reddit archive collector with sharding/backoff/resume, Arctic Shift cursor collector, Amazon Reviews 2023 streaming + Range downloader, reusable clean-screen stage). Not registered in the connector registry — see the toolbox README for why.

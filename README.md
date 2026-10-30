@@ -1,109 +1,123 @@
 # SURE
 
-**让每一条需求判断都带证据等级、覆盖缺口和证伪条件。**
+**一个入口，路由到软件、硬件、消费品、汽车、手机五类产品研究。**
 
-SURE（Structured User Research with Evidence）把访谈、评论、论坛、工单和行为记录整理成可审计的需求判断，并明确一批材料**能支持什么、还不能支持什么**。
+SURE 是 Agent 原生的研究与交付助手：说一句业务问题，它判断产品类型、生命周期、研究意图与风险，选择方法组合，生成研究计划、访谈/试验工具包、证据台账和可签收交付物。
 
 [![Agent Skill](https://img.shields.io/badge/Agent_Skill-user--demand--research-111111)](skills/user-demand-research/SKILL.md)
 [![CI](https://github.com/roy-tong/user-demand-research/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/user-demand-research/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-![Version](https://img.shields.io/badge/version-1.12.0-orange)
+![Version](https://img.shields.io/badge/version-1.13.0-orange)
 
 ## 30 秒证明它能工作
-
-不联网、不采集、不调用模型，跑内置合成样例：
 
 ```bash
 git clone https://github.com/roy-tong/user-demand-research.git
 cd user-demand-research
 pipx install --editable .
+sure do "家用摄像头夜间告警误报，想验证样机" --dry-run
 sure demo
 ```
 
-预期输出：
+也可以直接写需求：`sure "手机相机夜景和续航" --dry-run`（等价于 `sure do`）。
+`--dry-run` 只路由、不写文件；`demo` 跑内置合成样例。
 
-```text
-SURE 审计：synthetic-mobile-pet-check — pass
-- 记录 7 条；重复率 0.0%；主导来源 42.9%
-- 判断 1 条：可支持 1、超出证据 0、未定 0
-```
-
-没有 pipx 也可以直接跑：
+## 只装一次，不再分领域安装
 
 ```bash
-python3 skills/user-demand-research/scripts/sure.py demo
+sure do "SaaS 订阅留存下降，想看看用户为什么不续费"
+sure do "新口味饮料的包装和复购"
+sure do "座舱语音和 ADAS 接管体验"
+sure do "手机相机夜景和续航"
 ```
 
-`demo` 只证明本地运行时、门禁和输出格式可用；它不证明样例里的需求真实存在。
+同一行命令会自动识别：
 
-## 先选入口
+| 维度 | 可选 |
+|---|---|
+| 产品类型 | software / hardware / consumer / automotive / mobile |
+| 生命周期 | discovery / concept / prototype / validation / pricing / prelaunch / postlaunch / audit |
+| 意图 | route / plan / instruments / sources / collect / analyze / audit / deliver |
+| 风险 | 道路试验、摄入/皮肤接触、儿童、敏感数据、生产日志、破坏性测试等 |
 
-| 你手上有什么 | 用哪个 | 你会得到 |
-| --- | --- | --- |
-| 一批访谈、评论、工单，想知道能不能支持某个决定 | `sure audit <study>` | 每条判断的可支持等级、缺口、最便宜的补证 |
-| 还没开始，想知道这个研究做不做得成 | `sure plan <study> --goal …` | 平台可行性、配额、合规前提、采集任务 |
-| 要跑完整研究 | `plan → 采集 → signals → report` | 研究状态报告 + 证据台账 |
-| 让 Agent 自己按协议做 | 安装 Skill | 模式选择、停止规则、输出契约 |
-| MCP 客户端 | `sure mcp` | 同一组确定性工具 |
+输出包括：推荐方法、不推荐方法、证据形式、本阶段要回答的问题、安全门、平台预判和下一步命令。
 
-## 两个核心命令
+## 四个核心能力
 
-### 审计现有材料
+### 1. 方法路由
 
 ```bash
-sure audit ./study
-sure audit ./study --claim "用户愿意为远程协作付费"   # 只看一条判断
+sure route "汽车座舱语音的接管体验怎么验证" --json
+sure methods --domain automotive --stage validation
 ```
 
-输出 `05-audit/audit.md` 与 `audit.json`：
+不是“所有产品都做访谈”：汽车会路由到诊所/模拟器/封闭场地/道路/自然驾驶，消费品会路由到 CLT/HUT/复购，软件会路由到可用性/Beta/A-B/队列。
 
-```text
-# SURE 审计结论
-- 结论：**不可支持（或超出证据）**
-- 判断 D01：声称 validated，最高证据 E2 —— 缺商业链（需要 E4+/E5）、缺反证
-- 下一步：把 D01 降级为 needs-validation，或补 3 个预购页转化
-```
-
-退出码：`0` 通过，`1` 门禁未过或存在超出证据的判断，`2` 用法错误。
-
-### 规划一个新研究
+### 2. 平台雷达
 
 ```bash
-sure plan ./study \
-  --goal "AI 眼镜在海外社媒的用户不满与替代方案" \
-  --region overseas --sample-size 100000 --platform-types forum,social,video
+sure platforms "家用摄像头夜间告警的用户抱怨" --domain hardware --bulk
 ```
 
-得到平台配额、连接器 revision、每条路线的准入前提和采集任务清单。若没有可行平台，返回 `3` 并说明缺口，不会换成登录态或商业接口。
+回答“数据在哪个平台、能不能合规拿到、能证明什么”。内置 22 类平台/来源，包括 GitHub、Reddit、X、YouTube、Instagram、TikTok、Amazon、App Store、Google Play、Hacker News、Stack Overflow、Bilibili、知乎、小红书、京东、淘宝、Kickstarter，以及访谈、问卷、工单、遥测、实验室报告。
+
+平台结论分三档：`supported`、`limited`、`blocked`。Instagram/Amazon 等没有通用批量接口的，会明确要求授权导出/研究 API/历史数据集，不做未授权抓取。
+
+### 3. 采集与分析
+
+```bash
+sure collect ./study --platform github --query "camera motion alert" --limit 100
+sure collect ./study --platform reddit --query "night alert" --limit 100
+sure collect ./study --platform reddit --fixture export.jsonl   # 离线/授权导出
+sure analyze ./study --question "夜间误报"
+```
+
+- GitHub：官方 Search API（可选 `GITHUB_TOKEN`）
+- Reddit：官方 Data API（`SURE_REDDIT_CLIENT_ID` / `SURE_REDDIT_CLIENT_SECRET`）
+- 其他平台：授权导出、历史数据集或本地 fixture 接入
+- 每次采集写 manifest：平台、查询、配额、访问依据、条数、限制、偏差
+- 规模化按查询/时间/子版块分片，多次 run，按 `record_id` 跨 run 去重
+- `analyze` 做归一化、去重、平台/时间/结论类型分布、高频候选主题与问题匹配片段；**描述性统计，不证明总体或因果**
+
+### 4. 交付
+
+```bash
+sure instruments ./study     # 访谈/观察/任务/感官/价格/Beta/安全协议
+sure codebook ./study        # need/acceptance/usability/performance/commercial/safety
+sure deliver ./study --kind memo
+sure deliver ./study --kind prd
+```
+
+输出决策 memo、研究报告、PRD 输入、上市/复测 tracker，并把证据 id 带进附录。
 
 ## 安装
 
-**CLI（当前版本从源码安装）**
+**CLI**
 
 ```bash
-pipx install --editable ./user-demand-research
+git clone https://github.com/roy-tong/user-demand-research.git
+cd user-demand-research
+pipx install --editable .
 sure --version
 ```
 
-或使用 venv：
+或 venv：
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -U pip
+python3 -m venv .venv
+.venv/bin/pip install -U pip
 .venv/bin/pip install -e .
 .venv/bin/sure demo
 ```
 
-> PyPI 包发布后可以简化为 `pipx install sure-research`；当前版本尚未上传。
+> PyPI 包发布后可以简化为 `pipx install sure-research`；当前版本从源码安装。
 
 **Agent Skill**
 
 ```bash
-# 从仓库安装（固定位置）
-bash scripts/install-skill.sh                 # 默认 ~/.agents/skills
+bash scripts/install-skill.sh                 # ~/.agents/skills
 bash scripts/install-skill.sh ~/.codex/skills
 ```
-
-若本机有 skills CLI 且该仓库已被索引，也可以用 `npx skills add roy-tong/user-demand-research --skill user-demand-research -g`。
 
 **MCP**
 
@@ -111,69 +125,57 @@ bash scripts/install-skill.sh ~/.codex/skills
 sure mcp
 ```
 
-配置里只需要这一行，不再写绝对路径。工具：`sure_audit`、`sure_plan`、`sure_init`、`sure_check`、`sure_signals`、`sure_lexicon`、`sure_report`、`sure_connectors`、`sure_platform_map`。
+配置里只需要这一行。MCP 暴露 `sure_route`、`sure_do`、`sure_platforms`、`sure_collect`、`sure_analyze`、`sure_deliver` 等工具，与 CLI 共用同一套行为。
 
-## 它解决什么问题
+## 六类结论不能混
 
-AI 让“生成研究”变便宜，变贵的是**判断证据够不够**。
-
-| 常见工具 | 它们解决 | SURE 不跟它们抢 |
-| --- | --- | --- |
-| 访谈整理 / 洞察看板 | 标签、聚类、协作 | 不做分析 UI |
-| 通用大模型 | 快速摘要与结论 | 不替你下结论 |
-| 采集工具 | 把数据拿回来 | 不做大规模采集，只审连接器合规 |
-| **SURE** | **这批材料能支持到哪一级** | 审计层，夹在采集与决策之间 |
-
-### 证据等级（E0–E5）
-
-| 等级 | 材料中直接出现 | 允许的判断 |
-| --- | --- | --- |
-| E0 | 活动、角色或场景背景 | 这个场景出现在材料中 |
-| E1 | 未满足任务、目标或困难 | 问题被明确表达 |
-| E2 | 当前做法、绕行、失败或切换成本 | 已观察到替代方案及摩擦 |
-| E3 | 对研究方案的明确接受或偏好 | 方案在给定条件下被接受 |
-| E4+ | 价格锚点、购买或付费表达 | 出现直接商业意图 |
-| E4− | 拒绝、取消、退货或放弃 | 出现直接负面商业行为 |
-| E5 | 付费持有、部署、持续使用、复购 | 出现已实现的行为证据 |
-
-只有同一角色、场景和任务同时连接问题链 `E1/E2`、方案链 `E3` 与商业/行为链 `E4+/E5`，判断才能标为 `validated`；`E4−` 与反证必须保留。
+| 类型 | 回答 | 不能替代 |
+|---|---|---|
+| need | 谁在什么场景有什么未满足任务 | 功能请求、个案 |
+| acceptance | 用户是否理解/接受方案 | 喜欢≠会用/会买 |
+| usability | 能否完成任务、是否易学低错 | SUS/SEQ 不证明需求或付费 |
+| performance | 明确条件下是否达标 | 跑分≠体验 |
+| commercial | 购买、留存、复购、退换 | 口头意愿≠交易 |
+| safety | 使用风险与合规缺口 | 用户试验≠认证 |
 
 ## 边界
 
-- 不绕过登录、付费墙、验证码、robots、403/429；
-- 不用商业接口、商家 API、登录态替代被阻断的开源连接器；
-- 不把代码许可证当平台访问许可或数据使用许可；
-- 不把记录数写成用户数，不把检索地区写成常住地；
-- 不用便利样本推断总体比例、市场规模或份额；
-- 证据不足时输出研究状态与修复计划，不输出自信的市场结论。
-
-完整边界与禁止推断见 [docs/concepts.md](docs/concepts.md)。
+- 不做未授权抓取：平台无合规批量通道时，只接受授权导出/合规数据集；
+- 不把平台可用当样本代表总体；
+- 不把记录数当用户数；
+- 不把购买意愿当真实购买，不把一次喜欢当复购；
+- 不把 Beta/无投诉/零事件当安全或可发布；
+- 不代替实验室、法规、功能安全或医疗/食品/汽车认证；
+- 高风险研究停在 S0，Agent 只能出方案，不能指导执行。
 
 ## 文档
 
 | 文档 | 内容 |
-| --- | --- |
-| [快速开始](docs/quickstart.md) | 安装、demo、audit、plan、完整研究 |
-| [核心概念](docs/concepts.md) | E0–E5、证据角色、判断结构、边界 |
-| [三种模式](docs/modes.md) | Quick Audit / Design / Full Study 怎么选 |
-| [CLI 参考](docs/cli.md) | 命令、参数、退出码、JSON 输出 |
-| [数据契约](docs/data-contract.md) | study.json、evidence.jsonl、目录结构 |
-| [连接器](docs/connectors.md) | 四门审查、可用平台、被阻断路线 |
-| [故障排查](docs/troubleshooting.md) | 安装、版本、门禁、MCP 常见问题 |
+|---|---|
+| [快速开始](docs/quickstart.md) | 单入口、路由、采集、分析、交付 |
+| [核心概念](docs/concepts.md) | 六类结论、证据形式、边界 |
+| [五类产品](docs/modes.md) | 各产品的方法地图与门禁 |
+| [CLI 参考](docs/cli.md) | 命令、参数、退出码 |
+| [数据契约](docs/data-contract.md) | study/evidence/normalized/analysis |
+| [平台与连接器](docs/connectors.md) | 平台档位、访问方式、抓取边界 |
+| [故障排查](docs/troubleshooting.md) | 安装、路由、采集、MCP |
 
-Agent 入口：[llms.txt](llms.txt)（发现索引）、[AGENTS.md](AGENTS.md)（仓库约定）、[SKILL.md](skills/user-demand-research/SKILL.md)（判断协议）。
+Agent 入口：[llms.txt](llms.txt) · [AGENTS.md](AGENTS.md) · [SKILL.md](skills/user-demand-research/SKILL.md)。
 
 ## 仓库结构
 
 ```text
-skills/user-demand-research/   Skill（判断）+ references（协议）+ assets（模板/注册表）
-  scripts/sure.py              确定性 CLI（audit/plan/check/signals/report/…）
-  scripts/sure_mcp.py          MCP stdio 服务器
-  scripts/connectors/          第一方采集/清洗工具箱
-  scripts/stages/              第一方打标/建库/审计工具箱
-examples/sample-study/         离线合成样例
-docs/                          人类向文档
-tests/                         CLI 与 MCP 测试
+skills/user-demand-research/
+  SKILL.md                    单入口协议与判断规则
+  assets/method-catalog.json  方法目录（32 种）
+  assets/domain-packs/        五类产品研究包
+  assets/platform-catalog.json 平台可用性目录
+  scripts/sure.py             确定性 CLI（同一入口）
+  scripts/sure_kit.py         路由、计划、采集、分析、交付
+  scripts/sure_mcp.py         MCP 外壳
+docs/                         人类向文档
+examples/sample-study/        离线合成样例
+tests/                        CLI、路由、平台、MCP 测试
 ```
 
 ## License

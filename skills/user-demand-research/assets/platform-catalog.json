@@ -1,0 +1,836 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-10-30",
+  "platforms": [
+    {
+      "id": "github",
+      "name": "GitHub",
+      "domains": [
+        "software"
+      ],
+      "data_types": [
+        "issues",
+        "discussions",
+        "pull_requests",
+        "releases",
+        "repository_metadata"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance",
+        "usability",
+        "commercial"
+      ],
+      "access_modes": [
+        "official_api",
+        "authorized_export"
+      ],
+      "auth": "token_optional",
+      "bulk": "yes",
+      "freshness": "high",
+      "decision": "supported",
+      "adapter": "github",
+      "limits": [
+        "Search API rate limits; code search requires auth",
+        "Issues are not representative of all users",
+        "Repository stars are attention, not demand"
+      ],
+      "bias": [
+        "Developer/OSS self-selection",
+        "English/technical skew",
+        "Issue reporters over-represent active users"
+      ],
+      "notes": "Official REST/GraphQL API；公开仓库与 issue/discussion 可采，遵守 API 条款与速率限制。"
+    },
+    {
+      "id": "reddit",
+      "name": "Reddit",
+      "domains": [
+        "software",
+        "hardware",
+        "consumer",
+        "automotive",
+        "mobile"
+      ],
+      "data_types": [
+        "posts",
+        "comments",
+        "subreddit_metadata"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance",
+        "usability",
+        "commercial"
+      ],
+      "access_modes": [
+        "official_api",
+        "historical_archive"
+      ],
+      "auth": "oauth",
+      "bulk": "yes",
+      "freshness": "high",
+      "decision": "supported",
+      "adapter": "reddit",
+      "limits": [
+        "Data API requires approved app and user agent",
+        "Historical archives are third-party and may lag",
+        "Subreddit moderation/deletion changes samples"
+      ],
+      "bias": [
+        "Subreddit self-selection",
+        "Upvote/ranking bias",
+        "Deleted/removed content missing"
+      ],
+      "notes": "Official Reddit Data API 需审批应用；历史归档（PullPush/Arctic Shift）只作补充并记录来源与时点。"
+    },
+    {
+      "id": "x",
+      "name": "X",
+      "domains": [
+        "software",
+        "consumer",
+        "automotive",
+        "mobile"
+      ],
+      "data_types": [
+        "posts",
+        "replies",
+        "profiles"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance",
+        "commercial"
+      ],
+      "access_modes": [
+        "official_api"
+      ],
+      "auth": "oauth_paid",
+      "bulk": "limited",
+      "freshness": "high",
+      "decision": "limited",
+      "adapter": "none",
+      "limits": [
+        "API tiers are paid and rate-limited",
+        "No scraping",
+        "Historical access depends on tier"
+      ],
+      "bias": [
+        "Public-post reach bias",
+        "Reposts are distribution, not demand",
+        "Bot/spam contamination"
+      ],
+      "notes": "只走官方 API 与付费层级；不得用浏览器自动化或内部接口。"
+    },
+    {
+      "id": "youtube",
+      "name": "YouTube",
+      "domains": [
+        "software",
+        "hardware",
+        "consumer",
+        "automotive",
+        "mobile"
+      ],
+      "data_types": [
+        "videos",
+        "comments",
+        "channel_metadata",
+        "transcripts_if_authorized"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance",
+        "usability"
+      ],
+      "access_modes": [
+        "official_api"
+      ],
+      "auth": "oauth",
+      "bulk": "limited",
+      "freshness": "high",
+      "decision": "supported",
+      "adapter": "none",
+      "limits": [
+        "Data API quota",
+        "Comments require video IDs and pagination",
+        "Transcripts need authorization/rights"
+      ],
+      "bias": [
+        "Creator/commenter self-selection",
+        "Comment ranking bias",
+        "Video performance confounds"
+      ],
+      "notes": "Official YouTube Data API；评论/元数据按配额采集，字幕与转写需权利确认。"
+    },
+    {
+      "id": "instagram",
+      "name": "Instagram",
+      "domains": [
+        "consumer",
+        "mobile"
+      ],
+      "data_types": [
+        "posts",
+        "reels",
+        "comments",
+        "creator_insights"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance",
+        "commercial"
+      ],
+      "access_modes": [
+        "authorized_export",
+        "research_api"
+      ],
+      "auth": "oauth_business",
+      "bulk": "limited",
+      "freshness": "high",
+      "decision": "limited",
+      "adapter": "none",
+      "limits": [
+        "No general public hashtag/content bulk API",
+        "Scraping violates Meta terms",
+        "Research API eligibility is restricted"
+      ],
+      "bias": [
+        "Aesthetic/creator bias",
+        "Hashtag sampling bias",
+        "Deleted content missing"
+      ],
+      "notes": "仅用授权创作者/企业导出或符合资格的 Meta Content Library；不做公开批量抓取。"
+    },
+    {
+      "id": "tiktok",
+      "name": "TikTok",
+      "domains": [
+        "consumer",
+        "mobile"
+      ],
+      "data_types": [
+        "videos",
+        "comments",
+        "creator_metadata"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance",
+        "commercial"
+      ],
+      "access_modes": [
+        "research_api",
+        "authorized_export"
+      ],
+      "auth": "oauth_research",
+      "bulk": "limited",
+      "freshness": "high",
+      "decision": "limited",
+      "adapter": "none",
+      "limits": [
+        "Research API requires eligibility",
+        "Display API is limited",
+        "No scraping"
+      ],
+      "bias": [
+        "Algorithmic feed bias",
+        "Creator skew",
+        "Comment ranking"
+      ],
+      "notes": "TikTok Research API 或授权导出；不保证一般商业项目可用。"
+    },
+    {
+      "id": "amazon",
+      "name": "Amazon",
+      "domains": [
+        "consumer",
+        "hardware",
+        "mobile"
+      ],
+      "data_types": [
+        "reviews",
+        "ratings",
+        "product_metadata",
+        "sales_rank"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance",
+        "commercial"
+      ],
+      "access_modes": [
+        "historical_dataset",
+        "seller_api",
+        "associates_api"
+      ],
+      "auth": "partner",
+      "bulk": "limited",
+      "freshness": "medium",
+      "decision": "limited",
+      "adapter": "local",
+      "limits": [
+        "Official product/review APIs are partner/seller scoped",
+        "Review text generally not bulk-available",
+        "Scraping violates terms"
+      ],
+      "bias": [
+        "Reviewer self-selection",
+        "Incentivized reviews",
+        "Survivorship and listing changes"
+      ],
+      "notes": "优先 Amazon Reviews 2023 历史数据集或授权导出；实时评论不做未授权抓取。"
+    },
+    {
+      "id": "app_store",
+      "name": "Apple App Store",
+      "domains": [
+        "software",
+        "mobile"
+      ],
+      "data_types": [
+        "reviews",
+        "ratings",
+        "app_metadata"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance",
+        "commercial"
+      ],
+      "access_modes": [
+        "authorized_export",
+        "licensed_provider"
+      ],
+      "auth": "partner",
+      "bulk": "limited",
+      "freshness": "medium",
+      "decision": "limited",
+      "adapter": "none",
+      "limits": [
+        "No general bulk review API",
+        "Third-party providers need license",
+        "Storefront/locale differences"
+      ],
+      "bias": [
+        "Reviewer self-selection",
+        "Rating prompt bias",
+        "Version mix"
+      ],
+      "notes": "使用授权导出/合规数据商；记录 storefront、版本与抓取时点。"
+    },
+    {
+      "id": "google_play",
+      "name": "Google Play",
+      "domains": [
+        "software",
+        "mobile"
+      ],
+      "data_types": [
+        "reviews",
+        "ratings",
+        "app_metadata"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance",
+        "commercial"
+      ],
+      "access_modes": [
+        "authorized_export",
+        "licensed_provider"
+      ],
+      "auth": "partner",
+      "bulk": "limited",
+      "freshness": "medium",
+      "decision": "limited",
+      "adapter": "none",
+      "limits": [
+        "No general public review bulk API",
+        "Third-party providers need license",
+        "Locale/version differences"
+      ],
+      "bias": [
+        "Reviewer self-selection",
+        "Rating prompt bias",
+        "Device mix"
+      ],
+      "notes": "使用授权导出/合规数据商；不能把商店评分当需求强度。"
+    },
+    {
+      "id": "hackernews",
+      "name": "Hacker News",
+      "domains": [
+        "software"
+      ],
+      "data_types": [
+        "stories",
+        "comments"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance"
+      ],
+      "access_modes": [
+        "official_api"
+      ],
+      "auth": "none",
+      "bulk": "yes",
+      "freshness": "high",
+      "decision": "supported",
+      "adapter": "none",
+      "limits": [
+        "Algolia public API; rate limits",
+        "Tech/startup skew"
+      ],
+      "bias": [
+        "Technical/early-adopter bias",
+        "Comment ranking"
+      ],
+      "notes": "Algolia 公共 API；适合技术产品发现，不代表大众。"
+    },
+    {
+      "id": "stackoverflow",
+      "name": "Stack Overflow",
+      "domains": [
+        "software"
+      ],
+      "data_types": [
+        "questions",
+        "answers",
+        "tags"
+      ],
+      "claim_fit": [
+        "need",
+        "usability"
+      ],
+      "access_modes": [
+        "official_api"
+      ],
+      "auth": "none",
+      "bulk": "yes",
+      "freshness": "medium",
+      "decision": "supported",
+      "adapter": "none",
+      "limits": [
+        "API quota",
+        "Closed/duplicate questions missing"
+      ],
+      "bias": [
+        "Developer skew",
+        "Question wording bias"
+      ],
+      "notes": "Stack Exchange API；适合技术任务与替代方案，不代表所有用户。"
+    },
+    {
+      "id": "bilibili",
+      "name": "Bilibili",
+      "domains": [
+        "consumer",
+        "mobile",
+        "automotive",
+        "hardware"
+      ],
+      "data_types": [
+        "videos",
+        "comments",
+        "danmaku"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance"
+      ],
+      "access_modes": [
+        "public_endpoints",
+        "authorized_export"
+      ],
+      "auth": "optional",
+      "bulk": "limited",
+      "freshness": "high",
+      "decision": "limited",
+      "adapter": "none",
+      "limits": [
+        "Public endpoints subject to terms/anti-bot",
+        "No guaranteed bulk",
+        "Transcripts need rights"
+      ],
+      "bias": [
+        "Creator/audience skew",
+        "Danmaku context loss"
+      ],
+      "notes": "现有转写管线仅处理本地/授权素材；平台批量采集需合规评估。"
+    },
+    {
+      "id": "zhihu",
+      "name": "知乎",
+      "domains": [
+        "consumer",
+        "software",
+        "automotive"
+      ],
+      "data_types": [
+        "answers",
+        "articles",
+        "comments"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance"
+      ],
+      "access_modes": [
+        "authorized_export"
+      ],
+      "auth": "none",
+      "bulk": "no",
+      "freshness": "medium",
+      "decision": "blocked",
+      "adapter": "none",
+      "limits": [
+        "No public bulk API",
+        "Scraping/anti-bot restrictions"
+      ],
+      "bias": [
+        "Expert/self-selection bias",
+        "Answer ranking"
+      ],
+      "notes": "无合规公开批量接口；只接受授权导出或人工整理。"
+    },
+    {
+      "id": "xiaohongshu",
+      "name": "小红书",
+      "domains": [
+        "consumer",
+        "mobile"
+      ],
+      "data_types": [
+        "notes",
+        "comments",
+        "creator_metadata"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance",
+        "commercial"
+      ],
+      "access_modes": [
+        "authorized_export"
+      ],
+      "auth": "none",
+      "bulk": "no",
+      "freshness": "high",
+      "decision": "blocked",
+      "adapter": "none",
+      "limits": [
+        "No public API",
+        "Scraping violates terms",
+        "Creator data restricted"
+      ],
+      "bias": [
+        "Aesthetic/consumer skew",
+        "Ranking and recommendation bias"
+      ],
+      "notes": "只接受作者/品牌授权导出；不做公开批量抓取。"
+    },
+    {
+      "id": "jd",
+      "name": "京东",
+      "domains": [
+        "consumer",
+        "hardware",
+        "mobile"
+      ],
+      "data_types": [
+        "reviews",
+        "ratings",
+        "product_metadata"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance",
+        "commercial"
+      ],
+      "access_modes": [
+        "authorized_export"
+      ],
+      "auth": "partner",
+      "bulk": "limited",
+      "freshness": "medium",
+      "decision": "blocked",
+      "adapter": "none",
+      "limits": [
+        "No approved open connector",
+        "Scraping/anti-bot"
+      ],
+      "bias": [
+        "Reviewer self-selection",
+        "Promotional reviews"
+      ],
+      "notes": "现有 SURE 注册表标记为 blocked；仅授权导出。"
+    },
+    {
+      "id": "taobao",
+      "name": "淘宝/天猫",
+      "domains": [
+        "consumer",
+        "hardware",
+        "mobile"
+      ],
+      "data_types": [
+        "reviews",
+        "ratings",
+        "product_metadata"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance",
+        "commercial"
+      ],
+      "access_modes": [
+        "authorized_export"
+      ],
+      "auth": "partner",
+      "bulk": "limited",
+      "freshness": "medium",
+      "decision": "blocked",
+      "adapter": "none",
+      "limits": [
+        "No approved open connector",
+        "Login/session scraping prohibited"
+      ],
+      "bias": [
+        "Reviewer self-selection",
+        "Promotional reviews"
+      ],
+      "notes": "现有 SURE 注册表标记为 blocked；仅授权导出。"
+    },
+    {
+      "id": "kickstarter",
+      "name": "Kickstarter",
+      "domains": [
+        "hardware",
+        "consumer"
+      ],
+      "data_types": [
+        "campaigns",
+        "backers_public",
+        "comments"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance",
+        "commercial"
+      ],
+      "access_modes": [
+        "historical_dataset",
+        "authorized_export"
+      ],
+      "auth": "none",
+      "bulk": "limited",
+      "freshness": "low",
+      "decision": "blocked",
+      "adapter": "none",
+      "limits": [
+        "No approved live connector",
+        "Crawler-generated dataset stale"
+      ],
+      "bias": [
+        "Successful campaigns over-represented",
+        "Backer intent ≠ market"
+      ],
+      "notes": "历史冻结数据只作背景；不能证明当前需求。"
+    },
+    {
+      "id": "interviews",
+      "name": "访谈/用户材料",
+      "domains": [
+        "software",
+        "hardware",
+        "consumer",
+        "automotive",
+        "mobile"
+      ],
+      "data_types": [
+        "transcripts",
+        "notes",
+        "quotes"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance",
+        "usability"
+      ],
+      "access_modes": [
+        "first_party"
+      ],
+      "auth": "consent",
+      "bulk": "yes",
+      "freshness": "high",
+      "decision": "supported",
+      "adapter": "local",
+      "limits": [
+        "Small n; cannot estimate prevalence",
+        "Interviewer effects"
+      ],
+      "bias": [
+        "Recruitment self-selection",
+        "Recall/social desirability"
+      ],
+      "notes": "第一方材料需知情同意、最小化与保留期；访谈不能证明总体比例。"
+    },
+    {
+      "id": "surveys",
+      "name": "问卷/调查",
+      "domains": [
+        "software",
+        "hardware",
+        "consumer",
+        "automotive",
+        "mobile"
+      ],
+      "data_types": [
+        "responses",
+        "ratings",
+        "open_ends"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance",
+        "commercial"
+      ],
+      "access_modes": [
+        "first_party",
+        "licensed_panel"
+      ],
+      "auth": "consent",
+      "bulk": "yes",
+      "freshness": "medium",
+      "decision": "supported",
+      "adapter": "local",
+      "limits": [
+        "Non-probability samples cannot claim margin of error",
+        "Question wording/order effects"
+      ],
+      "bias": [
+        "Self-selection",
+        "Panel conditioning",
+        "Straight-lining"
+      ],
+      "notes": "概率样本才可推断总体；报告抽样框、权重、基数与区间。"
+    },
+    {
+      "id": "support_tickets",
+      "name": "工单/客服记录",
+      "domains": [
+        "software",
+        "hardware",
+        "consumer",
+        "mobile",
+        "automotive"
+      ],
+      "data_types": [
+        "tickets",
+        "chat_logs",
+        "repair_notes"
+      ],
+      "claim_fit": [
+        "need",
+        "usability",
+        "commercial"
+      ],
+      "access_modes": [
+        "first_party"
+      ],
+      "auth": "consent",
+      "bulk": "yes",
+      "freshness": "high",
+      "decision": "supported",
+      "adapter": "local",
+      "limits": [
+        "Only people who contacted support",
+        "PII and free-text noise"
+      ],
+      "bias": [
+        "Silent-user bias",
+        "Agent summarization bias"
+      ],
+      "notes": "第一方数据；需脱敏、访问控制、保留期；投诉量不等于故障率。"
+    },
+    {
+      "id": "telemetry",
+      "name": "遥测/产品日志",
+      "domains": [
+        "software",
+        "hardware",
+        "mobile",
+        "automotive"
+      ],
+      "data_types": [
+        "events",
+        "funnels",
+        "crashes",
+        "device_metrics"
+      ],
+      "claim_fit": [
+        "usability",
+        "commercial",
+        "performance"
+      ],
+      "access_modes": [
+        "first_party"
+      ],
+      "auth": "consent",
+      "bulk": "yes",
+      "freshness": "high",
+      "decision": "supported",
+      "adapter": "local",
+      "limits": [
+        "No motivation/why",
+        "Exposure denominators and event definitions required"
+      ],
+      "bias": [
+        "Opt-in bias",
+        "Bot/internal traffic",
+        "Survivorship"
+      ],
+      "notes": "第一方遥测；必须有暴露分母、版本与事件字典；相关不等于因果。"
+    },
+    {
+      "id": "lab_reports",
+      "name": "实验室/测试报告",
+      "domains": [
+        "hardware",
+        "mobile",
+        "automotive",
+        "consumer"
+      ],
+      "data_types": [
+        "test_reports",
+        "measurements",
+        "failures"
+      ],
+      "claim_fit": [
+        "performance",
+        "safety"
+      ],
+      "access_modes": [
+        "first_party",
+        "certified_lab"
+      ],
+      "auth": "none",
+      "bulk": "yes",
+      "freshness": "medium",
+      "decision": "supported",
+      "adapter": "local",
+      "limits": [
+        "Protocol/version/calibration required",
+        "Not user evidence"
+      ],
+      "bias": [
+        "Sample/unit selection",
+        "Lab-vs-field gap"
+      ],
+      "notes": "作为工程/安全证据引用；SURE 不生成认证结论。"
+    }
+  ]
+}

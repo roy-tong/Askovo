@@ -1,0 +1,218 @@
+{
+  "schema_version": "1.0",
+  "domain": "software",
+  "label": "软件 / SaaS / App",
+  "keywords": [
+    "软件",
+    "SaaS",
+    "App",
+    "应用",
+    "功能",
+    "页面",
+    "订阅",
+    "留存",
+    "漏斗",
+    "A/B",
+    "登录",
+    "工作流",
+    "API",
+    "后台",
+    "用户增长",
+    "产品经理",
+    "github",
+    "开发者",
+    "编程",
+    "代码库",
+    "技术栈"
+  ],
+  "roles": [
+    "终端用户",
+    "管理员",
+    "IT/安全",
+    "采购",
+    "预算 owner"
+  ],
+  "default_stage": "discovery",
+  "stages": {
+    "discovery": {
+      "label": "需求发现",
+      "methods": [
+        "discovery-interview",
+        "contextual-inquiry",
+        "diary-study",
+        "survey-ua"
+      ],
+      "decisions": [
+        "哪个细分问题值得解决",
+        "现有工作流与替代方案",
+        "什么证据会改变决定"
+      ],
+      "deliverables": [
+        "研究计划",
+        "JTBD/工作流",
+        "证据计划"
+      ]
+    },
+    "concept": {
+      "label": "概念与方案",
+      "methods": [
+        "concept-test",
+        "prototype-usability",
+        "task-analysis"
+      ],
+      "decisions": [
+        "价值主张是否被理解",
+        "是否值得投入",
+        "真实承诺是什么"
+      ],
+      "deliverables": [
+        "概念测试方案",
+        "原型任务",
+        "决策 memo"
+      ]
+    },
+    "prototype": {
+      "label": "原型与可用性",
+      "methods": [
+        "prototype-usability",
+        "task-analysis",
+        "accessibility-eval"
+      ],
+      "decisions": [
+        "哪里卡住、为何、如何改",
+        "新手/熟手/辅助技术路径"
+      ],
+      "deliverables": [
+        "任务脚本",
+        "可用性问题单",
+        "无障碍问题单"
+      ]
+    },
+    "validation": {
+      "label": "验证与 Beta",
+      "methods": [
+        "prototype-usability",
+        "beta-soak",
+        "ab-test",
+        "analytics-cohort"
+      ],
+      "decisions": [
+        "是否达到发布门槛",
+        "哪些指标有增量",
+        "风险与回滚条件"
+      ],
+      "deliverables": [
+        "Beta 方案",
+        "基准记分卡",
+        "发布建议"
+      ]
+    },
+    "pricing": {
+      "label": "定价与付费",
+      "methods": [
+        "pricing-vw",
+        "pricing-gg",
+        "conjoint"
+      ],
+      "decisions": [
+        "包装、计费单位与价格",
+        "声明性 WTP 与实测转化"
+      ],
+      "deliverables": [
+        "定价方案",
+        "价格测试",
+        "付费试点"
+      ]
+    },
+    "prelaunch": {
+      "label": "上线前",
+      "methods": [
+        "beta-soak",
+        "accessibility-eval",
+        "expert-review"
+      ],
+      "decisions": [
+        "发布门槛、护栏与回滚",
+        "支持与可访问性是否就绪"
+      ],
+      "deliverables": [
+        "发布检查单",
+        "红队问题",
+        "回滚方案"
+      ]
+    },
+    "postlaunch": {
+      "label": "上线后",
+      "methods": [
+        "analytics-cohort",
+        "telemetry-monitoring",
+        "ab-test",
+        "discovery-interview"
+      ],
+      "decisions": [
+        "留存/付费/流失由什么驱动",
+        "版本效果与异常"
+      ],
+      "deliverables": [
+        "留存/漏斗分析",
+        "流失访谈",
+        "下一实验"
+      ]
+    },
+    "audit": {
+      "label": "现有材料审计",
+      "methods": [
+        "expert-review",
+        "analytics-cohort"
+      ],
+      "decisions": [
+        "结论能否被证据支持",
+        "是否把可用性/活跃当需求"
+      ],
+      "deliverables": [
+        "审计备忘",
+        "补证计划"
+      ]
+    }
+  },
+  "evidence_plan": [
+    {
+      "role": "终端用户",
+      "target": "覆盖核心任务与新手/熟手",
+      "forms": [
+        "self_report",
+        "observation"
+      ]
+    },
+    {
+      "role": "管理员/IT/采购",
+      "target": "覆盖部署、安全与采购条件",
+      "forms": [
+        "self_report"
+      ]
+    },
+    {
+      "role": "流失/非活跃",
+      "target": "至少 3 个反例",
+      "forms": [
+        "self_report",
+        "instrument_log"
+      ]
+    }
+  ],
+  "claim_boundaries": [
+    "点击/报名只代表兴趣，不等于使用价值",
+    "活跃不等于满意，相关不等于因果",
+    "SUS/SEQ 不证明需求或付费",
+    "A/B 仅回答已测指标的增量"
+  ],
+  "risk_notes": [
+    "生产日志与录屏需授权、最小化、去标识",
+    "A/B 需预注册主指标与护栏，防止窥视"
+  ],
+  "sources": [
+    "NN/g Formative vs Summative",
+    "MeasureU SUS/SEQ",
+    "Kohavi et al. experiment survey"
+  ]
+}

@@ -1,6 +1,48 @@
-# 连接器
+# 平台与连接器
 
-SURE 只把**可审计、可修改的 GitHub 开源项目**纳入连接器清单。不接商业调研 SaaS，不把商家后台 API 当第三方市场研究方案。
+SURE 先判断**数据在哪个平台、能不能合规拿到、拿到后能证明什么**，再谈采集。
+
+## 平台雷达
+
+```bash
+sure platforms "家用摄像头夜间告警的用户抱怨" --domain hardware --bulk
+```
+
+内置 22 类平台/来源：GitHub、Reddit、X、YouTube、Instagram、TikTok、Amazon、App Store、Google Play、Hacker News、Stack Overflow、Bilibili、知乎、小红书、京东、淘宝、Kickstarter，以及访谈、问卷、工单、遥测、实验室报告。
+
+每个平台记录：
+
+| 字段 | 含义 |
+|---|---|
+| `access_modes` | official_api / authorized_export / historical_dataset / first_party / research_api / licensed_provider |
+| `auth` | none / token / oauth / partner / consent |
+| `bulk` | yes / limited / no |
+| `decision` | supported / limited / blocked |
+| `limits` / `bias` | 已知限制与选择偏差 |
+| `adapter` | 是否有内置适配器 |
+
+**三档含义**：
+
+- `supported`：有官方 API、第一方数据或合规历史数据集；
+- `limited`：需要授权、研究资格、合作方或历史数据，批量能力有限；
+- `blocked`：没有合规批量通道；SURE 只接受授权导出或人工整理，不做未授权抓取。
+
+### 当前内置采集适配器
+
+| 平台 | 通道 | 环境变量 |
+|---|---|---|
+| GitHub | 官方 Search API | `GITHUB_TOKEN`（可选，提高限额） |
+| Reddit | 官方 Data API | `SURE_REDDIT_CLIENT_ID` / `SURE_REDDIT_CLIENT_SECRET` / `SURE_REDDIT_USER_AGENT` |
+| 本地 fixture/授权导出 | JSONL/CSV | — |
+
+其他平台（Instagram、Amazon、X、TikTok、App Store 等）当前没有内置批量适配器，`collect` 会返回 `3` 并给出导入/授权导出路径。原因不是“技术做不到”，而是没有合规的通用批量接口。
+
+### 特殊平台说明
+
+- **Instagram**：没有通用公开内容批量 API；只接受授权创作者/企业导出或符合资格的研究 API；不做抓取。
+- **Amazon**：官方评论/商品接口按合作伙伴/卖家权限开放；优先 Amazon Reviews 2023 历史数据集或授权导出。
+- **X / TikTok / LinkedIn**：官方 API 有付费层级、研究资格或合作方限制。
+- **小红书 / 知乎 / 京东 / 淘宝 / Kickstarter**：当前标记为 blocked；只接受授权导出，不提供绕过方式。
 
 ## 四门审查
 
@@ -75,3 +117,15 @@ Reddit 的 2026 公共 Data API 过渡会改变研究访问方式：现有应用
 - [开源连接器审查](../skills/user-demand-research/references/open-source-connectors.md)
 - [连接器输出合同](../skills/user-demand-research/references/connector-contract.md)
 - 平台细则：[Reddit](../skills/user-demand-research/references/reddit-research.md) · [X](../skills/user-demand-research/references/x-research.md) · [YouTube](../skills/user-demand-research/references/youtube-research.md) · [Amazon](../skills/user-demand-research/references/amazon-research.md) · [京东](../skills/user-demand-research/references/jd-research.md) · [淘宝](../skills/user-demand-research/references/taobao-research.md) · [Kickstarter](../skills/user-demand-research/references/kickstarter-research.md)
+
+## 规模化采集
+
+“大量”不等于一次请求拉全量。生产上按查询、时间窗、子版块/仓库/频道分片，多次运行，靠 `record_id` 与文本 hash 跨 run 去重：
+
+- GitHub Search 单查询最多约 1,000 条；按 `created:` 日期、repo、label 分片。
+- Reddit listing 单次约 1,000 条；按 subreddit、时间窗、关键词分片。
+- 每次分片独立写 manifest，记录查询、配额、时间窗、达到上限与停止原因。
+- 跨 run 的重复记录在 `normalized.jsonl` 按 `record_id` 去重。
+- 先小样 pilot，估算有效产出、重复率与边际新主题，再放量；不要用“条数”替代代表性。
+
+当前 CLI 是单进程、配额受限的采集器；大规模并行需要外部 worker/队列，SURE 负责计划、manifest、去重与证据口径，不把并发伪装成研究质量。

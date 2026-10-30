@@ -1,0 +1,210 @@
+{
+  "schema_version": "1.0",
+  "domain": "automotive",
+  "label": "汽车 / 智能座舱 / ADAS / 车载软件",
+  "keywords": [
+    "汽车",
+    "整车",
+    "座舱",
+    "ADAS",
+    "驾驶",
+    "车载",
+    "HMI",
+    "方向盘",
+    "仪表",
+    "接管",
+    "自动驾驶",
+    "车机",
+    "OTA",
+    "道路",
+    "模拟器"
+  ],
+  "roles": [
+    "驾驶员",
+    "乘客",
+    "车主",
+    "购买者",
+    "安全员/工程师"
+  ],
+  "default_stage": "discovery",
+  "stages": {
+    "discovery": {
+      "label": "购前需求与配置",
+      "methods": [
+        "discovery-interview",
+        "contextual-inquiry",
+        "diary-study",
+        "survey-ua"
+      ],
+      "decisions": [
+        "购车/用车场景与 JTBD",
+        "配置取舍与价格"
+      ],
+      "deliverables": [
+        "场景地图",
+        "配置研究",
+        "需求层级"
+      ]
+    },
+    "concept": {
+      "label": "造型与配置概念",
+      "methods": [
+        "clinic-static",
+        "clinic-dynamic",
+        "conjoint"
+      ],
+      "decisions": [
+        "造型/空间/上下车/配置理解",
+        "动态驾乘坐与功能感知"
+      ],
+      "deliverables": [
+        "诊所报告",
+        "配置包",
+        "取舍矩阵"
+      ]
+    },
+    "prototype": {
+      "label": "座舱/HMI 原型",
+      "methods": [
+        "prototype-usability",
+        "task-analysis",
+        "clinic-static"
+      ],
+      "decisions": [
+        "屏幕/按键/语音、可达、视野、学习",
+        "停车任务与信息架构"
+      ],
+      "deliverables": [
+        "HMI 问题单",
+        "任务脚本",
+        "误用清单"
+      ]
+    },
+    "validation": {
+      "label": "模拟器/场地/道路",
+      "methods": [
+        "driving-simulator",
+        "closed-course",
+        "on-road",
+        "naturalistic-driving"
+      ],
+      "decisions": [
+        "分心、workload、接管与误用",
+        "真实车辆受控边界与生态有效性"
+      ],
+      "deliverables": [
+        "模拟器报告",
+        "场地报告",
+        "道路方案",
+        "NDS 方案"
+      ]
+    },
+    "pricing": {
+      "label": "配置与价格",
+      "methods": [
+        "conjoint",
+        "maxdiff"
+      ],
+      "decisions": [
+        "配置包与价格取舍",
+        "卖点优先级"
+      ],
+      "deliverables": [
+        "配置研究",
+        "价格 memo"
+      ]
+    },
+    "prelaunch": {
+      "label": "上市前",
+      "methods": [
+        "on-road",
+        "naturalistic-driving",
+        "beta-soak"
+      ],
+      "decisions": [
+        "OTA/版本集成",
+        "发布门槛与回滚"
+      ],
+      "deliverables": [
+        "发布检查单",
+        "OTA 方案",
+        "工程 V&V 待办"
+      ]
+    },
+    "postlaunch": {
+      "label": "上市后",
+      "methods": [
+        "naturalistic-driving",
+        "telemetry-monitoring",
+        "rma-review"
+      ],
+      "decisions": [
+        "真实使用、误用与近失",
+        "版本异常与售后"
+      ],
+      "deliverables": [
+        "NDS/遥测分析",
+        "误用清单",
+        "复测计划"
+      ]
+    },
+    "audit": {
+      "label": "现有材料审计",
+      "methods": [
+        "expert-review",
+        "naturalistic-driving"
+      ],
+      "decisions": [
+        "是否把诊所/模拟器写成道路安全",
+        "是否把用户试验当认证"
+      ],
+      "deliverables": [
+        "审计备忘",
+        "补证计划"
+      ]
+    }
+  },
+  "evidence_plan": [
+    {
+      "role": "驾驶员",
+      "target": "覆盖新手/熟手与不同场景",
+      "forms": [
+        "observation",
+        "self_report"
+      ]
+    },
+    {
+      "role": "乘客/旁观者",
+      "target": "记录干扰与真实使用",
+      "forms": [
+        "observation"
+      ]
+    },
+    {
+      "role": "售后/车队",
+      "target": "版本、里程、维修分母",
+      "forms": [
+        "support_record",
+        "transaction"
+      ]
+    }
+  ],
+  "claim_boundaries": [
+    "诊所支持需求/偏好，模拟器支持相对比较，场地支持受控真车，道路补充生态有效性",
+    "零事件不等于安全，相关不等于因果",
+    "高信任不等于更安全，目标是适当依赖",
+    "用户研究不能替代 ISO 26262/21448、UNECE 或 NCAP"
+  ],
+  "risk_notes": [
+    "道路研究需伦理/合法审批、车辆检查、路线评估、安全员与中止规则",
+    "开放道路禁止故意制造危险接管",
+    "位置/音视频/乘客与路人数据最小化"
+  ],
+  "sources": [
+    "NHTSA distraction guidelines",
+    "SHRP2 NDS",
+    "ISO 26262",
+    "ISO 21448",
+    "Euro NCAP protocols"
+  ]
+}

@@ -1,0 +1,212 @@
+{
+  "schema_version": "1.0",
+  "domain": "mobile",
+  "label": "手机 / 平板 / 可穿戴",
+  "keywords": [
+    "手机",
+    "平板",
+    "手表",
+    "耳机",
+    "可穿戴",
+    "影像",
+    "相机",
+    "信号",
+    "充电",
+    "发热",
+    "续航",
+    "系统更新",
+    "OS",
+    "跑分",
+    "智能终端"
+  ],
+  "roles": [
+    "购买者",
+    "使用者",
+    "家庭成员",
+    "辅助技术用户",
+    "售后"
+  ],
+  "default_stage": "discovery",
+  "stages": {
+    "discovery": {
+      "label": "购前需求",
+      "methods": [
+        "discovery-interview",
+        "diary-study",
+        "survey-ua",
+        "contextual-inquiry"
+      ],
+      "decisions": [
+        "细分、卖点优先级与场景",
+        "现有设备替代与迁移成本"
+      ],
+      "deliverables": [
+        "需求层级",
+        "场景地图",
+        "卖点假设"
+      ]
+    },
+    "concept": {
+      "label": "概念与配置",
+      "methods": [
+        "concept-test",
+        "conjoint",
+        "maxdiff"
+      ],
+      "decisions": [
+        "外观/影像/续航/性能/生态/价格取舍",
+        "配置组合"
+      ],
+      "deliverables": [
+        "概念研究",
+        "配置包",
+        "价格 memo"
+      ]
+    },
+    "prototype": {
+      "label": "握持与系统任务",
+      "methods": [
+        "prototype-usability",
+        "task-analysis",
+        "accessibility-eval"
+      ],
+      "decisions": [
+        "尺寸/触达/佩戴/手势/跨端",
+        "新手/熟手/辅助技术"
+      ],
+      "deliverables": [
+        "不适热区",
+        "任务报告",
+        "无障碍问题单"
+      ]
+    },
+    "validation": {
+      "label": "实验室/外场/Beta",
+      "methods": [
+        "lab-bench",
+        "beta-soak",
+        "telemetry-monitoring"
+      ],
+      "decisions": [
+        "工程达标、版本回归",
+        "真实采用与支持负担"
+      ],
+      "deliverables": [
+        "实验室报告",
+        "Beta 方案",
+        "版本问题单"
+      ]
+    },
+    "pricing": {
+      "label": "定价与配置",
+      "methods": [
+        "conjoint",
+        "maxdiff",
+        "pricing-vw"
+      ],
+      "decisions": [
+        "配置与价格取舍",
+        "可接受价格带"
+      ],
+      "deliverables": [
+        "配置研究",
+        "价格 memo"
+      ]
+    },
+    "prelaunch": {
+      "label": "上市前",
+      "methods": [
+        "beta-soak",
+        "lab-bench",
+        "rma-review"
+      ],
+      "decisions": [
+        "发布/回滚门槛",
+        "批次与售后准备"
+      ],
+      "deliverables": [
+        "发布检查单",
+        "RMA 预案"
+      ]
+    },
+    "postlaunch": {
+      "label": "上市后",
+      "methods": [
+        "telemetry-monitoring",
+        "rma-review",
+        "analytics-cohort"
+      ],
+      "decisions": [
+        "版本异常、采用与留存",
+        "退换/维修与卖点落差"
+      ],
+      "deliverables": [
+        "遥测分析",
+        "RMA 分析",
+        "复测计划"
+      ]
+    },
+    "audit": {
+      "label": "现有材料审计",
+      "methods": [
+        "expert-review",
+        "lab-bench"
+      ],
+      "decisions": [
+        "是否用跑分/精选样张替代体验",
+        "Beta 是否被外推全量"
+      ],
+      "deliverables": [
+        "审计备忘",
+        "补证计划"
+      ]
+    }
+  },
+  "evidence_plan": [
+    {
+      "role": "目标用户",
+      "target": "覆盖手型/左右手/新手熟手/辅助技术",
+      "forms": [
+        "observation",
+        "self_report"
+      ]
+    },
+    {
+      "role": "真实场景",
+      "target": "家庭/通勤/弱网/运动",
+      "forms": [
+        "observation",
+        "instrument_log"
+      ]
+    },
+    {
+      "role": "售后/退换",
+      "target": "带销量与使用时长分母",
+      "forms": [
+        "transaction",
+        "support_record"
+      ]
+    }
+  ],
+  "claim_boundaries": [
+    "跑分/规格不等于体验或购买理由",
+    "精选样张/平均分掩盖偶发失败",
+    "Beta 无投诉不等于可发布",
+    "活跃不等于满意，遥测相关不等于因果"
+  ],
+  "risk_notes": [
+    "电池/发热/充电异常立即停测",
+    "相机外拍涉及人像/儿童/住宅需授权",
+    "轨迹与家庭影像最小化、限期保存",
+    "破坏性试验仅限合格实验室"
+  ],
+  "sources": [
+    "ISO 9241-11",
+    "Apple HIG Accessibility",
+    "WCAG 2.2",
+    "DXOMARK testing",
+    "ITU-T P.808",
+    "IEC 60529",
+    "Android vitals"
+  ]
+}

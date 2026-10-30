@@ -1,6 +1,20 @@
 # Changelog
 
 
+## 1.13.0 — 2026-10-30
+
+- **Single entry**: `sure "<request>"` (bare shorthand) or `sure do "<request>"` routes software / hardware / consumer / automotive / mobile requests to a method pack, lifecycle stage, claim types, risk gate and platform preview; `route` is read-only. No per-domain installs or forked protocols.
+- **Method catalog + domain packs**: 32 methods and five packs under `assets/`; `sure methods`, `sure catalog`, `sure domains` expose them.
+- **Platform radar**: `sure platforms` ranks 22 platforms/sources by data availability, access mode, evidence fit, bulk capability, bias and legal limits; `supported` / `limited` / `blocked` are explicit.
+- **Collection runtime**: `sure collect` supports GitHub Search API, Reddit Data API and local JSONL/CSV fixtures; writes raw records, normalized records and a run manifest; blocked platforms return exit 3, never a bypass.
+- **Normalized analysis**: `sure analyze` dedups and describes platform/time/claim/form distributions, candidate terms and question matches; descriptive only, no prevalence or causality.
+- **Instruments and delivery**: `sure instruments`, `sure codebook`, `sure deliver` generate interview/observation/test kits, six-claim codebooks, memo/report/PRD/tracker outputs.
+- **Safety gate**: high-risk requests return exit 4 until a human acknowledges; `--ack-risk` is never implied.
+- **MCP**: new tools `sure_route`, `sure_do`, `sure_platforms`, `sure_collect`, `sure_analyze`, `sure_instruments`, `sure_codebook`, `sure_deliver`, `sure_methods`, `sure_domains`.
+- **Docs**: README, quickstart, concepts, modes, CLI, data contract, connectors, troubleshooting updated for the single-entry design.
+- Tests: 47 (bare shorthand, router, safety gate, platform ranking, authorized exports, fixture collection, analysis, delivery, MCP).
+
+
 ## 1.12.0 — 2026-10-29
 
 - **Packaging**: added `pyproject.toml`, `sure_research` entry package, and `sure` / `sure-mcp` console scripts. `pipx install --editable .` now exposes the CLI; `sure --version`, `sure doctor`, and `sure demo` work from any directory.

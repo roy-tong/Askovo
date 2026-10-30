@@ -38,23 +38,22 @@ SERVER_VERSION = sure.SURE_VERSION
 DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 SUPPORTED_PROTOCOL_VERSIONS = {"2024-11-05", "2025-03-26", "2025-06-18"}
 SERVER_INSTRUCTIONS = (
-    "SURE user-demand research, deterministic surface. Workflow: "
-    "(1) sure_plan with the user's goal, region (cn|overseas|global), sample size, and "
-    "platform types — it resolves platforms against the connector registry, allocates "
-    "quotas, and writes feasibility plus collection tasks; "
-    "(2) complete the design contract (decision, hypotheses, falsifiers, adapter review "
-    "fields) and pass sure_check stage=design before collecting; "
-    "(3) collect only with registry-supported connectors, writing a run manifest per "
-    "collection; (4) sure_signals computes deterministic corpus signals; "
-    "(5) sure_report assembles the research-status report. "
-    "Start with sure_audit when the user already has a study or corpus: it returns gates, "
-    "signals, and per-claim verdicts. Tool results embed exit codes: 1 = failed gate, 3 = no feasible platform — both are "
-    "research statuses to report, never reasons to retry or to substitute a commercial "
-    "provider, merchant API, saved login, internal endpoint, or browser automation. "
-    "Evidence is graded E0-E5; a validated demand judgment needs linked problem, solution, "
-    "commercial/behavioral, and counter-evidence chains for the same role, scene, and task. "
-    "Records are not users; convenience samples do not support prevalence or market-size "
-    "claims. For judgment rules read the Skill, not just these tools."
+    "SURE user-demand research, deterministic surface. Start with sure_route or sure_do: "
+    "one entry routes software / hardware / consumer / automotive / mobile requests to a "
+    "method pack, lifecycle stage, claim types and a platform plan. "
+    "(1) sure_platforms ranks where relevant data exists, how it can be accessed, and what it "
+    "cannot prove; (2) sure_do scaffolds the study, research plan and instruments; "
+    "(3) sure_collect runs a supported adapter (github/reddit) or a local export with quota, "
+    "manifest and dedup; (4) sure_analyze normalizes, dedups and describes the corpus; "
+    "(5) sure_audit checks gates and per-claim verdicts; (6) sure_deliver assembles memo, "
+    "report, PRD input or tracker. Legacy text/platform planning remains available as "
+    "sure_plan; sure_check remains the low-level gate command. "
+    "exit codes: 1 = failed gate or claim exceeding evidence, 3 = no feasible platform or "
+    "adapter, 4 = safety/ethics gate not acknowledged. These are research statuses to report, "
+    "never reasons to substitute a commercial provider, merchant API, saved login, internal "
+    "endpoint, or browser automation. Records are not users; convenience samples do not "
+    "support prevalence or market-size claims. For judgment rules read the Skill, not just "
+    "these tools."
 )
 PLATFORMS = ("reddit", "x", "youtube", "amazon", "jd", "taobao", "kickstarter")
 STAGES = sure.STAGES
@@ -179,6 +178,99 @@ def _build_connectors(arguments: dict[str, Any]) -> argparse.Namespace:
     if platform is not None and platform not in PLATFORMS:
         raise ValueError(f"platform must be one of: {', '.join(PLATFORMS)}")
     return _namespace(platform=platform, include_blocked=bool(arguments.get("include_blocked", False)))
+
+
+def _string_list(arguments: dict[str, Any], key: str) -> list[str] | None:
+    value = arguments.get(key)
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    raise ValueError(f"{key} must be a string or array of strings")
+
+
+def _build_route(arguments: dict[str, Any]) -> argparse.Namespace:
+    return _namespace(
+        need=_string(arguments.get("need"), "need"),
+        domain=_optional_string(arguments, "domain"),
+        stage=_optional_string(arguments, "stage"),
+        intent=_optional_string(arguments, "intent"),
+        json=True,
+    )
+
+
+def _build_do(arguments: dict[str, Any]) -> argparse.Namespace:
+    return _namespace(
+        need=_string(arguments.get("need"), "need"),
+        study=_optional_string(arguments, "study"),
+        domain=_optional_string(arguments, "domain"),
+        stage=_optional_string(arguments, "stage"),
+        intent=_optional_string(arguments, "intent"),
+        dry_run=bool(arguments.get("dry_run", False)),
+        ack_risk=bool(arguments.get("ack_risk", False)),
+        force=bool(arguments.get("force", False)),
+        json=True,
+    )
+
+
+def _build_platforms(arguments: dict[str, Any]) -> argparse.Namespace:
+    return _namespace(
+        need=_string(arguments.get("need"), "need"),
+        domain=_optional_string(arguments, "domain"),
+        claim_type=_string_list(arguments, "claim_type"),
+        bulk=bool(arguments.get("bulk", False)),
+        json=True,
+    )
+
+
+def _build_collect(arguments: dict[str, Any]) -> argparse.Namespace:
+    limit = arguments.get("limit", 100)
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+        raise ValueError("limit must be a positive integer")
+    return _namespace(
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        platform=_string(arguments.get("platform"), "platform"),
+        query=_string(arguments.get("query"), "query"),
+        limit=limit,
+        dry_run=bool(arguments.get("dry_run", True)),
+        fixture=_optional_string(arguments, "fixture"),
+    )
+
+
+def _build_analyze(arguments: dict[str, Any]) -> argparse.Namespace:
+    return _namespace(
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        question=_optional_string(arguments, "question"),
+    )
+
+
+def _build_instruments(arguments: dict[str, Any]) -> argparse.Namespace:
+    return _namespace(study_dir=_string(arguments.get("study_dir"), "study_dir"))
+
+
+def _build_codebook(arguments: dict[str, Any]) -> argparse.Namespace:
+    return _namespace(study_dir=_string(arguments.get("study_dir"), "study_dir"))
+
+
+def _build_deliver(arguments: dict[str, Any]) -> argparse.Namespace:
+    kind = arguments.get("kind", "memo")
+    if kind not in ("memo", "report", "prd", "tracker"):
+        raise ValueError("kind must be memo, report, prd or tracker")
+    return _namespace(study_dir=_string(arguments.get("study_dir"), "study_dir"), kind=kind)
+
+
+def _build_methods(arguments: dict[str, Any]) -> argparse.Namespace:
+    return _namespace(
+        domain=_string(arguments.get("domain"), "domain"),
+        stage=_optional_string(arguments, "stage"),
+        json=True,
+    )
+
+
+def _build_domains(arguments: dict[str, Any]) -> argparse.Namespace:
+    return _namespace(json=True)
 
 
 def _tool_platform_map(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -359,6 +451,136 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sure_route",
+        "description": (
+            "Classify a research request into product domain (software/hardware/consumer/"
+            "automotive/mobile), lifecycle stage, intent, claim types, risk flags and a "
+            "recommended method pack. Read-only."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "need": {"type": "string"},
+                "domain": {"enum": ["software", "hardware", "consumer", "automotive", "mobile"]},
+                "stage": {"enum": ["discovery", "concept", "prototype", "validation", "pricing", "prelaunch", "postlaunch", "audit"]},
+                "intent": {"enum": ["route", "plan", "instruments", "import", "sources", "collect", "analyze", "audit", "deliver"]},
+            },
+            "required": ["need"],
+        },
+    },
+    {
+        "name": "sure_do",
+        "description": (
+            "The single entry point: route the request and scaffold a study with method choice, "
+            "research plan, evidence plan and instruments. Safety-gated requests return exit 4 "
+            "until a human acknowledges the review."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "need": {"type": "string"},
+                "study": {"type": "string", "description": "workspace path; omit for a default path"},
+                "domain": {"enum": ["software", "hardware", "consumer", "automotive", "mobile"]},
+                "stage": {"enum": ["discovery", "concept", "prototype", "validation", "pricing", "prelaunch", "postlaunch", "audit"]},
+                "intent": {"enum": ["route", "plan", "instruments", "import", "sources", "collect", "analyze", "audit", "deliver"]},
+                "dry_run": {"type": "boolean", "default": False},
+                "ack_risk": {"type": "boolean", "default": False},
+                "force": {"type": "boolean", "default": False},
+            },
+            "required": ["need"],
+        },
+    },
+    {
+        "name": "sure_platforms",
+        "description": (
+            "Rank platforms by data availability, access mode, evidence fit, bulk capability, "
+            "bias and legal limits. Use before promising any platform coverage."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "need": {"type": "string"},
+                "domain": {"enum": ["software", "hardware", "consumer", "automotive", "mobile"]},
+                "claim_type": {"type": "array", "items": {"enum": ["need", "acceptance", "usability", "performance", "commercial", "safety"]}},
+                "bulk": {"type": "boolean", "default": False},
+            },
+            "required": ["need"],
+        },
+    },
+    {
+        "name": "sure_collect",
+        "description": (
+            "Run a supported collector (github/reddit) or a local fixture/export, with quota, "
+            "run manifest and dedup. Defaults to dry-run. Blocked platforms return exit 3."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "study_dir": {"type": "string"},
+                "platform": {"type": "string"},
+                "query": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "default": 100},
+                "dry_run": {"type": "boolean", "default": True},
+                "fixture": {"type": "string", "description": "local JSONL/CSV for offline collection"},
+            },
+            "required": ["study_dir", "platform", "query"],
+        },
+    },
+    {
+        "name": "sure_analyze",
+        "description": (
+            "Normalize, dedup and describe collected material: platform/claim/form distributions, "
+            "time spread, top terms and question-matching excerpts. Descriptive only; no causality."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "study_dir": {"type": "string"},
+                "question": {"type": "string"},
+            },
+            "required": ["study_dir"],
+        },
+    },
+    {
+        "name": "sure_instruments",
+        "description": "Generate interview, observation, task, sensory, pricing, beta or safety instruments for a study.",
+        "inputSchema": {"type": "object", "properties": {"study_dir": {"type": "string"}}, "required": ["study_dir"]},
+    },
+    {
+        "name": "sure_codebook",
+        "description": "Scaffold a claim-type codebook (need/acceptance/usability/performance/commercial/safety).",
+        "inputSchema": {"type": "object", "properties": {"study_dir": {"type": "string"}}, "required": ["study_dir"]},
+    },
+    {
+        "name": "sure_deliver",
+        "description": "Assemble a decision memo, report, PRD input or post-launch tracker from a study.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "study_dir": {"type": "string"},
+                "kind": {"enum": ["memo", "report", "prd", "tracker"], "default": "memo"},
+            },
+            "required": ["study_dir"],
+        },
+    },
+    {
+        "name": "sure_methods",
+        "description": "List methods for a product domain and lifecycle stage.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "domain": {"enum": ["software", "hardware", "consumer", "automotive", "mobile"]},
+                "stage": {"enum": ["discovery", "concept", "prototype", "validation", "pricing", "prelaunch", "postlaunch", "audit"]},
+            },
+            "required": ["domain"],
+        },
+    },
+    {
+        "name": "sure_domains",
+        "description": "List the five product research packs and their stages.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "sure_platform_map",
         "description": (
             "Show how regions (cn/overseas/global) and platform types resolve to platforms and "
@@ -369,6 +591,16 @@ TOOLS: list[dict[str, Any]] = [
 ]
 
 TOOL_BUILDERS = {
+    "sure_route": (sure.sure_kit.cli_route, _build_route),
+    "sure_do": (sure.sure_kit.cli_do, _build_do),
+    "sure_platforms": (sure.sure_kit.cli_platforms, _build_platforms),
+    "sure_collect": (sure.sure_kit.cli_collect, _build_collect),
+    "sure_analyze": (sure.sure_kit.cli_analyze, _build_analyze),
+    "sure_instruments": (sure.sure_kit.cli_instruments, _build_instruments),
+    "sure_codebook": (sure.sure_kit.cli_codebook, _build_codebook),
+    "sure_deliver": (sure.sure_kit.cli_deliver, _build_deliver),
+    "sure_methods": (sure.sure_kit.cli_methods, _build_methods),
+    "sure_domains": (sure.sure_kit.cli_domains, _build_domains),
     "sure_plan": (sure.command_plan, _build_plan),
     "sure_init": (sure.command_init, _build_init),
     "sure_check": (sure.command_check, _build_check),
