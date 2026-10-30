@@ -441,12 +441,18 @@ class Audit:
 
 
 def _is_missing(value: Any) -> bool:
-    if value is None or value == "":
+    if value is None:
         return True
     if isinstance(value, (list, dict)) and not value:
         return True
-    if isinstance(value, str) and value.strip().lower() in {"tbd", "todo", "[fill]", "待填写"}:
-        return True
+    if isinstance(value, str):
+        normalized = value.strip().casefold()
+        if not normalized:
+            return True
+        if normalized in {"tbd", "todo", "[fill]", "待填写", "待确认"}:
+            return True
+        if normalized.startswith(("tbd:", "todo:", "待填写", "待确认")):
+            return True
     return False
 
 
@@ -933,15 +939,33 @@ def _check_design(audit: Audit, paths: dict[str, Path]) -> dict[str, Any] | None
         else:
             errors.append("hypotheses must be an array")
         decision = study.get("decision", {})
-        if isinstance(decision, dict) and isinstance(decision.get("options"), list):
-            if len(decision["options"]) < 2:
-                errors.append("decision.options must contain at least two choices")
+        if isinstance(decision, dict):
+            for field_name in ("options", "minimum_evidence"):
+                if not isinstance(decision.get(field_name), list):
+                    errors.append(f"decision.{field_name} must be an array")
+            options = decision.get("options")
+            if isinstance(options, list):
+                if len(options) < 2:
+                    errors.append("decision.options must contain at least two choices")
+                if any(_is_missing(option) for option in options):
+                    errors.append("decision.options cannot contain blank or placeholder choices")
         scope = study.get("scope", {})
         if isinstance(scope, dict):
+            for field_name in SCOPE_REQUIRED - {"source_time_window", "unit_of_observation"}:
+                if not isinstance(scope.get(field_name), list):
+                    errors.append(f"scope.{field_name} must be an array")
             window = scope.get("source_time_window")
             missing_window = _missing_fields(window, {"start", "end"})
             if missing_window:
                 errors.append("scope.source_time_window missing: " + ", ".join(missing_window))
+            else:
+                try:
+                    start = datetime.strptime(str(window["start"]), "%Y-%m-%d").date()
+                    end = datetime.strptime(str(window["end"]), "%Y-%m-%d").date()
+                    if start > end:
+                        errors.append("scope.source_time_window start must not be after end")
+                except (TypeError, ValueError):
+                    errors.append("scope.source_time_window dates must use YYYY-MM-DD")
         gates = study.get("quality_gates", {})
         if isinstance(gates, dict):
             configured_roles = {str(value) for value in gates.get("required_corpus_roles", [])}
@@ -1857,6 +1881,20 @@ def _check_decisions(
                     errors.append(f"{judgment_id} lacks {chain_name} evidence for validated status")
             if require_counter and not judgment["counter_evidence_ids"]:
                 errors.append(f"{judgment_id} lacks counter-evidence for validated status")
+            context_key = str(judgment.get("context_key") or "").strip()
+            if not context_key:
+                errors.append(f"{judgment_id} lacks context_key for validated status")
+            else:
+                mismatched = sorted(
+                    value for value in all_references
+                    if value in evidence_by_id
+                    and str(evidence_by_id[value].get("context_key") or "").strip() != context_key
+                )
+                if mismatched:
+                    errors.append(
+                        f"{judgment_id} has evidence from a different or missing context_key: "
+                        + ", ".join(mismatched)
+                    )
 
     audit.metrics["demand_judgments"] = len(judgments)
     audit.metrics["validated_judgments"] = sum(
@@ -1888,6 +1926,35 @@ def audit_study(root: Path, stage: str) -> Audit:
         return audit
     _check_decisions(audit, paths, study, evidence_by_id)
     return audit
+
+
+def _design_gate_failure(study_dir: Path) -> dict[str, Any] | None:
+    audit = audit_study(study_dir, "design")
+    if audit.status == "pass":
+        return None
+    return {
+        "status": "design_gate_failed",
+        "requested_stage": "design",
+        "checks": [item.as_dict() for item in audit.findings],
+        "next_step": "complete the design contract, then run: askovo check STUDY --stage design",
+    }
+
+
+def command_collect(args: argparse.Namespace) -> int:
+    if not getattr(args, "dry_run", False):
+        failure = _design_gate_failure(Path(args.study_dir).resolve())
+        if failure is not None:
+            print(json.dumps(failure, ensure_ascii=False, indent=2))
+            return 1
+    return sure_engine.cli_collect(args)
+
+
+def command_queue_run(args: argparse.Namespace) -> int:
+    failure = _design_gate_failure(Path(args.study_dir).resolve())
+    if failure is not None:
+        print(json.dumps(failure, ensure_ascii=False, indent=2))
+        return 1
+    return sure_engine.cli_queue_run(args)
 
 
 def _write_report(audit: Audit) -> tuple[Path, Path]:
@@ -2012,25 +2079,24 @@ AUDIT_BOUNDARY = (
 )
 
 
-def _load_evidence_levels(path: Path) -> dict[str, str]:
+def _load_evidence_by_id(path: Path) -> dict[str, dict[str, Any]]:
     if not path.is_file():
         return {}
     try:
         records = _load_jsonl(path)
     except (OSError, json.JSONDecodeError, ValueError):
         return {}
-    levels: dict[str, str] = {}
+    evidence_by_id: dict[str, dict[str, Any]] = {}
     for record in records:
         record_id = str(record.get("record_id", ""))
-        level = str(record.get("evidence_level", ""))
-        if record_id and level in LEVELS:
-            levels[record_id] = level
-    return levels
+        if record_id and str(record.get("evidence_level", "")) in LEVELS:
+            evidence_by_id[record_id] = record
+    return evidence_by_id
 
 
 def _claim_verdicts(
     judgments: list[Any],
-    levels: dict[str, str],
+    evidence_by_id: dict[str, dict[str, Any]],
     require_counter: bool,
 ) -> list[dict[str, Any]]:
     claims: list[dict[str, Any]] = []
@@ -2047,7 +2113,7 @@ def _claim_verdicts(
             ids = [str(value) for value in (judgment.get(field) or []) if str(value)]
             referenced.update(ids)
             observed = sorted(
-                {levels[value] for value in ids if value in levels},
+                {str(evidence_by_id[value]["evidence_level"]) for value in ids if value in evidence_by_id},
                 key=lambda level: LEVEL_RANK.get(level, -1),
             )
             ok = bool(set(observed) & accepted)
@@ -2062,12 +2128,25 @@ def _claim_verdicts(
         if require_counter and not counter_ids:
             reasons.append("缺反证")
 
-        unknown = sorted(value for value in referenced if value not in levels)
+        unknown = sorted(value for value in referenced if value not in evidence_by_id)
         if unknown:
             reasons.append("引用不存在的证据：" + ", ".join(unknown))
 
+        if status == "validated":
+            context_key = str(judgment.get("context_key") or "").strip()
+            if not context_key:
+                reasons.append("validated 判断缺 context_key")
+            else:
+                mismatched = sorted(
+                    value for value in referenced
+                    if value in evidence_by_id
+                    and str(evidence_by_id[value].get("context_key") or "").strip() != context_key
+                )
+                if mismatched:
+                    reasons.append("证据 context_key 不一致：" + ", ".join(mismatched))
+
         all_levels = sorted(
-            {levels[value] for value in referenced if value in levels},
+            {str(evidence_by_id[value]["evidence_level"]) for value in referenced if value in evidence_by_id},
             key=lambda level: LEVEL_RANK.get(level, -1),
         )
         max_level = all_levels[-1] if all_levels else "none"
@@ -2227,7 +2306,7 @@ def command_audit(args: argparse.Namespace) -> int:
         signals = _compute_signals(root, study)
     except (OSError, json.JSONDecodeError, ValueError):
         signals = {}
-    levels = _load_evidence_levels(paths["evidence"])
+    evidence_by_id = _load_evidence_by_id(paths["evidence"])
 
     judgments: list[Any] = []
     if paths["judgments"].is_file():
@@ -2241,7 +2320,7 @@ def command_audit(args: argparse.Namespace) -> int:
     if not isinstance(gates, dict):
         gates = {}
     require_counter = bool(gates.get("require_counter_evidence_for_validated", True))
-    claims = _claim_verdicts(judgments, levels, require_counter)
+    claims = _claim_verdicts(judgments, evidence_by_id, require_counter)
 
     focus = str(getattr(args, "claim", "") or "").strip()
     if focus:
@@ -2402,6 +2481,30 @@ def _allocate_platform_shares(
     return shares, warnings
 
 
+def _allocate_whole_targets(weights: list[float], total: int) -> list[int]:
+    """Allocate an exact total with one record minimum per positive route."""
+    if not weights:
+        return []
+    if total < len(weights):
+        raise ValueError(f"target {total} cannot cover {len(weights)} routes with a minimum of 1 each")
+    safe_weights = [max(0.0, float(weight)) for weight in weights]
+    weight_total = sum(safe_weights)
+    if weight_total <= 0:
+        safe_weights = [1.0] * len(weights)
+        weight_total = float(len(weights))
+    remaining = total - len(weights)
+    raw_additions = [remaining * weight / weight_total for weight in safe_weights]
+    allocated = [1 + int(addition) for addition in raw_additions]
+    leftover = total - sum(allocated)
+    order = sorted(
+        range(len(weights)),
+        key=lambda index: (-(raw_additions[index] - int(raw_additions[index])), index),
+    )
+    for index in order[:leftover]:
+        allocated[index] += 1
+    return allocated
+
+
 def _scale_route_targets(routes_csv: Path, quota: int) -> None:
     if not routes_csv.is_file():
         return
@@ -2411,26 +2514,15 @@ def _scale_route_targets(routes_csv: Path, quota: int) -> None:
         fieldnames = list(reader.fieldnames or [])
     if not rows:
         return
-    baseline = 0
+    current_targets: list[int] = []
     for row in rows:
         try:
-            baseline += int(row.get("target_records", "0"))
+            current_targets.append(int(row.get("target_records", "0")))
         except (TypeError, ValueError):
-            baseline += 0
-    if baseline <= 0:
+            current_targets.append(0)
+    if sum(current_targets) <= 0:
         return
-    factor = quota / baseline
-    scaled: list[int] = []
-    for row in rows:
-        try:
-            current = int(row.get("target_records", "0"))
-        except (TypeError, ValueError):
-            current = 0
-        scaled.append(max(1, round(current * factor)))
-    drift = quota - sum(scaled)
-    if drift and scaled:
-        largest = max(range(len(scaled)), key=lambda index: scaled[index])
-        scaled[largest] = max(1, scaled[largest] + drift)
+    scaled = _allocate_whole_targets([float(value) for value in current_targets], quota)
     for row, value in zip(rows, scaled):
         row["target_records"] = str(value)
     with routes_csv.open("w", encoding="utf-8", newline="") as handle:
@@ -2454,13 +2546,10 @@ def _write_planned_source_plan(
     rows = []
     for platform in sorted(platform_quotas):
         quota = platform_quotas[platform]
-        role_targets = {
-            role: max(1, round(quota * weight)) for role, weight in PLAN_ROLE_WEIGHTS.items()
-        }
-        drift = quota - sum(role_targets.values())
-        if drift:
-            largest_role = max(role_targets, key=lambda role: role_targets[role])
-            role_targets[largest_role] = max(1, role_targets[largest_role] + drift)
+        role_targets = dict(zip(
+            PLAN_ROLE_WEIGHTS,
+            _allocate_whole_targets(list(PLAN_ROLE_WEIGHTS.values()), quota),
+        ))
         for role, target in role_targets.items():
             rows.append(
                 {
@@ -2556,7 +2645,10 @@ def command_plan(args: argparse.Namespace) -> int:
         entry["connector_revision"] = str(connector.get("reviewed_revision", ""))
         entry["connector_license"] = str(connector.get("license", ""))
         entry["registry_decision"] = decision
-        if decision in {"supported", "historical_only"}:
+        if decision in {"supported", "historical_only"} and sure_engine.connector_review_expired(connector):
+            entry["status"] = "review_expired"
+            entry["reason"] = str(connector.get("policy_watch", {}).get("recheck_by") or "policy review expired")
+        elif decision in {"supported", "historical_only"}:
             entry["status"] = "enabled"
             entry["quota"] = 0
             entry["prerequisites"] = _platform_prerequisites(connector)
@@ -2577,19 +2669,59 @@ def command_plan(args: argparse.Namespace) -> int:
     shares, share_warnings = _allocate_platform_shares(
         {item["platform"]: item["platform_type"] for item in enabled}
     )
-    platform_quotas: dict[str, int] = {}
-    allocated = 0
-    for platform, share in shares.items():
-        quota = max(1, round(args.sample_size * share))
-        platform_quotas[platform] = quota
-        allocated += quota
-    if platform_quotas:
-        drift = args.sample_size - allocated
-        if drift:
-            largest = max(platform_quotas, key=platform_quotas.get)
-            platform_quotas[largest] = max(1, platform_quotas[largest] + drift)
+    try:
+        allocated = _allocate_whole_targets(list(shares.values()), args.sample_size)
+    except ValueError as exc:
+        print(f"--sample-size is too small for the enabled platforms: {exc}", file=sys.stderr)
+        return 2
+    platform_quotas = dict(zip(shares, allocated))
     for item in enabled:
         item["quota"] = platform_quotas.get(item["platform"], 0)
+
+    # Validate every quota against its role/route minimums before creating files.
+    assets_dir = Path(__file__).resolve().parents[1] / "assets"
+    for item in enabled:
+        template = assets_dir / f"{item['platform']}-route-template.csv"
+        try:
+            with template.open(encoding="utf-8-sig", newline="") as handle:
+                route_count = sum(1 for _ in csv.DictReader(handle))
+        except OSError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        minimum = max(len(PLAN_ROLE_WEIGHTS), route_count)
+        if item["quota"] < minimum:
+            print(
+                f"--sample-size gives {item['platform']} quota {item['quota']}, "
+                f"but its {minimum} planned roles/routes need at least {minimum}; "
+                "increase the sample or reduce platform types",
+                file=sys.stderr,
+            )
+            return 2
+
+    all_historical = bool(enabled) and all(
+        item.get("registry_decision") == "historical_only" for item in enabled
+    )
+    if args.time_window:
+        parts = args.time_window.split(":")
+        try:
+            if len(parts) != 2:
+                raise ValueError("two dates required")
+            start = datetime.strptime(parts[0], "%Y-%m-%d").date()
+            end = datetime.strptime(parts[1], "%Y-%m-%d").date()
+            if start > end:
+                raise ValueError("start is after end")
+        except ValueError as exc:
+            print(f"--time-window must be YYYY-MM-DD:YYYY-MM-DD with start <= end: {exc}", file=sys.stderr)
+            return 2
+        window = {"start": parts[0], "end": parts[1]}
+    elif all_historical:
+        window = {"start": HISTORICAL_DEFAULT_WINDOW[0], "end": HISTORICAL_DEFAULT_WINDOW[1]}
+    else:
+        today = datetime.now(timezone.utc).date()
+        window = {
+            "start": (today - timedelta(days=365)).isoformat(),
+            "end": today.isoformat(),
+        }
 
     study_id = args.study_id or (
         "study-"
@@ -2608,24 +2740,6 @@ def command_plan(args: argparse.Namespace) -> int:
     except (FileNotFoundError, OSError, json.JSONDecodeError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
-
-    all_historical = bool(enabled) and all(
-        item.get("registry_decision") == "historical_only" for item in enabled
-    )
-    if args.time_window:
-        parts = args.time_window.split(":")
-        if len(parts) != 2 or not parts[0] or not parts[1]:
-            print("--time-window must look like 2025-01-01:2026-08-31", file=sys.stderr)
-            return 2
-        window = {"start": parts[0], "end": parts[1]}
-    elif all_historical:
-        window = {"start": HISTORICAL_DEFAULT_WINDOW[0], "end": HISTORICAL_DEFAULT_WINDOW[1]}
-    else:
-        today = datetime.now(timezone.utc).date()
-        window = {
-            "start": (today - timedelta(days=365)).isoformat(),
-            "end": today.isoformat(),
-        }
     languages = args.languages.split(",") if args.languages else (["zh"] if args.region == "cn" else ["en"])
     scope = study.get("scope", {})
     scope["markets"] = [args.region] + ([args.market] if args.market else [])
@@ -2801,7 +2915,7 @@ def command_plan(args: argparse.Namespace) -> int:
 
 def _compute_signals(root: Path, study: dict[str, Any] | None) -> dict[str, Any]:
     evidence_path = root / "02-data" / "evidence.jsonl"
-    records = _load_jsonl(evidence_path)
+    records = _load_jsonl(evidence_path) if evidence_path.is_file() else []
     total = len(records)
     record_ids = [str(record.get("record_id", "")) for record in records]
     level_counts: Counter[str] = Counter()
@@ -3106,8 +3220,9 @@ def _aggregate_manifests(manifest_dir: Path) -> dict[str, Any]:
             continue
         result["runs"] += 1
         for field_name in ("requested_records", "reached_records", "written_records"):
+            legacy_name = field_name.removesuffix("_records")
             try:
-                result[field_name] += int(manifest.get(field_name, 0))
+                result[field_name] += int(manifest.get(field_name, manifest.get(legacy_name, 0)))
             except (TypeError, ValueError):
                 continue
         connector_id = str(manifest.get("connector_id", "")).strip()
@@ -3455,28 +3570,13 @@ def command_report(args: argparse.Namespace) -> int:
         print("study.json must contain an object", file=sys.stderr)
         return 2
 
-    signals_path = root / "04-findings" / "signals.json"
-    if signals_path.is_file():
-        try:
-            signals = _load_json(signals_path)
-        except (OSError, json.JSONDecodeError):
-            signals = _compute_signals(root, study)
-    else:
+    try:
+        # Reports must reflect current artifacts, not stale latest.json/signals.json files.
         signals = _compute_signals(root, study)
-    if not isinstance(signals, dict):
-        signals = {}
-
-    audit_payload: dict[str, Any] | None = None
-    audit_path = root / "05-audit" / "latest.json"
-    if audit_path.is_file():
-        try:
-            loaded_audit = _load_json(audit_path)
-            if isinstance(loaded_audit, dict):
-                audit_payload = loaded_audit
-        except (OSError, json.JSONDecodeError):
-            audit_payload = None
-    if audit_payload is None:
-        audit_payload = audit_study(root, "full").as_dict()
+        audit_payload: dict[str, Any] | None = audit_study(root, "full").as_dict()
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(f"cannot audit current study artifacts: {exc}", file=sys.stderr)
+        return 2
 
     judgments: list[Any] = []
     judgments_path = root / "04-findings" / "demand-judgments.json"
@@ -3714,7 +3814,7 @@ def build_parser() -> argparse.ArgumentParser:
     collect_parser.add_argument("--cdp-url", help="Chrome DevTools endpoint, e.g. http://127.0.0.1:9222")
     collect_parser.add_argument("--url", help="authorized visible page URL for CDP")
     collect_parser.add_argument("--ack-terms", action="store_true", help="acknowledge platform terms and authorized session")
-    collect_parser.set_defaults(func=sure_engine.cli_collect)
+    collect_parser.set_defaults(func=command_collect)
 
     analyze_parser = subparsers.add_parser(
         "analyze", help="normalize, dedup and describe collected material"
@@ -3774,7 +3874,7 @@ def build_parser() -> argparse.ArgumentParser:
     queue_run.add_argument("--workers", type=int, default=2)
     queue_run.add_argument("--min-interval", type=float, default=None, help="override per-platform seconds")
     queue_run.add_argument("--lease-seconds", type=float, default=300)
-    queue_run.set_defaults(func=sure_engine.cli_queue_run)
+    queue_run.set_defaults(func=command_queue_run)
     queue_status = queue_sub.add_parser("status", help="show queue counts and recent errors")
     queue_status.add_argument("study_dir")
     queue_status.set_defaults(func=sure_engine.cli_queue_status)
@@ -3841,9 +3941,8 @@ CLI_COMMANDS = {
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
     if raw and not raw[0].startswith("-") and raw[0] not in CLI_COMMANDS:
-        # Bare natural-language request: route it through `do`.
-        if any("\u4e00" <= char <= "\u9fff" for char in raw[0]):
-            raw = ["do", *raw]
+        # Bare natural-language request in any language: route it through `do`.
+        raw = ["do", *raw]
     args = build_parser().parse_args(raw)
     return int(args.func(args))
 

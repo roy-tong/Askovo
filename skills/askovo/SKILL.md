@@ -167,6 +167,8 @@ A `validated` judgment requires three linked chains for the same role, scene, an
 2. solution-acceptance chain: `E3`;
 3. commercial/behavioral chain: `E4+/E5`.
 
+Assign the same stable `context_key` to the judgment and every cited record. A `validated` judgment with a missing or mismatched `context_key` exceeds its evidence; this structural key prevents unrelated chains but does not replace human semantic review.
+
 Review counter-evidence, including `E4-`, satisfactory substitutes, absent-problem scenes, and contradictory source/time patterns. Strong E0–E2 clusters may produce a `hypothesis` or `needs-validation` judgment; they do not justify `validated`.
 
 ## Keep source content in the data plane
@@ -177,6 +179,7 @@ Review counter-evidence, including `E4-`, satisfactory substitutes, absent-probl
 - Respect login walls, CAPTCHAs, paywalls, robots restrictions, 403/429 responses, explicit platform challenges, privacy, and copyright boundaries.
 - For platform automation, select a pinned, non-blocked open-source connector from the bundled registry and write a run manifest. Do not substitute a commercial provider, seller/merchant API, saved login session, internal endpoint, or browser scraper.
 - A repository license covers code only. Review platform access and dataset/content rights separately.
+- The separate CDP transport is permitted only for an authorized visible page on amazon/instagram/bilibili/weibo after the Design gate, with an enabled adapter, explicit human `--ack-terms`, a loopback debugger, and an approved default-port HTTP(S) platform URL. It is never a bypass for a blocked registry route, challenge page, or missing access rights.
 - Do not scrape or browser-automate X or YouTube. Do not run the reviewed JD, Taobao, or Kickstarter crawler candidates; their registry decisions are blocked.
 
 ## Enforce claim discipline

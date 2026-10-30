@@ -27,7 +27,7 @@ import csv
 from pathlib import Path
 from typing import Any, Dict, List
 
-from common import Taxonomy, ensure_parent, read_jsonl
+from common import Taxonomy, ensure_parent, read_jsonl, spreadsheet_safe
 
 DEFAULT_FIELDS = [
     "record_id",
@@ -124,7 +124,7 @@ def main() -> int:
             out["quality_flags"] = "|".join(row.get("quality_flags") or [])
             for field in list_fields:
                 out[field] = "|".join(str(x) for x in (row.get(field) or []))
-            writer.writerow(out)
+            writer.writerow({field: spreadsheet_safe(value) for field, value in out.items()})
             count += 1
     print(f"wrote {count} metadata rows -> {args.out}")
     return 0

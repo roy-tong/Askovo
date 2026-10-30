@@ -121,8 +121,7 @@
         "Reposts are distribution, not demand",
         "Bot/spam contamination"
       ],
-      "notes": "只走官方 API 与付费层级；不得用浏览器自动化或内部接口。",
-      "cdp": true
+      "notes": "只走官方 API 与付费层级；不得用浏览器自动化或内部接口。"
     },
     {
       "id": "youtube",
@@ -163,8 +162,7 @@
         "Comment ranking bias",
         "Video performance confounds"
       ],
-      "notes": "Official YouTube Data API；评论/元数据按配额采集，字幕与转写需权利确认。",
-      "cdp": true
+      "notes": "Official YouTube Data API；评论/元数据按配额采集，字幕与转写需权利确认；不使用浏览器自动化。"
     },
     {
       "id": "instagram",

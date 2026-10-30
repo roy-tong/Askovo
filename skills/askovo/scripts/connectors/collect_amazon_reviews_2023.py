@@ -19,6 +19,7 @@ pseudonymisation reuse the shared common.py. The dataset itself is historical
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -48,9 +49,16 @@ def text_matches(text: str, keywords: Iterable[str]) -> bool:
     return any(keyword.lower() in t for keyword in keywords)
 
 
-def stream_dataset(dataset_id: str, config_name: str):
+def stream_dataset(dataset_id: str, config_name: str, revision: str):
     load_dataset = import_datasets()
-    return load_dataset(dataset_id, config_name, split="full", streaming=True, trust_remote_code=True)
+    return load_dataset(
+        dataset_id,
+        config_name,
+        split="full",
+        streaming=True,
+        trust_remote_code=False,
+        revision=revision,
+    )
 
 
 def get_value(row: Dict[str, Any], keys: Iterable[str]) -> Any:
@@ -65,11 +73,12 @@ def find_product_asins(
     category: str,
     product_keywords: List[str],
     max_meta_records: int,
+    revision: str,
 ) -> Set[str]:
     config_name = f"raw_meta_{category}"
     asins: Set[str] = set()
     scanned = 0
-    for row in stream_dataset(dataset_id, config_name):
+    for row in stream_dataset(dataset_id, config_name, revision):
         scanned += 1
         title = clean_text(str(get_value(row, ["title", "name"]) or ""))
         categories = clean_text(json.dumps(get_value(row, ["categories", "main_category"]) or "", ensure_ascii=False))
@@ -94,7 +103,8 @@ def normalize_review(row: Dict[str, Any], category: str, query: str, author_salt
     body = clean_text(" ".join([title, text]))
     if len(body) < 20:
         return None
-    stable_id = review_id or f"{category}:{asin}:{user_id}:{get_value(row, ['timestamp', 'time'])}:{hash(body)}"
+    content_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()[:24]
+    stable_id = review_id or f"{category}:{asin}:{user_id}:{get_value(row, ['timestamp', 'time'])}:{content_hash}"
     timestamp = get_value(row, ["timestamp", "time"])
     if isinstance(timestamp, str) and timestamp.isdigit():
         timestamp = int(timestamp)
@@ -118,7 +128,10 @@ def normalize_review(row: Dict[str, Any], category: str, query: str, author_salt
 
 
 def collect(cfg: Dict[str, Any], max_records: int, max_meta_records: int, skip_metadata: bool, author_salt: Optional[str]) -> List[Dict[str, Any]]:
-    dataset_id = cfg.get("dataset", DEFAULT_DATASET)
+    dataset_id = str(cfg.get("dataset", DEFAULT_DATASET))
+    revision = str(cfg.get("dataset_revision") or "")
+    if len(revision) != 40 or any(char not in "0123456789abcdefABCDEF" for char in revision):
+        raise ValueError("config dataset_revision must be a full reviewed HuggingFace commit SHA")
     query_label = str(cfg.get("query_label", DEFAULT_QUERY_LABEL))
     rows: List[Dict[str, Any]] = []
     seen = set()
@@ -131,12 +144,13 @@ def collect(cfg: Dict[str, Any], max_records: int, max_meta_records: int, skip_m
                 category,
                 cfg["product_keywords"],
                 max_meta_records,
+                revision,
             )
             if not asin_allowlist:
                 continue
         config_name = f"raw_review_{category}"
         scanned = 0
-        for row in stream_dataset(dataset_id, config_name):
+        for row in stream_dataset(dataset_id, config_name, revision):
             scanned += 1
             asin = str(get_value(row, ["parent_asin", "asin"]) or "")
             title = clean_text(str(get_value(row, ["title", "review_title"]) or ""))
@@ -168,7 +182,7 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = common.load_json_config(args.config)
-    missing = [key for key in ("categories", "product_keywords", "review_keywords") if not cfg.get(key)]
+    missing = [key for key in ("dataset_revision", "categories", "product_keywords", "review_keywords") if not cfg.get(key)]
     if missing:
         raise SystemExit(f"config missing keys: {', '.join(missing)}")
     rows = collect(cfg, args.max_records, args.max_meta_records, args.skip_metadata, args.author_salt)

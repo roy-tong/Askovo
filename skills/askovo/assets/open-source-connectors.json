@@ -1,11 +1,11 @@
 {
   "schema_version": "1.0",
-  "reviewed_at": "2026-08-27",
-  "scope": "Open-source GitHub projects that an independent third-party researcher could inspect, fork, or wrap for SURE studies.",
+  "reviewed_at": "2026-10-30",
+  "scope": "Open-source GitHub projects that an independent third-party researcher could inspect, fork, or wrap for askovo studies.",
   "decisions": {
     "supported": "May be selected after study-specific platform, privacy, retention, and data-rights review.",
     "historical_only": "May be selected only for the stated historical dataset; it is not a live-market connector.",
-    "blocked": "Kept as a reviewed negative example. The SURE CLI must not enable it."
+    "blocked": "Kept as a reviewed negative example. The askovo CLI must not enable it."
   },
   "connectors": [
     {
@@ -28,10 +28,10 @@
         "2026 access transition: existing Data API apps must be registered by 2026-09-30 to remain in good standing; new self-service access is closed and requires approval; the long-term direction is the Reddit Developer Platform (Devvit)."
       ],
       "policy_watch": {
-        "noted_at": "2026-08-27",
-        "summary": "Reddit's 2026 plan for the public Data API requires every existing Data API app to register by 2026-09-30 to remain in good standing. New self-service access is closed under the Responsible Builder Policy and needs an approval request. The stated long-term direction is migration to the Reddit Developer Platform (Devvit), with migration-program participants committing to migrate by 2026-12-31.",
-        "action_required": "Confirm the study's API app is registered before 2026-09-30; verify the approved access basis and limits; re-review this connector once the Devvit migration path affects research access.",
-        "recheck_by": "2026-09-30",
+        "noted_at": "2026-10-30",
+        "summary": "The 2026-10-30 limited review confirmed that Reddit's current Data API Terms remain published. The earlier migration plan required existing Data API apps to register by 2026-09-30 and described a Devvit migration commitment by 2026-12-31; the migration guide itself was not revalidated in this review.",
+        "action_required": "Use only an already registered and study-approved API app; do not assume new self-service access. Verify current approved limits and retention rights, then re-review the Devvit migration path by 2026-12-31.",
+        "recheck_by": "2026-12-31",
         "sources": [
           "https://www.reddit.com/r/redditdev/comments/1vgbm9c/our_plans_for_the_future_of_reddits_public_data/",
           "https://developers.reddit.com/docs/guides/migrate/public-api",

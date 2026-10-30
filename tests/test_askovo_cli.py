@@ -495,6 +495,29 @@ class PlanSignalsReportTests(unittest.TestCase):
             design_check = run_cli("check", str(target), "--stage", "design")
             self.assertEqual(1, design_check.returncode)
 
+    def test_plan_rejects_impossible_quota_without_creating_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "too-small"
+            completed = run_cli(
+                "plan", str(target), "--goal", "AI glasses complaints", "--region", "overseas",
+                "--sample-size", "1", "--platform-types", "forum,social,video",
+            )
+            self.assertEqual(2, completed.returncode)
+            self.assertFalse(target.exists())
+
+    def test_plan_validates_time_window_before_creating_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "time-window"
+            base_args = (
+                "plan", str(target), "--goal", "AI glasses complaints", "--region", "overseas",
+                "--sample-size", "1000", "--platform-types", "social",
+            )
+            invalid = run_cli(*base_args, "--time-window", "not-a-window")
+            self.assertEqual(2, invalid.returncode)
+            self.assertFalse(target.exists())
+            valid = run_cli(*base_args, "--time-window", "2025-01-01:2026-08-31")
+            self.assertEqual(0, valid.returncode, valid.stdout + valid.stderr)
+
     def test_plan_cn_ecommerce_fails_visibly_without_workaround(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "cn-ecommerce"
@@ -566,6 +589,18 @@ class PlanSignalsReportTests(unittest.TestCase):
             self.assertIn("## 3. 数据质量与关键信号", text)
             self.assertIn("## 4. 需求判断", text)
             self.assertIn("禁止推断", text)
+
+    def test_report_recomputes_stale_passing_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "sample"
+            shutil.copytree(SAMPLE, target)
+            checked = run_cli("check", str(target), "--stage", "full", "--write-report")
+            self.assertEqual(0, checked.returncode, checked.stdout + checked.stderr)
+            (target / "02-data/evidence.jsonl").write_text("", encoding="utf-8")
+            completed = run_cli("report", str(target))
+            self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+            self.assertEqual("fail", json.loads(completed.stdout)["audit_status"])
+            self.assertIn("未通过", (target / "06-report/report.md").read_text(encoding="utf-8"))
 
     def test_report_warns_when_full_check_fails(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -778,6 +813,21 @@ class AuditTests(unittest.TestCase):
         payload = json.loads((self.target / "05-audit/audit.json").read_text(encoding="utf-8"))
         self.assertEqual("exceeds_evidence", payload["claims"][0]["verdict"])
         self.assertTrue(any("commercial" in reason for reason in payload["claims"][0]["reasons"]))
+
+    def test_audit_rejects_evidence_from_another_decision_context(self) -> None:
+        evidence_path = self.target / "02-data/evidence.jsonl"
+        records = [json.loads(line) for line in evidence_path.read_text(encoding="utf-8").splitlines()]
+        for record in records[:4]:
+            record["context_key"] = "unrelated-product-context"
+        evidence_path.write_text(
+            "\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n",
+            encoding="utf-8",
+        )
+        completed = run_cli("audit", str(self.target))
+        self.assertEqual(1, completed.returncode, completed.stdout + completed.stderr)
+        payload = json.loads((self.target / "05-audit/audit.json").read_text(encoding="utf-8"))
+        self.assertEqual("exceeds_evidence", payload["claims"][0]["verdict"])
+        self.assertTrue(any("context_key" in reason for reason in payload["claims"][0]["reasons"]))
 
     def test_audit_unknown_claim_filter_is_a_usage_error(self) -> None:
         completed = run_cli("audit", str(self.target), "--claim", "no-such-claim")

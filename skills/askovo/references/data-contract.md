@@ -9,6 +9,7 @@ Every line in `02-data/evidence.jsonl` must contain these fields:
 | Field | Meaning |
 | --- | --- |
 | `record_id` | Stable ID used by demand judgments. |
+| `context_key` | Required when cited by a `validated` judgment; must exactly match the judgment's decision-context key. |
 | `user_role` | Role or user state supported by the record. |
 | `scene_trigger` | Situation and trigger in which the task occurs. |
 | `task_outcome` | What the person is trying to complete or achieve. |
@@ -36,10 +37,10 @@ Missingness is allowed in the full research schema. For the compact evidence ind
 Example:
 
 ```json
-{"record_id":"support-0042","user_role":"现场维修工程师","scene_trigger":"双手正在拆装设备，需要确认下一步操作","task_outcome":"在不停止操作的情况下取得准确指导","current_substitute":"放下工具后查看手机","friction_cost":"中断操作","consequence":"维修时间延长","evidence_level":"E2","evidence_basis":"原文描述了当前做法及其中断","corpus_role":"open_scene","source_family":"professional_forum","source_ref":"https://example.invalid/thread/42#record","normalized_text_hash":"sha256:..."}
+{"record_id":"support-0042","context_key":"repair-guidance-context","user_role":"现场维修工程师","scene_trigger":"双手正在拆装设备，需要确认下一步操作","task_outcome":"在不停止操作的情况下取得准确指导","current_substitute":"放下工具后查看手机","friction_cost":"中断操作","consequence":"维修时间延长","evidence_level":"E2","evidence_basis":"原文描述了当前做法及其中断","corpus_role":"open_scene","source_family":"professional_forum","source_ref":"https://example.invalid/thread/42#record","normalized_text_hash":"sha256:..."}
 ```
 
-The example supports a problem/substitute claim. It does not support solution acceptance, purchase intent, or market prevalence.
+The example supports a problem/substitute claim. It does not support solution acceptance, purchase intent, or market prevalence. A shared `context_key` prevents unrelated records from satisfying structural gates; human review still decides whether the role, scene, task, and counter-evidence are genuinely relevant.
 
 ## Extended provenance and identity fields
 

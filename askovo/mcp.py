@@ -14,5 +14,9 @@ MCP = PACKAGED if PACKAGED.is_file() else ROOT / "skills" / "askovo" / "scripts"
 def main() -> None:
     if not MCP.is_file():
         sys.exit(f"askovo-mcp: runtime not found at {MCP}")
-    sys.argv = [str(MCP)]
+    sys.argv = [str(MCP), *sys.argv[1:]]
     runpy.run_path(str(MCP), run_name="__main__")
+
+
+if __name__ == "__main__":
+    main()

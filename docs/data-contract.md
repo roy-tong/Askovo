@@ -44,7 +44,7 @@ study/
 {
   "study_id": "ai-glasses-2026",
   "title": "AI 眼镜用户不满",
-  "method_version": "2.0.0",
+  "method_version": "2.0.1",
   "decision": {
     "question": "是否值得为远程协作做一款新品",
     "owner": "产品负责人",
@@ -89,6 +89,7 @@ study/
 | 字段 | 说明 |
 | --- | --- |
 | `record_id` | 稳定唯一 id |
+| `context_key` | 决策上下文键；被 `validated` 判断引用时必填且必须与判断一致 |
 | `user_role` | 用户角色 |
 | `scene_trigger` | 触发场景 |
 | `task_outcome` | 想完成的任务/结果 |
@@ -111,6 +112,7 @@ study/
 | 字段 | 说明 |
 | --- | --- |
 | `id` | 判断 id |
+| `context_key` | `validated` 必填；同一角色/场景/任务决策上下文的稳定键，所有引用证据必须一致 |
 | `title` | 一句话结论 |
 | `user_role` / `scene` / `task` | 必须与证据一致 |
 | `current_substitute` / `friction` / `consequence` | 问题链叙事 |

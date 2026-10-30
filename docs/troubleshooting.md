@@ -4,7 +4,7 @@
 
 ### `askovo: command not found`
 
-- `pipx install askovo` 后确认 `~/.local/bin` 在 `PATH`；
+- 源码 checkout 中用 `pipx install --editable .`，或安装已验证的本地 wheel；随后确认 `~/.local/bin` 在 `PATH`。PyPI 尚未发布，不要直接执行 `pipx install askovo`；
 - 源码安装用 `.venv/bin/askovo`，或先 `source .venv/bin/activate`；
 - 不要直接 `python3 skills/askovo/scripts/askovo.py` 当作日常入口，它不暴露 `--version` 之外的包行为。
 
@@ -22,10 +22,11 @@ python3 -m venv .venv
 
 ### `askovo: runtime not found`
 
-说明 `askovo` 找到了，但仓库里的 `skills/askovo/scripts/askovo.py` 不在预期位置。阶段 1 的包装依赖 editable 安装；重新执行：
+说明 `askovo` 找到了，但 packaged runtime 或源码 fallback 不在预期位置。普通 wheel 已包含 runtime；优先安装同一版本的已验证本地 wheel。开发 checkout 也可重新执行：
 
 ```bash
 pipx install --editable /path/to/askovo
+askovo doctor
 ```
 
 ## 版本
@@ -33,7 +34,7 @@ pipx install --editable /path/to/askovo
 ### 审计报告出现版本警告
 
 ```text
-- 方法版本：`askovo 1.6`（⚠ study records askovo 1.6; current runtime is 2.0.0）
+- 方法版本：`askovo 1.6`（⚠ study records askovo 1.6; current runtime is 2.0.1）
 ```
 
 说明 study 是旧版本创建的。处理方式：
@@ -48,8 +49,10 @@ pipx install --editable /path/to/askovo
 
 ```bash
 askovo doctor
-pipx reinstall askovo
+python3 -m pip install --force-reinstall /path/to/askovo-2.0.1-py3-none-any.whl
 ```
+
+把路径换成该版本的实际 wheel；开发 checkout 则用 `pipx install --editable .` 重装。
 
 ## 门禁
 
@@ -80,6 +83,7 @@ pipx reinstall askovo
 - `demand-judgments.json` 为空或结构缺字段
 - 引用了不存在的 `record_id`
 - `validated` 缺少问题链、方案链、商业链或反证
+- `validated` 缺少 `context_key`，或引用证据的 `context_key` 与判断不一致；不要用不相关记录凑等级
 
 ### audit 退出码 1，但 check 是 0
 
@@ -132,7 +136,7 @@ askovo mcp
 
 ### `tools/list` 里没有 `askovo_audit`
 
-说明运行的是旧版本。`askovo --version` 应为 2.0.0 或更高；`pipx reinstall askovo`。
+说明运行的是旧版本。`askovo --version` 应为 2.0.0 或更高；用源码或对应的本地 wheel 重装，再用 `askovo-mcp --tools` 或 MCP `tools/list` 复核。
 
 ## 平台与编码
 
@@ -236,7 +240,7 @@ export ASKOVO_REDDIT_USER_AGENT="askovo/2.0 by <you>"
 
 ### MCP 看不到 `askovo_route` / `askovo_do`
 
-运行 `askovo --version`，应为 2.0.0 或更高；`askovo mcp` 应返回 22 个工具。旧版本需重新安装。
+运行 `askovo --version`，应为 2.0.0 或更高。`askovo mcp` 是等待 stdin 的 stdio server；请用 `askovo-mcp --tools` 查看清单，或让客户端调用 MCP `tools/list`。旧版本需用源码或本地 wheel 重新安装。
 
 ## CDP
 
@@ -253,7 +257,7 @@ askovo collect ./study --platform amazon --query "..." \
 
 ### `cdp_not_allowed`
 
-CDP 只对 amazon、instagram、x、youtube、bilibili、weibo 开放；其他平台走官方 API、授权导出或本地数据集。
+CDP 只对 amazon、instagram、bilibili、weibo 的授权可见页面开放；X/YouTube 只走官方 API。调试端点必须是回环地址，目标必须是默认端口 HTTP(S) 平台 URL。
 
 ### CDP 连接失败
 

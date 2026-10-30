@@ -1,6 +1,7 @@
 [
   {
     "id": "D01",
+    "context_key": "synthetic-mobile-check",
     "title": "Supervised mobile verification for fixed-camera blind spots",
     "user_role": "Remote pet owners whose current cameras leave important blind spots",
     "scene": "An alert or prolonged absence creates a need to check another room",

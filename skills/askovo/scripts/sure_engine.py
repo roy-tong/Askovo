@@ -12,11 +12,14 @@ from __future__ import annotations
 import base64
 import csv
 import hashlib
+import hmac
 import os
 import socket
 import struct
 import json
+import math
 import re
+import shlex
 import shutil
 import sqlite3
 import sys
@@ -29,7 +32,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 try:
     import fcntl
@@ -92,6 +95,30 @@ def now() -> str:
 
 def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def connector_review_expired(connector: dict[str, Any], today: Any = None) -> bool:
+    watch = connector.get("policy_watch")
+    if not isinstance(watch, dict) or not watch.get("recheck_by"):
+        return False
+    try:
+        deadline = datetime.strptime(str(watch["recheck_by"]), "%Y-%m-%d").date()
+    except ValueError:
+        return True
+    current = today or datetime.now(timezone.utc).date()
+    return current > deadline
+
+
+def platform_review_expired(platform: str) -> bool:
+    registry = load_json(ASSETS / "open-source-connectors.json")
+    connectors = registry.get("connectors", []) if isinstance(registry, dict) else []
+    return any(
+        isinstance(item, dict)
+        and item.get("platform") == platform
+        and item.get("decision") in {"supported", "historical_only"}
+        and connector_review_expired(item)
+        for item in connectors
+    )
 
 
 def method_catalog() -> dict[str, Any]:
@@ -225,16 +252,16 @@ def detect_intent(text: str, explicit: str | None = None) -> dict[str, Any]:
 
 
 RISK_RULES = (
-    ("road_test", ("开放道路", "实车路测", "上路测试", "道路试验", "on-road")),
-    ("food_ingest", ("试吃", "试喝", "摄入", "食用测试", "吃下去")),
-    ("skin_contact", ("皮肤接触", "涂抹", "上脸", "斑贴")),
-    ("minors", ("儿童", "未成年", "小学生", "幼儿")),
-    ("sensitive_data", ("健康数据", "生物特征", "位置轨迹", "家庭影像", "医疗记录")),
-    ("destructive_test", ("跌落测试", "破坏性", "拆解测试", "针刺")),
-    ("production_logs", ("生产日志", "全量日志", "用户遥测", "生产环境数据")),
-    ("home_recording", ("入户录像", "家庭录像", "家中拍摄")),
-    ("bystander_recording", ("路人拍摄", "旁观者录像", "公共场所录像")),
-    ("electrical_thermal", ("电池测试", "高温测试", "充电异常", "市电测试", "热失控")),
+    ("road_test", ("开放道路", "实车路测", "上路测试", "道路试验", "on-road", "road test", "road-test", "public road")),
+    ("food_ingest", ("试吃", "试喝", "摄入", "食用测试", "吃下去", "food ingestion", "ingest", "taste test", "eating", "drinking")),
+    ("skin_contact", ("皮肤接触", "涂抹", "上脸", "斑贴", "skin contact", "skin-contact", "topical", "patch test", "on-skin")),
+    ("minors", ("儿童", "未成年", "小学生", "幼儿", "children", "child", "minor", "underage", "pediatric")),
+    ("sensitive_data", ("健康数据", "生物特征", "位置轨迹", "家庭影像", "医疗记录", "health data", "biometric", "location history", "medical record")),
+    ("destructive_test", ("跌落测试", "破坏性", "拆解测试", "针刺", "drop test", "destructive test", "teardown", "nail penetration")),
+    ("production_logs", ("生产日志", "全量日志", "用户遥测", "生产环境数据", "production logs", "production data", "user telemetry")),
+    ("home_recording", ("入户录像", "家庭录像", "家中拍摄", "home recording", "in-home video", "household recording")),
+    ("bystander_recording", ("路人拍摄", "旁观者录像", "公共场所录像", "bystander recording", "public recording")),
+    ("electrical_thermal", ("电池测试", "高温测试", "充电异常", "市电测试", "热失控", "battery test", "thermal runaway", "mains voltage", "high temperature test")),
 )
 
 
@@ -317,14 +344,17 @@ def route_request(
     if intent_name == "audit":
         next_commands.append("askovo audit <study>")
     elif intent_name == "sources":
-        next_commands.append(f'askovo platforms "{text}" --domain {domain_info["domain"]} --bulk')
+        next_commands.append(shlex.join(["askovo", "platforms", text, "--domain", domain_info["domain"], "--bulk"]))
     elif intent_name == "collect":
-        next_commands.append(f'askovo platforms "{text}" --domain {domain_info["domain"]} --bulk')
-        next_commands.append(f'askovo collect <study> --platform github --query "<query>" --limit 100')
+        next_commands.append(shlex.join(["askovo", "platforms", text, "--domain", domain_info["domain"], "--bulk"]))
+        next_commands.append('askovo collect <study> --platform github --query "<query>" --limit 100')
     elif intent_name == "analyze":
         next_commands.append('askovo analyze <study> --question "<研究问题>"')
     else:
-        next_commands.append(f'askovo do "{text}" --domain {domain_info["domain"]} --stage {stage_key} --study {slug}')
+        next_commands.append(shlex.join([
+            "askovo", "do", text, "--domain", domain_info["domain"],
+            "--stage", stage_key, "--study", slug,
+        ]))
     if requires_ack:
         next_commands.append("若确需执行，请由负责人完成安全/伦理审查后追加 --ack-risk")
     return {
@@ -396,21 +426,6 @@ def route_markdown(route: dict[str, Any]) -> str:
     lines.extend(["## 下一步", ""])
     lines.extend(f"- `{item}`" for item in route.get("next_commands", []))
     return "\n".join(lines) + "\n"
-
-
-def _map_evidence_forms(forms: Iterable[str]) -> str:
-    mapping = {
-        "self_report": "interview_or_survey",
-        "observation": "field_observation",
-        "product_interaction": "prototype_session",
-        "experiment": "experiment",
-        "instrument_log": "telemetry_log",
-        "lab_report": "lab_report",
-        "transaction": "transaction",
-        "support_record": "support_ticket",
-    }
-    values = [mapping.get(form, form) for form in forms]
-    return ",".join(dict.fromkeys(values)) or "mixed"
 
 
 def _slug(text: str) -> str:
@@ -510,19 +525,16 @@ def create_study(
     for sub in ("01-sources/instruments", "01-sources/manifests", "02-data/raw", "03-codebook", "04-findings", "05-audit", "06-report"):
         (study_dir / sub).mkdir(parents=True, exist_ok=True)
 
-    forms: set[str] = set()
-    for item in selected:
-        forms.update(item.get("evidence_forms", []))
     rows = [
-        ["direct_solution", _map_evidence_forms(forms), "直接使用/接受目标方案的人", "待设计", "planned", "自选择/活跃用户偏差"],
-        ["open_scene", "field_observation", "在开放场景描述问题的人", "待设计", "planned", "场景覆盖偏差"],
-        ["substitute_rejector", "interview_or_survey", "用过替代方案后拒绝/放弃的人", "待设计", "planned", "难触达/回忆偏差"],
-        ["post_purchase_support", "support_ticket", "购买后遇到问题的人", "待设计", "planned", "沉默用户缺失"],
-        ["control", "interview_or_survey", "背景对照人群", "待设计", "planned", "相关性低"],
+        ["direct_solution", "prototype_test", "待设计：目标方案原型/概念测试", 2, 0.40, "planned", "自选择/活跃用户偏差"],
+        ["open_scene", "field_observation", "待设计：开放场景访谈/观察", 2, 0.40, "planned", "场景覆盖偏差"],
+        ["substitute_rejector", "interview", "待设计：替代方案拒绝/放弃访谈", 2, 0.40, "planned", "难触达/回忆偏差"],
+        ["post_purchase_support", "support_ticket", "待设计：购买后支持记录", 1, 0.40, "planned", "沉默用户缺失"],
+        ["control", "control_survey", "待设计：背景对照调查", 1, 0.40, "planned", "相关性低"],
     ]
     with (study_dir / "01-sources" / "source-plan.csv").open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["corpus_role", "source_family", "route_or_query", "target_records", "access_status", "known_bias"])
+        writer.writerow(["corpus_role", "source_family", "route_or_query", "target_records", "cap_share", "access_status", "known_bias"])
         writer.writerows(rows)
 
     (study_dir / "01-sources" / "evidence-plan.json").write_text(
@@ -1129,6 +1141,15 @@ def doctor() -> int:
                 if method_id not in ids:
                     missing.append(f"{name}.{stage_name}:{method_id}")
     checks.append(("pack-method-refs", not missing, "; ".join(missing[:5]) or "all resolve"))
+    try:
+        registry = load_json(ASSETS / "open-source-connectors.json")
+        expired = [
+            str(item.get("id")) for item in registry.get("connectors", [])
+            if isinstance(item, dict) and connector_review_expired(item)
+        ]
+        checks.append(("connector-policy-review", not expired, ", ".join(expired) or "all current"))
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        checks.append(("connector-policy-review", False, str(exc)))
     checks.append(("version", bool(VERSION and VERSION != "dev"), VERSION))
     for name, ok, detail in checks:
         print(f"[{'ok' if ok else 'FAIL'}] {name} {detail}".rstrip())
@@ -1307,9 +1328,11 @@ def _run_id(platform: str, token: str | None = None) -> str:
 
 
 def _hash_author(value: str) -> str:
-    if not value:
+    salt = os.environ.get("ASKOVO_AUTHOR_SALT")
+    if not value or not salt:
         return ""
-    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+    digest = hmac.new(salt.encode("utf-8"), value.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
+    return "hmac-sha256:" + digest
 
 
 def _normalize_platform_record(raw: dict[str, Any], platform: str, run_id: str, query: str) -> dict[str, Any]:
@@ -1317,7 +1340,9 @@ def _normalize_platform_record(raw: dict[str, Any], platform: str, run_id: str, 
     title = str(raw.get("title") or "")
     if title and text and title not in text:
         text = title + "\n\n" + text
-    record_id = str(raw.get("record_id") or raw.get("id") or f"{platform}:{hashlib.sha256(text.encode()).hexdigest()[:12]}")
+    record_id = str(raw.get("record_id") or raw.get("id") or hashlib.sha256(text.encode()).hexdigest()[:12])
+    if not record_id.startswith(platform + ":"):
+        record_id = f"{platform}:{record_id}"
     return {
         "record_id": record_id,
         "platform": platform,
@@ -1356,38 +1381,146 @@ def _locked_file(lock_path: Path):
             handle.close()
 
 
-def _write_run(study_dir: Path, platform: str, run_id: str, records: list[dict[str, Any]], manifest: dict[str, Any]) -> dict[str, Any]:
+def _write_run(
+    study_dir: Path,
+    platform: str,
+    run_id: str,
+    records: list[dict[str, Any]],
+    manifest: dict[str, Any],
+    raw_records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    manifest = dict(manifest)
+    source_rows = list(raw_records) if raw_records is not None else list(records)
+    try:
+        study = load_json(study_dir / "study.json")
+    except (OSError, json.JSONDecodeError):
+        study = {}
+    manifest["study_id"] = str(manifest.get("study_id") or (study.get("study_id") if isinstance(study, dict) else "") or "")
+    adapters = study.get("source_adapters", {}) if isinstance(study, dict) else {}
+    adapter = adapters.get(platform, {}) if isinstance(adapters, dict) else {}
+    if not isinstance(adapter, dict):
+        adapter = {}
+    for field_name in (
+        "connector_id", "connector_repo", "connector_revision", "connector_license",
+        "terms_reviewed_at", "data_rights_reviewed_at", "data_rights_basis", "retention_rule",
+    ):
+        manifest.setdefault(field_name, adapter.get(field_name) or "")
+    if not manifest.get("data_rights_basis"):
+        manifest["data_rights_basis"] = "See the approved study design; CLI does not verify platform terms"
+    connector_id = str(manifest.get("connector_id") or "unknown")
+    connector_revision = str(manifest.get("connector_revision") or "unknown")
+
     raw_dir = study_dir / "02-data" / "raw" / platform
     raw_dir.mkdir(parents=True, exist_ok=True)
     raw_path = raw_dir / f"{run_id}.jsonl"
-    with raw_path.open("w", encoding="utf-8") as handle:
-        for record in records:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    manifest_path = study_dir / "01-sources" / "manifests" / f"{run_id}.json"
+    if raw_path.exists() or manifest_path.exists():
+        raise FileExistsError(f"collection run already exists: {run_id}")
+    with raw_path.open("x", encoding="utf-8") as handle:
+        for index, raw in enumerate(source_rows):
+            normalized = records[index] if index < len(records) else {}
+            text = str(raw.get("text") or raw.get("body") or raw.get("selftext") or raw.get("content") or normalized.get("text") or "")
+            envelope = {
+                "collection_run_id": run_id,
+                "connector_id": connector_id,
+                "connector_revision": connector_revision,
+                "source_platform": platform,
+                "source_record_id": str(raw.get("record_id") or raw.get("id") or normalized.get("record_id") or ""),
+                "source_parent_id": raw.get("parent_id"),
+                "source_url": str(raw.get("source_url") or raw.get("url") or raw.get("html_url") or normalized.get("source_url") or ""),
+                "source_channel": str(raw.get("source_channel") or raw.get("subreddit") or ""),
+                "source_content_type": str(raw.get("source_content_type") or raw.get("content_type") or "unknown"),
+                "created_at": str(raw.get("created_at") or normalized.get("created_at") or ""),
+                "collected_at": str(raw.get("collected_at") or now()),
+                "content_status": str(raw.get("content_status") or "present"),
+                "text": text,
+                "source_fields": raw,
+            }
+            handle.write(json.dumps(envelope, ensure_ascii=False) + "\n")
+
     normalized_path = study_dir / "02-data" / "normalized.jsonl"
     added = 0
+    dropped = {"duplicate_id": 0, "duplicate_text": 0, "id_conflicts": 0}
+    conflicts: list[str] = []
     with _locked_file(normalized_path.with_suffix(".lock")):
-        existing: set[str] = set()
+        existing_ids: dict[str, str] = {}
+        existing_hashes: set[str] = set()
         if normalized_path.is_file():
             for line in normalized_path.read_text(encoding="utf-8").splitlines():
-                if line.strip():
-                    try:
-                        existing.add(str(json.loads(line).get("record_id")))
-                    except json.JSONDecodeError:
-                        continue
+                if not line.strip():
+                    continue
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(item, dict):
+                    continue
+                item_platform = str(item.get("platform") or item.get("source_family") or "unknown")
+                item_id = str(item.get("record_id") or "")
+                item_hash = str(item.get("normalized_text_hash") or "")
+                if item_id:
+                    existing_ids[f"{item_platform}:{item_id}"] = item_hash
+                if item_hash:
+                    existing_hashes.add(f"{item_platform}:{item_hash}")
         with normalized_path.open("a", encoding="utf-8") as handle:
             for record in records:
-                if record["record_id"] in existing:
+                record_id = str(record["record_id"])
+                text_hash = str(record.get("normalized_text_hash") or "")
+                id_key = f"{platform}:{record_id}"
+                hash_key = f"{platform}:{text_hash}"
+                if id_key in existing_ids:
+                    if existing_ids[id_key] != text_hash:
+                        dropped["id_conflicts"] += 1
+                        conflicts.append(record_id)
+                    else:
+                        dropped["duplicate_id"] += 1
                     continue
+                if text_hash and hash_key in existing_hashes:
+                    dropped["duplicate_text"] += 1
+                    continue
+                record["collection_run_id"] = run_id
+                record["connector_id"] = connector_id
+                record["connector_revision"] = connector_revision
+                record["source_ref"] = str(record.get("source_ref") or record.get("source_url") or "")
                 handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-                existing.add(record["record_id"])
+                existing_ids[id_key] = text_hash
+                if text_hash:
+                    existing_hashes.add(hash_key)
                 added += 1
-    manifest = dict(manifest)
-    manifest.update({"run_id": run_id, "requested": manifest.get("requested", 0), "reached": len(records), "written": added, "raw_file": str(raw_path)})
+
+    requested = manifest.get("requested_records", manifest.get("requested", 0))
+    for legacy_name in ("requested", "reached", "written"):
+        manifest.pop(legacy_name, None)
+    previous_dropped = manifest.get("blocked_or_dropped", {})
+    blocked_or_dropped = dict(previous_dropped) if isinstance(previous_dropped, dict) else {}
+    blocked_or_dropped.update(dropped)
+    warnings = list(manifest.get("warnings") or [])
+    if conflicts:
+        warnings.append("same platform record id with different content: " + ", ".join(conflicts[:20]))
+    manifest.update({
+        "collection_run_id": run_id,
+        "run_id": run_id,
+        "requested_records": requested,
+        "reached_records": len(source_rows),
+        "written_records": added,
+        "blocked_or_dropped": blocked_or_dropped,
+        "warnings": warnings,
+        "stop_reason": manifest.get("stop_reason") or "completed",
+        "requested_at": manifest.get("requested_at") or manifest.get("started_at") or now(),
+        "completed_at": now(),
+        "raw_file": str(raw_path),
+    })
     manifest_dir = study_dir / "01-sources" / "manifests"
     manifest_dir.mkdir(parents=True, exist_ok=True)
-    manifest_path = manifest_dir / f"{run_id}.json"
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return {"run_id": run_id, "raw_file": str(raw_path), "normalized_added": added, "manifest": str(manifest_path)}
+    with manifest_path.open("x", encoding="utf-8") as handle:
+        handle.write(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+    return {
+        "run_id": run_id,
+        "raw_file": str(raw_path),
+        "normalized_added": added,
+        "id_conflicts": dropped["id_conflicts"],
+        "manifest": str(manifest_path),
+    }
 
 
 def _collect_github(query: str, limit: int, kind: str = "issues") -> list[dict[str, Any]]:
@@ -1494,13 +1627,62 @@ def _collect_reddit(query: str, limit: int) -> list[dict[str, Any]]:
 # CDP transport: authorized visible pages only. No challenge bypass.
 
 
+CDP_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+CDP_TARGET_HOSTS = {
+    "amazon": ("amazon.com", "amazon.ca", "amazon.co.uk", "amazon.de", "amazon.fr", "amazon.co.jp"),
+    "instagram": ("instagram.com",),
+    "bilibili": ("bilibili.com",),
+    "weibo": ("weibo.com", "weibo.cn"),
+}
+MAX_CDP_HANDSHAKE_BYTES = 64 * 1024
+MAX_CDP_MESSAGE_BYTES = 16 * 1024 * 1024
+
+
+def _validate_cdp_base(cdp_base: str) -> tuple[str, int]:
+    parsed = urllib.parse.urlparse(cdp_base)
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname not in CDP_LOOPBACK_HOSTS
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in ("", "/")
+    ):
+        raise ValueError("CDP endpoint must be a plain http:// loopback URL")
+    return parsed.hostname or "127.0.0.1", parsed.port or 80
+
+
+def _validate_cdp_target(platform: str, url: str) -> None:
+    parsed = urllib.parse.urlparse(url)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    allowed = CDP_TARGET_HOSTS.get(platform, ())
+    host_matches = any(host == domain or host.endswith("." + domain) for domain in allowed)
+    default_port = 443 if parsed.scheme == "https" else 80
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not host_matches
+        or parsed.username
+        or parsed.password
+        or parsed.port not in (None, default_port)
+    ):
+        raise ValueError(f"CDP target must be a default-port HTTP(S) URL on an approved {platform} host")
+
+
+def _validate_cdp_ws_url(url: str, expected_port: int | None = None) -> None:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "ws" or parsed.hostname not in CDP_LOOPBACK_HOSTS or parsed.username or parsed.password:
+        raise ValueError("CDP websocket must be a ws:// loopback URL")
+    if expected_port is not None and (parsed.port or 80) != expected_port:
+        raise ValueError("CDP websocket must stay on the approved loopback port")
+
+
 class _WebSocket:
     """Minimal RFC6455 client for Chrome DevTools Protocol (ws:// only)."""
 
     def __init__(self, url: str, timeout: float = 30):
+        _validate_cdp_ws_url(url)
         parsed = urllib.parse.urlparse(url)
-        if parsed.scheme != "ws":
-            raise ValueError(f"only ws:// CDP endpoints are supported: {url}")
         host = parsed.hostname or "127.0.0.1"
         port = parsed.port or 80
         path = parsed.path or "/"
@@ -1523,9 +1705,22 @@ class _WebSocket:
             if not chunk:
                 raise ConnectionError("CDP websocket handshake closed")
             response += chunk
-        status = response.split(b"\r\n", 1)[0]
-        if b" 101 " not in status:
-            raise ConnectionError(f"CDP websocket handshake failed: {status.decode(errors='ignore')}")
+            if len(response) > MAX_CDP_HANDSHAKE_BYTES:
+                raise ConnectionError("CDP websocket handshake is too large")
+        header_block = response.split(b"\r\n\r\n", 1)[0].decode("iso-8859-1")
+        lines = header_block.split("\r\n")
+        if " 101 " not in lines[0]:
+            raise ConnectionError(f"CDP websocket handshake failed: {lines[0]}")
+        headers = {}
+        for line in lines[1:]:
+            name, separator, value = line.partition(":")
+            if separator:
+                headers[name.strip().lower()] = value.strip()
+        expected = base64.b64encode(
+            hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()
+        ).decode()
+        if headers.get("sec-websocket-accept") != expected:
+            raise ConnectionError("CDP websocket handshake has an invalid accept signature")
 
     def _read_exact(self, size: int) -> bytes:
         data = b""
@@ -1566,6 +1761,8 @@ class _WebSocket:
                 length = struct.unpack("!H", self._read_exact(2))[0]
             elif length == 127:
                 length = struct.unpack("!Q", self._read_exact(8))[0]
+            if length > MAX_CDP_MESSAGE_BYTES or len(buffer) + length > MAX_CDP_MESSAGE_BYTES:
+                raise ConnectionError("CDP websocket message is too large")
             mask = self._read_exact(4) if masked else b""
             payload = self._read_exact(length) if length else b""
             if masked:
@@ -1624,21 +1821,40 @@ class CDPClient:
         self.ws.close()
 
 
+def _read_limited_json(response: Any) -> Any:
+    payload = response.read(MAX_CDP_MESSAGE_BYTES + 1)
+    if len(payload) > MAX_CDP_MESSAGE_BYTES:
+        raise RuntimeError("CDP response is too large")
+    return json.loads(payload.decode("utf-8"))
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> None:
+        return None
+
+
+_CDP_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def cdp_new_page(cdp_base: str, url: str) -> str:
+    _, expected_port = _validate_cdp_base(cdp_base)
     base = cdp_base.rstrip("/")
     target = f"{base}/json/new?{urllib.parse.quote(url, safe='')}"
     request = urllib.request.Request(target, method="PUT")
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+        with _CDP_OPENER.open(request, timeout=15) as response:
+            payload = _read_limited_json(response)
     except urllib.error.HTTPError as exc:
         if exc.code not in (404, 405):
+            exc.close()
             raise
-        with urllib.request.urlopen(target, timeout=15) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    ws_url = payload.get("webSocketDebuggerUrl")
+        exc.close()
+        with _CDP_OPENER.open(target, timeout=15) as response:
+            payload = _read_limited_json(response)
+    ws_url = payload.get("webSocketDebuggerUrl") if isinstance(payload, dict) else None
     if not ws_url:
         raise RuntimeError("CDP did not return a page websocket URL")
+    _validate_cdp_ws_url(str(ws_url), expected_port)
     return str(ws_url)
 
 
@@ -1689,6 +1905,8 @@ def collect_cdp(
     limit: int = 50,
     scrolls: int = 5,
     wait_seconds: float = 2.5,
+    run_id: str | None = None,
+    lease_valid: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     if not ack_terms:
         return {
@@ -1701,10 +1919,13 @@ def collect_cdp(
         return {
             "status": "cdp_not_allowed",
             "platform": platform,
-            "reason": "CDP is only enabled for platforms with authorized visible pages (amazon/instagram/x/youtube/bilibili/weibo)",
+            "reason": "CDP is only enabled for authorized visible pages on amazon/instagram/bilibili/weibo",
         }
     if not url:
         return {"status": "error", "platform": platform, "reason": "CDP requires --url"}
+    _validate_cdp_target(platform, url)
+    if lease_valid is not None and not lease_valid():
+        return {"status": "lease_lost", "platform": platform, "reason": "queue lease is no longer owned by this worker"}
     ws_url = cdp_new_page(cdp_base, url)
     client = CDPClient(_WebSocket(ws_url))
     rows: list[dict[str, Any]] = []
@@ -1752,13 +1973,19 @@ def collect_cdp(
         }
         for row in rows[:limit]
     ]
-    run_id = _run_id(platform, "cdp")
+    if lease_valid is not None and not lease_valid():
+        return {"status": "lease_lost", "platform": platform, "reason": "queue lease is no longer owned by this worker"}
+    run_id = run_id or _run_id(platform)
     normalized = [_normalize_platform_record(raw, platform, run_id, query) for raw in raw_records]
     manifest = {
         "platform": platform,
         "query": query,
+        "route_id": query,
         "limit": limit,
         "adapter": "cdp",
+        "connector_id": "cdp-authorized-visible-page",
+        "connector_revision": VERSION,
+        "connector_license": "MIT",
         "access_basis": "cdp_authorized_visible_page",
         "auth": "user_browser_session",
         "started_at": now(),
@@ -1770,7 +1997,7 @@ def collect_cdp(
         "bias": entry.get("bias", []),
         "terms_note": "visible page text only; no challenge bypass; platform terms may still restrict collection",
     }
-    written = _write_run(study_dir, platform, run_id, normalized, manifest)
+    written = _write_run(study_dir, platform, run_id, normalized, manifest, raw_records)
     return {"status": "collected", "platform": platform, "transport": "cdp", "records": len(normalized), **written}
 
 
@@ -1785,7 +2012,10 @@ def collect_platform(
     cdp_url: str | None = None,
     url: str | None = None,
     ack_terms: bool = False,
+    lease_valid: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+        raise ValueError("limit must be a positive integer")
     study_dir = study_dir.resolve()
     if not (study_dir / "study.json").is_file():
         raise ValueError(f"missing study.json under {study_dir}; run `askovo do` first")
@@ -1819,8 +2049,37 @@ def collect_platform(
         plan["ack_terms"] = ack_terms
     if dry_run:
         return {"status": "planned", **plan, "next": f"askovo collect {study_dir} --platform {platform} --query {query!r} --limit {limit}"}
+    if platform_review_expired(platform):
+        return {
+            "status": "review_expired",
+            "platform": platform,
+            "reason": "connector policy review is expired; re-review the registry before collection",
+        }
+    study = load_json(study_dir / "study.json")
+    scope = study.get("scope", {}) if isinstance(study, dict) else {}
+    allowed_sources = scope.get("allowed_sources", []) if isinstance(scope, dict) else []
+    if not isinstance(allowed_sources, list) or platform not in allowed_sources:
+        return {
+            "status": "scope_blocked",
+            "platform": platform,
+            "reason": "platform is not listed in study.scope.allowed_sources",
+        }
+    adapters = study.get("source_adapters", {}) if isinstance(study, dict) else {}
+    adapter = adapters.get(platform) if isinstance(adapters, dict) else None
+    adapter_disabled = not isinstance(adapter, dict) or not adapter.get("enabled", False)
+    if adapter_disabled and (fixture is None or adapter is not None):
+        return {
+            "status": "adapter_disabled",
+            "platform": platform,
+            "reason": "live collection requires an enabled platform adapter in study.json",
+        }
+    if lease_valid is not None and not lease_valid():
+        return {"status": "lease_lost", "platform": platform, "reason": "queue lease is no longer owned by this worker"}
     if cdp_url:
-        return collect_cdp(study_dir, platform, query, url or "", cdp_url, ack_terms, limit)
+        return collect_cdp(
+            study_dir, platform, query, url or "", cdp_url, ack_terms, limit,
+            run_id=run_id, lease_valid=lease_valid,
+        )
     if fixture:
         raw_records: list[dict[str, Any]] = []
         suffix = fixture.suffix.lower()
@@ -1851,12 +2110,22 @@ def collect_platform(
             "access_modes": entry.get("access_modes", []),
             "next": f"askovo import {study_dir} <export.jsonl> --source-family {platform}",
         }
+    for index, raw in enumerate(raw_records, start=1):
+        if not isinstance(raw, dict):
+            raise ValueError(f"fixture record {index} must be a JSON object")
+    if lease_valid is not None and not lease_valid():
+        return {"status": "lease_lost", "platform": platform, "reason": "queue lease is no longer owned by this worker"}
     normalized = [_normalize_platform_record(raw, platform, run_id, query) for raw in raw_records[:limit]]
+    adapter_config = adapter if isinstance(adapter, dict) else {}
     manifest = {
         "platform": platform,
         "query": query,
+        "route_id": query,
         "limit": limit,
         "adapter": entry.get("adapter"),
+        "connector_id": "authorized-export" if fixture else adapter_config.get("connector_id") or entry.get("adapter"),
+        "connector_revision": "local" if fixture else adapter_config.get("connector_revision") or VERSION,
+        "connector_license": "" if fixture else adapter_config.get("connector_license") or "MIT",
         "access_basis": "authorized_export" if fixture else ", ".join(entry.get("access_modes", [])),
         "auth": entry.get("auth"),
         "started_at": now(),
@@ -1865,13 +2134,14 @@ def collect_platform(
         "limits": entry.get("limits", []),
         "bias": entry.get("bias", []),
     }
-    written = _write_run(study_dir, platform, run_id, normalized, manifest)
+    written = _write_run(study_dir, platform, run_id, normalized, manifest, raw_records[:limit])
     return {"status": "collected", "platform": platform, "records": len(normalized), **written}
 
 
 def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any]:
     study_dir = study_dir.resolve()
     records: list[dict[str, Any]] = []
+    invalid_records = 0
     for name in ("02-data/normalized.jsonl", "02-data/evidence.jsonl"):
         path = study_dir / name
         if not path.is_file():
@@ -1882,16 +2152,27 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
             try:
                 item = json.loads(line)
             except json.JSONDecodeError:
+                invalid_records += 1
                 continue
             if isinstance(item, dict):
                 records.append(item)
-    seen: set[str] = set()
+            else:
+                invalid_records += 1
+    seen_ids: set[str] = set()
+    seen_hashes: set[str] = set()
     unique: list[dict[str, Any]] = []
     for record in records:
-        key = str(record.get("record_id") or record.get("normalized_text_hash") or "")
-        if key in seen:
+        platform = str(record.get("platform") or record.get("source_family") or "unknown")
+        record_id = str(record.get("record_id") or "")
+        text_hash = str(record.get("normalized_text_hash") or record.get("text_hash") or "")
+        id_key = f"{platform}:{record_id}"
+        hash_key = f"{platform}:{text_hash}"
+        if (record_id and id_key in seen_ids) or (text_hash and hash_key in seen_hashes):
             continue
-        seen.add(key)
+        if record_id:
+            seen_ids.add(id_key)
+        if text_hash:
+            seen_hashes.add(hash_key)
         unique.append(record)
     by_platform: dict[str, int] = {}
     by_claim: dict[str, int] = {}
@@ -1934,6 +2215,7 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
         "generated_at": now(),
         "question": question,
         "records": len(unique),
+        "invalid_records": invalid_records,
         "by_platform": by_platform,
         "by_claim_type": by_claim,
         "by_evidence_form": by_form,
@@ -2008,7 +2290,7 @@ def cli_collect(args: Any) -> int:
         return 4
     if status == "cdp_not_allowed":
         return 4
-    if status in ("blocked", "adapter_unavailable", "error", "challenge"):
+    if status in ("blocked", "adapter_unavailable", "adapter_disabled", "scope_blocked", "review_expired", "lease_lost", "error", "challenge"):
         return 3
     return 0
 
@@ -2124,27 +2406,44 @@ class QueueStore:
                 conn.execute("ROLLBACK")
                 raise
 
-    def complete(self, job_id: str, records: int) -> None:
+    def renew(self, job_id: str, worker_id: str, lease_seconds: float) -> bool:
+        now_ts = time.time()
         with self._connect() as conn:
-            conn.execute(
-                "UPDATE jobs SET status='done', record_count=?, lease_until=0, updated_at=? WHERE id=?",
-                (records, now(), job_id),
+            cursor = conn.execute(
+                "UPDATE jobs SET lease_until=?, updated_at=? "
+                "WHERE id=? AND status='running' AND worker_id=? AND lease_until>?",
+                (now_ts + lease_seconds, now(), job_id, worker_id, now_ts),
             )
+            return cursor.rowcount == 1
 
-    def fail(self, job_id: str, error: str, attempts: int, max_attempts: int = 3) -> None:
+    def complete(self, job_id: str, records: int, worker_id: str) -> bool:
+        now_ts = time.time()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE jobs SET status='done', record_count=?, lease_until=0, worker_id=NULL, updated_at=? "
+                "WHERE id=? AND status='running' AND worker_id=? AND lease_until>?",
+                (records, now(), job_id, worker_id, now_ts),
+            )
+            return cursor.rowcount == 1
+
+    def fail(self, job_id: str, error: str, attempts: int, worker_id: str, max_attempts: int = 3) -> bool:
         stamp = now()
+        now_ts = time.time()
         with self._connect() as conn:
             if attempts >= max_attempts:
-                conn.execute(
-                    "UPDATE jobs SET status='failed', last_error=?, lease_until=0, updated_at=? WHERE id=?",
-                    (error[:2000], stamp, job_id),
+                cursor = conn.execute(
+                    "UPDATE jobs SET status='failed', last_error=?, lease_until=0, worker_id=NULL, updated_at=? "
+                    "WHERE id=? AND status='running' AND worker_id=? AND lease_until>?",
+                    (error[:2000], stamp, job_id, worker_id, now_ts),
                 )
             else:
                 delay = min(300, 5 * (2 ** max(0, attempts - 1)))
-                conn.execute(
-                    "UPDATE jobs SET status='retry', last_error=?, next_at=?, lease_until=0, updated_at=? WHERE id=?",
-                    (error[:2000], time.time() + delay, stamp, job_id),
+                cursor = conn.execute(
+                    "UPDATE jobs SET status='retry', last_error=?, next_at=?, lease_until=0, worker_id=NULL, updated_at=? "
+                    "WHERE id=? AND status='running' AND worker_id=? AND lease_until>?",
+                    (error[:2000], now_ts + delay, stamp, job_id, worker_id, now_ts),
                 )
+            return cursor.rowcount == 1
 
     def retry_failed(self) -> int:
         with self._connect() as conn:
@@ -2162,14 +2461,18 @@ class QueueStore:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 row = conn.execute("SELECT next_at FROM rate_state WHERE platform=?", (platform,)).fetchone()
+                slot = now_ts if row is None else max(now_ts, float(row["next_at"]))
+                wait = slot - now_ts
                 if row is None:
-                    conn.execute("INSERT INTO rate_state (platform, next_at) VALUES (?, ?)", (platform, now_ts + min_interval))
-                    wait = 0.0
-                elif row["next_at"] <= now_ts:
-                    conn.execute("UPDATE rate_state SET next_at=? WHERE platform=?", (now_ts + min_interval, platform))
-                    wait = 0.0
+                    conn.execute(
+                        "INSERT INTO rate_state (platform, next_at) VALUES (?, ?)",
+                        (platform, slot + min_interval),
+                    )
                 else:
-                    wait = float(row["next_at"] - now_ts)
+                    conn.execute(
+                        "UPDATE rate_state SET next_at=? WHERE platform=?",
+                        (slot + min_interval, platform),
+                    )
                 conn.execute("COMMIT")
                 return wait
             except Exception:
@@ -2214,6 +2517,12 @@ def run_queue(
     min_interval: float | None = None,
     lease_seconds: float = 300,
 ) -> dict[str, Any]:
+    if workers < 1:
+        raise ValueError("workers must be at least 1")
+    if not math.isfinite(lease_seconds) or lease_seconds <= 0:
+        raise ValueError("lease_seconds must be a positive finite number")
+    if min_interval is not None and (not math.isfinite(min_interval) or min_interval < 0):
+        raise ValueError("min_interval must be a non-negative finite number")
     study_dir = study_dir.resolve()
     store = QueueStore(study_dir / "01-sources" / "queue.db")
     store.init()
@@ -2230,38 +2539,73 @@ def run_queue(
                 continue
             with lock:
                 summary["leased"] += 1
-            wait = store.acquire_rate(job["platform"], _rate_for(job["platform"], min_interval))
-            if wait > 0:
-                time.sleep(wait)
+            stop_heartbeat = threading.Event()
+            lease_lost = threading.Event()
+
+            def heartbeat() -> None:
+                while not stop_heartbeat.wait(max(0.1, lease_seconds / 3)):
+                    try:
+                        if not store.renew(job["id"], worker_id, lease_seconds):
+                            lease_lost.set()
+                            return
+                    except sqlite3.Error:
+                        lease_lost.set()
+                        return
+
+            heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
+            heartbeat_thread.start()
             try:
+                wait = store.acquire_rate(job["platform"], _rate_for(job["platform"], min_interval))
+                if wait > 0:
+                    time.sleep(wait)
+                if lease_lost.is_set():
+                    return
                 result = collect_platform(
                     study_dir,
                     job["platform"],
                     job["query"],
                     limit=int(job["limit_n"]),
                     fixture=Path(job["fixture"]) if job["fixture"] else None,
-                    run_id=f"job-{job['id']}",
+                    run_id=f"job-{job['id']}-attempt-{job['attempts']}",
                     cdp_url=job["cdp_url"],
                     url=job["url"],
                     ack_terms=bool(job["ack_terms"]),
+                    lease_valid=lambda: not lease_lost.is_set(),
                 )
                 status = result.get("status")
+                if status == "lease_lost":
+                    return
                 if status == "collected":
                     records = int(result.get("records", 0))
-                    store.complete(job["id"], records)
-                    with lock:
-                        summary["done"] += 1
-                        summary["records"] += records
+                    if store.complete(job["id"], records, worker_id):
+                        with lock:
+                            summary["done"] += 1
+                            summary["records"] += records
                 else:
-                    store.fail(job["id"], json.dumps(result, ensure_ascii=False), int(job["attempts"]), int(job["max_attempts"]))
+                    recorded = store.fail(
+                        job["id"], json.dumps(result, ensure_ascii=False), int(job["attempts"]),
+                        worker_id, int(job["max_attempts"]),
+                    )
+                    if recorded:
+                        with lock:
+                            summary["failed"] += 1
+            except Exception as exc:  # keep the queue alive; record the failure
+                recorded = store.fail(
+                    job["id"], f"{type(exc).__name__}: {exc}", int(job["attempts"]),
+                    worker_id, int(job["max_attempts"]),
+                )
+                if recorded:
                     with lock:
                         summary["failed"] += 1
-            except Exception as exc:  # keep the queue alive; record the failure
-                store.fail(job["id"], f"{type(exc).__name__}: {exc}", int(job["attempts"]), int(job["max_attempts"]))
-                with lock:
-                    summary["failed"] += 1
+            finally:
+                stop_heartbeat.set()
+                heartbeat_thread.join(timeout=1)
 
-    threads = [threading.Thread(target=worker, args=(f"worker-{index+1}",), daemon=False) for index in range(max(1, workers))]
+    run_id = uuid.uuid4().hex[:12]
+    threads = [
+        threading.Thread(target=worker, args=(f"{run_id}-worker-{index+1}",), daemon=False)
+        for index in range(max(1, workers))
+    ]
     for thread in threads:
         thread.start()
     for thread in threads:
@@ -2281,6 +2625,10 @@ def queue_add(
     ack_terms: bool = False,
     max_attempts: int = 3,
 ) -> dict[str, Any]:
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+        raise ValueError("limit must be a positive integer")
+    if isinstance(max_attempts, bool) or not isinstance(max_attempts, int) or max_attempts < 1:
+        raise ValueError("max_attempts must be a positive integer")
     store = QueueStore(study_dir.resolve() / "01-sources" / "queue.db")
     store.init()
     job_id = store.add(platform, query, limit, fixture, cdp_url, url, ack_terms, max_attempts)

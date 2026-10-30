@@ -76,6 +76,13 @@ def _optional_string(arguments: dict[str, Any], field: str) -> str | None:
     return value
 
 
+def _boolean(arguments: dict[str, Any], field: str, default: bool = False) -> bool:
+    value = arguments.get(field, default)
+    if not isinstance(value, bool):
+        raise ValueError(f"{field} must be a boolean")
+    return value
+
+
 def _platform_list(arguments: dict[str, Any], field: str) -> list[str]:
     value = arguments.get(field, [])
     if isinstance(value, str):
@@ -138,7 +145,7 @@ def _build_check(arguments: dict[str, Any]) -> argparse.Namespace:
     return _namespace(
         study_dir=_string(arguments.get("study_dir"), "study_dir"),
         stage=stage,
-        write_report=bool(arguments.get("write_report", False)),
+        write_report=_boolean(arguments, "write_report"),
     )
 
 
@@ -177,7 +184,7 @@ def _build_connectors(arguments: dict[str, Any]) -> argparse.Namespace:
     platform = _optional_string(arguments, "platform")
     if platform is not None and platform not in PLATFORMS:
         raise ValueError(f"platform must be one of: {', '.join(PLATFORMS)}")
-    return _namespace(platform=platform, include_blocked=bool(arguments.get("include_blocked", False)))
+    return _namespace(platform=platform, include_blocked=_boolean(arguments, "include_blocked"))
 
 
 def _string_list(arguments: dict[str, Any], key: str) -> list[str] | None:
@@ -208,9 +215,9 @@ def _build_do(arguments: dict[str, Any]) -> argparse.Namespace:
         domain=_optional_string(arguments, "domain"),
         stage=_optional_string(arguments, "stage"),
         intent=_optional_string(arguments, "intent"),
-        dry_run=bool(arguments.get("dry_run", False)),
-        ack_risk=bool(arguments.get("ack_risk", False)),
-        force=bool(arguments.get("force", False)),
+        dry_run=_boolean(arguments, "dry_run"),
+        ack_risk=_boolean(arguments, "ack_risk"),
+        force=_boolean(arguments, "force"),
         json=True,
     )
 
@@ -220,7 +227,7 @@ def _build_platforms(arguments: dict[str, Any]) -> argparse.Namespace:
         need=_string(arguments.get("need"), "need"),
         domain=_optional_string(arguments, "domain"),
         claim_type=_string_list(arguments, "claim_type"),
-        bulk=bool(arguments.get("bulk", False)),
+        bulk=_boolean(arguments, "bulk"),
         json=True,
     )
 
@@ -234,11 +241,11 @@ def _build_collect(arguments: dict[str, Any]) -> argparse.Namespace:
         platform=_string(arguments.get("platform"), "platform"),
         query=_string(arguments.get("query"), "query"),
         limit=limit,
-        dry_run=bool(arguments.get("dry_run", True)),
+        dry_run=_boolean(arguments, "dry_run", True),
         fixture=_optional_string(arguments, "fixture"),
         cdp_url=_optional_string(arguments, "cdp_url"),
         url=_optional_string(arguments, "url"),
-        ack_terms=bool(arguments.get("ack_terms", False)),
+        ack_terms=_boolean(arguments, "ack_terms"),
     )
 
 
@@ -251,7 +258,7 @@ def _build_queue_add(arguments: dict[str, Any]) -> argparse.Namespace:
         fixture=_optional_string(arguments, "fixture"),
         cdp_url=_optional_string(arguments, "cdp_url"),
         url=_optional_string(arguments, "url"),
-        ack_terms=bool(arguments.get("ack_terms", False)),
+        ack_terms=_boolean(arguments, "ack_terms"),
         max_attempts=int(arguments.get("max_attempts", 3)),
     )
 
@@ -665,7 +672,7 @@ TOOL_BUILDERS = {
     "askovo_route": (askovo_cli.sure_engine.cli_route, _build_route),
     "askovo_do": (askovo_cli.sure_engine.cli_do, _build_do),
     "askovo_platforms": (askovo_cli.sure_engine.cli_platforms, _build_platforms),
-    "askovo_collect": (askovo_cli.sure_engine.cli_collect, _build_collect),
+    "askovo_collect": (askovo_cli.command_collect, _build_collect),
     "askovo_analyze": (askovo_cli.sure_engine.cli_analyze, _build_analyze),
     "askovo_instruments": (askovo_cli.sure_engine.cli_instruments, _build_instruments),
     "askovo_codebook": (askovo_cli.sure_engine.cli_codebook, _build_codebook),
@@ -673,7 +680,7 @@ TOOL_BUILDERS = {
     "askovo_methods": (askovo_cli.sure_engine.cli_methods, _build_methods),
     "askovo_domains": (askovo_cli.sure_engine.cli_domains, _build_domains),
     "askovo_queue_add": (askovo_cli.sure_engine.cli_queue_add, _build_queue_add),
-    "askovo_queue_run": (askovo_cli.sure_engine.cli_queue_run, _build_queue_run),
+    "askovo_queue_run": (askovo_cli.command_queue_run, _build_queue_run),
     "askovo_queue_status": (askovo_cli.sure_engine.cli_queue_status, _build_queue_status),
     "askovo_plan": (askovo_cli.command_plan, _build_plan),
     "askovo_init": (askovo_cli.command_init, _build_init),

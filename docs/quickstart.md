@@ -60,7 +60,13 @@ route.json / route.md      路由依据
 method-choice.json
 ```
 
-补全 `study.json` 的决策、选项、截止日、假设、证伪条件、样本理由与停止规则。
+补全 `study.json` 的决策、选项、截止日、假设、证伪条件、样本理由与停止规则。将允许的平台写入 `scope.allowed_sources`；live/CDP 还需配置并启用对应 `source_adapters`、条款与数据权利审查。然后必须先通过：
+
+```bash
+askovo check ./cam-study --stage design
+```
+
+Design gate 未通过时，真实 fixture/API/CDP 采集和 queue run 都会停止；dry-run 仅用于规划。
 
 ## 第三步：判断数据在哪
 

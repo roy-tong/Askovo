@@ -2,9 +2,24 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
-**/05-audit/latest.json
-**/05-audit/latest.md
+.env
+.env.*
+!.env.example
 
 *.egg-info/
 build/
 dist/
+
+# Generated study state and reports; tracked synthetic templates/samples stay intact.
+**/01-sources/queue.db*
+**/01-sources/manifests/*.json
+**/02-data/normalized.jsonl
+**/02-data/normalized.lock
+**/02-data/raw/**/*.jsonl
+**/04-findings/signals.json
+**/04-findings/analysis.json
+**/04-findings/analysis.md
+**/05-audit/latest.*
+**/05-audit/audit.json
+**/05-audit/audit.md
+**/06-report/

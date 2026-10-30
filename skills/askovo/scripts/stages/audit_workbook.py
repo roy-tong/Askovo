@@ -47,7 +47,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from common import ensure_parent, read_jsonl
+from common import ensure_parent, read_jsonl, spreadsheet_safe
 
 try:
     from openpyxl import Workbook, load_workbook
@@ -55,10 +55,12 @@ try:
     from openpyxl.utils import get_column_letter
 except ModuleNotFoundError:  # pragma: no cover - exercised only without openpyxl
     Workbook = None  # type: ignore[assignment]
+    load_workbook = None  # type: ignore[assignment]
+    Alignment = Font = PatternFill = get_column_letter = None  # type: ignore[assignment]
 
-HEADER_FILL = PatternFill("solid", fgColor="1F4E79")
-HEADER_FONT = Font(color="FFFFFF", bold=True)
-WRAP = Alignment(wrap_text=True, vertical="top")
+HEADER_FILL = PatternFill("solid", fgColor="1F4E79") if PatternFill else None
+HEADER_FONT = Font(color="FFFFFF", bold=True) if Font else None
+WRAP = Alignment(wrap_text=True, vertical="top") if Alignment else None
 SAMPLE_SHEET = "抽检样本"
 
 GOLD_REVIEWER_COLUMNS = ["reviewer", "review_date", "notes"]
@@ -68,9 +70,14 @@ GOLD_REVIEWER_COLUMNS = ["reviewer", "review_date", "notes"]
 # shared helpers
 # ---------------------------------------------------------------------------
 
-def snapshot_hash(record_ids: Sequence[str]) -> str:
-    """BCI pattern: stable 16-hex fingerprint of the sampled input snapshot."""
-    joined = "\n".join(sorted(str(r) for r in record_ids))
+def snapshot_hash(records: Sequence[Any]) -> str:
+    """Stable fingerprint of canonical record content, not just record IDs."""
+    canonical = [
+        json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if isinstance(record, dict) else str(record)
+        for record in records
+    ]
+    joined = "\n".join(sorted(canonical))
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
 
 
@@ -94,7 +101,7 @@ def write_table_sheet(wb: Any, name: str, header: List[str], rows: List[List[Any
         cell.font = HEADER_FONT
     for i, row in enumerate(rows, start=2):
         for j, value in enumerate(row, start=1):
-            cell = ws.cell(row=i, column=j, value=value)
+            cell = ws.cell(row=i, column=j, value=spreadsheet_safe(value))
             cell.alignment = WRAP
     for j, col in enumerate(header, start=1):
         lens = [len(str(col))] + [len(str(row[j - 1])) for row in rows]
@@ -160,8 +167,8 @@ def concentration_warnings(
 # ---------------------------------------------------------------------------
 
 def cmd_sample(args: argparse.Namespace) -> int:
-    if Workbook is None:
-        print("openpyxl is required for the xlsx workbook: pip install openpyxl")
+    if Workbook is None and not args.csv_out:
+        print("openpyxl is required for the xlsx workbook, or pass --csv-out: pip install openpyxl")
         return 2
     records = list(read_jsonl(args.input))
     if not records:
@@ -169,7 +176,7 @@ def cmd_sample(args: argparse.Namespace) -> int:
         return 2
     rng = random.Random(args.seed)
     label_fields = [f.strip() for f in args.label_fields.split(",") if f.strip()]
-    snap = snapshot_hash(str(r.get("record_id")) for r in records)
+    snap = snapshot_hash(records)
 
     stratum_field = None if args.no_stratify else args.stratum_field
     cross_field = args.cross_field
@@ -186,8 +193,9 @@ def cmd_sample(args: argparse.Namespace) -> int:
     picked: List[Dict[str, Any]] = []
     for stratum in sorted(strata):
         pool = strata[stratum]
-        chosen: List[Dict[str, Any]] = []
+        chosen: List[Dict[str, Any]] = list(pool)
         if cross_field:
+            chosen = []
             observed = cross_values or sorted(
                 {join_labels(r.get(cross_field)) or "unknown" for r in pool}
             )
@@ -245,6 +253,16 @@ def cmd_sample(args: argparse.Namespace) -> int:
         row.extend(["", "", ""])  # reviewer / review_date / notes
         row.append(snap)
         rows.append(row)
+
+    if Workbook is None:
+        ensure_parent(args.csv_out)
+        with args.csv_out.open("w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(header)
+            writer.writerows([spreadsheet_safe(value) for value in row] for row in rows)
+        print(f"wrote CSV sample ({len(picked)} rows) -> {args.csv_out}")
+        print(f"snapshot {snap}; reviewer fills gold_* columns, then run: audit_workbook.py score")
+        return 0
 
     wb = Workbook()
     wb.remove(wb.active)
@@ -307,7 +325,7 @@ def cmd_sample(args: argparse.Namespace) -> int:
         with args.csv_out.open("w", encoding="utf-8-sig", newline="") as handle:
             writer = csv.writer(handle)
             writer.writerow(header)
-            writer.writerows(rows)
+            writer.writerows([spreadsheet_safe(value) for value in row] for row in rows)
         print(f"wrote CSV sample -> {args.csv_out}")
     return 0
 
@@ -489,7 +507,10 @@ def cmd_score(args: argparse.Namespace) -> int:
         args.report_out.write_text("\n".join(lines) + "\n", encoding="utf-8")
         print(f"wrote agreement report -> {args.report_out}")
 
-    if args.min_agreement is not None and overall_reviewed:
+    if args.min_agreement is not None:
+        if not overall_reviewed:
+            print("agreement gate requires at least one non-empty gold review")
+            return 1
         if (report["overall_exact_agreement"] or 0) < args.min_agreement:
             print(
                 f"agreement {report['overall_exact_agreement']} below gate {args.min_agreement} — "

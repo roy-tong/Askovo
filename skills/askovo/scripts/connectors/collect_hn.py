@@ -4,11 +4,21 @@ from __future__ import annotations
 import argparse
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, List
 
-from common import build_url, clean_text, infer_sample_bucket, is_primary_date, load_config, request_json, write_jsonl
-from common import author_hash, base_quality_flags, month_bucket, quality_score, stable_text_hash, utc_now_iso
-
+import common
+from common import (
+    author_hash,
+    base_quality_flags,
+    build_url,
+    clean_text,
+    is_primary_date,
+    month_bucket,
+    quality_score,
+    stable_text_hash,
+    utc_now_iso,
+    write_jsonl,
+)
 
 HN_SEARCH = "https://hn.algolia.com/api/v1/search"
 
@@ -44,7 +54,7 @@ def normalize_hit(hit: Dict[str, Any], query: str) -> Dict[str, Any] | None:
         "thread_url": f"https://news.ycombinator.com/item?id={story_id}" if story_id else None,
         "product_hint": story_title,
         "source_role": "motivation",
-        "sample_bucket": infer_sample_bucket(text, query, "hacker_news"),
+        "sample_bucket": query,
         "month_bucket": month_bucket(created_at),
         "primary_sample_eligible": is_primary_date(created_at),
         "quality_score": quality_score(text, flags, score),
@@ -53,8 +63,8 @@ def normalize_hit(hit: Dict[str, Any], query: str) -> Dict[str, Any] | None:
     }
 
 
-def collect(max_records: int, hits_per_page: int, sleep_s: float, timeout: int) -> List[Dict[str, Any]]:
-    cfg = load_config()["hacker_news"]
+def collect(cfg: Dict[str, Any], max_records: int, hits_per_page: int, sleep_s: float, timeout: int) -> List[Dict[str, Any]]:
+    cfg = cfg.get("hacker_news", cfg)
     queries = cfg["queries"]
     after_utc = cfg.get("after_utc")
     rows: List[Dict[str, Any]] = []
@@ -74,7 +84,7 @@ def collect(max_records: int, hits_per_page: int, sleep_s: float, timeout: int) 
                 },
             )
             try:
-                payload = request_json(url, timeout=timeout, retries=2)
+                payload = common.request_json(url, timeout=timeout, retries=2)
             except Exception as exc:
                 print(f"warning: HN query={query!r} page={page} failed: {exc}")
                 break
@@ -99,20 +109,25 @@ def collect(max_records: int, hits_per_page: int, sleep_s: float, timeout: int) 
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Collect Hacker News comments through the Algolia public API.")
+    parser.add_argument("--config", type=Path, required=True, help='JSON: {"queries": [...], "after_utc": 1704067200}')
     parser.add_argument("--max-records", type=int, default=2000)
     parser.add_argument("--hits-per-page", type=int, default=100)
     parser.add_argument("--sleep", type=float, default=0.25)
     parser.add_argument("--timeout", type=int, default=12)
-    parser.add_argument(
-        "--out",
-        type=Path,
-        default=Path("data/raw/hn/hn_comments.jsonl"),
-    )
+    parser.add_argument("--user-agent", required=True)
+    parser.add_argument("--author-salt", default=None)
+    parser.add_argument("--primary-after-utc", type=int, default=None)
+    parser.add_argument("--out", type=Path, default=Path("data/raw/hn/hn_comments.jsonl"))
     args = parser.parse_args()
 
+    common.configure(
+        user_agent=args.user_agent,
+        author_salt=args.author_salt,
+        primary_after_utc=args.primary_after_utc,
+    )
     out_path = Path(__file__).resolve().parents[1] / args.out
-    rows = collect(args.max_records, args.hits_per_page, args.sleep, args.timeout)
+    rows = collect(common.load_json_config(args.config), args.max_records, args.hits_per_page, args.sleep, args.timeout)
     count = write_jsonl(out_path, rows, append=False)
     print(f"wrote {count} Hacker News records to {out_path}")
 

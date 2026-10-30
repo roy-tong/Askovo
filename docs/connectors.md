@@ -125,10 +125,10 @@ Reddit 的 2026 公共 Data API 过渡会改变研究访问方式：现有应用
 - GitHub Search 单查询最多约 1,000 条；按 `created:` 日期、repo、label 分片。
 - Reddit listing 单次约 1,000 条；按 subreddit、时间窗、关键词分片。
 - 每次分片独立写 manifest，记录查询、配额、时间窗、达到上限与停止原因。
-- 跨 run 的重复记录在 `normalized.jsonl` 按 `record_id` 去重。
+- 跨 run 的重复记录在 `normalized.jsonl` 按平台内 `record_id` 与文本 hash 双键去重；同 ID 不同内容保留 raw 并记录冲突。
 - 先小样 pilot，估算有效产出、重复率与边际新主题，再放量；不要用“条数”替代代表性。
 
-当前 CLI 是单进程、配额受限的采集器；大规模并行需要外部 worker/队列，askovo 负责计划、manifest、去重与证据口径，不把并发伪装成研究质量。
+当前 CLI 支持单机 SQLite 多进程/多 worker、租约、失败重试与平台限速；跨机器共享需要外部队列。askovo 负责计划、manifest、去重与证据口径，不把并发伪装成研究质量。
 
 ## CDP 受限传输层
 
@@ -147,7 +147,8 @@ askovo collect ./study --platform amazon --query "night alert" \
 - 命中验证码/机器人检查立即 `challenge` 停止，不绕过；
 - 不伪造指纹、不用代理池、不做无限翻页；
 - `--ack-terms` 必须由人确认平台条款、账号授权、数据用途与保留；
-- 当前开放：amazon、instagram、x、youtube、bilibili、weibo；blocked 平台（小红书/知乎/京东/淘宝/Kickstarter）仍不开放；
+- 当前开放：amazon、instagram、bilibili、weibo；X/YouTube 只走官方 API，blocked 平台（小红书/知乎/京东/淘宝/Kickstarter）仍不开放；
+- 仅允许回环 CDP 端点、默认端口 HTTP(S) 平台 URL，返回 WebSocket 也必须留在同一回环端口；
 - 平台条款可能仍然禁止自动化采集；askovo 只提供技术通道和留痕，不替用户承担合规判断。
 
-适配器与传输是两回事：GitHub/Reddit 走官方 API；Amazon/Instagram 等优先授权导出/历史数据集，CDP 是受限兜底；本地 fixture 永远可用（授权导出）。
+适配器与传输是两回事：GitHub/Reddit 走官方 API；Amazon/Instagram 等优先授权导出/历史数据集，CDP 是受限兜底；本地 fixture 只用于已授权导出，并同样先通过 design gate 与 scope 检查。

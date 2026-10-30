@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,9 +8,33 @@ dynamic = ["version"]
 description = "askovo — evidence-led product research with the SURE engine"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Roy.Tong" }]
+keywords = ["user-research", "product-research", "agent-skill", "mcp", "evidence", "jtbd"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+  "Topic :: Utilities",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/roy-tong/askovo"
+Repository = "https://github.com/roy-tong/askovo"
+Documentation = "https://github.com/roy-tong/askovo/blob/main/docs/README.md"
+Changelog = "https://github.com/roy-tong/askovo/blob/main/CHANGELOG.md"
+Issues = "https://github.com/roy-tong/askovo/issues"
+Security = "https://github.com/roy-tong/askovo/security"
 
 [project.scripts]
 askovo = "askovo.cli:main"

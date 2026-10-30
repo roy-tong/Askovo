@@ -45,19 +45,16 @@ class _RouteNotFound(Exception):
 
 
 def month_bounds(start: str, end: str) -> list[tuple[datetime, datetime]]:
-    """Whole calendar months intersecting [start, end), derived from the CLI
-    window instead of a hardcoded year range (merged improvement 2)."""
+    """Calendar-month intersections of the exact [start, end) request window."""
     finish = datetime.fromisoformat(end + "T00:00:00+00:00")
     current = datetime.fromisoformat(start + "T00:00:00+00:00")
-    # Snap to the first day of the month so windows align with calendar months.
-    current = current.replace(day=1)
     months: list[tuple[datetime, datetime]] = []
     while current < finish:
-        year, month = current.year, current.month
-        if month == 12:
-            nxt = current.replace(year=year + 1, month=1)
+        first = current.replace(day=1)
+        if current.month == 12:
+            nxt = first.replace(year=current.year + 1, month=1)
         else:
-            nxt = current.replace(month=month + 1)
+            nxt = first.replace(month=current.month + 1)
         months.append((current, min(nxt, finish)))
         current = nxt
     return months
@@ -217,7 +214,8 @@ def main() -> None:
     args = parser.parse_args()
     run_id = args.run_id or f"legacy-reddit-archive-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
 
-    routes = list(csv.DictReader(args.routes.open(encoding="utf-8-sig", newline="")))
+    with args.routes.open(encoding="utf-8-sig", newline="") as handle:
+        routes = list(csv.DictReader(handle))
     if args.shard_total > 1:
         routes = routes[args.shard_idx::args.shard_total]
     state = json.loads(args.state.read_text(encoding="utf-8")) if args.state.exists() else {"completed": [], "blocked": [], "counts": {}}
@@ -233,6 +231,10 @@ def main() -> None:
                 if not args.full and written >= args.target_records:
                     break
                 for wi, (wafter, wbefore) in enumerate(month_windows(year, month, args.windows)):
+                    wafter = max(wafter, month_start)
+                    wbefore = min(wbefore, month_end)
+                    if wafter >= wbefore:
+                        continue
                     key = f"{route['route_id']}:{year}-{month:02d}:w{wi}"
                     if key in completed or key in blocked or f"{route['route_id']}:*" in blocked:
                         continue

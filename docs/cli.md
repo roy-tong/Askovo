@@ -14,7 +14,7 @@ askovo --help
 | `do "<需求>"` | **单入口**：路由 + 生成研究计划、方法选择、证据计划、工具包 | 0/2/4 |
 | `route "<需求>"` | 只路由，不写文件 | 0/2 |
 | `platforms "<需求>"` | 平台雷达：数据在哪、能否合规拿到、能证明什么 | 0/2 |
-| `collect <study>` | 运行采集适配器/本地导出/CDP，写 manifest 与 normalized | 0/2/3/4 |
+| `collect <study>` | 通过 design gate 后运行采集适配器/本地导出/CDP，写 raw、manifest 与 normalized | 0/1/2/3/4 |
 | `queue init/add/run/status/retry` | SQLite 队列、worker、重试、限速、断点续跑 | 0/1/2 |
 | `analyze <study>` | 归一化、去重、分布、候选主题、问题匹配 | 0/2 |
 | `instruments <study>` | 生成访谈/观察/任务/感官/价格/Beta/安全工具包 | 0/2 |
@@ -82,12 +82,13 @@ askovo collect ./study --platform amazon --query "night alert" \
   --cdp-url http://127.0.0.1:9222 --url "https://www.amazon.com/product-reviews/B0..." --ack-terms
 ```
 
+- 非 dry-run 采集先执行 design gate；失败返回 `1` 和 `design_gate_failed`。平台还必须在 `scope.allowed_sources` 中，live/CDP 必须启用 adapter。
 - GitHub：官方 Search API；`GITHUB_TOKEN` 可选。
-- Reddit：官方 Data API；需要 `ASKOVO_REDDIT_CLIENT_ID`、`ASKOVO_REDDIT_CLIENT_SECRET`、可选 `ASKOVO_REDDIT_USER_AGENT`。
-- `--fixture`：离线 JSONL/CSV，用于授权导出、历史数据集和测试。
+- Reddit：官方 Data API；需要 `ASKOVO_REDDIT_CLIENT_ID`、`ASKOVO_REDDIT_CLIENT_SECRET`、可选 `ASKOVO_REDDIT_USER_AGENT`；registry 复核过期会返回 `review_expired`。
+- `--fixture`：离线 JSONL/CSV，用于授权导出、历史数据集和测试；每行必须是 JSON object。
 - 其他平台没有内置适配器时返回 `3`，并给出导入/授权导出路径。
 - `blocked` 平台直接返回 `3`，不提供绕过方式。
-- 每次采集写 `01-sources/manifests/<run_id>.json`，原始记录写 `02-data/raw/<platform>/`，归一化记录追加 `02-data/normalized.jsonl`。
+- 每次采集写 `01-sources/manifests/<run_id>.json`，raw envelope 写 `02-data/raw/<platform>/`，归一化记录追加 `02-data/normalized.jsonl`；平台内按 ID + 文本 hash 双键去重，冲突写入 `blocked_or_dropped` 与 warnings。
 
 ### CDP（授权可见页面）
 
@@ -101,7 +102,8 @@ askovo collect ./study --platform amazon --query "night alert" \
 - 需要 Chrome 以 `--remote-debugging-port=9222` 启动，且使用你本人已登录的 profile；
 - 只抓当前页面可见文本；命中验证码/机器人检查立即停止；
 - `--ack-terms` 是人工确认平台条款、账号授权、用途与保留；没有它返回 `4`；
-- 仅 amazon/instagram/x/youtube/bilibili/weibo 开放；blocked 平台不开放；
+- 仅 amazon/instagram/bilibili/weibo 开放；X/YouTube 只走官方 API，blocked 平台不开放；
+- CDP 仅允许回环端点与默认端口 HTTP(S) 平台 URL，WebSocket 不得跳到其他主机或端口；
 - 不伪造指纹、不绕验证码、不做无限翻页。
 
 ## queue
@@ -177,5 +179,6 @@ askovo platforms "..." --json | jq '.recommended[] | {id, decision, bulk}'
 | `GITHUB_TOKEN` | 提高 GitHub API 限额；公开数据可不填 |
 | `ASKOVO_REDDIT_CLIENT_ID` / `ASKOVO_REDDIT_CLIENT_SECRET` | Reddit 官方 Data API |
 | `ASKOVO_REDDIT_USER_AGENT` | Reddit 要求的可识别 User-Agent |
+| `ASKOVO_AUTHOR_SALT` | 可选研究级 HMAC 盐；未设置时 normalized 不生成作者关联 hash，不把它当匿名化 |
 
 所有平台采集必须遵守平台条款、速率限制、数据权利与保留规则。没有合规通道时只接受授权导出/历史数据集。

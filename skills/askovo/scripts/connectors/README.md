@@ -115,6 +115,28 @@ python3 collect_arctic_reddit.py \
   --out 02-data/raw/arctic_comments.jsonl
 ```
 
+### Hacker News / PullPush 显式配置
+
+`collect_hn.py` 与 `collect_pullpush_reddit.py` 不再读取隐藏的项目配置，也不包含项目专用的 `infer_sample_bucket`。两者都要求 `--config` 与研究级 `--user-agent`，可选 `--author-salt` / `--primary-after-utc`：
+
+```bash
+cat > hn_cfg.json <<'JSON'
+{"queries": ["camera motion alert"], "after_utc": 1704067200}
+JSON
+python3 collect_hn.py --config hn_cfg.json \
+  --user-agent "MyStudyResearch/1.0 (+contact@example.com)" \
+  --out 02-data/raw/hn_comments.jsonl
+
+cat > pullpush_cfg.json <<'JSON'
+{"queries": ["night alert"], "subreddits": ["smarthome"], "after_utc": 1704067200}
+JSON
+python3 collect_pullpush_reddit.py --config pullpush_cfg.json \
+  --user-agent "MyStudyResearch/1.0 (+contact@example.com)" \
+  --out 02-data/raw/pullpush_comments.jsonl
+```
+
+HN 使用 Algolia 公开 API；PullPush 是第三方 Reddit 归档，启用前仍需单独复核访问依据、数据权利、时效与删除边界。
+
 ---
 
 ## 3. Amazon Reviews 2023：两种获取方式
@@ -138,12 +160,13 @@ python3 range_download.py \
 
 ### `collect_amazon_reviews_2023.py`（HF 流式过滤，来自 Tiiny）
 
-`projects/Tiiny用户研究/scripts/collect_amazon_reviews_2023.py`。两遍法（元数据关键词 → ASIN 白名单 → 评论关键词过滤），全流式不落全量。改动：数据集 id/类目/关键词从 `--config` JSON 传入（原来在项目 `config/queries.json`）；输出路径显式；`--author-salt` 透传匿名化；查询标签可由 `query_label` 配置（原硬编码 `amazon_reviews_2023_hardware_keywords`）。**唯一非标准库依赖：`pip install datasets`。**
+`projects/Tiiny用户研究/scripts/collect_amazon_reviews_2023.py`。两遍法（元数据关键词 → ASIN 白名单 → 评论关键词过滤），全流式不落全量。数据集 id/类目/关键词从 `--config` JSON 传入；`--author-salt` 透传匿名化。安全边界：`trust_remote_code=False`，`dataset_revision` 必须是已审查的完整 40 位 HuggingFace commit SHA，元数据与评论两遍使用同一 revision；缺 ID 记录用规范化正文的 SHA-256 生成稳定 ID。**可选非标准库依赖：`pip install datasets`，核心 CLI 不需要它。**
 
 ```bash
 cat > amazon_cfg.json <<'JSON'
 {
   "dataset": "McAuley-Lab/Amazon-Reviews-2023",
+  "dataset_revision": "0123456789abcdef0123456789abcdef01234567",
   "categories": ["Toys_and_Games", "Sports_and_Outdoors"],
   "product_keywords": ["eeg", "neurofeedback", "sleep headband"],
   "review_keywords": ["sleep", "focus", "training"]
@@ -152,6 +175,8 @@ JSON
 python3 collect_amazon_reviews_2023.py --config amazon_cfg.json \
   --max-records 50000 --out 02-data/raw/amazon_filtered.jsonl
 ```
+
+示例 SHA 仅展示格式，不是已审查版本；必须替换为你实际审查并锁定的数据集 commit。整文件下载也应把 `/resolve/main/` 换成 `/resolve/<reviewed-commit>/`，并用 manifest 的文件 `oid`/哈希复核。
 
 ### `amazon_reviews_2023_manifest.py`
 

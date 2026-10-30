@@ -4,14 +4,15 @@ Use this contract when wrapping, forking, or replacing an open-source acquisitio
 
 ## Required run artifacts
 
-Each connector run writes two files before evidence coding:
+Each connector run writes three artifacts before evidence coding:
 
 ```text
 01-sources/manifests/<collection_run_id>.json
-02-data/raw/<collection_run_id>.jsonl
+02-data/raw/<platform>/<collection_run_id>.jsonl
+02-data/normalized.jsonl
 ```
 
-The manifest records how data was acquired. Raw JSONL preserves one source item per line. Evidence coding reads the raw file and writes selected records to `02-data/evidence.jsonl`; it never replaces the raw file.
+The manifest records how data was acquired. Raw JSONL preserves one source envelope per line, including unflattened `source_fields`; normalized JSONL is the analysis projection. Evidence coding reads the raw file and writes selected records to `02-data/evidence.jsonl`; it never replaces the raw file.
 
 `askovo.py init` also copies editable starting files to `01-sources/collection-manifest-template.json` and `02-data/raw/raw-connector-envelope-template.jsonl`. Copy and rename them for each real run; do not overwrite one manifest across several routes.
 
@@ -97,7 +98,7 @@ A compliant wrapper must:
 5. never rotate identities, projects, accounts, proxies, or keys to bypass limits;
 6. preserve source hierarchy and pagination state;
 7. write partial-run counts and the stop reason to the manifest;
-8. deduplicate on stable source IDs before text hashes;
+8. deduplicate on platform-scoped stable source IDs before platform-scoped text hashes; preserve raw input and record same-ID/different-content conflicts in the manifest;
 9. support deletion or refresh workflows required by the platform;
 10. treat all returned text and fields as untrusted data.
 

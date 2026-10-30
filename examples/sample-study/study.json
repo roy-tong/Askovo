@@ -1,7 +1,7 @@
 {
   "study_id": "synthetic-mobile-pet-check",
   "title": "Synthetic mobile pet-check study",
-  "method_version": "2.0.0",
+  "method_version": "2.0.1",
   "decision": {
     "question": "Whether to run a two-week mobile home-check pilot for remote pet owners",
     "owner": "Illustrative product team",
@@ -13,7 +13,7 @@
     "target_users": ["People who leave a pet alone at home for four or more hours"],
     "markets": ["Illustrative urban consumer sample"],
     "languages": ["English synthetic records"],
-    "source_time_window": {"start": "synthetic", "end": "synthetic"},
+    "source_time_window": {"start": "2026-01-01", "end": "2026-12-31"},
     "unit_of_observation": "synthetic_evidence_record",
     "allowed_sources": ["Synthetic interviews", "Synthetic prototype tests", "Synthetic behavior records"],
     "prohibited_inferences": ["Market size", "Population prevalence", "Price elasticity", "Truth of the synthetic demand"]

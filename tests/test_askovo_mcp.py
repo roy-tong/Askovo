@@ -31,6 +31,15 @@ def tool_payload(response: dict) -> dict:
 
 
 class AskvoMcpServerTests(unittest.TestCase):
+    def test_package_entry_forwards_tools_flag(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, str(ROOT / "askovo/mcp.py"), "--tools"],
+            check=False, capture_output=True, text=True, timeout=120,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        tools = json.loads(completed.stdout)["tools"]
+        self.assertIn("askovo_plan", {tool["name"] for tool in tools})
+
     def test_handshake_lists_tools_and_calls_registry(self) -> None:
         responses = run_mcp(
             {
@@ -155,6 +164,18 @@ class AskvoMcpServerTests(unittest.TestCase):
                         "arguments": {"study_dir": study_dir, "stage": "design"},
                     },
                 },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "askovo_collect",
+                        "arguments": {
+                            "study_dir": study_dir, "platform": "reddit", "query": "glasses",
+                            "fixture": str(Path(directory) / "unused.jsonl"), "dry_run": False,
+                        },
+                    },
+                },
             )
             by_id = {response.get("id"): response for response in responses}
             planned = tool_payload(by_id[1])
@@ -164,6 +185,9 @@ class AskvoMcpServerTests(unittest.TestCase):
             design = tool_payload(by_id[2])
             self.assertEqual(1, design["exit_code"])
             self.assertEqual("fail", design["result"]["status"])
+            collected = tool_payload(by_id[3])
+            self.assertEqual(1, collected["exit_code"])
+            self.assertEqual("design_gate_failed", collected["result"]["status"])
 
     def test_missing_required_argument_returns_invalid_params(self) -> None:
         responses = run_mcp(
@@ -178,6 +202,31 @@ class AskvoMcpServerTests(unittest.TestCase):
         self.assertIsNotNone(error)
         self.assertEqual(-32602, error["code"])
         self.assertIn("study_dir", error["message"])
+
+    def test_boolean_arguments_reject_strings(self) -> None:
+        responses = run_mcp(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "askovo_do",
+                    "arguments": {"need": "SaaS retention churn", "dry_run": "false"},
+                },
+            },
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "askovo_do",
+                    "arguments": {"need": "SaaS retention churn", "dry_run": True, "ack_risk": "false"},
+                },
+            },
+        )
+        for response in responses:
+            self.assertEqual(-32602, response["error"]["code"])
+            self.assertIn("must be a boolean", response["error"]["message"])
 
     def test_unknown_tool_returns_invalid_params(self) -> None:
         responses = run_mcp(

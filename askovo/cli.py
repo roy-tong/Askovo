@@ -52,7 +52,7 @@ research:
 
 def _require(path: Path) -> None:
     if not path.is_file():
-        sys.exit(f"askovo: runtime not found at {path}\nreinstall with: pipx install askovo")
+        sys.exit(f"askovo: runtime not found at {path}\nreinstall from the askovo source checkout or a verified local wheel")
 
 
 def _run(path: Path, argv: list[str]) -> None:
@@ -88,8 +88,13 @@ def main() -> int:
         print(f"askovo {__version__}")
         return 0
 
-    if not argv or argv[0] in ("-h", "--help"):
+    if not argv:
         print(USAGE)
+        return 0
+
+    if argv[0] in ("-h", "--help"):
+        _require(CLI)
+        _run(CLI, argv)
         return 0
 
     cmd, rest = argv[0], argv[1:]

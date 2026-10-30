@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/roy-tong/user-demand-research/main/assets/brand/askovo-logo-600.png" alt="askovo" width="300">
+  <img src="https://raw.githubusercontent.com/roy-tong/askovo/main/assets/brand/askovo-logo-600.png" alt="askovo" width="300">
 </p>
 
 # askovo
@@ -12,22 +12,21 @@
 askovo 是 Agent 原生的研究与交付助手：说一句业务问题，它判断产品类型、生命周期、研究意图与风险，选择方法组合，生成研究计划、访谈/试验工具包、证据台账和可签收交付物。
 
 [![Agent Skill](https://img.shields.io/badge/Agent_Skill-askovo-111111)](skills/askovo/SKILL.md)
-[![CI](https://github.com/roy-tong/user-demand-research/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/user-demand-research/actions/workflows/tests.yml)
+[![CI](https://github.com/roy-tong/askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/askovo/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-![Version](https://img.shields.io/badge/version-2.0.0-orange)
 
 ## 30 秒证明它能工作
 
 ```bash
-git clone https://github.com/roy-tong/user-demand-research.git
-cd user-demand-research
+git clone https://github.com/roy-tong/askovo.git
+cd askovo
 pipx install --editable .
 askovo do "家用摄像头夜间告警误报，想验证样机" --dry-run
 askovo demo
 ```
 
 也可以直接写需求：`askovo "手机相机夜景和续航" --dry-run`（等价于 `askovo do`）。
-`--dry-run` 只路由、不写文件；`demo` 跑内置合成样例。
+`--dry-run` 只路由、不写文件；`demo` 跑内置合成样例。预期关键结果：`status: pass`、`supported: 1`、`overclaims: 0`；这只是结构与证据链演示，不证明真实市场需求。
 
 ## 只装一次，不再分领域安装
 
@@ -83,15 +82,16 @@ askovo platforms "家用摄像头夜间告警的用户抱怨" --domain hardware 
 ```bash
 askovo collect ./study --platform github --query "camera motion alert" --limit 100
 askovo collect ./study --platform reddit --query "night alert" --limit 100
-askovo collect ./study --platform reddit --fixture export.jsonl   # 离线/授权导出
+askovo collect ./study --platform reddit --fixture export.jsonl --query "night alert"   # 离线/授权导出
 askovo analyze ./study --question "夜间误报"
 ```
 
 - GitHub：官方 Search API（可选 `GITHUB_TOKEN`）
 - Reddit：官方 Data API（`ASKOVO_REDDIT_CLIENT_ID` / `ASKOVO_REDDIT_CLIENT_SECRET`）
 - 其他平台：授权导出、历史数据集或本地 fixture 接入
-- 每次采集写 manifest：平台、查询、配额、访问依据、条数、限制、偏差
-- 规模化按查询/时间/子版块分片，多次 run，按 `record_id` 跨 run 去重
+- 真实采集前必须通过 `askovo check ./study --stage design`，并把平台加入 `scope.allowed_sources`；live/CDP 还需启用 adapter
+- 每次采集写 raw envelope + normalized + canonical manifest：run、connector、访问/权利依据、条数、丢弃原因、限制、偏差
+- 规模化按查询/时间/子版块分片，多次 run，平台内按 `record_id` 与文本 hash 双键去重；同 ID 不同内容会记录冲突
 - `analyze` 做归一化、去重、平台/时间/结论类型分布、高频候选主题与问题匹配片段；**描述性统计，不证明总体或因果**
 
 ### CDP：授权可见页面
@@ -108,7 +108,8 @@ askovo collect ./study --platform amazon --query "night alert" \
 
 - 只抓当前页面**可见文本**；不绕过验证码/挑战页，不伪造指纹；
 - `--ack-terms` 必须由人确认：平台条款、账号授权、数据用途与保留；
-- 当前仅对 amazon、instagram、x、youtube、bilibili、weibo 开放；blocked 平台仍不开放；
+- 当前仅对 amazon、instagram、bilibili、weibo 的授权可见页面开放；X/YouTube 只走官方 API，blocked 平台仍不开放；
+- CDP 仅接受回环调试端点、默认端口 HTTP(S) 平台 URL，返回的 WebSocket 也保持在同一回环端口；
 - 命中挑战页立即停止，manifest 记录 `challenge`。
 
 ### 队列：并发、断点、限速
@@ -140,8 +141,8 @@ askovo deliver ./study --kind prd
 **CLI**
 
 ```bash
-git clone https://github.com/roy-tong/user-demand-research.git
-cd user-demand-research
+git clone https://github.com/roy-tong/askovo.git
+cd askovo
 pipx install --editable .
 askovo --version
 ```
@@ -166,11 +167,20 @@ bash scripts/install-skill.sh ~/.codex/skills
 
 **MCP**
 
-```bash
-askovo mcp
+```json
+{
+  "mcpServers": {
+    "askovo": {
+      "command": "askovo",
+      "args": ["mcp"]
+    }
+  }
+}
 ```
 
-配置里只需要这一行。MCP 暴露 `askovo_route`、`askovo_do`、`askovo_platforms`、`askovo_collect`、`askovo_analyze`、`askovo_deliver` 等工具，与 CLI 共用同一套行为。
+MCP 暴露 `askovo_route`、`askovo_do`、`askovo_platforms`、`askovo_collect`、`askovo_analyze`、`askovo_deliver` 等工具，与 CLI 共用同一套行为；其中 collect 默认 dry-run。用 `askovo-mcp --tools` 检查工具清单，用 MCP `tools/list` 检查运行中服务。
+
+核心 CLI/Skill/MCP 只使用标准库。可选 Workbook XLSX 需要 `openpyxl`，Amazon HF 流式工具需要 `datasets`；它们不是核心安装依赖。
 
 ## 六类结论不能混
 
@@ -207,6 +217,8 @@ askovo mcp
 | [故障排查](docs/troubleshooting.md) | 安装、路由、采集、MCP |
 
 Agent 入口：[llms.txt](llms.txt) · [AGENTS.md](AGENTS.md) · [SKILL.md](skills/askovo/SKILL.md)。
+
+参与与发布：[贡献指南（含 AI 辅助政策）](CONTRIBUTING.md) · [安全政策](SECURITY.md) · [发布流程](RELEASING.md) · [行为准则](CODE_OF_CONDUCT.md)。如果 askovo 让你的研究决策更可追溯，欢迎 Star、提交合成数据复现的 Issue，或分享一个真实采用案例。
 
 ## 仓库结构
 

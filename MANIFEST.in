@@ -1,8 +1,17 @@
 include VERSION
 include README.md
 include LICENSE
+include CHANGELOG.md
+include AGENTS.md
+include llms.txt
+include CONTRIBUTING.md
+include CODE_OF_CONDUCT.md
+include SECURITY.md
+include RELEASING.md
+recursive-include .github *.yml *.md
 recursive-include skills/askovo *
 recursive-include examples/sample-study *
 recursive-include docs *
 recursive-include assets *
 recursive-include tests *
+global-exclude *.py[cod] .DS_Store

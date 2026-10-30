@@ -255,7 +255,8 @@ def main() -> int:
         bg_latin.update(set(words))
         bg_latin.update(set(latin_ngrams(words, 2, stopwords, noise_phrases)))
         bg_cjk.update(set(cjk_ngrams(text, cjk_noise)))
-    bg_total = sum(bg_latin.values()) + sum(bg_cjk.values()) or 1
+    # Background and evidence scores both use document frequency, not occurrences.
+    bg_total = len(records) or 1
 
     unigram: Counter = Counter()
     bigram: Counter = Counter()
@@ -274,7 +275,7 @@ def main() -> int:
             latin_ngrams(words, 3, stopwords, noise_phrases)
         )
         unigram.update(words)
-        bigram.update(g for g in grams if g.count(" ") == 1)
+        bigram.update({g for g in grams if g.count(" ") == 1})
         trigram.update(g for g in grams if g.count(" ") == 2)
         cjk_terms = set(cjk_ngrams(text, cjk_noise))
         cjk_phrase.update(cjk_terms)

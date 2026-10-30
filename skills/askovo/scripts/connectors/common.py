@@ -62,20 +62,12 @@ def request_json(url: str, *, timeout: int = 30, retries: int = 3, user_agent: O
     last_error: Optional[Exception] = None
     for attempt in range(retries):
         try:
-            try:
-                import requests  # type: ignore
-
-                response = requests.get(url, headers={"User-Agent": user_agent or USER_AGENT}, timeout=timeout)
-                response.raise_for_status()
-                return response.json()
-            except ModuleNotFoundError:
-                req = urllib.request.Request(url, headers={"User-Agent": user_agent or USER_AGENT})
-                with urllib.request.urlopen(req, timeout=timeout) as response:
-                    return json.loads(response.read().decode("utf-8"))
-            except Exception:
-                req = urllib.request.Request(url, headers={"User-Agent": user_agent or USER_AGENT})
-                with urllib.request.urlopen(req, timeout=timeout) as response:
-                    return json.loads(response.read().decode("utf-8"))
+            req = urllib.request.Request(url, headers={"User-Agent": user_agent or USER_AGENT})
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                payload = response.read(16 * 1024 * 1024 + 1)
+                if len(payload) > 16 * 1024 * 1024:
+                    raise RuntimeError("JSON response exceeds 16 MiB limit")
+                return json.loads(payload.decode("utf-8"))
         except Exception as exc:
             last_error = exc
             if isinstance(exc, urllib.error.HTTPError) and exc.code in {400, 404}:

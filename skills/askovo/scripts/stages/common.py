@@ -72,6 +72,15 @@ def ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
+def spreadsheet_safe(value: Any) -> Any:
+    """Keep untrusted strings literal in CSV/XLSX while preserving numeric values."""
+    if not isinstance(value, str):
+        return value
+    if value.lstrip().startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
+
+
 def read_jsonl(path: Path) -> Iterator[Dict[str, Any]]:
     """Yield rows from a ``.jsonl`` or ``.jsonl.gz`` file (suffix decides)."""
     path = Path(path)
