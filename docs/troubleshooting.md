@@ -34,7 +34,7 @@ askovo doctor
 ### 审计报告出现版本警告
 
 ```text
-- 方法版本：`askovo 1.6`（⚠ study records askovo 1.6; current runtime is 2.0.1）
+- 方法版本：`askovo 1.6`（⚠ study records askovo 1.6; current runtime is 2.1.0）
 ```
 
 说明 study 是旧版本创建的。处理方式：
@@ -49,7 +49,7 @@ askovo doctor
 
 ```bash
 askovo doctor
-python3 -m pip install --force-reinstall /path/to/askovo-2.0.1-py3-none-any.whl
+python3 -m pip install --force-reinstall /path/to/askovo-2.1.0-py3-none-any.whl
 ```
 
 把路径换成该版本的实际 wheel；开发 checkout 则用 `pipx install --editable .` 重装。
