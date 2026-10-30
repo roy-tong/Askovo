@@ -1,32 +1,75 @@
 {
   "study_id": "synthetic-mobile-pet-check",
   "title": "Synthetic mobile pet-check study",
-  "method_version": "2.0.1",
+  "method_version": "2.1.0",
   "product_reasoning_version": "2.0",
   "product_reasoning": {
-    "flow": ["scene", "user", "pain", "need", "feature", "product", "business"],
+    "flow": [
+      "scene",
+      "user",
+      "pain",
+      "need",
+      "feature",
+      "product",
+      "business"
+    ],
     "flow_label": "场景 → 用户 → 痛点 → 需求 → 特性 → 产品 → 商业",
     "primary_artifact": "04-findings/product-reasoning.json",
     "principle": "Evidence supports each product inference; it does not replace the inference."
   },
   "delivery": {
-    "audiences": ["product_manager", "user_researcher", "user_operations", "market_researcher", "market_analyst", "requirements_analyst", "business_analyst"]
+    "audiences": [
+      "product_manager",
+      "user_researcher",
+      "user_operations",
+      "market_researcher",
+      "market_analyst",
+      "requirements_analyst",
+      "business_analyst"
+    ]
   },
   "decision": {
     "question": "Whether to run a two-week mobile home-check pilot for remote pet owners",
     "owner": "Illustrative product team",
     "deadline": "Synthetic fixture; no real deadline",
-    "options": ["Run a bounded pilot", "Keep fixed-camera concept", "Stop the concept"],
-    "minimum_evidence": ["Problem and substitute evidence", "Prototype acceptance", "Paid or retained behavior", "Privacy counter-evidence"]
+    "options": [
+      "Run a bounded pilot",
+      "Keep fixed-camera concept",
+      "Stop the concept"
+    ],
+    "minimum_evidence": [
+      "Problem and substitute evidence",
+      "Prototype acceptance",
+      "Paid or retained behavior",
+      "Privacy counter-evidence"
+    ]
   },
   "scope": {
-    "target_users": ["People who leave a pet alone at home for four or more hours"],
-    "markets": ["Illustrative urban consumer sample"],
-    "languages": ["English synthetic records"],
-    "source_time_window": {"start": "2026-01-01", "end": "2026-12-31"},
+    "target_users": [
+      "People who leave a pet alone at home for four or more hours"
+    ],
+    "markets": [
+      "Illustrative urban consumer sample"
+    ],
+    "languages": [
+      "English synthetic records"
+    ],
+    "source_time_window": {
+      "start": "2026-01-01",
+      "end": "2026-12-31"
+    },
     "unit_of_observation": "synthetic_evidence_record",
-    "allowed_sources": ["Synthetic interviews", "Synthetic prototype tests", "Synthetic behavior records"],
-    "prohibited_inferences": ["Market size", "Population prevalence", "Price elasticity", "Truth of the synthetic demand"]
+    "allowed_sources": [
+      "Synthetic interviews",
+      "Synthetic prototype tests",
+      "Synthetic behavior records"
+    ],
+    "prohibited_inferences": [
+      "Market size",
+      "Population prevalence",
+      "Price elasticity",
+      "Truth of the synthetic demand"
+    ]
   },
   "hypotheses": [
     {
@@ -37,11 +80,22 @@
   ],
   "quality_gates": {
     "min_evidence_records": 7,
-    "required_corpus_roles": ["direct_solution", "open_scene", "substitute_rejector", "post_purchase_support", "control"],
+    "required_corpus_roles": [
+      "direct_solution",
+      "open_scene",
+      "substitute_rejector",
+      "post_purchase_support",
+      "control"
+    ],
     "max_source_family_share": 0.5,
     "max_normalized_duplicate_rate": 0.0,
     "require_counter_evidence_for_validated": true
   },
-  "stopping_rules": ["Stop after one full synthetic audit", "Stop if the privacy falsifier is met"],
-  "restart_rules": ["Restart only to test a changed privacy-control design"]
+  "stopping_rules": [
+    "Stop after one full synthetic audit",
+    "Stop if the privacy falsifier is met"
+  ],
+  "restart_rules": [
+    "Restart only to test a changed privacy-control design"
+  ]
 }

@@ -21,14 +21,10 @@ jobs:
             refs/heads/release/*) TAG="v${GITHUB_REF#refs/heads/release/}" ;;
             *) echo "unexpected ref: ${GITHUB_REF}" >&2; exit 2 ;;
           esac
-          git ls-remote --exit-code origin "refs/tags/${TAG}" >/dev/null || {
-            echo "tag ${TAG} does not exist; push the annotated tag first" >&2
-            exit 2
-          }
           echo "TAG=${TAG}" >> "$GITHUB_ENV"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ env.TAG }}
+          ref: refs/tags/${{ env.TAG }}
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.9"
