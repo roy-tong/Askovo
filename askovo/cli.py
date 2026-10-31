@@ -40,6 +40,7 @@ research:
   collect <study>      run a supported collector or plan an export
   analyze <study>      normalize, dedup and describe collected material
   import <study> <file> import interviews/CSV/JSONL/text
+  document <file>       convert a local PDF/Office/text source to Markdown (optional Docling)
   codebook <study>     scaffold claim-type codebook
   deliver <study>      memo / report / MRD / PRD / BRD / user ops / tracker
   report <study>       write the user-research status projection
@@ -103,6 +104,25 @@ def main() -> int:
 
     if cmd == "doctor":
         return _doctor()
+
+    if cmd == "document":
+        import argparse
+        import json
+        from .documents import DocumentIntakeError, ingest_document
+
+        parser = argparse.ArgumentParser(prog="askovo document",
+                                         description="Extract a local document; no claims are registered")
+        parser.add_argument("source")
+        parser.add_argument("--out", required=True, help="Markdown output path")
+        parser.add_argument("--force", action="store_true")
+        opts = parser.parse_args(rest)
+        try:
+            result = ingest_document(opts.source, opts.out, overwrite=opts.force)
+        except (DocumentIntakeError, OSError) as exc:
+            print(f"askovo document: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
 
     if cmd == "mcp":
         _require(MCP)
