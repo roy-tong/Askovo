@@ -832,6 +832,25 @@ TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+# Local document intake shares the same underlying adapter as askovo document.
+# It writes only the explicitly requested local Markdown and provenance sidecar;
+# it does not make a research claim or run a network collector.
+TOOLS.append({
+    "name": "askovo_document",
+    "description": ("Convert one authorized local text/PDF/Office document into Markdown "
+                    "and a source-hash provenance sidecar. Optional Docling for non-text "
+                    "formats; output is unreviewed and not automatically study evidence."),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "source": {"type": "string", "description": "local source path only"},
+            "output": {"type": "string", "description": "local .md output path"},
+            "force": {"type": "boolean", "default": False},
+        },
+        "required": ["source", "output"],
+    },
+})
+
 TOOL_BUILDERS = {
     "askovo_route": (askovo_cli.sure_engine.cli_route, _build_route),
     "askovo_do": (askovo_cli.sure_engine.cli_do, _build_do),
@@ -865,6 +884,14 @@ TOOL_BUILDERS = {
 
 
 def _run_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    if name == "askovo_document":
+        from askovo.documents import ingest_document
+        result = ingest_document(
+            _string(arguments.get("source"), "source"),
+            _string(arguments.get("output"), "output"),
+            overwrite=_boolean(arguments, "force"),
+        )
+        return {"exit_code": 0, "result": result}
     if name == "askovo_platform_map":
         return _tool_platform_map(arguments)
     entry = TOOL_BUILDERS.get(name)
