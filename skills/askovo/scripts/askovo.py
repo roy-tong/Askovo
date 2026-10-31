@@ -1991,6 +1991,19 @@ def _check_product_reasoning(
         (study or {}).get("quality_gates", {}).get("require_counter_evidence_for_validated", True)
     )
     seen_chain_ids: set[str] = set()
+    all_chain_ids = {
+        str(item.get("id")) for item in chains if isinstance(item, dict) and item.get("id")
+    }
+    referrable_nodes = set(sure_engine.REASONING_NODES) | set(sure_engine.LEGACY_REASONING_NODES)
+
+    def _unresolved_ref(value: object, prefix: str) -> str | None:
+        """Return an error message when a CHAIN.node reference does not resolve."""
+        text = str(value or "").strip()
+        target_chain, separator, target_node = text.partition(".")
+        if not separator or target_chain not in all_chain_ids or target_node not in referrable_nodes:
+            return f"{prefix} references unresolved node {text!r} (expected CHAIN_ID.node)"
+        return None
+
     linked_judgment_ids: list[str] = []
     for index, chain in enumerate(chains, start=1):
         if not isinstance(chain, dict):
@@ -2031,6 +2044,12 @@ def _check_product_reasoning(
                     for field_name in ("id", "impact", "decision", "projection_sync"):
                         if _is_missing(entry.get(field_name)):
                             errors.append(f"{chain_id}.change_log requires {field_name}")
+                    affected = entry.get("affected_refs")
+                    if isinstance(affected, list):
+                        for ref in affected:
+                            problem = _unresolved_ref(ref, f"{chain_id}.change_log[{entry.get('id')}]")
+                            if problem:
+                                errors.append(problem)
         states = chain.get("supporting_states", {})
         if not isinstance(states, dict):
             errors.append(f"{chain_id}.supporting_states must be an object")
@@ -2124,6 +2143,12 @@ def _check_product_reasoning(
                     for field_name in ("id", "criteria", "user_refs", "payer", "evidence_ids"):
                         if field_name not in segment or _is_missing(segment[field_name]):
                             errors.append(f"{prefix}.segments requires {field_name}")
+                    segment_refs = segment.get("user_refs")
+                    if isinstance(segment_refs, list):
+                        for ref in segment_refs:
+                            problem = _unresolved_ref(ref, f"{prefix}.segments[{segment.get('id')}]")
+                            if problem:
+                                errors.append(problem)
                 for price in node.get("pricing", []):
                     if not isinstance(price, dict):
                         errors.append(f"{prefix}.pricing entries must be objects")

@@ -7,10 +7,15 @@
 
 - **Hard minimum for the pain→need inference**: a validated `need` node must now cite at least one E2 record (observed substitute, workaround, or failure). Stated pain alone (E1) keeps the node at `needs-validation` — words are a signal, observed effort is a stronger one. Protocol docs (product-reasoning, research-protocol, SKILL) and the Chinese README/data-contract state the same rule.
 - **PSM chain anchoring**: `askovo psm` stamps the owning `study_id` into the report header, and `askovo check` emits a `pricing_psm_link` warning (never a fail) when `06-report/pricing-psm.md` exists without a `business.pricing` entry citing PSM or a registered E4- record, so the projection cannot silently float outside the chain.
+- **Cross-node reference resolution**: `segments[].user_refs` and `change_log[].affected_refs` must now resolve as `CHAIN_ID.node` against the chains in the file; dangling references fail the check instead of passing as opaque strings. The human-review checklist now also names the judgment↔chain phrasing seam (the judgment stays the canonical demand-side wording; no machine check compares free text).
+
+### Fixed
+
+- The bundled sample study duplicated the user node's `role` and `statement` text verbatim; the role is now a concise label, as the schema intends.
 
 ### Validation
 
-- 138 tests pass, including the new need-E2 gate and both PSM anchor cases.
+- 140 tests pass, including the need-E2 gate, both PSM anchor cases, and unresolved-ref rejection for segments and change logs.
 
 
 ## 2.2.0 — 2026-10-31

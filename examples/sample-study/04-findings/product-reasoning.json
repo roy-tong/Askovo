@@ -1,6 +1,14 @@
 {
   "schema_version": "2.0",
-  "flow": ["scene", "user", "pain", "need", "feature", "product", "business"],
+  "flow": [
+    "scene",
+    "user",
+    "pain",
+    "need",
+    "feature",
+    "product",
+    "business"
+  ],
   "chains": [
     {
       "id": "PR01",
@@ -10,17 +18,33 @@
       "status": "decided",
       "confidence": "low",
       "supporting_states": {
-        "delivery": {"status": "unplanned", "release_plan_ref": ""},
-        "outcome": {"status": "observing", "metric_refs": ["synthetic-retention-01"]},
-        "causal": {"status": "not-claimed", "experiment_refs": []}
+        "delivery": {
+          "status": "unplanned",
+          "release_plan_ref": ""
+        },
+        "outcome": {
+          "status": "observing",
+          "metric_refs": [
+            "synthetic-retention-01"
+          ]
+        },
+        "causal": {
+          "status": "not-claimed",
+          "experiment_refs": []
+        }
       },
       "nodes": {
         "scene": {
           "statement": "An alert or prolonged absence creates a need to check another room",
           "rationale": "The decision is triggered by an observable verification gap, not by a general interest in mobile devices",
           "status": "validated",
-          "evidence_ids": ["R01", "R02"],
-          "assumptions": ["The synthetic alert and absence scenes represent the pilot's intended use boundary"],
+          "evidence_ids": [
+            "R01",
+            "R02"
+          ],
+          "assumptions": [
+            "The synthetic alert and absence scenes represent the pilot's intended use boundary"
+          ],
           "trigger": "An unusual-noise alert or two hours without a camera sighting while away",
           "environment": "Away from home with fixed-camera blind spots",
           "task_context": "Inspect the relevant space before deciding whether intervention is needed"
@@ -29,9 +53,14 @@
           "statement": "Remote pet owners whose current cameras leave important blind spots",
           "rationale": "Only owners with an unverified blind-spot scene have the observed problem; satisfied full-coverage owners are a control",
           "status": "validated",
-          "evidence_ids": ["R01", "R02"],
-          "assumptions": ["The owner is also the pilot purchase and intervention decision-maker"],
-          "role": "Remote pet owners whose current cameras leave important blind spots",
+          "evidence_ids": [
+            "R01",
+            "R02"
+          ],
+          "assumptions": [
+            "The owner is also the pilot purchase and intervention decision-maker"
+          ],
+          "role": "Remote pet owner",
           "state": "Away from home and unable to verify the pet in the current camera view",
           "decision_role": "Pet owner deciding whether to intervene and whether to join the pilot"
         },
@@ -39,8 +68,13 @@
           "statement": "Fixed cameras and neighbor requests cannot verify blind spots quickly enough",
           "rationale": "The selected users' current substitutes fail in the identified scene and produce a delayed or unnecessary intervention",
           "status": "validated",
-          "evidence_ids": ["R01", "R02"],
-          "assumptions": ["The observed delay and social cost matter enough to justify a bounded pilot"],
+          "evidence_ids": [
+            "R01",
+            "R02"
+          ],
+          "assumptions": [
+            "The observed delay and social cost matter enough to justify a bounded pilot"
+          ],
           "current_substitute": "Fixed cameras or asking a neighbor",
           "friction_cost": "Blind spots, additional installation, or a slow and socially costly neighbor request",
           "consequence": "Delayed or unnecessary return home"
@@ -49,52 +83,106 @@
           "statement": "Verify a blind spot promptly without an unnecessary return home or expanded always-on recording",
           "rationale": "The pain implies a solution-neutral verification outcome; it does not by itself prove that mobile hardware is the right answer",
           "status": "validated",
-          "evidence_ids": ["R01", "R02"],
-          "assumptions": ["Prompt remote verification is valuable even when no intervention follows"],
+          "evidence_ids": [
+            "R01",
+            "R02"
+          ],
+          "assumptions": [
+            "Prompt remote verification is valuable even when no intervention follows"
+          ],
           "desired_outcome": "Determine whether intervention is needed before returning home or asking a neighbor",
-          "constraints": ["Avoid expanded always-on recording", "Avoid routine dependence on a neighbor"],
+          "constraints": [
+            "Avoid expanded always-on recording",
+            "Avoid routine dependence on a neighbor"
+          ],
           "measure": "Time to a verification decision and unnecessary return or neighbor requests avoided in a bounded pilot"
         },
         "feature": {
           "statement": "A session-bounded mobile check with explicit privacy controls",
           "rationale": "On-demand movement addresses the blind-spot need while session, shutter and room boundaries answer the observed privacy rejection",
           "status": "validated",
-          "evidence_ids": ["R03"],
-          "assumptions": ["Privacy controls remain understandable and effective outside the prototype setting"],
+          "evidence_ids": [
+            "R03"
+          ],
+          "assumptions": [
+            "Privacy controls remain understandable and effective outside the prototype setting"
+          ],
           "capability": "Move to a blind spot only during an explicit supervised session with physical shutter, room limits and visible recording state",
-          "acceptance_conditions": ["Physical shutter", "Room boundaries", "Explicit session start", "Visible recording state"],
-          "alternatives_considered": ["Install additional fixed cameras", "Ask a neighbor", "Keep the existing fixed-camera setup"]
+          "acceptance_conditions": [
+            "Physical shutter",
+            "Room boundaries",
+            "Explicit session start",
+            "Visible recording state"
+          ],
+          "alternatives_considered": [
+            "Install additional fixed cameras",
+            "Ask a neighbor",
+            "Keep the existing fixed-camera setup"
+          ]
         },
         "product": {
           "statement": "A session-bounded mobile home check",
           "rationale": "The mobile check and its privacy controls form the smallest coherent pilot that can test the need, solution acceptance and retained behavior together",
           "status": "validated",
-          "evidence_ids": ["R03", "R04", "R06"],
-          "assumptions": ["A two-week pilot is sufficient to reject an unusable or unwanted concept, but not to estimate market demand"],
+          "evidence_ids": [
+            "R03",
+            "R04",
+            "R06"
+          ],
+          "assumptions": [
+            "A two-week pilot is sufficient to reject an unusable or unwanted concept, but not to estimate market demand"
+          ],
           "form": "Supervised mobile camera device controlled through an explicit bounded session",
           "scope": "Two-week pilot for on-demand blind-spot verification in approved rooms",
-          "non_goals": ["Always-on autonomous patrol", "Replacement for a whole-home security system", "Market-size validation"],
-          "acceptance_criteria": ["Participants complete the blind-spot verification task", "Privacy controls are used without unresolved rejection", "Predeclared retained-use threshold is met during the pilot"]
+          "non_goals": [
+            "Always-on autonomous patrol",
+            "Replacement for a whole-home security system",
+            "Market-size validation"
+          ],
+          "acceptance_criteria": [
+            "Participants complete the blind-spot verification task",
+            "Privacy controls are used without unresolved rejection",
+            "Predeclared retained-use threshold is met during the pilot"
+          ]
         },
         "business": {
           "statement": "Run a bounded paid pilot before making any subscription, launch, or market-expansion decision",
           "rationale": "The product creates a testable value loop, while a bounded paid pilot is the smallest business experiment that can test payment and retained behavior without pretending to prove a sustainable company",
           "status": "validated",
-          "evidence_ids": ["R04", "R06"],
-          "assumptions": ["A real pilot can recruit eligible owners without changing their privacy or usage behavior", "Pilot support and delivery costs can be measured before any scale decision"],
+          "evidence_ids": [
+            "R04",
+            "R06"
+          ],
+          "assumptions": [
+            "A real pilot can recruit eligible owners without changing their privacy or usage behavior",
+            "Pilot support and delivery costs can be measured before any scale decision"
+          ],
           "market_definition": "Remote pet owners with fixed-camera blind spots in an illustrative urban consumer sample",
-          "geographies": ["Illustrative urban consumer sample only"],
+          "geographies": [
+            "Illustrative urban consumer sample only"
+          ],
           "time_window": "Synthetic 2026 research and pilot cycle",
-          "included_markets": ["Remote household pet checking through a supervised mobile session"],
-          "excluded_markets": ["Professional security services", "Livestock monitoring", "Whole-home surveillance"],
+          "included_markets": [
+            "Remote household pet checking through a supervised mobile session"
+          ],
+          "excluded_markets": [
+            "Professional security services",
+            "Livestock monitoring",
+            "Whole-home surveillance"
+          ],
           "target_segment": "Owners who cannot verify an important room with their current setup and are eligible for a supervised two-week pilot",
           "segments": [
             {
               "id": "SEG01",
               "criteria": "Remote owners with an important fixed-camera blind spot and no satisfactory neighbor alternative",
-              "user_refs": ["PR01.user"],
+              "user_refs": [
+                "PR01.user"
+              ],
               "payer": "The remote pet owner who reserves the pilot",
-              "evidence_ids": ["R01", "R02"],
+              "evidence_ids": [
+                "R01",
+                "R02"
+              ],
               "status": "hypothesis_outside_synthetic_sample"
             }
           ],
@@ -103,11 +191,31 @@
           "revenue_model": "Refundable pilot deposit only; no subscription or long-term revenue is assumed",
           "pricing_hypothesis": "Payment behavior is observed only for the synthetic pilot deposit; final pricing and elasticity remain unknown",
           "pricing": [
-            {"model": "refundable_pilot_deposit", "amount": null, "currency": "not_asserted", "unit": "pilot", "term": "two weeks", "evidence_type": "paid", "evidence_ids": ["R04"]}
+            {
+              "model": "refundable_pilot_deposit",
+              "amount": null,
+              "currency": "not_asserted",
+              "unit": "pilot",
+              "term": "two weeks",
+              "evidence_type": "paid",
+              "evidence_ids": [
+                "R04"
+              ]
+            }
           ],
-          "channels": ["Synthetic direct pilot recruitment"],
-          "competitive_alternatives": ["Additional fixed cameras", "Neighbor assistance", "No change to the current setup"],
-          "cost_drivers": ["Device and fulfillment cost", "Pilot support", "Privacy onboarding and returns"],
+          "channels": [
+            "Synthetic direct pilot recruitment"
+          ],
+          "competitive_alternatives": [
+            "Additional fixed cameras",
+            "Neighbor assistance",
+            "No change to the current setup"
+          ],
+          "cost_drivers": [
+            "Device and fulfillment cost",
+            "Pilot support",
+            "Privacy onboarding and returns"
+          ],
           "market_estimates": [
             {
               "metric": "TAM/SAM/SOM",
@@ -116,15 +224,29 @@
               "unit": "not_estimated",
               "method": "Requires an external sampling frame and paid-demand evidence before estimation",
               "formula": "",
-              "assumptions": ["No market-size claim is made"],
+              "assumptions": [
+                "No market-size claim is made"
+              ],
               "value": null,
               "source_ref": "",
               "status": "unknown"
             }
           ],
           "unit_economics_inputs": [
-            {"metric": "Refundable pilot deposit", "value": "Synthetic behavior only", "unit": "not_a_price", "source_ref": "R04", "status": "observed_behavior_not_price"},
-            {"metric": "Device, delivery, and support cost", "value": null, "unit": "unknown", "source_ref": "", "status": "missing_before_scale_decision"}
+            {
+              "metric": "Refundable pilot deposit",
+              "value": "Synthetic behavior only",
+              "unit": "not_a_price",
+              "source_ref": "R04",
+              "status": "observed_behavior_not_price"
+            },
+            {
+              "metric": "Device, delivery, and support cost",
+              "value": null,
+              "unit": "unknown",
+              "source_ref": "",
+              "status": "missing_before_scale_decision"
+            }
           ],
           "success_metrics": [
             {
@@ -138,7 +260,12 @@
               "guardrail": "Privacy rejection, unresolved support burden, or return rate crosses the predeclared threshold"
             }
           ],
-          "non_goals": ["Subscription launch", "Market-share expansion", "Unit-economics approval", "Market-size estimation"],
+          "non_goals": [
+            "Subscription launch",
+            "Market-share expansion",
+            "Unit-economics approval",
+            "Market-size estimation"
+          ],
           "gate": {
             "stage": "G0",
             "decision": "Run a bounded pilot",
@@ -152,7 +279,10 @@
         "The current fixed-camera setup may already be adequate for users without blind spots",
         "Privacy concerns may outweigh the value of mobile verification even with the proposed controls"
       ],
-      "counter_evidence_ids": ["R05", "R07"],
+      "counter_evidence_ids": [
+        "R05",
+        "R07"
+      ],
       "human_review": {
         "status": "synthetic_fixture_not_real_review",
         "reviewer": "Synthetic example only",
@@ -161,7 +291,11 @@
       },
       "prioritization": {
         "method": "Synthetic gate choice: test privacy, acceptance and retained use before any scale decision",
-        "factors": {"consequence": "privacy rejection would invalidate the pilot", "evidence_strength": "synthetic only", "strategic_fit": "illustrative"},
+        "factors": {
+          "consequence": "privacy rejection would invalidate the pilot",
+          "evidence_strength": "synthetic only",
+          "strategic_fit": "illustrative"
+        },
         "owner": "Illustrative product team",
         "decided_at": "Synthetic fixture; no real decision date",
         "rationale": "The pilot is prioritized as the smallest test that can reverse the concept; no market-size ranking is claimed"
@@ -171,8 +305,13 @@
           "id": "CHG01",
           "base_version": "synthetic-v0",
           "new_version": "synthetic-v1",
-          "reason_evidence_ids": ["R05"],
-          "affected_refs": ["PR01.feature", "PR01.product"],
+          "reason_evidence_ids": [
+            "R05"
+          ],
+          "affected_refs": [
+            "PR01.feature",
+            "PR01.product"
+          ],
           "impact": "Added privacy controls and bounded product scope",
           "decision": "Keep privacy and retention as predeclared pilot gates",
           "owner": "Illustrative product team",

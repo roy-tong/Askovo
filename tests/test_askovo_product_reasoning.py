@@ -610,6 +610,24 @@ class ProductReasoningTests(unittest.TestCase):
         payload = json.loads(completed.stdout)
         self.assertFalse(any(item["id"] == "pricing_psm_link" for item in payload["checks"]))
 
+    def test_segment_user_refs_must_resolve_to_a_chain_node(self) -> None:
+        data = json.loads(self.reasoning_path.read_text(encoding="utf-8"))
+        data["chains"][0]["nodes"]["business"]["segments"][0]["user_refs"] = ["PR404.user"]
+        self.write_reasoning(data)
+        completed = run_cli("check", str(self.target), "--stage", "full")
+        self.assertEqual(1, completed.returncode, completed.stdout + completed.stderr)
+        check = self.assert_product_check(json.loads(completed.stdout), "fail")
+        self.assertIn("references unresolved node 'PR404.user'", check["detail"])
+
+    def test_change_log_affected_refs_must_resolve_to_a_chain_node(self) -> None:
+        data = json.loads(self.reasoning_path.read_text(encoding="utf-8"))
+        data["chains"][0]["change_log"][0]["affected_refs"] = ["PR01.market"]
+        self.write_reasoning(data)
+        completed = run_cli("check", str(self.target), "--stage", "full")
+        self.assertEqual(1, completed.returncode, completed.stdout + completed.stderr)
+        check = self.assert_product_check(json.loads(completed.stdout), "fail")
+        self.assertIn("references unresolved node 'PR01.market'", check["detail"])
+
     def test_market_estimate_with_a_value_needs_denominator_and_source(self) -> None:
         data = json.loads(self.reasoning_path.read_text(encoding="utf-8"))
         estimate = data["chains"][0]["nodes"]["business"]["market_estimates"][0]

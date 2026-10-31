@@ -125,6 +125,7 @@ The CLI can check structure, IDs, context, evidence subsets, and required fields
 
 - whether a solution has been disguised as a need;
 - whether the evidence genuinely supports the rationale;
+- whether the linked judgment's demand phrasing (`user_role`/`scene`/`task`/`current_substitute`/`friction`/`consequence`) and the chain's node statements contradict each other — the judgment is the canonical demand-side phrasing; a chain statement that rewrites it must stay consistent, because no machine check compares free text;
 - whether deviant cases and alternatives were treated fairly;
 - whether sampling, ethics, scope, and wording are defensible;
 - whether residual risk is acceptable.
