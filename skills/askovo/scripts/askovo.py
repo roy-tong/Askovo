@@ -4425,8 +4425,31 @@ def build_parser() -> argparse.ArgumentParser:
         "deliver", help="assemble chain-led PM, PRD, BRD, user-operations and tracker deliverables"
     )
     deliver_parser.add_argument("study_dir")
-    deliver_parser.add_argument("--kind", choices=("memo", "report", "mrd", "prd", "brd", "ops", "tracker"), default="memo")
+    deliver_parser.add_argument("--kind", choices=("memo", "report", "mrd", "prd", "brd", "ops", "tracker", "signoff"), default="memo")
     deliver_parser.set_defaults(func=sure_engine.cli_deliver)
+
+    boundary_parser = subparsers.add_parser(
+        "boundary",
+        help="F2 boundary audit: Added/Missing/Inflated between a requirements doc and an AI-produced doc (lexical candidates, human review)",
+    )
+    boundary_parser.add_argument("study_dir")
+    boundary_parser.add_argument("--requirements", required=True, help="path to the original requirements/intent doc")
+    boundary_parser.add_argument("--output", required=True, help="path to the AI-produced doc (PRD/spec)")
+    boundary_parser.add_argument("--match-threshold", type=float, default=0.30)
+    boundary_parser.add_argument("--inflate-ratio", type=float, default=3.0)
+    boundary_parser.set_defaults(func=sure_engine.cli_boundary)
+
+    cost_parser = subparsers.add_parser(
+        "cost",
+        help="F4 verification cost log: manual minutes per task with optional no-tool baseline",
+    )
+    cost_parser.add_argument("study_dir")
+    cost_parser.add_argument("action", choices=("log", "report"))
+    cost_parser.add_argument("--task", help="log: task name")
+    cost_parser.add_argument("--minutes", type=int, help="log: positive integer minutes")
+    cost_parser.add_argument("--baseline-minutes", type=int, help="log: no-tool baseline for the same task")
+    cost_parser.add_argument("--note", default="")
+    cost_parser.set_defaults(func=sure_engine.cli_cost)
 
     queue_parser = subparsers.add_parser(
         "queue", help="durable collection queue: init/add/run/status/retry"
@@ -4528,7 +4551,7 @@ def build_parser() -> argparse.ArgumentParser:
 CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "do", "domains",
     "methods", "catalog", "platforms", "collect", "analyze", "instruments", "import", "queue",
-    "codebook", "chain", "economics", "psm", "deliver", "doctor", "audit", "check", "connectors",
+    "codebook", "chain", "economics", "psm", "deliver", "boundary", "cost", "doctor", "audit", "check", "connectors",
     "stage", "label", "build",
 }
 

@@ -1889,8 +1889,18 @@ def deliver(study_dir: Path, kind: str = "memo") -> dict[str, Any]:
                         ])
         return {"status": "written", "path": str(path), "kind": kind}
 
-    titles = {"memo": "决策备忘", "report": "产品推理报告", "mrd": "MRD 市场需求文档", "prd": "PRD 产品需求文档", "brd": "BRD 商业需求文档", "ops": "用户运营交付"}
+    titles = {"memo": "决策备忘", "report": "产品推理报告", "mrd": "MRD 市场需求文档", "prd": "PRD 产品需求文档", "brd": "BRD 商业需求文档", "ops": "用户运营交付", "signoff": "干系人签收页"}
     title = titles.get(kind, "交付物")
+    if kind == "signoff" and reasoning is not None:
+        path = out_dir / "signoff.md"
+        path.write_text(_signoff_page(study, reasoning, study_dir), encoding="utf-8")
+        return {
+            "status": "written",
+            "path": str(path),
+            "kind": kind,
+            "evidence_count": evidence["count"],
+            "product_reasoning": product_reasoning_summary(reasoning),
+        }
     lines = [
         f"# {title}：{study.get('title', '')}",
         "",
@@ -3851,3 +3861,313 @@ def cli_deliver(args: Any) -> int:
 
 def cli_doctor(args: Any) -> int:
     return doctor()
+
+
+def _signoff_page(study: dict[str, Any], reasoning: dict[str, Any], study_dir: Path) -> str:
+    """F3 stakeholder sign-off one-pager: conclusion, levels, boundaries, blanks to sign."""
+    evidence_levels: dict[str, str] = {}
+    evidence_path = Path(study_dir) / "02-data" / "evidence.jsonl"
+    if evidence_path.is_file():
+        for line in evidence_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                rec = json.loads(line)
+                evidence_levels[str(rec.get("record_id"))] = str(rec.get("evidence_level") or "")
+    reviewed = unreviewed = 0
+    if evidence_path.is_file():
+        for line in evidence_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                rec = json.loads(line)
+                if rec.get("human_review_status") == "reviewed":
+                    reviewed += 1
+                else:
+                    unreviewed += 1
+    chains = reasoning.get("chains", []) if isinstance(reasoning, dict) else []
+    lines = [
+        "# 干系人签收页",
+        "",
+        f"> 研究：{study.get('title', '')}（{study.get('study_id', '')}）",
+        f"> 决策问题：{(study.get('decision') or {}).get('question', '')}",
+        f"> 责任人：{(study.get('decision') or {}).get('owner', '')} · 截止：{(study.get('decision') or {}).get('deadline', '')}",
+        "",
+    ]
+    for chain in chains if isinstance(chains, list) else []:
+        if not isinstance(chain, dict):
+            continue
+        lines += [
+            f"## {chain.get('id', '')} · {chain.get('title', '')}",
+            "",
+            f"- 链状态：`{chain.get('status', '')}`（置信度 {chain.get('confidence', '')}）——**不是需求或商业已证明**",
+            f"- 反证 {len(chain.get('counter_evidence_ids') or [])} 条在案；替代解释 {len(chain.get('alternative_explanations') or [])} 条在案",
+            "",
+            "| 节点 | 判断（摘要） | 状态 | 证据等级 |",
+            "| --- | --- | --- | --- |",
+        ]
+        nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
+        for node_name, node in nodes.items():
+            if not isinstance(node, dict):
+                continue
+            ids = [str(v) for v in node.get("evidence_ids", [])] if isinstance(node.get("evidence_ids"), list) else []
+            levels = [evidence_levels.get(i, "?") for i in ids]
+            level_summary = ", ".join(f"{lv}×{levels.count(lv)}" for lv in sorted(set(levels)) if lv) or "无"
+            statement = str(node.get("statement", ""))[:60]
+            lines.append(f"| {node_name} | {statement} | `{node.get('status', '')}` | {level_summary} |")
+        assumptions = [a for a in (chain.get("gaps") or []) if isinstance(a, str)][:5]
+        lines += ["", "**未验证假设（签收前必读）**："]
+        lines += [f"- {a}" for a in assumptions] or ["- （无记录）"]
+        lines.append("")
+    lines += [
+        "## 边界声明",
+        "",
+        "- 本页只汇总研究链现状，不证明总体比例、市场规模、因果或产品成功；",
+        f"- 证据复核状态：已复核 {reviewed} 条 / 待复核 {unreviewed} 条——待复核证据不因出现在本页而生效；",
+        "- 超出证据等级的表述应被 `askovo check` 拦截；如发现本页与 04-findings 主链不一致，以主链为准。",
+        "",
+        "## 签收",
+        "",
+        "| 角色 | 姓名 | 意见（采纳/修改/退回） | 日期 |",
+        "| --- | --- | --- | --- |",
+        "| 决策人 |  |  |  |",
+        "| 复核人 |  |  |  |",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# F2 boundary audit: Added / Missing / Inflated between requirements and an AI doc
+
+
+BOUNDARY_STOPWORDS = set(
+    "the a an and or of to for in on with by is are be as at from that this it its "
+    "we you they i our your their will shall should can may need needs want wants "
+    "的 了 和 与 或 在 对 从 被 把 是 有 要 会 能 并 等 以及 一个 我们 你们".split()
+)
+
+
+def _boundary_items(path: Path) -> list[tuple[str, str]]:
+    """Parse a doc into traceable items: (ref 'file:line', text)."""
+    items: list[tuple[str, str]] = []
+    for lineno, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("#"):
+            items.append((f"{path.name}:{lineno}", line.lstrip("# ").strip()))
+            continue
+        if len(line) > 2 and line[0] in "-*•" or (line[:2].rstrip(".").isdigit() and "." in line[:4]):
+            items.append((f"{path.name}:{lineno}", line.lstrip("-*•0123456789. ").strip()))
+            continue
+        # prose: split sentences (zh + en)
+        buf = ""
+        for char in line:
+            buf += char
+            if char in "。．.!?；;":
+                sentence = buf.strip()
+                if len(sentence) >= 12:
+                    items.append((f"{path.name}:{lineno}", sentence))
+                buf = ""
+        tail = buf.strip()
+        if len(tail) >= 12:
+            items.append((f"{path.name}:{lineno}", tail))
+    return items
+
+
+def _boundary_tokens(text: str) -> set[str]:
+    """Normalized content tokens; zh chars pass through, en words lowercased."""
+    tokens: set[str] = set()
+    current = ""
+    for char in text:
+        if "\u4e00" <= char <= "\u9fff":
+            if current:
+                word = current.lower()
+                if len(word) > 1 and word not in BOUNDARY_STOPWORDS:
+                    tokens.add(word)
+                current = ""
+            tokens.add(char)
+        elif char.isalnum():
+            current += char
+        else:
+            if current:
+                word = current.lower()
+                if len(word) > 1 and word not in BOUNDARY_STOPWORDS:
+                    tokens.add(word)
+                current = ""
+    if current:
+        word = current.lower()
+        if len(word) > 1 and word not in BOUNDARY_STOPWORDS:
+            tokens.add(word)
+    return tokens
+
+
+def boundary_audit(
+    requirements_path: Path,
+    output_path: Path,
+    match_threshold: float = 0.30,
+    inflate_ratio: float = 3.0,
+    inflate_new_tokens: int = 12,
+) -> dict[str, Any]:
+    """Deterministic lexical boundary audit: Added / Missing / Inflated.
+
+    Heuristic by design: it flags candidate deviations for human review; it does
+    not understand semantics and never claims a deviation is an error.
+    """
+    req_items = _boundary_items(Path(requirements_path))
+    out_items = _boundary_items(Path(output_path))
+    req_tokens = [(ref, text, _boundary_tokens(text)) for ref, text in req_items]
+    out_tokens = [(ref, text, _boundary_tokens(text)) for ref, text in out_items]
+
+    def best_match(item: tuple[str, str, set], others: list[tuple[str, str, set]]):
+        best = (0.0, None)
+        for other in others:
+            union = item[2] | other[2]
+            score = (len(item[2] & other[2]) / len(union)) if union else 0.0
+            if score > best[0]:
+                best = (score, other)
+        return best
+
+    added, missing, inflated = [], [], []
+    matched_out_refs = set()
+    for ref, text, tokens in out_tokens:
+        score, match = best_match((ref, text, tokens), req_tokens)
+        if score < match_threshold and len(tokens) >= 3:
+            added.append({"ref": ref, "excerpt": text[:120], "closest": (match[0] if match else ""), "score": round(score, 2)})
+        elif match is not None:
+            matched_out_refs.add(ref)
+            req_len = max(1, len(match[2]))
+            ratio = len(tokens) / req_len
+            new_tokens = len(tokens - match[2])
+            if ratio >= inflate_ratio and new_tokens >= inflate_new_tokens:
+                inflated.append({
+                    "ref": ref, "excerpt": text[:120], "against": match[0],
+                    "against_excerpt": match[1][:80], "ratio": round(ratio, 1), "new_tokens": new_tokens,
+                })
+    matched_req_refs = set()
+    for ref, text, tokens in req_tokens:
+        score, match = best_match((ref, text, tokens), out_tokens)
+        if score < match_threshold and len(tokens) >= 3:
+            missing.append({"ref": ref, "excerpt": text[:120], "closest": (match[0] if match else ""), "score": round(score, 2)})
+        elif match is not None:
+            matched_req_refs.add(match[0])
+
+    return {
+        "requirements": {"path": str(requirements_path), "items": len(req_items)},
+        "output": {"path": str(output_path), "items": len(out_items)},
+        "added": added,
+        "missing": missing,
+        "inflated": inflated,
+        "matched": len(matched_out_refs & matched_req_refs),
+        "thresholds": {"match": match_threshold, "inflate_ratio": inflate_ratio, "inflate_new_tokens": inflate_new_tokens},
+        "boundary": ("词法启发式对照：三条清单是候选偏差，不是错误判定；语义判断（是否真属未讨论添加/缺失/膨胀）"
+                     "由人工复核负责。阈值可在命令行覆盖。"),
+    }
+
+
+def boundary_report(result: dict[str, Any]) -> str:
+    lines = [
+        "# 边界审计：需求 ↔ AI 产出对照（候选清单）",
+        "",
+        f"> 需求侧 {result['requirements']['items']} 项 / 产出侧 {result['output']['items']} 项，词法匹配 {result['matched']} 对。",
+        f"> {result['boundary']}",
+        "",
+    ]
+    for key, label in (("added", "Added｜产出有、需求未讨论（候选越界添加）"),
+                       ("missing", "Missing｜需求有、产出未见（候选遗漏）"),
+                       ("inflated", "Inflated｜有对应但显著膨胀（候选范围膨胀）")):
+        rows = result[key]
+        lines += [f"## {label}（{len(rows)}）", ""]
+        if not rows:
+            lines += ["（无）", ""]
+            continue
+        if key == "inflated":
+            for row in rows:
+                lines.append(f"- `{row['ref']}` {row['excerpt']}")
+                lines.append(f"  - 对照 `{row['against']}`（{row['against_excerpt']}…）：{row['ratio']}×，新增实词 {row['new_tokens']} 个")
+        else:
+            for row in rows:
+                hint = f"（最近对照 `{row['closest']}`，重合 {row['score']}）" if row["closest"] else ""
+                lines.append(f"- `{row['ref']}` {row['excerpt']} {hint}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def cli_boundary(args: Any) -> int:
+    req = Path(args.requirements)
+    out = Path(args.output)
+    for path, label in ((req, "--requirements"), (out, "--output")):
+        if not path.is_file():
+            print(f"{label} file not found: {path}", file=sys.stderr)
+            return 2
+    result = boundary_audit(req, out, match_threshold=args.match_threshold, inflate_ratio=args.inflate_ratio)
+    if args.study_dir:
+        report_path = Path(args.study_dir) / "06-report" / "boundary-audit.md"
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(boundary_report(result), encoding="utf-8")
+        result["report"] = str(report_path)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# F4 verification cost log: manual minutes with optional no-tool baseline
+
+
+def cost_log(study_dir: Path, *, task: str, minutes: int, baseline_minutes, note: str = "") -> dict[str, Any]:
+    if isinstance(minutes, bool) or not isinstance(minutes, int) or minutes <= 0:
+        raise ValueError("minutes must be a positive integer")
+    if baseline_minutes is not None and (isinstance(baseline_minutes, bool) or not isinstance(baseline_minutes, int) or baseline_minutes <= 0):
+        raise ValueError("baseline_minutes must be a positive integer when provided")
+    if not str(task or "").strip():
+        raise ValueError("task cannot be empty")
+    path = Path(study_dir) / "02-data" / "verify-log.jsonl"
+    rec = {
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "task": task,
+        "minutes": minutes,
+        "baseline_minutes": baseline_minutes,
+        "note": note or "",
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return rec
+
+
+def cost_report(study_dir: Path) -> dict[str, Any]:
+    path = Path(study_dir) / "02-data" / "verify-log.jsonl"
+    rows = []
+    if path.is_file():
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    total = sum(r["minutes"] for r in rows)
+    baseline_rows = [r for r in rows if r.get("baseline_minutes")]
+    baseline_total = sum(r["baseline_minutes"] for r in baseline_rows)
+    actual_of_baseline = sum(r["minutes"] for r in baseline_rows)
+    ratio = round(baseline_total / actual_of_baseline, 2) if actual_of_baseline else None
+    return {
+        "tasks": len(rows),
+        "total_minutes": total,
+        "tasks_with_baseline": len(baseline_rows),
+        "baseline_minutes": baseline_total,
+        "actual_minutes_on_baseline_tasks": actual_of_baseline,
+        "baseline_to_actual_ratio": ratio,
+        "rows": rows,
+        "boundary": ("算术汇总，不是效率证明：基线是同任务自报的无工具口径，样本量与可比性由人工判断；"
+                     "ratio 只在提供基线的任务上计算。"),
+    }
+
+
+def cli_cost(args: Any) -> int:
+    study_dir = Path(args.study_dir)
+    if not (study_dir / "study.json").is_file():
+        print(f"missing study.json under {study_dir}", file=sys.stderr)
+        return 2
+    if args.action == "log":
+        try:
+            rec = cost_log(study_dir, task=args.task, minutes=args.minutes,
+                           baseline_minutes=args.baseline_minutes, note=args.note or "")
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        print(json.dumps(rec, ensure_ascii=False))
+        return 0
+    print(json.dumps(cost_report(study_dir), ensure_ascii=False, indent=2))
+    return 0

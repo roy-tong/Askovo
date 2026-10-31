@@ -31,6 +31,9 @@ askovo deliver <study> --kind mrd              # market research/analysis projec
 askovo deliver <study> --kind prd              # requirements research/analysis projection
 askovo deliver <study> --kind brd              # business analysis projection
 askovo deliver <study> --kind ops              # user-operations projection
+askovo boundary <study> --requirements <req.md> --output <ai-doc.md>  # F2: Added/Missing/Inflated lexical candidates
+askovo cost <study> log --task <t> --minutes <n> [--baseline-minutes <n>]  # F4: manual verification minutes
+askovo deliver <study> --kind signoff            # F3: stakeholder sign-off one-pager
 ```
 
 `askovo do` detects product domain, lifecycle stage, intent and risk, then selects the method pack. If the domain is ambiguous, ask once: software / hardware / consumer / automotive / mobile. If the request is high-risk (road test, ingestion, skin contact, minors, sensitive data, production logs, destructive test), stop at S0 and require an explicit human acknowledgement; never add `--ack-risk` on the user's behalf.

@@ -1,6 +1,20 @@
 # Changelog
 
 
+## 2.4.0 — 2026-10-31
+
+### Added
+
+- **F2 boundary audit (`askovo boundary`)**: deterministic lexical Added/Missing/Inflated lists between a requirements doc and an AI-produced doc. Items are traceable to `file:line`; the three lists are candidate deviations for human review, never error verdicts. Thresholds are tunable; report lands in `06-report/boundary-audit.md`. Derived from the dogfood study's PRD feature derivation (evidence-anchored: R42/R43/R50).
+- **F3 stakeholder sign-off page (`askovo deliver --kind signoff`)**: one page per chain — conclusion summary, per-node judgment with evidence-level distribution (E1×n/E2×n), unverified assumptions, boundary statement, review-status counts, and blank signature rows. Nothing on the page upgrades evidence status.
+- **F4 verification cost log (`askovo cost`)**: per-task manual minutes with an optional no-tool baseline; `report` outputs arithmetic totals and the baseline/actual ratio with an explicit not-a-productivity-proof boundary.
+- MCP parity: `askovo_boundary` and `askovo_cost` tools, `signoff` added to `askovo_deliver`.
+
+### Validation
+
+- 146 tests pass, including planted Added/Missing detection, sign-off page content assertions, and cost log/ratio arithmetic.
+
+
 ## 2.3.0 — 2026-10-31
 
 ### Added

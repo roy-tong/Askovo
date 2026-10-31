@@ -212,6 +212,21 @@ askovo psm ./study --input pricing-survey.csv --currency CNY
 
 `psm` 读取四问 CSV（列名 `too_cheap/cheap/expensive/too_expensive`，也接受 太便宜/便宜/贵/太贵），剔除“太便宜≤便宜≤贵≤太贵”不成立的行，计算 PMC/OPP/IDP/PME 交点与可接受区间，写 `06-report/pricing-psm.md`。**PSM 是陈述意向，不是付费行为**：结果不能直接作为商业节点 validated 证据，竞品标价也不是自有定价证据。问卷可用 `instruments` 的价格工具包生成。
 
+## boundary / cost / signoff（F2 边界审计 · F4 核验计量 · F3 签收页）
+
+```bash
+askovo boundary ./study --requirements req.md --output ai-prd.md
+askovo cost ./study log --task "audit PRD" --minutes 25 --baseline-minutes 90
+askovo cost ./study report
+askovo deliver ./study --kind signoff
+```
+
+`boundary` 做**词法启发式对照**：把需求文档与 AI 产出文档各解析成可追溯条目（`文件:行号`），按归一化词集重合度配对，输出三类候选清单——**Added**（产出有、需求未讨论）、**Missing**（需求有、产出未见）、**Inflated**（有对应但体量数倍膨胀且引入大量新实词）。三条清单是**候选偏差不是错误判定**：语义判断（是否真属越界/遗漏/膨胀）由人工复核负责，阈值可调。报告写 `06-report/boundary-audit.md`。
+
+`cost` 记录单次核验任务的人工分钟（可附同一任务的无工具基线口径），`report` 出算术汇总：任务数、总分钟、有基线任务的基线/实际比值。**比值不是效率证明**——基线是自报口径，样本量与可比性由人判断。
+
+`deliver --kind signoff` 从主链生成干系人签收一页纸：结论摘要、每节点判断与证据等级分布、未验证假设、边界声明、空白签收栏。超证据表述仍由 `check` 拦截；本页与主链不一致时以主链为准。三者均有 MCP 对应工具（`askovo_boundary` / `askovo_cost` / `askovo_deliver kind=signoff`）。
+
 ## 机器可读
 
 所有命令输出 JSON 或 Markdown；错误写 stderr。适合：

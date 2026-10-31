@@ -132,6 +132,9 @@ askovo deliver ./study --kind mrd      # 市场研究与分析 → MRD
 askovo deliver ./study --kind prd      # 需求研究与分析 → PRD
 askovo deliver ./study --kind brd      # 商业分析 → BRD
 askovo deliver ./study --kind memo     # 产品决策 memo
+askovo boundary ./study --requirements req.md --output ai-prd.md  # F2 边界审计：Added/Missing/Inflated 候选清单
+askovo cost ./study log --task "audit PRD" --minutes 25           # F4 核验人工分钟（可带无工具基线）
+askovo deliver ./study --kind signoff   # F3 干系人签收页：结论+证据等级+边界+签名栏
 askovo deliver ./study --kind ops      # 用户运营投影
 askovo deliver ./study --kind tracker  # 行为、验收和商业指标跟踪
 askovo report ./study                  # 用研状态：06-report/research-status.md

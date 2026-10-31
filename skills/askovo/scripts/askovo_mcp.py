@@ -319,9 +319,33 @@ def _build_codebook(arguments: dict[str, Any]) -> argparse.Namespace:
 
 def _build_deliver(arguments: dict[str, Any]) -> argparse.Namespace:
     kind = arguments.get("kind", "memo")
-    if kind not in ("memo", "report", "mrd", "prd", "brd", "ops", "tracker"):
-        raise ValueError("kind must be memo, report, mrd, prd, brd, ops or tracker")
+    if kind not in ("memo", "report", "mrd", "prd", "brd", "ops", "tracker", "signoff"):
+        raise ValueError("kind must be memo, report, mrd, prd, brd, ops, tracker or signoff")
     return _namespace(study_dir=_string(arguments.get("study_dir"), "study_dir"), kind=kind)
+
+
+def _build_boundary(arguments: dict[str, Any]) -> argparse.Namespace:
+    return _namespace(
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        requirements=_string(arguments.get("requirements"), "requirements"),
+        output=_string(arguments.get("output"), "output"),
+        match_threshold=float(arguments.get("match_threshold", 0.30)),
+        inflate_ratio=float(arguments.get("inflate_ratio", 3.0)),
+    )
+
+
+def _build_cost(arguments: dict[str, Any]) -> argparse.Namespace:
+    action = _string(arguments.get("action"), "action")
+    if action not in ("log", "report"):
+        raise ValueError("action must be log or report")
+    return _namespace(
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        action=action,
+        task=_optional_string(arguments, "task") or "",
+        minutes=int(arguments["minutes"]) if arguments.get("minutes") is not None else 0,
+        baseline_minutes=int(arguments["baseline_minutes"]) if arguments.get("baseline_minutes") is not None else None,
+        note=_optional_string(arguments, "note") or "",
+    )
 
 
 def _build_methods(arguments: dict[str, Any]) -> argparse.Namespace:
@@ -629,7 +653,7 @@ TOOLS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "study_dir": {"type": "string"},
-                "kind": {"enum": ["memo", "report", "mrd", "prd", "brd", "ops", "tracker"], "default": "memo"},
+                "kind": {"enum": ["memo", "report", "mrd", "prd", "brd", "ops", "tracker", "signoff"], "default": "memo"},
             },
             "required": ["study_dir"],
         },
@@ -650,6 +674,37 @@ TOOLS: list[dict[str, Any]] = [
         "name": "askovo_domains",
         "description": "List the five product research packs and their stages.",
         "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "askovo_boundary",
+        "description": "F2 boundary audit: deterministic lexical Added/Missing/Inflated lists between a requirements doc and an AI-produced doc; candidates for human review, never error verdicts.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "study_dir": {"type": "string"},
+                "requirements": {"type": "string", "description": "path to the original requirements/intent doc"},
+                "output": {"type": "string", "description": "path to the AI-produced doc"},
+                "match_threshold": {"type": "number", "default": 0.30},
+                "inflate_ratio": {"type": "number", "default": 3.0},
+            },
+            "required": ["study_dir", "requirements", "output"],
+        },
+    },
+    {
+        "name": "askovo_cost",
+        "description": "F4 verification cost log: record manual minutes per task (optionally with a no-tool baseline) and report arithmetic totals; not a productivity proof.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "study_dir": {"type": "string"},
+                "action": {"enum": ["log", "report"]},
+                "task": {"type": "string"},
+                "minutes": {"type": "integer", "minimum": 1},
+                "baseline_minutes": {"type": "integer", "minimum": 1},
+                "note": {"type": "string"},
+            },
+            "required": ["study_dir", "action"],
+        },
     },
     {
         "name": "askovo_queue_add",
@@ -765,6 +820,8 @@ TOOL_BUILDERS = {
     "askovo_stage": (askovo_cli.command_stage, _build_stage),
     "askovo_economics": (askovo_cli.sure_engine.cli_economics, _build_economics),
     "askovo_psm": (askovo_cli.sure_engine.cli_psm, _build_psm),
+    "askovo_boundary": (askovo_cli.sure_engine.cli_boundary, _build_boundary),
+    "askovo_cost": (askovo_cli.sure_engine.cli_cost, _build_cost),
 }
 
 
