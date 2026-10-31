@@ -4,6 +4,7 @@
 
 - Harden interruption/evidence handling and add regression coverage.
 - Align product positioning and publish the feature implementation status.
+- Ship a bilingual README: English is now the repo-default `README.md`, with the full Chinese mirror in `README.zh-CN.md` (language switch at the top of both). English example commands verified against the router; `--domain` is passed where the Chinese-first keyword tables don't match English queries.
 
 
 ## Unreleased — 2026-10-31
@@ -20,7 +21,7 @@
 
 ### Validation
 
-- 160 tests pass, including nested-evidence negative cases, fresh-audit delivery, signoff refusal, multi-option comparison, and Research Run authorization/hash/fixture/step/interruption tests.
+- 163 tests pass, including nested-evidence negative cases, fresh-audit delivery, signoff refusal, multi-option comparison, Research Run authorization/hash/fixture/step/interruption tests, and local Docling document intake.
 
 ## 2.5.0 — 2026-10-31
 

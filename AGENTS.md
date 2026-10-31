@@ -29,7 +29,7 @@ The product/business spine for product managers, user researchers, user operatio
 - Run the full suite before any commit: `python3 -m unittest discover -s tests`.
 - Never commit study outputs: `05-audit/latest.*`, `06-report/`, generated studies, credentials, or collected platform content. The sample study is synthetic by design.
 - Registry changes (`assets/open-source-connectors.json`, `assets/platform-catalog.json`) must state access mode, license/terms, bulk capability, bias and the reason; blocked entries stay deliberately negative. Update the catalog date and add a CHANGELOG line.
-- Docs are bilingual by layer: `references/` and code comments in English, `README.md` in Chinese. Keep both in sync when behavior changes.
+- Docs are bilingual by layer: `references/` and code comments in English; `README.md` is English (repo default) and `README.zh-CN.md` is its Chinese mirror — change them together. Keep both in sync when behavior changes.
 - A release means: version bumped once in `VERSION` (CLI, MCP, packaging and synthetic sample read it), `CHANGELOG.md` updated, Python 3.9–3.12 and non-editable wheel checks green, README quickstart commands re-run. Follow `RELEASING.md` for the external GitHub/PyPI checklist.
 
 ## Safety boundaries (apply to every change)

@@ -2,250 +2,254 @@
   <img src="https://raw.githubusercontent.com/roy-tong/askovo/main/assets/brand/askovo-logo-600.png" alt="Askovo" width="300">
 </p>
 
+<p align="center">
+  <b>English</b> | <a href="README.zh-CN.md">简体中文</a>
+</p>
+
 # Askovo
 
-**从业务问题出发，采集数据、验证判断，交付可追溯的研究成果。**
+**Start from a business question, collect data, verify judgments, and deliver traceable research outcomes.**
 
-Askovo 面向产品经理、用户研究和业务分析人员。你提供业务目标、背景与允许的数据来源，Agent 制定研究动作，Askovo 执行获授权的采集、描述性分析和证据审计，生成研究报告、MRD、PRD 或 BRD，帮助团队决定下一步做什么、还需要验证什么。
+Askovo is built for product managers, user researchers, and business analysts. You bring the business goal, the context, and the permitted data sources; your agent plans the research actions, and Askovo executes the authorized collection, descriptive analysis, and evidence audits — producing research reports, MRD, PRD, or BRD that help the team decide what to do next and what still needs validation.
 
-当前支持 CLI、Skill 和 MCP；研究动作由宿主 Agent 规划，执行器按授权计划运行。来源缺口和人工语义复核会明确保留。[能力进度与技术取舍](docs/feature-status.md)。
+CLI, Skill, and MCP surfaces are live today; research actions are planned by the host agent, and the executor runs only the authorized plan. Source gaps and human semantic review are kept explicit, never hidden. See [capability status and trade-offs](docs/feature-status.md) (Chinese).
 
-> **场景 → 用户 → 痛点 → 需求 → 特性 → 产品 → 商业**
+> **scene → user → pain → need → feature → product → business**
 
-数据收集、描述性分析、访谈、实验、证据分级和平台连接都只是支撑步骤：它们用于验证某个节点或推导关系，不能代替产品与商业推理本身。
+Data collection, descriptive analysis, interviews, experiments, evidence grading, and platform connectors are supporting steps only: they validate a node or an inference edge — they never substitute for the product and business reasoning itself.
 
-AI 研究工具的产出，每一句听起来都同样自信——有据的和编的看起来一样，签字的人看不出哪句能信。askovo 给每条结论标证据等级（E0–E5）；结论超出证据时，`askovo audit` 直接说出来，退出码 1 可以进 CI。
+Every line an AI research tool produces sounds equally confident — the evidenced and the invented look identical, and whoever signs off cannot tell which sentence to trust. Askovo grades every conclusion with an evidence level (E0–E5); when a conclusion outruns its evidence, `askovo audit` says so outright, and its exit code 1 can gate CI.
 
-[官网](https://roy-tong.github.io/Askovo/) · [快速开始](docs/quickstart.md) · [产品与商业推理主链](docs/product-reasoning.md) · [岗位方法论](docs/product-methodology.md) · [平台与连接器](docs/connectors.md)
+[Website](https://roy-tong.github.io/Askovo/) · [Quickstart](docs/quickstart.md) · [Product & business reasoning chain](docs/product-reasoning.md) · [Role methodology](docs/product-methodology.md) · [Platforms & connectors](docs/connectors.md)
 
 [![Agent Skill](https://img.shields.io/badge/Agent_Skill-Askovo-111111)](skills/askovo/SKILL.md)
 [![CI](https://github.com/roy-tong/askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/askovo/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
-## 30 秒证明它能工作
+## Proof it works in 30 seconds
 
 ```bash
 pipx install git+https://github.com/roy-tong/askovo.git
-askovo do "家用摄像头夜间告警误报，想验证样机" --dry-run
+askovo do "home security camera false alerts at night, want to validate the prototype" --domain hardware --dry-run
 askovo demo
 ```
 
-<!-- 首屏 demo GIF：用 marketing/demo/askovo-demo.tape 录制（vhs），产物拷到 assets/demo/askovo-demo.gif 后取消注释。
+<!-- Hero demo GIF: record with marketing/demo/askovo-demo.tape (vhs), copy the artifact to assets/demo/askovo-demo.gif, then uncomment.
 <p align="center">
-  <img src="assets/demo/askovo-demo.gif" alt="askovo demo：一句话路由、推理链骨架、审计超证" width="860">
+  <img src="assets/demo/askovo-demo.gif" alt="askovo demo: one-line routing, chain skeleton, overclaim audit" width="860">
 </p>
 -->
 
-也可以直接写：`askovo "手机相机夜景和续航" --dry-run`。`--dry-run` 只路由、不写文件；`demo` 运行内置合成样例。
+You can also route directly: `askovo "SaaS subscription churn is dropping, want to know why users don't renew" --dry-run`. `--dry-run` only routes and writes nothing; `demo` runs the built-in synthetic sample. Router keyword tables are Chinese-first — English queries work, and `--domain` pins the product type whenever English keywords don't match.
 
-预期关键结果：`status: pass`、`supported: 1`、`overclaims: 0`。这只证明合成样例的结构、推理链和证据引用自洽，**不证明真实需求、产品质量、市场规模或发布可行性**。
+Expected key results: `status: pass`, `supported: 1`, `overclaims: 0`. This only proves that the synthetic sample is self-consistent in structure, chain, and evidence references. It proves **nothing about real demand, product quality, market size, or release readiness**.
 
-## 研究问题 → 决策结果：一次完整交付长什么样
+## From research question to decision result: what a full delivery looks like
 
-输入一个决策问题，输出一份**决策包（Decision Package）**——每个判断都能沿七节点主链回溯到证据和反证。以内置合成样例（`examples/sample-study`）为例：
+Feed in a decision question, get back a **Decision Package** — every judgment traceable along the seven-node chain to its evidence and counter-evidence. Using the built-in synthetic sample (`examples/sample-study`):
 
-> 研究问题：养宠物的远程主人，是否值得为"离家时的宠物看护"跑一个两周的手机巡检试点？
+> Research question: for remote pet owners, is it worth running a two-week phone-based check-in pilot for "pet watch while away from home"?
 
-主链跑完（七节点全部 validated，2 条反证在案）后，一条命令生成决策包：
+Once the chain is complete (all seven nodes validated, 2 counter-evidence items on record), one command produces the decision package:
 
 ```bash
 askovo chain examples/sample-study
 askovo deliver examples/sample-study --kind decision   # → 06-report/decision-package.md
 ```
 
-决策包给决策者五个视图：
+The decision package gives the decision maker five views:
 
-| 视图 | 回答 |
+| View | Answers |
 |---|---|
-| 机会地图 Opportunity Map | 哪些方向值得考虑（场景×用户×痛点、节点就绪度、优先级） |
-| 证据图 Evidence Graph | 每个判断被哪些证据（带 E0–E5 等级）支持或反驳 |
-| 选项与权衡 Options & Trade-offs | 候选方向的收益、代价、反证与替代解释 |
-| 决策备忘 Decision Memo | 推荐选择、置信边界、未选择的原因；交付/结果/因果三态分列 |
-| 验证清单 Validation Backlog | 最值得下一步验证的未知（缺口、needs-validation 节点、最便宜的证伪测试） |
+| Opportunity Map | Which directions are worth considering (scene × user × pain, node readiness, priorities) |
+| Evidence Graph | Which evidence (with E0–E5 levels) supports or refutes each judgment |
+| Options & Trade-offs | Benefits, costs, counter-evidence, and alternative explanations per candidate direction |
+| Decision Memo | Recommended choice, confidence bounds, why the others were not taken; delivery/outcome/causal states listed separately |
+| Validation Backlog | The unknowns most worth validating next (gaps, needs-validation nodes, cheapest falsification test) |
 
-样例决策备忘（节选，原文为英文合成数据）：优先级方法 "test privacy, acceptance and retained use before any scale decision"；理由 "the smallest test that can reverse the concept; no market-size ranking is claimed"；置信边界——反证 `R05`/`R07`，缺口含 "Privacy controls are not tested in real homes"；三态：交付 `unplanned` / 结果 `observing` / 因果 `not-claimed`。**`decided` 只是选择记录，不是发布或商业证明**——三态互相独立，不得互推。
+Sample decision memo (excerpt, from the synthetic sample): prioritization method — "test privacy, acceptance and retained use before any scale decision"; rationale — "the smallest test that can reverse the concept; no market-size ranking is claimed"; confidence bounds — counter-evidence `R05`/`R07`, gaps include "Privacy controls are not tested in real homes"; three states — delivery `unplanned` / outcome `observing` / causality `not-claimed`. **`decided` is only a record of choice, not release or commercial proof** — the three states are independent and must not be inferred from one another.
 
-MRD/PRD/BRD 不是另外三套结论，而是同一条主链的市场/需求/商业投影；决策包是它们的决策侧汇总视图。
+MRD/PRD/BRD are not three separate sets of conclusions — they are market/requirements/business projections of the same chain; the decision package is their decision-side summary view.
 
-三个高频任务都走同一条链，只是收口交付不同：**发现**（研究问题 → 机会地图）、**验证**（审查设想 → 验证清单）、**决策**（候选比较 → 决策备忘）。
+The three recurring tasks all run the same chain and differ only in what they deliver: **discover** (research question → Opportunity Map), **validate** (review a hypothesis → Validation Backlog), **decide** (compare candidates → Decision Memo).
 
-## 一条主链，多类职责，五个领域
+## One chain, many roles, five domains
 
-| 使用者 | 从同一主链获得什么 | 主要交付 |
+| Role | What they get from the same chain | Primary deliverables |
 |---|---|---|
-| 产品经理 | 全链取舍、范围、优先级、验收、风险和商业门 | 决策 memo、产品/商业报告、BRD 与最终签收 |
-| 用户研究 | 场景、用户、痛点、需求证据，反证与语义复核 | 研究状态报告、需求判断、证据台账、补证计划 |
-| 用户运营 | 场景×用户分群、真实行为、异议、生命周期干预与反馈回流 | 用户运营投影、tracker、行为和留存证据 |
-| 市场研究 / 市场分析 | 市场边界、细分、竞品替代、渠道、价格、规模口径与进入假设 | MRD |
-| 需求研究 / 需求分析 | 把用户、市场、业务和技术需要转为特性、产品要求、优先级、验收和追溯 | PRD |
-| 商业分析 | 收入模式、价格、成本、单位经济、资源门与风险接受 | BRD |
+| Product manager | End-to-end trade-offs, scope, priorities, acceptance, risks, and business gates | Decision memo, product/business report, BRD, and final sign-off |
+| User researcher | Scene, user, pain, and need evidence; counter-evidence and semantic review | Research status report, demand judgments, evidence ledger, evidence-backfill plan |
+| User operations | Scene × user segmentation, real behavior, objections, lifecycle interventions, feedback loops | User-ops projection, tracker, behavior and retention evidence |
+| Market research / analysis | Market boundaries, segments, competitor substitution, channels, pricing, sizing conventions, entry assumptions | MRD |
+| Requirements research / analysis | Turning user, market, business, and technical needs into features, product requirements, priorities, acceptance, and traceability | PRD |
+| Business analysis | Revenue model, pricing, cost, unit economics, resource gates, and risk acceptance | BRD |
 
-小团队可以一人承担多项职责，但工作流和产出不能混：
+A small team can wear several hats, but the workflows and outputs must not be conflated:
 
-| 分析工作流 | 正式产出 | 不能冒充 |
+| Analysis workflow | Formal output | Must not masquerade as |
 |---|---|---|
-| 市场研究与市场分析 | MRD：候选市场、细分、替代、渠道、价格与规模口径 | 用户需求成立、产品成功 |
-| 需求研究与需求分析 | PRD：场景到需求再到特性、产品及验收的可追溯要求 | 市场需求、商业成立 |
-| 商业分析 | BRD：产品到商业模式的决策、资源门、单位经济和剩余风险 | 产品已成功、市场已被证明 |
+| Market research & analysis | MRD: candidate markets, segments, substitution, channels, pricing, and sizing conventions | User demand established, product success |
+| Requirements research & analysis | PRD: traceable requirements from scene to need to feature, product, and acceptance | Market demand, business viability |
+| Business analysis | BRD: product-to-business-model decisions, resource gates, unit economics, and residual risk | Product having succeeded, market having been proven |
 
-五类领域共用同一份主链 schema，不各自分叉流程。领域包只改变方法、证据形式、风险门和验收重点。当前重点深耕 **AI 软件、开发者工具与智能硬件**三类场景（五域方法论保持兼容）：
+All five domains share one chain schema — no per-domain forking. Domain packs only change methods, evidence forms, risk gates, and acceptance focus. Current first focus: **AI software, developer tools, and smart hardware** (the five-domain methodology stays compatible):
 
-| 领域 | 验证与交付重点 |
+| Domain | Validation & delivery focus |
 |---|---|
-| 软件 / SaaS | 工作流、任务可用性、Beta、A/B、队列留存、发布护栏 |
-| 硬件 / IoT | 安装维护、样机偏差、实验室与现场、配置基线、RMA |
-| 消费品 | 使用场合、概念包装、CLT/HUT、感官、首购与复购 |
-| 汽车 | HMI、诊所/模拟器/场地/道路、误用、工程 V&V 与安全边界 |
-| 手机 / 可穿戴 | 真实场景、握持与跨端、弱网/功耗/兼容、版本与售后 |
+| Software / SaaS | Workflows, task usability, beta, A/B, cohort retention, release guardrails |
+| Hardware / IoT | Install & maintenance, prototype bias, lab vs. field, configuration baselines, RMA |
+| Consumer goods | Usage occasions, concept & packaging, CLT/HUT, sensory, first purchase & repurchase |
+| Automotive | HMI, clinic/simulator/closed-course/road, misuse, engineering V&V and safety boundaries |
+| Phone / wearable | Real-world scenarios, grip and cross-device use, weak network/power/compatibility, versions and after-sales |
 
-## 核心工作方式
+## How it works
 
-### 1. 先建立产品与商业推理，再决定研究什么
+### 1. Build the product and business reasoning first; decide what to research second
 
 ```bash
-askovo do "SaaS 订阅留存下降，想看看用户为什么不续费"
+askovo do "SaaS subscription churn is dropping, want to know why users don't renew"
 askovo chain ./askovo-software-postlaunch
 ```
 
-`do` 识别领域、生命周期、意图与风险，并创建主链画布。`chain` 渲染同一份机器真值：
+`do` detects domain, lifecycle stage, intent, and risks, then creates the chain canvas. `chain` renders the same machine truth:
 
 ```text
-04-findings/product-reasoning.json   七节点、推导、假设、反证与决策状态
-06-report/product-reasoning.md       人类可读投影
+04-findings/product-reasoning.json   seven nodes, inferences, assumptions, counter-evidence, decision states
+06-report/product-reasoning.md       human-readable projection
 ```
 
-每个节点都必须填写：
+Every node must carry:
 
-- `statement`：当前判断；
-- `rationale`：为什么能从上一节点推到本节点；
-- `assumptions`：推导成立还必须假设什么；
-- `evidence_ids`：哪些已登记证据支持它；
-- `status`：hypothesis / needs-validation / validated / rejected / deprioritized。
+- `statement`: the current judgment;
+- `rationale`: why the previous node licenses this one;
+- `assumptions`: what must also hold for the inference to stand;
+- `evidence_ids`: which registered evidence supports it;
+- `status`: hypothesis / needs-validation / validated / rejected / deprioritized.
 
-特性还要记录备选方案和接受条件；产品还要记录形态、范围、非目标和验收；商业节点还要记录市场边界、细分、付费者、竞争定位、渠道、价格、成本、市场估计口径、单位经济、成功指标和商业门。链条的 `decided` 只表示记录了当前阶段的产品/商业选择，**不等于研究语义复核、工程验证、发布批准、商业成立或因果效果**。
+Feature nodes also record alternatives and acceptance criteria; the product node records form factor, scope, non-goals, and acceptance; the business node records market boundaries, segments, payers, competitive positioning, channels, pricing, cost, market-sizing conventions, unit economics, success metrics, and business gates. A chain's `decided` only means the current product/business choice was recorded — **it is not semantic review, engineering verification, release approval, commercial validity, or causal effect**.
 
-### 2. 找最弱节点，用研究补证
+### 2. Find the weakest node; backfill it with research
 
 ```bash
 askovo check ./study --stage design
-askovo platforms "家用摄像头夜间告警的用户抱怨" --domain hardware --bulk
+askovo platforms "home security camera night-alert complaints" --domain hardware --bulk
 askovo instruments ./study
 askovo collect ./study --platform reddit --query "night alert" --limit 100
-askovo analyze ./study --question "夜间误报"
+askovo analyze ./study --question "night false alerts"
 ```
 
-`source-plan.csv` 用 `reasoning_nodes` 标明每条路线服务哪个节点，避免为了凑数据量而采集。真实采集前仍必须通过 Design gate、来源授权和适配器检查。
+`source-plan.csv` marks which chain node each route serves via `reasoning_nodes`, so you never collect just to pump volume. Real collection still requires the Design gate, source authorization, and adapter checks.
 
-`analyze` 只做归一化、去重、分布、高频候选词和问题匹配片段；它不会自动生成场景、需求、特性或产品结论。
+`analyze` only normalizes, deduplicates, computes distributions, frequent candidate terms, and question-matched snippets; it never auto-generates scene, need, feature, or product conclusions.
 
-### 3. 同时审计“证据是否够”和“推理是否断”
+### 3. Audit both "is the evidence enough" and "is the reasoning broken"
 
 ```bash
 askovo check ./study --stage full --write-report
 askovo audit ./study --json
 ```
 
-两份文件分工明确：
+Two files, two owners:
 
-- `product-reasoning.json`：拥有七段产品语义和推导理由；
-- `demand-judgments.json`：拥有需求、方案、商业行为与反证的证据资格判断。
+- `product-reasoning.json`: owns the seven-node product semantics and inference rationales;
+- `demand-judgments.json`: owns the evidence-eligibility judgments for demand, solutions, commercial behavior, and counter-evidence.
 
-二者通过 `demand_judgment_id + context_key` 连接。节点引用的证据必须已经登记在对应需求判断中，不能靠修改主链文件绕过 E1/E2、E3、E4+/E5、反证和上下文门。其中痛点→需求这条推导边有明确下限：**需求节点升 validated 必须至少含一条 E2（观察到的替代/绕行/失败行为）证据，仅有 E1 口头陈述只能停在 needs-validation**——说了不算，做了才算。
+They join on `demand_judgment_id + context_key`. Evidence cited by a node must already be registered in the linked demand judgment — you cannot bypass the E1/E2, E3, E4+/E5, counter-evidence, and context gates by editing the chain file. The pain → need edge has a hard floor: **a need node can only reach `validated` with at least one piece of E2 evidence (observed substitution, workaround, or failure behavior); E1 verbal statements alone cap it at needs-validation** — saying is not doing.
 
-完整主链也不能证明产品/商业成功；证据齐全也不能补偿缺失的推导理由。自动检查只验证结构与配置，关键语义、市场规模、单位经济仍由人工和专业复核。
+A complete chain still does not prove product/business success; complete evidence cannot compensate for a missing inference rationale. Automated checks validate structure and configuration only — key semantics, market sizing, and unit economics stay with human and professional review.
 
-### 4. 从同一主链生成不同分析与职责交付
+### 4. Project the same chain into role-specific deliverables
 
 ```bash
-askovo deliver ./study --kind decision # 决策包：机会地图/证据图/选项与权衡/决策备忘/验证清单
-askovo deliver ./study --kind report   # 产品与商业推理总报告
-askovo deliver ./study --kind mrd      # 市场研究与分析 → MRD
-askovo deliver ./study --kind prd      # 需求研究与分析 → PRD
-askovo deliver ./study --kind brd      # 商业分析 → BRD
-askovo deliver ./study --kind memo     # 产品决策 memo
-askovo boundary ./study --requirements req.md --output ai-prd.md  # F2 边界审计：Added/Missing/Inflated 候选清单
-askovo cost ./study log --task "audit PRD" --minutes 25           # F4 核验人工分钟（可带无工具基线）
-askovo deliver ./study --kind signoff   # F3 干系人签收页：结论+证据等级+边界+签名栏
-askovo deliver ./study --kind ops      # 用户运营投影
-askovo deliver ./study --kind tracker  # 行为、验收和商业指标跟踪
-askovo report ./study                  # 用研状态：06-report/research-status.md
+askovo deliver ./study --kind decision # decision package: opportunity map / evidence graph / options & trade-offs / decision memo / validation backlog
+askovo deliver ./study --kind report   # combined product & business reasoning report
+askovo deliver ./study --kind mrd      # market research & analysis → MRD
+askovo deliver ./study --kind prd      # requirements research & analysis → PRD
+askovo deliver ./study --kind brd      # business analysis → BRD
+askovo deliver ./study --kind memo     # product decision memo
+askovo boundary ./study --requirements req.md --output ai-prd.md  # F2 boundary audit: Added/Missing/Inflated candidates
+askovo cost ./study log --task "audit PRD" --minutes 25           # F4 logged human minutes (optional no-tool baseline)
+askovo deliver ./study --kind signoff   # F3 stakeholder sign-off page: conclusions + evidence levels + boundaries + signature block
+askovo deliver ./study --kind ops      # user-ops projection
+askovo deliver ./study --kind tracker  # behavior, acceptance, and business metric tracking
+askovo report ./study                  # research status: 06-report/research-status.md
 ```
 
-`deliver --kind report` 是产品/商业总报告的唯一写入者；`askovo report` 写独立的研究状态文件。决策包、MRD、PRD、BRD、运营视图全部由同一条七节点主链投影生成，不是几套平行事实源。
+`deliver --kind report` is the single writer of the combined product/business report; `askovo report` writes a separate research-status file. The decision package, MRD, PRD, BRD, and ops views are all projections of one seven-node chain — not parallel sources of truth.
 
-## Askovo 与 SURE
+## Askovo and SURE
 
-**Askovo 是产品；SURE 是底层研究与证据支撑引擎。**
+**Askovo is the product; SURE is the research and evidence engine underneath.**
 
-- **Askovo**：主链工作区、五域路由、CLI/Skill/MCP、采集分析和角色交付。
-- **SURE（Structured User Research with Evidence）**：方法选择、证据形式与等级、claim 边界、反幸存者偏差、安全门和判断约束。
-- 三个入口共用 `sure_engine.py` 与 CLI 命令函数，不分叉行为。
+- **Askovo**: the chain workspace, five-domain routing, CLI/Skill/MCP, collection, analysis, and role deliverables.
+- **SURE (Structured User Research with Evidence)**: method selection, evidence forms and levels, claim boundaries, anti-survivorship bias, safety gates, and judgment constraints.
+- All three surfaces share `sure_engine.py` and the CLI command functions — behavior never forks.
 
-一句话：**Askovo 负责“从用户推理到产品与商业”，SURE 负责“让每一步推理知道证据能支持到哪里”。**
+In one line: **Askovo handles "reasoning from users to product and business"; SURE makes sure "every step knows how far its evidence actually reaches".**
 
-**研发后的增长由 [Growovo](https://github.com/roy-tong/Growovo) 承接**：它消费 askovo 的研究判断做定位与增长（定→造→跑），一手增长反馈以同一套 E0–E5 证据分级回流——上下游交换证据，不重复造研究。
+**Post-launch growth is handled by [Growovo](https://github.com/roy-tong/Growovo)**: it consumes askovo's research judgments for positioning and growth (position → build → run), and first-party growth feedback flows back with the same E0–E5 grading — upstream and downstream exchange evidence instead of duplicating research.
 
-## 研究支撑能力
+## Research support capabilities
 
-### 方法路由
+### Method routing
 
 ```bash
-askovo route "汽车座舱语音的接管体验怎么验证" --json
+askovo route "how to validate the takeover experience of automotive cockpit voice" --domain automotive --json
 askovo methods --domain automotive --stage validation
 ```
 
-汽车会路由到诊所、模拟器、封闭场地、道路或自然驾驶；消费品会路由到 CLT/HUT/复购；软件会路由到可用性、Beta、A/B 和队列。
+Automotive routes to clinics, simulators, closed courses, road, or naturalistic driving; consumer goods route to CLT/HUT/repurchase; software routes to usability, beta, A/B, and cohorts.
 
-### 平台雷达
+### Platform radar
 
 ```bash
-askovo platforms "家用摄像头夜间告警的用户抱怨" --domain hardware --bulk
+askovo platforms "home security camera night-alert complaints" --domain hardware --bulk
 ```
 
-回答“数据在哪里、能否合规获得、能帮助哪个推理节点、不能证明什么”。平台结论分为 `supported`、`limited`、`blocked`；无合规批量通道时，只接受授权导出、研究 API 或合规历史数据集。
+Answers "where is the data, can it be obtained compliantly, which reasoning node does it help, and what can it not prove". Platform verdicts come as `supported`, `limited`, or `blocked`; where no compliant bulk channel exists, only authorized exports, research APIs, or compliant historical datasets are accepted.
 
-### 采集、队列与可复现性
+### Collection, queues, and reproducibility
 
-- GitHub 使用官方 Search API；Reddit 使用官方 Data API；其他平台使用授权导出、历史数据集或本地 fixture。
-- 每次采集保存 raw envelope、normalized 和 manifest，记录访问依据、权利、条数、丢弃原因、限制和偏差。
-- SQLite 队列支持多 worker、租约回收、失败退避、限速和断点续跑。
-- CDP 仅限 amazon / instagram / bilibili / weibo 的授权可见页面；X / YouTube 和 blocked 平台不使用它，不绕过验证码、登录墙或平台控制。
+- GitHub goes through the official Search API; Reddit through the official Data API; everything else uses authorized exports, historical datasets, or local fixtures.
+- Every collection run stores raw envelopes, normalized records, and a manifest recording access basis, rights, counts, discard reasons, restrictions, and bias.
+- A SQLite queue supports multiple workers, lease recovery, failure backoff, rate limits, and resumable runs.
+- CDP is limited to authorized visible pages on amazon / instagram / bilibili / weibo; X / YouTube and blocked platforms never use it, and captchas, login walls, and platform controls are never bypassed.
 
-详见 [平台与连接器](docs/connectors.md) 和 [CLI 参考](docs/cli.md)。
+See [Platforms & connectors](docs/connectors.md) and the [CLI reference](docs/cli.md) (Chinese).
 
-## 六类结论不能混
+## Six finding types that must not be conflated
 
-| 类型 | 回答 | 不能替代 |
+| Type | Answers | Must not substitute for |
 |---|---|---|
-| need | 谁在什么场景有什么未满足任务 | 功能请求、个案、普遍率 |
-| acceptance | 用户是否理解/接受方案 | 喜欢≠会用/会买 |
-| usability | 能否完成任务、是否易学低错 | 好用≠需求成立 |
-| performance | 明确条件下是否达标 | 跑分≠体验 |
-| commercial | 购买、留存、复购、退换 | 口头意愿≠交易 |
-| safety | 使用风险与合规缺口 | 用户试验≠认证 |
+| need | Who has what unmet job in what scene | Feature requests, anecdotes, prevalence |
+| acceptance | Whether users understand/accept the solution | Liking ≠ will use / will buy |
+| usability | Whether users can complete the task; learnable, low-error | Usable ≠ demand established |
+| performance | Whether it meets the bar under stated conditions | Benchmark scores ≠ experience |
+| commercial | Purchase, retention, repurchase, returns | Stated intent ≠ transactions |
+| safety | Usage risk and compliance gaps | User trials ≠ certification |
 
-E0–E5 只描述需求与商业证据强度，不是产品/商业推理得分。可用性、工程性能、安全、可行性、商业门和发布门分别有各自的验证要求。
+E0–E5 grade demand and commercial evidence strength only — they are not a product/business reasoning score. Usability, engineering performance, safety, feasibility, business gates, and release gates each carry their own verification requirements.
 
-## 边界
+## Boundaries
 
-- 不做未授权抓取，不绕过 blocked connector、登录墙、验证码或平台挑战。
-- 不把平台可用当样本代表总体，不把记录数当用户数或客群规模。
-- 不把功能提及频率当需求，不把购买意愿当真实购买，不把采用率当产品结果。
-- 不把一次喜欢当复购，不把 Beta、无投诉或零事件当安全或可发布。
-- 不让需求证据替代可用性、性能、安全、工程 V&V、法规或认证。
-- 高风险研究停在 S0，Agent 只能出方案，不能指导执行。
-- 所有交付默认草稿；CLI 通过不替代人工语义复核、产品签收或风险接受。
+- No unauthorized scraping; blocked connectors, login walls, captchas, and platform challenges are never bypassed.
+- Platform availability is never treated as sample-represents-population; record counts are never treated as user counts or audience size.
+- Feature-mention frequency is not need; purchase intent is not purchase; adoption rate is not product outcome.
+- One-time liking is not repurchase; beta, zero complaints, or zero incidents are not safety or release readiness.
+- Demand evidence never substitutes for usability, performance, safety, engineering V&V, regulatory, or certification evidence.
+- High-risk research stops at S0: the agent may only propose a plan, never instruct execution.
+- All deliverables are drafts by default; a passing CLI run never replaces human semantic review, product sign-off, or risk acceptance.
 
-## 安装
+## Installation
 
-PyPI 包尚未发布（2026-10-31 核实），当前从源码安装：
+Not on PyPI yet (checked 2026-10-31); install from source:
 
 ```bash
 pipx install --editable .
 askovo --version
 ```
 
-或使用 venv：
+Or with venv:
 
 ```bash
 python3 -m venv .venv
@@ -254,7 +258,7 @@ python3 -m venv .venv
 .venv/bin/askovo demo
 ```
 
-核心 CLI、Skill、MCP 只使用 Python 标准库，兼容 Python 3.9–3.12。可选 Workbook XLSX 和 Amazon HF 工具分别声明 openpyxl/datasets 依赖。
+The core CLI, Skill, and MCP use only the Python standard library and support Python 3.9–3.12. The optional Workbook XLSX and Amazon HF tools declare openpyxl/datasets separately.
 
 **Agent Skill**
 
@@ -276,68 +280,70 @@ bash scripts/install-skill.sh ~/.codex/skills
 }
 ```
 
-MCP 暴露 `askovo_route`、`askovo_do`、`askovo_chain`、`askovo_platforms`、`askovo_collect`、`askovo_analyze`、`askovo_audit`、`askovo_deliver` 等工具，与 CLI 共用行为；`collect` 默认 dry-run。
+MCP exposes `askovo_route`, `askovo_do`, `askovo_chain`, `askovo_platforms`, `askovo_collect`, `askovo_analyze`, `askovo_audit`, `askovo_deliver`, and more, sharing behavior with the CLI; `collect` defaults to dry-run.
 
-## 服务与支持
+## Services & support
 
-**引擎永久免费开源**：CLI、Agent Skill、MCP 与五域基础领域包均为 MIT，无功能阉割版。付费的只可能是深度领域资产与人工交付，永远不是引擎本身。
+**The engine is free and open source forever**: the CLI, Agent Skill, MCP, and the five base domain packs are all MIT, with no feature-crippled edition. The only paid things may be deep domain assets and human delivery — never the engine itself.
 
-| 能力 | 当前边界 |
+| Capability | Current boundary |
 |---|---|
-| 七节点推理链与决策包/MRD/PRD/BRD 投影 | 结构与证据引用自动校验；语义复核由人负责 |
-| 证据分级审计（E0–E5，退出码进 CI） | 只验结构与配置门，不证明需求普遍率或市场成功 |
-| 平台雷达与采集 | blocked 平台不绕过；采集前须过 Design gate 与授权检查 |
-| 人工交付（需求验证 study / 团队工作坊） | 范围与费用按任务商定；商业复购仍在验证 |
+| Seven-node chain with decision package / MRD / PRD / BRD projections | Structure and evidence references checked automatically; semantic review stays human |
+| Evidence-graded audit (E0–E5, CI-ready exit code) | Checks structure and configured gates only; proves neither demand prevalence nor market success |
+| Platform radar and collection | Blocked platforms never bypassed; the Design gate and authorization checks precede any collection |
+| Human delivery (demand-validation study / team workshop) | Scope and fee agreed per engagement; commercial repeat business still being validated |
 
-人工交付**不公布标准价目**：先邮件 <a href="mailto:tongroy18@gmail.com?subject=Askovo%20%E9%9C%80%E6%B1%82%E9%AA%8C%E8%AF%81%20%E2%80%94%20%E4%BB%BB%E5%8A%A1%E5%88%9D%E5%88%A4&body=%E4%BA%A7%E5%93%81%E4%B8%8E%E9%A2%86%E5%9F%9F%EF%BC%88%E8%BD%AF%E4%BB%B6/%E7%A1%AC%E4%BB%B6/%E6%B6%88%E8%B4%B9%E5%93%81/%E6%B1%BD%E8%BD%A6/%E6%89%8B%E6%9C%BA%EF%BC%89%EF%BC%9A%0A%E6%83%B3%E9%AA%8C%E8%AF%81%E7%9A%84%E9%9C%80%E6%B1%82%E6%88%96%E5%86%B3%E7%AD%96%E9%97%AE%E9%A2%98%EF%BC%9A%0A%E5%86%B3%E7%AD%96%E6%88%96%E8%AF%84%E5%AE%A1%E6%97%A5%E6%9C%9F%EF%BC%9A%0A%E5%B7%B2%E6%9C%89%E7%9A%84%E8%B5%84%E6%96%99%E7%B1%BB%E5%9E%8B%EF%BC%88%E9%A6%96%E5%B0%81%E9%82%AE%E4%BB%B6%E8%AF%B7%E5%8B%BF%E9%99%84%E5%8E%9F%E5%A7%8B%E6%95%B0%E6%8D%AE%EF%BC%89%EF%BC%9A%0A%E8%B0%81%E5%AF%B9%E7%BB%93%E6%9E%9C%E8%B4%9F%E8%B4%A3%EF%BC%9A%0A">tongroy18@gmail.com</a> 描述任务（领域、决策问题、日期、已有资料、谁拍板），合适就给书面报价，确认后开工——[接单页](https://roy-tong.github.io/Askovo/first-look.html)。商业交付与开源引擎守同一条纪律：结论不超出证据表述，语义复核与产品签收由决策人负责。免费支持走 [GitHub Issues](https://github.com/roy-tong/askovo/issues)，响应不承诺 SLA。
+Human delivery has **no published price list**: email <a href="mailto:tongroy18@gmail.com?subject=Askovo%20research%20engagement%20%E2%80%94%20initial%20brief&body=Product%20%26%20domain%20%28software%2Fhardware%2Fconsumer%2Fautomotive%2Fmobile%29%3A%0AThe%20demand%20or%20decision%20question%20to%20validate%3A%0ADecision%20or%20review%20date%3A%0AExisting%20materials%20%28please%20don%27t%20attach%20raw%20data%20in%20the%20first%20email%29%3A%0AWho%20owns%20the%20decision%3A%0A">tongroy18@gmail.com</a> describing the task (domain, decision question, dates, existing materials, who owns the decision); if it fits, you get a written quote and work starts after confirmation — see the [engagement page](https://roy-tong.github.io/Askovo/first-look.html). Commercial delivery follows the same discipline as the open-source engine: conclusions never outrun the evidence, and semantic review and product sign-off belong to the decision maker. Free support goes through [GitHub Issues](https://github.com/roy-tong/askovo/issues); no SLA is promised.
 
-<!-- 真实案例（脱敏后回填，沉淀规则见 marketing/services/services.md §4；每单交付后更新）
-## 真实案例
+<!-- Real cases (fill in after anonymization; rules in marketing/services/services.md §4; update after each engagement)
+## Real cases
 
-| 领域 | 原始问题 | 最弱节点 | 补证动作 | 结论状态 |
+| Domain | Original question | Weakest node | Evidence action | Conclusion status |
 |---|---|---|---|---|
 -->
 
-## 文档
+## Documentation
 
-| 文档 | 内容 |
+Docs under `docs/` are Chinese for now; this README and [llms.txt](llms.txt) are the English entry points.
+
+| Doc | Contents |
 |---|---|
-| [市场、需求与商业分析](docs/business-analysis.md) | 三类分析工作流、职责边界及 MRD/PRD/BRD 的关系 |
-| [岗位方法论](docs/product-methodology.md) | 五域 PM、UXR、用户运营与专业分析角色的方法依据 |
-| [产品与商业推理主链](docs/product-reasoning.md) | 七节点、推导边、商业门、反证和人工复核 |
-| [快速开始](docs/quickstart.md) | 从 do 到主链、补证、审计和角色交付 |
-| [核心概念](docs/concepts.md) | 六类结论、证据形式和禁止推断 |
-| [五类产品](docs/modes.md) | 同一主链下的领域验证差异 |
-| [数据契约](docs/data-contract.md) | product-reasoning、study、evidence、judgments |
-| [SURE 引擎](docs/sure-engine.md) | 产品主链与研究支撑引擎的分工 |
-| [平台与连接器](docs/connectors.md) | 平台档位、访问方式和抓取边界 |
-| [CLI 参考](docs/cli.md) | 命令、参数、产物和退出码 |
-| [故障排查](docs/troubleshooting.md) | 安装、路由、断链、采集和 MCP |
+| [Market, demand & business analysis](docs/business-analysis.md) | The three analysis workflows, role boundaries, and how MRD/PRD/BRD relate |
+| [Role methodology](docs/product-methodology.md) | Method basis for PM, UXR, user-ops, and analyst roles across five domains |
+| [Product & business reasoning chain](docs/product-reasoning.md) | Seven nodes, inference edges, business gates, counter-evidence, human review |
+| [Quickstart](docs/quickstart.md) | From `do` to chain, evidence backfill, audit, and role deliverables |
+| [Core concepts](docs/concepts.md) | Six finding types, evidence forms, forbidden inferences |
+| [Five product modes](docs/modes.md) | Domain-specific validation differences on one chain |
+| [Data contract](docs/data-contract.md) | product-reasoning, study, evidence, judgments |
+| [SURE engine](docs/sure-engine.md) | Division between the product chain and the research support engine |
+| [Platforms & connectors](docs/connectors.md) | Platform tiers, access modes, and scraping boundaries |
+| [CLI reference](docs/cli.md) | Commands, arguments, artifacts, and exit codes |
+| [Troubleshooting](docs/troubleshooting.md) | Install, routing, broken chains, collection, MCP |
 
-Agent 入口：[llms.txt](llms.txt) · [AGENTS.md](AGENTS.md) · [SKILL.md](skills/askovo/SKILL.md)。
+Agent entry points: [llms.txt](llms.txt) · [AGENTS.md](AGENTS.md) · [SKILL.md](skills/askovo/SKILL.md).
 
-## 仓库结构
+## Repository layout
 
 ```text
 skills/askovo/
-  SKILL.md                     单入口协议与判断规则
-  assets/domain-packs/         五类产品研究包（不改主链）
-  assets/study-template/       含 product-reasoning 的工作区模板
-  references/                  研究、主链、数据与连接器协议
-  templates/                   MRD/PRD/BRD 与访谈支撑模板
-  scripts/askovo.py            确定性 CLI（唯一行为真值）
-  scripts/sure_engine.py       SURE 支撑引擎与主链脚手架
-  scripts/askovo_mcp.py        MCP 外壳
-docs/                          中文产品与方法论文档
-examples/sample-study/         含完整主链的离线合成样例
-tests/                         CLI、主链、路由、平台、队列、MCP 测试
+  SKILL.md                     single-entry protocol and judgment rules
+  assets/domain-packs/         five product research packs (never change the chain)
+  assets/study-template/       workspace template including product-reasoning
+  references/                  research, chain, data, and connector protocols
+  templates/                   MRD/PRD/BRD and interview support templates
+  scripts/askovo.py            deterministic CLI (single source of behavior)
+  scripts/sure_engine.py       SURE support engine and chain scaffolding
+  scripts/askovo_mcp.py        MCP shell
+docs/                          Chinese product & methodology docs
+examples/sample-study/         offline synthetic sample with a complete chain
+tests/                         CLI, chain, routing, platforms, queue, MCP tests
 ```
 
-参与与发布：[贡献指南](CONTRIBUTING.md) · [安全政策](SECURITY.md) · [发布流程](RELEASING.md) · [行为准则](CODE_OF_CONDUCT.md)。如果 Askovo 帮到了你，给仓库一个 star 能帮更多人找到它——完全自愿，不设任何前提。
+Participating & releasing: [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) · [Release process](RELEASING.md) · [Code of conduct](CODE_OF_CONDUCT.md). If Askovo helps you, a star helps more people find it — entirely voluntary, no strings attached.
 
 ## License
 
-MIT。第三方组件与数据权利边界见 [LICENSE](LICENSE) 与 [docs/connectors.md](docs/connectors.md)。
+MIT. Third-party components and data-rights boundaries: see [LICENSE](LICENSE) and [docs/connectors.md](docs/connectors.md).
 
 ## Local document intake (optional Docling adapter)
 
@@ -353,3 +359,4 @@ askovo audit ./my-study
 ```
 
 Plain UTF-8 `.txt` / `.md` work without Docling. The resulting `.provenance.json` records the original file hash and marks the extraction `unreviewed`. It does **not** make unsupported public-platform scraping permissible. See [feature status](docs/feature-status.md).
+

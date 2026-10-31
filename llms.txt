@@ -13,7 +13,7 @@ Stable raw base: https://raw.githubusercontent.com/roy-tong/askovo/main/
 - Use `askovo audit <study>` when the user already has a corpus; it returns per-claim verdicts and product-chain gate results.
 - [Product reasoning protocol](skills/askovo/references/product-reasoning.md): canonical seven-node schema, rationale/alternative/review rules, evidence joins, and independent delivery/outcome/causal states.
 - [Agent runbook](skills/askovo/references/agent-runbook.md): file-level execution steps, stage gates, and inter-agent handoff format.
-- [README quickstart](README.md): 30-second sample and the chain → evidence → judgment → audit → role-deliverable walkthrough (Chinese).
+- [README quickstart](README.md): 30-second sample and the chain → evidence → judgment → audit → role-deliverable walkthrough (English; full Chinese mirror in [README.zh-CN.md](README.zh-CN.md)).
 
 ## Interfaces
 
