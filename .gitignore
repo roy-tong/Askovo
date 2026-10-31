@@ -30,6 +30,7 @@ dist/
 # Internal commercialization materials (marketing/README.md marks these 内部; only demo/ is public)
 marketing/README.md
 marketing/commercialization-plan.md
-marketing/workbuddy/
 marketing/services/
-marketing/launch/
+
+# Real study runs live outside the repo contract; never commit study outputs
+studies/

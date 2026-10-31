@@ -149,6 +149,8 @@ askovo report ./study                  # 用研状态：06-report/research-statu
 
 一句话：**Askovo 负责“从用户推理到产品与商业”，SURE 负责“让每一步推理知道证据能支持到哪里”。**
 
+**研发后的增长由 [Growovo](https://github.com/roy-tong/Growovo) 承接**：它消费 askovo 的研究判断做定位与增长（定→造→跑），一手增长反馈以同一套 E0–E5 证据分级回流——上下游交换证据，不重复造研究。
+
 ## 研究支撑能力
 
 ### 方法路由
