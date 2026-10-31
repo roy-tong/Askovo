@@ -168,7 +168,7 @@ Assign the strongest directly observed level:
 - `E4-` — rejection, cancellation, return, or abandonment;
 - `E5` — paid ownership, deployment, retained use, repeat behavior, or expansion.
 
-Do not infer a higher level from a lower one. Open-scene E1/E2 evidence cannot prove acceptance of the studied product.
+Do not infer a higher level from a lower one. Open-scene E1/E2 evidence cannot prove acceptance of the studied product. On the chain, a validated need node requires at least one E2 observed-behavior record; E1 statements alone keep the need at `needs-validation`.
 
 ## Build evidence by role
 

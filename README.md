@@ -15,6 +15,8 @@ askovo 是面向**软件、硬件、消费品、汽车、手机**五类产品经
 
 AI 研究工具的产出，每一句听起来都同样自信——有据的和编的看起来一样，签字的人看不出哪句能信。askovo 给每条结论标证据等级（E0–E5）；结论超出证据时，`askovo audit` 直接说出来，退出码 1 可以进 CI。
 
+[官网](https://roy-tong.github.io/askovo/) · [快速开始](docs/quickstart.md) · [产品与商业推理主链](docs/product-reasoning.md) · [岗位方法论](docs/product-methodology.md) · [平台与连接器](docs/connectors.md)
+
 [![Agent Skill](https://img.shields.io/badge/Agent_Skill-Askovo-111111)](skills/askovo/SKILL.md)
 [![CI](https://github.com/roy-tong/askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/askovo/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
@@ -26,6 +28,12 @@ pipx install git+https://github.com/roy-tong/askovo.git
 askovo do "家用摄像头夜间告警误报，想验证样机" --dry-run
 askovo demo
 ```
+
+<!-- 首屏 demo GIF：用 marketing/demo/askovo-demo.tape 录制（vhs），产物拷到 assets/demo/askovo-demo.gif 后取消注释。
+<p align="center">
+  <img src="assets/demo/askovo-demo.gif" alt="askovo demo：一句话路由、推理链骨架、审计超证" width="860">
+</p>
+-->
 
 也可以直接写：`askovo "手机相机夜景和续航" --dry-run`。`--dry-run` 只路由、不写文件；`demo` 运行内置合成样例。
 
@@ -112,7 +120,7 @@ askovo audit ./study --json
 - `product-reasoning.json`：拥有七段产品语义和推导理由；
 - `demand-judgments.json`：拥有需求、方案、商业行为与反证的证据资格判断。
 
-二者通过 `demand_judgment_id + context_key` 连接。节点引用的证据必须已经登记在对应需求判断中，不能靠修改主链文件绕过 E1/E2、E3、E4+/E5、反证和上下文门。
+二者通过 `demand_judgment_id + context_key` 连接。节点引用的证据必须已经登记在对应需求判断中，不能靠修改主链文件绕过 E1/E2、E3、E4+/E5、反证和上下文门。其中痛点→需求这条推导边有明确下限：**需求节点升 validated 必须至少含一条 E2（观察到的替代/绕行/失败行为）证据，仅有 E1 口头陈述只能停在 needs-validation**——说了不算，做了才算。
 
 完整主链也不能证明产品/商业成功；证据齐全也不能补偿缺失的推导理由。自动检查只验证结构与配置，关键语义、市场规模、单位经济仍由人工和专业复核。
 
@@ -194,6 +202,8 @@ E0–E5 只描述需求与商业证据强度，不是产品/商业推理得分�
 
 ## 安装
 
+PyPI 包尚未发布（2026-10-31 核实），当前从源码安装：
+
 ```bash
 pipx install --editable .
 askovo --version
@@ -232,6 +242,26 @@ bash scripts/install-skill.sh ~/.codex/skills
 
 MCP 暴露 `askovo_route`、`askovo_do`、`askovo_chain`、`askovo_platforms`、`askovo_collect`、`askovo_analyze`、`askovo_audit`、`askovo_deliver` 等工具，与 CLI 共用行为；`collect` 默认 dry-run。
 
+## 服务与支持
+
+**引擎永久免费开源**：CLI、Agent Skill、MCP 与五域基础领域包均为 MIT，无功能阉割版。付费的只可能是深度领域资产与人工交付，永远不是引擎本身。
+
+| 能力 | 当前边界 |
+|---|---|
+| 七节点推理链与 MRD/PRD/BRD 投影 | 结构与证据引用自动校验；语义复核由人负责 |
+| 证据分级审计（E0–E5，退出码进 CI） | 只验结构与配置门，不证明需求普遍率或市场成功 |
+| 平台雷达与采集 | blocked 平台不绕过；采集前须过 Design gate 与授权检查 |
+| 人工交付（需求验证 study / 团队工作坊） | 范围与费用按任务商定；商业复购仍在验证 |
+
+人工交付**不公布标准价目**：先邮件 <a href="mailto:tongroy18@gmail.com?subject=Askovo%20%E9%9C%80%E6%B1%82%E9%AA%8C%E8%AF%81%20%E2%80%94%20%E4%BB%BB%E5%8A%A1%E5%88%9D%E5%88%A4&body=%E4%BA%A7%E5%93%81%E4%B8%8E%E9%A2%86%E5%9F%9F%EF%BC%88%E8%BD%AF%E4%BB%B6/%E7%A1%AC%E4%BB%B6/%E6%B6%88%E8%B4%B9%E5%93%81/%E6%B1%BD%E8%BD%A6/%E6%89%8B%E6%9C%BA%EF%BC%89%EF%BC%9A%0A%E6%83%B3%E9%AA%8C%E8%AF%81%E7%9A%84%E9%9C%80%E6%B1%82%E6%88%96%E5%86%B3%E7%AD%96%E9%97%AE%E9%A2%98%EF%BC%9A%0A%E5%86%B3%E7%AD%96%E6%88%96%E8%AF%84%E5%AE%A1%E6%97%A5%E6%9C%9F%EF%BC%9A%0A%E5%B7%B2%E6%9C%89%E7%9A%84%E8%B5%84%E6%96%99%E7%B1%BB%E5%9E%8B%EF%BC%88%E9%A6%96%E5%B0%81%E9%82%AE%E4%BB%B6%E8%AF%B7%E5%8B%BF%E9%99%84%E5%8E%9F%E5%A7%8B%E6%95%B0%E6%8D%AE%EF%BC%89%EF%BC%9A%0A%E8%B0%81%E5%AF%B9%E7%BB%93%E6%9E%9C%E8%B4%9F%E8%B4%A3%EF%BC%9A%0A">tongroy18@gmail.com</a> 描述任务（领域、决策问题、日期、已有资料、谁拍板），合适就给书面报价，确认后开工——[接单页](https://roy-tong.github.io/askovo/first-look.html)。商业交付与开源引擎守同一条纪律：结论不超出证据表述，语义复核与产品签收由决策人负责。免费支持走 [GitHub Issues](https://github.com/roy-tong/askovo/issues)，响应不承诺 SLA。
+
+<!-- 真实案例（脱敏后回填，沉淀规则见 marketing/services/services.md §4；每单交付后更新）
+## 真实案例
+
+| 领域 | 原始问题 | 最弱节点 | 补证动作 | 结论状态 |
+|---|---|---|---|---|
+-->
+
 ## 文档
 
 | 文档 | 内容 |
@@ -267,7 +297,7 @@ examples/sample-study/         含完整主链的离线合成样例
 tests/                         CLI、主链、路由、平台、队列、MCP 测试
 ```
 
-参与与发布：[贡献指南](CONTRIBUTING.md) · [安全政策](SECURITY.md) · [发布流程](RELEASING.md) · [行为准则](CODE_OF_CONDUCT.md)。
+参与与发布：[贡献指南](CONTRIBUTING.md) · [安全政策](SECURITY.md) · [发布流程](RELEASING.md) · [行为准则](CODE_OF_CONDUCT.md)。如果 Askovo 帮到了你，给仓库一个 star 能帮更多人找到它——完全自愿，不设任何前提。
 
 ## License
 

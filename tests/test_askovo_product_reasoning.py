@@ -568,6 +568,48 @@ class ProductReasoningTests(unittest.TestCase):
         for field in ("geographies", "segments", "pricing"):
             self.assertIn(field, detail)
 
+    def test_validated_need_requires_e2_observed_behavior(self) -> None:
+        data = json.loads(self.reasoning_path.read_text(encoding="utf-8"))
+        data["chains"][0]["nodes"]["need"]["evidence_ids"] = ["R02"]
+        self.write_reasoning(data)
+        completed = run_cli("check", str(self.target), "--stage", "full")
+        self.assertEqual(1, completed.returncode, completed.stdout + completed.stderr)
+        check = self.assert_product_check(json.loads(completed.stdout), "fail")
+        self.assertIn("PR01.need validated need requires at least one E2 observed-behavior evidence", check["detail"])
+
+    def test_orphan_psm_report_warns_but_does_not_fail(self) -> None:
+        psm_path = self.target / "06-report" / "pricing-psm.md"
+        psm_path.parent.mkdir(parents=True, exist_ok=True)
+        psm_path.write_text("# 价格敏感度（van Westendorp PSM）投影\n", encoding="utf-8")
+        completed = run_cli("check", str(self.target), "--stage", "full")
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        payload = json.loads(completed.stdout)
+        warning = next(item for item in payload["checks"] if item["id"] == "pricing_psm_link")
+        self.assertEqual("warn", warning["status"])
+        self.assertIn("E4-", warning["detail"])
+
+    def test_psm_report_anchored_by_pricing_entry_does_not_warn(self) -> None:
+        data = json.loads(self.reasoning_path.read_text(encoding="utf-8"))
+        data["chains"][0]["nodes"]["business"]["pricing"].append(
+            {
+                "model": "psm_survey",
+                "amount": None,
+                "currency": "not_asserted",
+                "unit": "survey",
+                "term": "n/a",
+                "evidence_type": "psm_survey",
+                "evidence_ids": ["R05"],
+            }
+        )
+        self.write_reasoning(data)
+        psm_path = self.target / "06-report" / "pricing-psm.md"
+        psm_path.parent.mkdir(parents=True, exist_ok=True)
+        psm_path.write_text("# 价格敏感度（van Westendorp PSM）投影\n", encoding="utf-8")
+        completed = run_cli("check", str(self.target), "--stage", "full")
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertFalse(any(item["id"] == "pricing_psm_link" for item in payload["checks"]))
+
     def test_market_estimate_with_a_value_needs_denominator_and_source(self) -> None:
         data = json.loads(self.reasoning_path.read_text(encoding="utf-8"))
         estimate = data["chains"][0]["nodes"]["business"]["market_estimates"][0]

@@ -58,7 +58,7 @@ Node-specific fields:
 
 A feature request is both a demand signal and a candidate solution, never sufficient proof of the Need node. Rewrite the need without solution vocabulary, then compare the original request with other candidates.
 
-Evidence on a node does not prove its incoming inference. Pay particular attention to `pain → need`, `need → feature`, and `feature → product`.
+Evidence on a node does not prove its incoming inference. Pay particular attention to `pain → need`, `need → feature`, and `feature → product`. For the `pain → need` edge the CLI enforces one minimum: a validated need node must cite at least one E2 record (observed substitute, workaround, or failure). Stated pain alone (E1) keeps the need at `needs-validation` — words are a signal, observed effort is a stronger one.
 
 ## Decision and evidence states are different
 
@@ -111,7 +111,7 @@ Node references are projections of the judgment ledger:
 Direct-evidence minima for validated nodes:
 
 - scene/user: semantically appropriate direct records other than E4-;
-- pain/need: E1/E2;
+- pain/need: E1/E2; a validated need additionally requires at least one E2 observed-behavior record (E1 alone stays needs-validation);
 - feature/product: E3 acceptance; the original judgment separately requires commercial/behavioral evidence for its own validated status;
 - business: E4+ commercial intent or E5 paid/retained/expanded behavior. This supports the current commercial decision, not a claim of sustainable business success, market size, or causal effect.
 
@@ -148,7 +148,7 @@ Discovery and delivery may run in parallel. Launch does not end discovery. These
 
 Projection mapping: **market research/analysis → MRD**, **requirements research/analysis → PRD**, **business analysis → BRD**. These are views of one chain, not three fact stores. Market estimates require population/boundary, time window, unit, formula, source, and inference scope; payment evidence distinguishes list price, stated intent, preorder, paid transaction, and renewal. Unknown values stay null with gaps, never zero.
 
-Business-node support commands: `askovo economics` renders a deterministic unit-economics projection (numeric, unit-matched, source-referenced inputs only; "cost-like" sums are name-based and indicative; arithmetic check, never commercial proof) and `askovo psm --input <csv>` renders a van Westendorp price-sensitivity projection (PMC/OPP/IDP/PME plus the acceptable range). PSM answers are stated intent, not paid behavior; neither output validates the business node by itself. Write findings back into `pricing`/`unit_economics_inputs`/`gaps`; do not create a second business truth in the reports.
+Business-node support commands: `askovo economics` renders a deterministic unit-economics projection (numeric, unit-matched, source-referenced inputs only; "cost-like" sums are name-based and indicative; arithmetic check, never commercial proof) and `askovo psm --input <csv>` renders a van Westendorp price-sensitivity projection (PMC/OPP/IDP/PME plus the acceptable range). PSM answers are stated intent, not paid behavior; neither output validates the business node by itself. Write findings back into `pricing`/`unit_economics_inputs`/`gaps`; do not create a second business truth in the reports. If `06-report/pricing-psm.md` exists without a `business.pricing` entry citing PSM or a registered E4- record, `askovo check` emits a `pricing_psm_link` warning so the projection cannot silently float outside the chain.
 
 ## Role projections
 

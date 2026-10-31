@@ -175,7 +175,7 @@ Assign the strongest directly observed level:
 | E4- | Rejection/return/abandonment | “Direct negative commercial evidence exists.” |
 | E5 | Paid use/deployment/retention/expansion | “Observed behavior supports realized demand.” |
 
-Do not collapse the levels into one undifferentiated count.
+Do not collapse the levels into one undifferentiated count. On the product chain, E1 and E2 are not interchangeable for the need node: a validated need requires at least one E2 record (observed substitute, workaround, or failure); E1 statements alone keep the need at `needs-validation`.
 
 Create a demand judgment only when the following can be filled with evidence:
 

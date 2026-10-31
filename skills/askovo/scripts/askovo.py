@@ -2186,6 +2186,11 @@ def _check_product_reasoning(
                     f"{prefix} validated lacks direct evidence at {', '.join(sorted(accepted_levels))}; "
                     "a rationale is still required and is not proved by evidence volume"
                 )
+            elif node_name == "need" and "E2" not in observed_levels:
+                errors.append(
+                    f"{prefix} validated need requires at least one E2 observed-behavior evidence "
+                    "(substitute, workaround, or failure); stated pain alone (E1) stays needs-validation"
+                )
 
         counter_ids = chain.get("counter_evidence_ids") if isinstance(chain.get("counter_evidence_ids"), list) else []
         all_references.update(str(value) for value in counter_ids)
@@ -2272,6 +2277,40 @@ def _check_product_reasoning(
         else f"{len(chains)} product chain(s) make every node and inference rationale explicit",
         stage,
     )
+
+    if not design_only and "business" in required_nodes:
+        psm_report_path = paths["study"].parent / "06-report" / "pricing-psm.md"
+        if psm_report_path.is_file():
+            anchored = False
+            for chain_item in chains if isinstance(chains, list) else []:
+                if not isinstance(chain_item, dict):
+                    continue
+                node_map = chain_item.get("nodes") if isinstance(chain_item.get("nodes"), dict) else {}
+                business_node = node_map.get("business") if isinstance(node_map.get("business"), dict) else {}
+                pricing_entries = business_node.get("pricing") if isinstance(business_node.get("pricing"), list) else []
+                for price in pricing_entries:
+                    if not isinstance(price, dict):
+                        continue
+                    if "psm" in str(price.get("evidence_type", "")).casefold():
+                        anchored = True
+                        break
+                    price_evidence = price.get("evidence_ids") if isinstance(price.get("evidence_ids"), list) else []
+                    if any(
+                        str(evidence_by_id.get(str(evidence_id), {}).get("evidence_level")) == "E4-"
+                        for evidence_id in price_evidence
+                    ):
+                        anchored = True
+                        break
+                if anchored:
+                    break
+            if not anchored:
+                audit.add(
+                    "pricing_psm_link",
+                    "warn",
+                    "06-report/pricing-psm.md exists but no business.pricing entry cites PSM or stated-intent (E4-) evidence; "
+                    "write the findings back into business.pricing with a registered E4- record or drop the orphan report",
+                    stage,
+                )
 
 
 def audit_study(root: Path, stage: str) -> Audit:

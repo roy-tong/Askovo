@@ -1790,7 +1790,7 @@ def _psm_intersections(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def psm_report(csv_path: Path, currency: str) -> tuple[str, dict[str, Any]]:
+def psm_report(csv_path: Path, currency: str, study_ref: str = "") -> tuple[str, dict[str, Any]]:
     """Van Westendorp price-sensitivity projection with explicit intent boundaries."""
     valid, rejected = _parse_psm_rows(csv_path)
     result: dict[str, Any] = {"valid_rows": len(valid), "rejected_rows": len(rejected)}
@@ -1800,9 +1800,12 @@ def psm_report(csv_path: Path, currency: str) -> tuple[str, dict[str, Any]]:
         "> 四问口径：太便宜 / 便宜 / 贵 / 太贵。交点由样本累积分布线性插值得出。",
         "> PSM 是陈述意向，不是付费行为：结果不能直接作为商业节点 validated 证据（E4/E5 需一方付费证据），",
         "> 竞品标价也不是自有定价证据。样本代表性、购买意向偏差与货币口径需人工评审。",
+        "> 交点结论如需计入商业节点：回写 business.pricing 并引用一条注册的 E4-（陈述意向）证据，",
+        "> 否则 `askovo check` 会提示 pricing-psm.md 是游离报告。",
         "",
         f"- 输入：{csv_path.name}；有效 {len(valid)} 行，剔除 {len(rejected)} 行",
         f"- 币种标注：{currency}",
+        f"- 归属 study：{study_ref or '未注明（未在 study 目录内运行，不关联 study 契约）'}",
         "",
     ]
     if rejected:
@@ -3778,8 +3781,13 @@ def cli_psm(args: Any) -> int:
         return 2
     try:
         study_dir = Path(args.study_dir).resolve()
+        try:
+            study_meta = load_json(study_dir / "study.json")
+        except (OSError, json.JSONDecodeError):
+            study_meta = None
+        study_ref = str(study_meta.get("study_id") or "") if isinstance(study_meta, dict) else ""
         currency = str(getattr(args, "currency", "") or "未注明币种")
-        markdown, stats = psm_report(csv_path, currency)
+        markdown, stats = psm_report(csv_path, currency, study_ref)
         report = study_dir / "06-report" / "pricing-psm.md"
         report.parent.mkdir(parents=True, exist_ok=True)
         report.write_text(markdown, encoding="utf-8")

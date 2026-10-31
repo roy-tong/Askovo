@@ -170,7 +170,7 @@ business 使用 `market_definition`、`geographies`、`time_window`、`included_
 | `user_role` / `scene` / `task` | 必须与证据一致 |
 | `current_substitute` / `friction` / `consequence` | 问题链叙事 |
 | `solution` / `acceptance_conditions` | 方案与接受条件 |
-| `problem_evidence_ids` | 需要 `E1/E2` |
+| `problem_evidence_ids` | 需要 `E1/E2`；主链上 need 节点升 `validated` 还须至少含一条 `E2`（观察到的替代/绕行/失败行为），仅 `E1` 陈述停在 `needs-validation` |
 | `solution_evidence_ids` | 需要 `E3` |
 | `commercial_evidence_ids` | 需要 `E4+` / `E5` |
 | `counter_evidence_ids` | 反证 |
