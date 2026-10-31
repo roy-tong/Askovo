@@ -1,7 +1,7 @@
 {
   "study_id": "synthetic-mobile-pet-check",
   "title": "Synthetic mobile pet-check study",
-  "method_version": "2.4.1",
+  "method_version": "2.5.0",
   "product_reasoning_version": "2.0",
   "product_reasoning": {
     "flow": [
