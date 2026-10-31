@@ -27,6 +27,7 @@ askovo route "<request>" --json                # route only
 askovo platforms "<request>" --domain …        # where supporting data lives
 askovo collect <study> --platform …            # collect/import against a chain gap
 askovo analyze <study> --question …            # normalize/describe
+askovo deliver <study> --kind decision         # Decision Package (chain-led, five decision views)
 askovo deliver <study> --kind mrd              # market research/analysis projection
 askovo deliver <study> --kind prd              # requirements research/analysis projection
 askovo deliver <study> --kind brd              # business analysis projection
@@ -58,6 +59,18 @@ askovo deliver <study> --kind signoff            # F3: stakeholder sign-off one-
 | An audited corpus plus a decision question | Synthesize | Product/business chain, demand judgments, and falsification backlog |
 
 Infer the mode when the artifacts make it clear. For end-to-end or file-producing work, read [references/agent-runbook.md](references/agent-runbook.md). For methodological decisions, read [references/research-protocol.md](references/research-protocol.md). Before writing records or collectors, read [references/data-contract.md](references/data-contract.md). When synthesis must grow into decision-facing business documents, use the three projections: **market research/analysis → MRD**, **requirements research/analysis → PRD**, **business analysis → BRD**. Start from the bundled template groups [templates/integration-docs/runbook.md](templates/integration-docs/runbook.md) and [templates/interview-kit/runbook.md](templates/interview-kit/runbook.md); never create a second market or requirement truth beside the chain.
+
+### Task entries (one skill, one entry — never separate installs)
+
+Users arrive with three recurring task shapes. They map onto the modes above and always end in the same chain; only the deliverable differs:
+
+| Task entry | User asks | Loop | Deliverable |
+| --- | --- | --- | --- |
+| `askovo-discover` | “研究这个市场/问题，什么值得做” | Frame/Grounding → collection against chain gaps → chain draft with demand judgments | `deliver --kind decision` (Opportunity Map + Evidence Graph); MRD view when market boundary matters |
+| `askovo-validate` | “审查这个产品设想，哪些假设没证据” | Audit → import missing evidence → re-run `audit` against level gates | `deliver --kind decision` (Validation Backlog: gaps, needs-validation nodes, cheapest decision-changing test) |
+| `askovo-decide` | “比较候选方向，给决策建议” | One chain per candidate → `decided` on the chosen one → synthesize | `deliver --kind decision` (Decision Memo: prioritization, rejected options, confidence bounds, delivery/outcome/causal states kept separate) |
+
+The Decision Package (`askovo deliver --kind decision` → `06-report/decision-package.md`) is the shared decision-side projection of the same chain. MRD/PRD/BRD/ops remain its market/requirements/business/operations views, not independent conclusions, and a `decided` chain is a choice record — never release or commercial proof.
 
 When a supported platform is in scope, read [references/open-source-connectors.md](references/open-source-connectors.md) and [references/connector-contract.md](references/connector-contract.md) before choosing acquisition code. Then read the shared adapter and matching platform reference:
 
@@ -112,6 +125,7 @@ The generated paths are the handoff contract:
 - `04-findings/signals.json` — deterministic corpus signals;
 - `05-audit/` — machine-readable and human-readable checks;
 - `06-report/report.md` — combined product/business report from `deliver --kind report`;
+- `06-report/decision-package.md` — decision-side projection from `deliver --kind decision`;
 - `06-report/mrd.md` — market research/analysis projection from `deliver --kind mrd`;
 - `06-report/prd.md` — requirements research/analysis projection from `deliver --kind prd`;
 - `06-report/brd.md` — business analysis projection from `deliver --kind brd`;
@@ -132,6 +146,7 @@ After evidence exists, compute signals and render role projections:
 python3 scripts/askovo.py signals STUDY
 python3 scripts/askovo.py report STUDY
 python3 scripts/askovo.py deliver STUDY --kind report
+python3 scripts/askovo.py deliver STUDY --kind decision
 python3 scripts/askovo.py deliver STUDY --kind ops
 ```
 

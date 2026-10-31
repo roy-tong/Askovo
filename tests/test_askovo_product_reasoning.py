@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -532,6 +533,79 @@ class ProductReasoningTests(unittest.TestCase):
         business_rows = [row for row in rows if row["node_id"] == "business"]
         self.assertEqual({"pilot_retained_use"}, {row["metric"] for row in business_rows})
         self.assertTrue(all(row["metric"] and row["next_action"] for row in rows))
+
+    def test_decision_package_projects_the_same_chain(self) -> None:
+        delivered = run_cli("deliver", str(self.target), "--kind", "decision")
+        self.assertEqual(0, delivered.returncode, delivered.stdout + delivered.stderr)
+        package_path = self.target / "06-report/decision-package.md"
+        self.assertTrue(package_path.is_file())
+        text = package_path.read_text(encoding="utf-8")
+        # 五个决策侧视图全部在场，且按固定顺序排列
+        sections = (
+            "## 1. 机会地图（Opportunity Map）",
+            "## 2. 证据图（Evidence Graph）",
+            "## 3. 选项与权衡（Options & Trade-offs）",
+            "## 4. 决策备忘（Decision Memo）",
+            "## 5. 验证清单（Validation Backlog）",
+            "## 边界",
+        )
+        for section in sections:
+            self.assertIn(section, text)
+        positions = [text.index(section) for section in sections]
+        self.assertEqual(sorted(positions), positions)
+        self.assertIn("PR01", text)
+        # decided 主链进入决策备忘：优先级、三态分列、非证明读法
+        self.assertIn("产品/商业选择记录", text)
+        self.assertIn("Illustrative product team", text)
+        self.assertIn("交付 `unplanned`", text)
+        self.assertIn("结果 `observing`", text)
+        self.assertIn("因果 `not-claimed`", text)
+        self.assertIn("最便宜且能改变决策的下一验证", text)
+        # 证据可回溯：包内引用的证据 id 必须存在于 evidence.jsonl
+        evidence_ids = {
+            json.loads(line)["record_id"]
+            for line in (self.target / "02-data/evidence.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        }
+        cited = set(re.findall(r"`(R\d+)`", text))
+        self.assertTrue(cited)
+        self.assertTrue(cited <= evidence_ids, cited - evidence_ids)
+        # 单链时选项节如实声明，不虚构多方案对比
+        self.assertIn("单一主链", text)
+
+    def test_decision_package_degrades_without_decided_chain(self) -> None:
+        data = json.loads(self.reasoning_path.read_text(encoding="utf-8"))
+        chain = data["chains"][0]
+        chain["status"] = "draft"
+        for node in chain["nodes"].values():
+            node["status"] = "needs-validation"
+        self.write_reasoning(data)
+        delivered = run_cli("deliver", str(self.target), "--kind", "decision")
+        self.assertEqual(0, delivered.returncode, delivered.stdout + delivered.stderr)
+        text = (self.target / "06-report/decision-package.md").read_text(encoding="utf-8")
+        memo = text[text.index("## 4."):text.index("## 5.")]
+        self.assertIn("尚无可决策主链", memo)
+        self.assertIn("未达标节点", memo)
+        backlog = text[text.index("## 5."):]
+        self.assertIn("待验证节点", backlog)
+        self.assertNotIn("产品/商业选择记录", memo)
+
+    def test_mcp_deliver_supports_decision_kind(self) -> None:
+        responses = run_mcp(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "askovo_deliver",
+                    "arguments": {"study_dir": str(self.target), "kind": "decision"},
+                },
+            }
+        )
+        payload = json.loads(responses[0]["result"]["content"][0]["text"])
+        self.assertEqual(0, payload["exit_code"], json.dumps(payload, ensure_ascii=False))
+        self.assertEqual("written", payload["result"]["status"])
+        self.assertTrue((self.target / "06-report/decision-package.md").is_file())
 
     def test_product_and_research_reports_have_distinct_writers(self) -> None:
         product = run_cli("deliver", str(self.target), "--kind", "report")

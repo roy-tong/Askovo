@@ -23,7 +23,7 @@ askovo --help
 | `instruments <study>` | 生成访谈/观察/任务/感官/价格/Beta/安全工具包 | 0/2 |
 | `import <study> <file>` | 导入 JSONL/CSV/文本为证据 | 0/2 |
 | `codebook <study>` | 生成六类结论的编码本 | 0/2 |
-| `deliver <study>` | 主链 memo / 总 report / MRD / PRD / BRD / 运营 ops / tracker | 0/2 |
+| `deliver <study>` | 决策包 decision / 主链 memo / 总 report / MRD / PRD / BRD / 运营 ops / tracker / 签收 signoff | 0/2 |
 | `report <study>` | 中文研究状态报告（UXR 视角）→ `06-report/research-status.md` | 0/2 |
 | `signals <study>` | 从 evidence.jsonl 计算确定性语料信号 | 0/2 |
 | `lexicon <study>` | 未命名体验模式：词表产出与充分性检查 | 0/1/2 |
@@ -179,6 +179,7 @@ askovo report ./study
 
 `deliver --kind`：
 
+- `decision`：决策包（Decision Package），写 `06-report/decision-package.md`——机会地图/证据图/选项与权衡/决策备忘/验证清单五个决策侧视图，全部由同一条主链与需求判断投影；
 - `memo`：产品/商业决策 memo；
 - `report`：产品与商业推理总报告，写 `06-report/report.md`；
 - `mrd`：市场研究与分析投影，写 `06-report/mrd.md`；
@@ -187,7 +188,7 @@ askovo report ./study
 - `ops`：场景×用户分群、痛点/异议和运营回流，写 `06-report/user-ops.md`；
 - `tracker`：从特性/产品验收和商业成功指标生成带 chain/node ID 的跟踪行，写 `06-report/postlaunch-tracker.csv`。
 
-`askovo report` 是用研支撑报告，写 `06-report/research-status.md`；它不与产品/商业 `deliver --kind report` 共用文件。所有交付都从同一七节点主链渲染，不另建语义真值。MRD、PRD、BRD 分别对应市场研究/分析、需求研究/分析、商业分析三条工作流，不是三个平行事实库。
+`askovo report` 是用研支撑报告，写 `06-report/research-status.md`；它不与产品/商业 `deliver --kind report` 共用文件。所有交付都从同一七节点主链渲染，不另建语义真值。决策包是决策侧汇总视图；MRD、PRD、BRD 分别对应市场研究/分析、需求研究/分析、商业分析三条工作流，不是三个平行事实库。
 
 `check --stage design/evidence/full` 分别检查设计、证据和完整决策结构；`audit` 另输出逐条需求判断 verdict。返回 1 是合法研究状态，应修复主链/证据缺口或明确下一步，不能绕过。
 

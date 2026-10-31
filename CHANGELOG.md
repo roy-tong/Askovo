@@ -1,6 +1,18 @@
 # Changelog
 
 
+## 2.5.0 — 2026-10-31
+
+### Added
+
+- **Decision Package (`askovo deliver --kind decision`)**: `06-report/decision-package.md` renders five decision-side views from the same seven-node chain and demand judgments — Opportunity Map (chain readiness, prioritization), Evidence Graph (per-node evidence ids with E0–E5 levels, counter-evidence, judgment link), Options & Trade-offs (multi-chain comparison; a single chain is stated as such, never dressed up as a comparison), Decision Memo (only `decided` chains: prioritization, business gate, confidence bounds, rejected/deprioritized reasons, delivery/outcome/causal states kept separate; degrades to a gap list without a decided chain), and Validation Backlog (gaps, needs-validation nodes, cheapest decision-changing test). Zero new facts: every field is a projection of `04-findings/`; MRD/PRD/BRD/ops remain its market/requirements/business/operations views. MCP `askovo_deliver` gains the `decision` kind.
+- **Task entries in the Skill**: `askovo-discover` / `askovo-validate` / `askovo-decide` map the three recurring task shapes onto the existing modes and the Decision Package sections — one skill, one entry, never separate installs.
+- README repositioned: a full "research question → decision result" walkthrough (sample study → chain → Decision Package excerpt) now leads; five-domain and MRD/PRD/BRD tables stay as the support layer; first-focus domains stated (AI software, developer tools, smart hardware). Free/commercial boundary wording unchanged.
+
+### Validation
+
+- 150 tests pass, including Decision Package section structure/order, evidence-id traceability against `evidence.jsonl`, no-decided-chain degradation, and MCP `kind=decision` dispatch.
+
 ## 2.4.1 — 2026-10-31
 
 ### Fixed

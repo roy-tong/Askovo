@@ -319,8 +319,8 @@ def _build_codebook(arguments: dict[str, Any]) -> argparse.Namespace:
 
 def _build_deliver(arguments: dict[str, Any]) -> argparse.Namespace:
     kind = arguments.get("kind", "memo")
-    if kind not in ("memo", "report", "mrd", "prd", "brd", "ops", "tracker", "signoff"):
-        raise ValueError("kind must be memo, report, mrd, prd, brd, ops, tracker or signoff")
+    if kind not in ("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff"):
+        raise ValueError("kind must be memo, report, mrd, prd, brd, ops, decision, tracker or signoff")
     return _namespace(study_dir=_string(arguments.get("study_dir"), "study_dir"), kind=kind)
 
 
@@ -653,7 +653,7 @@ TOOLS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "study_dir": {"type": "string"},
-                "kind": {"enum": ["memo", "report", "mrd", "prd", "brd", "ops", "tracker", "signoff"], "default": "memo"},
+                "kind": {"enum": ["memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff"], "default": "memo"},
             },
             "required": ["study_dir"],
         },

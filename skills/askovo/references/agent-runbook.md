@@ -15,6 +15,12 @@ Inspect the user's inputs before creating anything.
 
 Do not ask the user to choose a mode when it follows from the available artifacts. State the inferred mode and proceed. Ask only when a missing decision boundary would materially change sources, privacy handling, or the product decision.
 
+Three recurring task shapes run through the same loop and end in the same chain; only the closing deliverable differs:
+
+- **askovo-discover**（研究问题 → 机会）: steps 1–7 with collection aimed at chain gaps, close with `askovo deliver <study> --kind decision` and read back the Opportunity Map / Evidence Graph sections.
+- **askovo-validate**（审查设想 → 验证清单）: start at Audit (step 1, row 3), import the missing evidence roles, re-run `audit`/`check --stage full`, close with `deliver --kind decision` and read back the Validation Backlog (gaps, needs-validation nodes, cheapest decision-changing test).
+- **askovo-decide**（候选比较 → 决策备忘）: build one chain per candidate (step 7A), mark the chosen chain `decided` only after all seven nodes are validated, close with `deliver --kind decision` and read back the Decision Memo. A `decided` chain is a choice record; delivery/outcome/causal states stay separate.
+
 ## 2. Create a study workspace
 
 For a new product question, start with `do`, then render the chain:

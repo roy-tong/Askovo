@@ -1837,6 +1837,279 @@ def psm_report(csv_path: Path, currency: str, study_ref: str = "") -> tuple[str,
     return "\n".join(lines), result
 
 
+def _decision_package_lines(
+    study: dict[str, Any],
+    reasoning: dict[str, Any] | None,
+    evidence: dict[str, Any],
+) -> list[str]:
+    """Decision Package：同一条推理链/需求判断的五个决策侧视图。
+
+    机会地图 / 证据图 / 选项与权衡 / 决策备忘 / 验证清单——全部字段来自
+    04-findings 的链与判定，本函数不产生新事实、不合成数字；决策边界与
+    支撑证据表由 deliver() 统一追加。MRD/PRD/BRD 是本包的市场/需求/商业
+    投影，不是独立结论来源。
+    """
+    route = study.get("route") or {}
+    decision = study.get("decision") or {}
+    chains = reasoning.get("chains", []) if isinstance(reasoning, dict) else []
+    chains = [chain for chain in chains if isinstance(chain, dict)]
+    levels = {
+        str(record.get("record_id")): str(record.get("evidence_level") or "unclassified")
+        for record in evidence.get("records", [])
+    }
+    lines: list[str] = [
+        f"# 决策包 Decision Package：{study.get('title', '')}",
+        "",
+        f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label', study.get('product_domain', ''))}；"
+        f"阶段：{route.get('stage_label', study.get('lifecycle_stage', ''))}。",
+        "",
+        f"- 决策问题：{decision.get('question') or study.get('decision_question') or study.get('title', '待确认')}",
+        f"- 决策负责人：{decision.get('owner') or '待确认'}；截止：{decision.get('deadline') or '未设置'}",
+        "",
+        "> 本包是研究投影：所有判断、证据与缺口以 `04-findings/` 为准；证据强度不等于商业或发布证明。",
+        "",
+    ]
+
+    # ── 1. 机会地图 ────────────────────────────────────────────
+    lines.extend(["## 1. 机会地图（Opportunity Map）", ""])
+    if not chains:
+        lines.extend(
+            [
+                "尚无产品推理链。机会地图需要至少一条 `scene → … → business` 主链："
+                "先运行 `askovo do` 建立研究工作区并补齐推理链，再生成决策包。",
+                "",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "| 主链 | 机会（场景×用户×痛点） | 状态 | 节点就绪 | 需求判断 | 优先级结论 |",
+                "|---|---|---|---|---|---|",
+            ]
+        )
+        for chain in chains:
+            nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
+            flow_value = (reasoning or {}).get("flow")
+            flow = tuple(flow_value) if isinstance(flow_value, list) and flow_value else REASONING_NODES
+            validated = sum(
+                1 for name in flow
+                if isinstance(nodes.get(name), dict) and nodes.get(name, {}).get("status") == "validated"
+            )
+            scene = nodes.get("scene", {}) if isinstance(nodes.get("scene"), dict) else {}
+            user = nodes.get("user", {}) if isinstance(nodes.get("user"), dict) else {}
+            pain = nodes.get("pain", {}) if isinstance(nodes.get("pain"), dict) else {}
+            opportunity = "／".join(
+                str(part) for part in (
+                    scene.get("statement"), user.get("role"), pain.get("statement"),
+                ) if part
+            ) or chain.get("title", "未命名")
+            prioritization = chain.get("prioritization", {})
+            priority_bit = ""
+            if isinstance(prioritization, dict) and prioritization.get("rationale"):
+                priority_bit = str(prioritization.get("rationale"))
+            lines.append(
+                f"| `{chain.get('id', 'PR?')}` | {_markdown_cell(opportunity)} | "
+                f"`{chain.get('status', 'unknown')}` | {validated}/{len(flow)} validated | "
+                f"`{chain.get('demand_judgment_id') or '未关联'}` | {_markdown_cell(priority_bit or '未记录')} |"
+            )
+        lines.extend(
+            [
+                "",
+                "节点就绪 = 已验证节点数 / 主链节点总数；`decided` 才进入第 4 节决策备忘。",
+                "",
+            ]
+        )
+
+    # ── 2. 证据图 ──────────────────────────────────────────────
+    lines.extend(["## 2. 证据图（Evidence Graph）", ""])
+    if not chains:
+        lines.append("无链可引用；证据图随推理链建立生成。")
+        lines.append("")
+    for chain in chains:
+        nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
+        flow_value = (reasoning or {}).get("flow")
+        flow = tuple(flow_value) if isinstance(flow_value, list) and flow_value else REASONING_NODES
+        lines.extend(
+            [
+                f"### {chain.get('id', 'PR?')} 的证据支撑",
+                "",
+                "| 节点 | 状态 | 引用证据（等级） |",
+                "|---|---|---|",
+            ]
+        )
+        level_counter: dict[str, int] = {}
+        for name in flow:
+            node = nodes.get(name, {})
+            if not isinstance(node, dict):
+                node = {}
+            ids = [str(item) for item in node.get("evidence_ids", [])]
+            rendered = ", ".join(f"`{item}`（{levels.get(item, '?')}）" for item in ids)
+            for item in ids:
+                level_counter[levels.get(item, "?")] = level_counter.get(levels.get(item, "?"), 0) + 1
+            lines.append(
+                f"| {REASONING_NODE_LABELS[name]} | `{node.get('status', 'unknown')}` | "
+                f"{_markdown_cell(rendered) or '—'} |"
+            )
+        counter_ids = [str(item) for item in chain.get("counter_evidence_ids", [])]
+        for item in counter_ids:
+            level_counter[levels.get(item, "?")] = level_counter.get(levels.get(item, "?"), 0) + 1
+        counter_rendered = ", ".join(
+            "`%s`（%s）" % (item, levels.get(item, "?")) for item in counter_ids
+        )
+        lines.append(f"- 反证：{counter_rendered or '未记录'}")
+        lines.append(
+            f"- 证据等级分布（本链引用）：{json.dumps(level_counter, ensure_ascii=False) if level_counter else '无引用'}"
+        )
+        lines.append(
+            f"- 需求判断链接：`{chain.get('demand_judgment_id') or '未关联'}`；"
+            f"context_key `{chain.get('context_key') or '未设置'}`（链/判定/证据三方一致才有效，"
+            "以 `askovo audit` 判定为准）"
+        )
+        lines.append("")
+
+    # ── 3. 选项与权衡 ─────────────────────────────────────────
+    lines.extend(["## 3. 选项与权衡（Options & Trade-offs）", ""])
+    if len(chains) >= 2:
+        lines.extend(
+            [
+                "| 选项（主链） | 状态 | 优先级理由 | 主要反证 | 替代解释 |",
+                "|---|---|---|---|---|",
+            ]
+        )
+        for chain in chains:
+            alternatives = chain.get("alternative_explanations", [])
+            counter_ids = [str(item) for item in chain.get("counter_evidence_ids", [])]
+            prioritization = chain.get("prioritization", {})
+            rationale = (prioritization or {}).get("rationale") if isinstance(prioritization, dict) else ""
+            lines.append(
+                f"| `{chain.get('id', 'PR?')}` {chain.get('title', '')} | `{chain.get('status', 'unknown')}` | "
+                f"{_markdown_cell(str(rationale or '未记录'))} | "
+                f"{_markdown_cell(', '.join(f'`{i}`' for i in counter_ids) or '未记录')} | "
+                f"{_markdown_cell('；'.join(str(a) for a in alternatives) or '未记录')} |"
+            )
+        lines.append("")
+    elif len(chains) == 1:
+        chain = chains[0]
+        alternatives = chain.get("alternative_explanations", [])
+        lines.append(
+            f"当前只有单一主链 `{chain.get('id', 'PR?')}`，尚未形成多方案对比——这不代表它是最优解，"
+            "只代表尚未构造竞争选项。该链自身的替代解释："
+        )
+        lines.append("")
+        if alternatives:
+            for item in alternatives:
+                lines.append(f"- {item}")
+        else:
+            lines.append("- 未记录替代解释（决策前必须补齐，见产品推理协议）。")
+        lines.append("")
+    else:
+        lines.append("无选项可比。")
+        lines.append("")
+
+    # ── 4. 决策备忘 ────────────────────────────────────────────
+    lines.extend(["## 4. 决策备忘（Decision Memo）", ""])
+    decided = [chain for chain in chains if chain.get("status") == "decided"]
+    rejected = [chain for chain in chains if chain.get("status") in ("rejected", "deprioritized")]
+    if not decided:
+        lines.append("**尚无可决策主链**（没有 `decided` 状态的链）。决策备忘降级为缺口清单：")
+        lines.append("")
+        for chain in chains:
+            nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
+            flow_value = (reasoning or {}).get("flow")
+            flow = tuple(flow_value) if isinstance(flow_value, list) and flow_value else REASONING_NODES
+            unvalidated = [
+                REASONING_NODE_LABELS[name]
+                for name in flow
+                if not (isinstance(nodes.get(name), dict) and nodes.get(name, {}).get("status") == "validated")
+            ]
+            lines.append(
+                f"- `{chain.get('id', 'PR?')}`（`{chain.get('status', 'unknown')}`）："
+                f"未达标节点 {'、'.join(unvalidated) or '无'}；"
+                f"`decided` 需全部节点 validated + 已验证判定 + 替代解释 + 反证 + 优先级记录。"
+            )
+        if not chains:
+            lines.append("- 无推理链：先 `askovo do` 与 `askovo chain`。")
+        lines.append("")
+    else:
+        for chain in decided:
+            nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
+            business = nodes.get("business", {}) if isinstance(nodes.get("business"), dict) else {}
+            gate = business.get("gate", {}) if isinstance(business.get("gate"), dict) else {}
+            prioritization = chain.get("prioritization", {})
+            states = chain.get("supporting_states", {}) if isinstance(chain.get("supporting_states"), dict) else {}
+            state_bits = []
+            for key, label in (("delivery", "交付"), ("outcome", "结果"), ("causal", "因果")):
+                value = states.get(key, {}) if isinstance(states.get(key), dict) else {}
+                if value.get("status"):
+                    state_bits.append(f"{label} `{value['status']}`")
+            lines.extend(
+                [
+                    f"### {chain.get('id', 'PR?')} · {chain.get('title', '')}",
+                    "",
+                    f"- 推荐读法：`decided` 是**产品/商业选择记录**，不是发布或商业成功证明。",
+                    f"- 优先级：方法 {prioritization.get('method') or '待确认'}；"
+                    f"负责人 {prioritization.get('owner') or '待确认'}；"
+                    f"理由 {prioritization.get('rationale') or '待确认'}",
+                    f"- 商业门：`{gate.get('stage', 'G0')}` / `{gate.get('decision', 'hypothesis')}`；"
+                    f"资源承诺 {gate.get('resource_commitment') or '待确认'}",
+                    f"- 置信边界：反证 {', '.join(f'`{i}`' for i in chain.get('counter_evidence_ids', [])) or '未记录'}；"
+                    f"缺口 {'；'.join(str(g) for g in chain.get('gaps', [])) or '未记录'}",
+                    f"- 交付/结果/因果三态（互相独立，不得互推）：{'；'.join(state_bits) or '未记录'}",
+                    "",
+                ]
+            )
+        if rejected:
+            lines.append("未选择的方向及原因：")
+            lines.append("")
+            for chain in rejected:
+                prioritization = chain.get("prioritization", {})
+                rationale = (prioritization or {}).get("rationale") if isinstance(prioritization, dict) else ""
+                lines.append(
+                    f"- `{chain.get('id', 'PR?')}`（`{chain.get('status')}`）："
+                    f"{_markdown_cell(str(rationale or '未记录放弃理由'))}"
+                )
+            lines.append("")
+
+    # ── 5. 验证清单 ────────────────────────────────────────────
+    lines.extend(["## 5. 验证清单（Validation Backlog）", ""])
+    if not chains:
+        lines.append("无链可验证。")
+        lines.append("")
+    for chain in chains:
+        nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
+        flow_value = (reasoning or {}).get("flow")
+        flow = tuple(flow_value) if isinstance(flow_value, list) and flow_value else REASONING_NODES
+        pending = [
+            REASONING_NODE_LABELS[name]
+            for name in flow
+            if (isinstance(nodes.get(name), dict)
+                and nodes.get(name, {}).get("status") in ("hypothesis", "needs-validation"))
+        ]
+        marker = "（已决，交付后回看）" if chain.get("status") == "decided" else ""
+        lines.append(
+            f"- `{chain.get('id', 'PR?')}`{marker}：待验证节点 "
+            f"{'、'.join(pending) or '无'}；缺口 {'；'.join(str(g) for g in chain.get('gaps', [])) or '未记录'}；"
+            f"最便宜且能改变决策的下一验证：{chain.get('next_test') or '未记录'}"
+        )
+    lines.append("")
+    lines.append(
+        "排序原则：优先做**最便宜且能改变决策**的验证；validated 的等级门槛"
+        "（scene/user 任意非 E4−、pain/need E1/E2、feature/product E3、business E4+/E5）"
+        "以 `askovo audit` 判定为准，本清单不重算。"
+    )
+    lines.append("")
+    lines.extend(
+        [
+            "## 边界",
+            "",
+            "决策包是产品与商业推理链的决策侧投影，不构成发布就绪、市场体量、因果或商业成功的证明；"
+            "MRD/PRD/BRD/运营视图均由同一条链投影生成，不产生独立结论；最终产品/商业决定由负责人做出并留痕。",
+            "",
+        ]
+    )
+    return lines
+
+
 def deliver(study_dir: Path, kind: str = "memo") -> dict[str, Any]:
     study_dir = study_dir.resolve()
     study = load_json(study_dir / "study.json")
@@ -1889,8 +2162,21 @@ def deliver(study_dir: Path, kind: str = "memo") -> dict[str, Any]:
                         ])
         return {"status": "written", "path": str(path), "kind": kind}
 
-    titles = {"memo": "决策备忘", "report": "产品推理报告", "mrd": "MRD 市场需求文档", "prd": "PRD 产品需求文档", "brd": "BRD 商业需求文档", "ops": "用户运营交付", "signoff": "干系人签收页"}
+    titles = {"memo": "决策备忘", "report": "产品推理报告", "mrd": "MRD 市场需求文档", "prd": "PRD 产品需求文档", "brd": "BRD 商业需求文档", "ops": "用户运营交付", "decision": "决策包 Decision Package", "signoff": "干系人签收页"}
     title = titles.get(kind, "交付物")
+    if kind == "decision":
+        path = out_dir / "decision-package.md"
+        path.write_text(
+            "\n".join(_decision_package_lines(study, reasoning, evidence)) + "\n",
+            encoding="utf-8",
+        )
+        return {
+            "status": "written",
+            "path": str(path),
+            "kind": kind,
+            "evidence_count": evidence["count"],
+            "product_reasoning": product_reasoning_summary(reasoning),
+        }
     if kind == "signoff" and reasoning is not None:
         path = out_dir / "signoff.md"
         path.write_text(_signoff_page(study, reasoning, study_dir), encoding="utf-8")

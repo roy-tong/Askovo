@@ -4425,7 +4425,7 @@ def build_parser() -> argparse.ArgumentParser:
         "deliver", help="assemble chain-led PM, PRD, BRD, user-operations and tracker deliverables"
     )
     deliver_parser.add_argument("study_dir")
-    deliver_parser.add_argument("--kind", choices=("memo", "report", "mrd", "prd", "brd", "ops", "tracker", "signoff"), default="memo")
+    deliver_parser.add_argument("--kind", choices=("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff"), default="memo")
     deliver_parser.set_defaults(func=sure_engine.cli_deliver)
 
     boundary_parser = subparsers.add_parser(

@@ -39,6 +39,35 @@ askovo demo
 
 预期关键结果：`status: pass`、`supported: 1`、`overclaims: 0`。这只证明合成样例的结构、推理链和证据引用自洽，**不证明真实需求、产品质量、市场规模或发布可行性**。
 
+## 研究问题 → 决策结果：一次完整交付长什么样
+
+输入一个决策问题，输出一份**决策包（Decision Package）**——每个判断都能沿七节点主链回溯到证据和反证。以内置合成样例（`examples/sample-study`）为例：
+
+> 研究问题：养宠物的远程主人，是否值得为"离家时的宠物看护"跑一个两周的手机巡检试点？
+
+主链跑完（七节点全部 validated，2 条反证在案）后，一条命令生成决策包：
+
+```bash
+askovo chain examples/sample-study
+askovo deliver examples/sample-study --kind decision   # → 06-report/decision-package.md
+```
+
+决策包给决策者五个视图：
+
+| 视图 | 回答 |
+|---|---|
+| 机会地图 Opportunity Map | 哪些方向值得考虑（场景×用户×痛点、节点就绪度、优先级） |
+| 证据图 Evidence Graph | 每个判断被哪些证据（带 E0–E5 等级）支持或反驳 |
+| 选项与权衡 Options & Trade-offs | 候选方向的收益、代价、反证与替代解释 |
+| 决策备忘 Decision Memo | 推荐选择、置信边界、未选择的原因；交付/结果/因果三态分列 |
+| 验证清单 Validation Backlog | 最值得下一步验证的未知（缺口、needs-validation 节点、最便宜的证伪测试） |
+
+样例决策备忘（节选，原文为英文合成数据）：优先级方法 "test privacy, acceptance and retained use before any scale decision"；理由 "the smallest test that can reverse the concept; no market-size ranking is claimed"；置信边界——反证 `R05`/`R07`，缺口含 "Privacy controls are not tested in real homes"；三态：交付 `unplanned` / 结果 `observing` / 因果 `not-claimed`。**`decided` 只是选择记录，不是发布或商业证明**——三态互相独立，不得互推。
+
+MRD/PRD/BRD 不是另外三套结论，而是同一条主链的市场/需求/商业投影；决策包是它们的决策侧汇总视图。
+
+三个高频任务都走同一条链，只是收口交付不同：**发现**（研究问题 → 机会地图）、**验证**（审查设想 → 验证清单）、**决策**（候选比较 → 决策备忘）。
+
 ## 一条主链，多类职责，五个领域
 
 | 使用者 | 从同一主链获得什么 | 主要交付 |
@@ -58,7 +87,7 @@ askovo demo
 | 需求研究与需求分析 | PRD：场景到需求再到特性、产品及验收的可追溯要求 | 市场需求、商业成立 |
 | 商业分析 | BRD：产品到商业模式的决策、资源门、单位经济和剩余风险 | 产品已成功、市场已被证明 |
 
-五类领域共用同一份主链 schema，不各自分叉流程。领域包只改变方法、证据形式、风险门和验收重点：
+五类领域共用同一份主链 schema，不各自分叉流程。领域包只改变方法、证据形式、风险门和验收重点。当前重点深耕 **AI 软件、开发者工具与智能硬件**三类场景（五域方法论保持兼容）：
 
 | 领域 | 验证与交付重点 |
 |---|---|
@@ -127,6 +156,7 @@ askovo audit ./study --json
 ### 4. 从同一主链生成不同分析与职责交付
 
 ```bash
+askovo deliver ./study --kind decision # 决策包：机会地图/证据图/选项与权衡/决策备忘/验证清单
 askovo deliver ./study --kind report   # 产品与商业推理总报告
 askovo deliver ./study --kind mrd      # 市场研究与分析 → MRD
 askovo deliver ./study --kind prd      # 需求研究与分析 → PRD
@@ -140,7 +170,7 @@ askovo deliver ./study --kind tracker  # 行为、验收和商业指标跟踪
 askovo report ./study                  # 用研状态：06-report/research-status.md
 ```
 
-`deliver --kind report` 是产品/商业总报告的唯一写入者；`askovo report` 写独立的研究状态文件。MRD、PRD、BRD 是同一条七节点主链的市场、需求、商业投影，不是三套平行事实源。
+`deliver --kind report` 是产品/商业总报告的唯一写入者；`askovo report` 写独立的研究状态文件。决策包、MRD、PRD、BRD、运营视图全部由同一条七节点主链投影生成，不是几套平行事实源。
 
 ## Askovo 与 SURE
 
@@ -253,7 +283,7 @@ MCP 暴露 `askovo_route`、`askovo_do`、`askovo_chain`、`askovo_platforms`、
 
 | 能力 | 当前边界 |
 |---|---|
-| 七节点推理链与 MRD/PRD/BRD 投影 | 结构与证据引用自动校验；语义复核由人负责 |
+| 七节点推理链与决策包/MRD/PRD/BRD 投影 | 结构与证据引用自动校验；语义复核由人负责 |
 | 证据分级审计（E0–E5，退出码进 CI） | 只验结构与配置门，不证明需求普遍率或市场成功 |
 | 平台雷达与采集 | blocked 平台不绕过；采集前须过 Design gate 与授权检查 |
 | 人工交付（需求验证 study / 团队工作坊） | 范围与费用按任务商定；商业复购仍在验证 |

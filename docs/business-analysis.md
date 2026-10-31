@@ -87,7 +87,11 @@ BRD 不与其他工作流并列。**BRD 是商业分析的产出。**
 
 BRD 只投影这些内容，不另建数字。未知保留为未知，不能用 0、假精确值或市场规模填满。
 
-## 6. 证据与推断纪律
+## 6. 决策包：三条工作流的决策侧汇总
+
+`askovo deliver ./study --kind decision` 生成 `06-report/decision-package.md`：机会地图、证据图、选项与权衡、决策备忘、验证清单。它不新增事实——五个视图全部由同一条七节点主链与需求判断投影：机会地图读链的节点就绪度与优先级，证据图读节点证据与等级，决策备忘读 `decided` 链的优先级/商业门/反证与三态（交付/结果/因果互相独立），验证清单读缺口与下一验证。没有 `decided` 链时决策备忘降级为缺口清单。MRD/PRD/BRD 是本包的市场/需求/商业视图，不是独立结论。
+
+## 7. 证据与推断纪律
 
 1. **市场研究和市场分析都包含分析**：研究不是只采集，分析也不是没有来源的计算。
 2. **事实、解释、建议分层**：先写直接观察到的事实，再写研究解释，最后写决策建议。
@@ -101,7 +105,7 @@ BRD 只投影这些内容，不另建数字。未知保留为未知，不能用 
 10. **变更先改真值**：先更新主链和影响项，再同步 MRD/PRD/BRD；投影标 `pending` 时不能假装已同步。
 11. **业务门与安全门分离**：商业通过不能抵消安全/伦理 HOLD，也不能证明因果。
 
-## 7. CLI 使用
+## 8. CLI 使用
 
 ```bash
 askovo chain ./study
@@ -124,7 +128,7 @@ askovo psm ./study --input pricing.csv --currency CNY   # 价格敏感度 → 06
 - `psm` 计算四问交点（PMC/OPP/IDP/PME）与可接受区间；**陈述意向≠付费行为**，结果不能直接作为商业节点 validated 证据，竞品标价也不是自有定价证据。
 - 两个输出都回写主链的 `pricing`/`unit_economics_inputs`/`gaps` 之后再进入 BRD，不另建商业真值。
 
-## 8. 方法来源
+## 9. 方法来源
 
 - [AMA：marketing research 定义](https://www.ama.org/the-definition-of-marketing-what-is-marketing/)
 - [ICC/ESOMAR 2025 研究守则](https://iccwbo.org/news-publications/business-solutions/iccesomar-international-code-market-opinion-social-research-data-analytics/)
