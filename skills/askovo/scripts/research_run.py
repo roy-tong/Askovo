@@ -28,9 +28,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import sure_engine
 
@@ -190,7 +193,16 @@ def prepare(study_dir: Path, actions_path: Path, *, reset: bool = False) -> Dict
 
 def _save(path: Path, state: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    fd, name = tempfile.mkstemp(prefix=".research-", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as out:
+            out.write(json.dumps(state, ensure_ascii=False, indent=2) + "\n")
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(name, str(path))
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
 
 
 def load_state(study_dir: Path) -> Dict[str, Any]:
@@ -218,6 +230,14 @@ def authorize(study_dir: Path, *, by: str) -> Dict[str, Any]:
 
 
 def _check_authorized(state: Dict[str, Any]) -> None:
+    actions = state.get("actions") or []
+    if not actions:
+        raise ResearchRunError("research plan has no actions")
+    hashes = [_sha({k: a[k] for k in
+                   ("id", "node", "platform", "query", "limit", "fixture",
+                    "cdp_url", "url", "ack_terms")}) for a in actions]
+    if hashes != [a.get("action_sha256") for a in actions] or _sha(hashes) != state.get("actions_sha256"):
+        raise ResearchRunError("research plan changed; prepare and re-authorize the new plan")
     auth = state.get("authorization")
     if not isinstance(auth, dict) or not auth.get("by"):
         raise ResearchRunError("research actions are not authorized; run `research authorize --by NAME`")
@@ -226,7 +246,35 @@ def _check_authorized(state: Dict[str, Any]) -> None:
             "authorization is stale: the action list changed; re-authorize the new plan")
 
 
+@contextmanager
+def _run_lock(study_dir):
+    # POSIX cross-process lock; Windows keeps the state machine but has no fcntl.
+    try:
+        import fcntl
+    except ImportError:  # pragma: no cover - Windows fallback
+        fcntl = None
+    if fcntl is None:
+        yield
+        return
+    path = state_path(study_dir).with_suffix(".lock")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ResearchRunError("research run is already executing")
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
 def run(study_dir: Path, *, max_steps: int = 1, analyze: bool = False) -> Dict[str, Any]:
+    with _run_lock(study_dir):
+        return _run(study_dir, max_steps=max_steps, analyze=analyze)
+
+
+def _run(study_dir: Path, *, max_steps: int = 1, analyze: bool = False) -> Dict[str, Any]:
     if max_steps < 1 or max_steps > 20:
         raise ResearchRunError("max_steps must be 1..20")
     state = load_state(study_dir)
@@ -237,8 +285,12 @@ def run(study_dir: Path, *, max_steps: int = 1, analyze: bool = False) -> Dict[s
             break
         if action.get("state") == "completed":
             continue
-        if action.get("state") == "blocked":
+        if action.get("state") in ("blocked", "running"):
+            state["status"] = "blocked"
             break
+        action["state"] = "running"
+        state["status"] = "running"
+        _save(state_path(study_dir), state)
         try:
             kwargs = {
                 "study_dir": Path(study_dir),
@@ -262,6 +314,7 @@ def run(study_dir: Path, *, max_steps: int = 1, analyze: bool = False) -> Dict[s
             state["budget"]["used_records"] = int(state["budget"].get("used_records", 0)) + int(
                 result.get("records", 0) or 0)
             completed += 1
+            _save(state_path(study_dir), state)
         elif result.get("status") == "planned":
             action["state"] = "blocked"
             state["status"] = "blocked"
@@ -272,6 +325,7 @@ def run(study_dir: Path, *, max_steps: int = 1, analyze: bool = False) -> Dict[s
             break
     if all(a.get("state") == "completed" for a in state.get("actions") or []):
         state["status"] = "completed"
+    _save(state_path(study_dir), state)
     analysis = None
     if analyze and any(a.get("state") == "completed" for a in state.get("actions") or []):
         analysis = sure_engine.analyze_study(Path(study_dir), None)

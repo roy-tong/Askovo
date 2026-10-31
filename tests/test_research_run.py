@@ -128,5 +128,30 @@ class ResearchRunTests(unittest.TestCase):
         self.assertTrue(payload["analysis"])
 
 
+    def test_mutated_state_cannot_reuse_authorization(self):
+        actions = self.actions()
+        run_cli("research", "plan", str(self.study), "--actions", str(actions))
+        run_cli("research", "authorize", str(self.study), "--by", "operator")
+        path = self.study / "04-findings/research-run.json"
+        state = json.loads(path.read_text())
+        state["actions"][0]["query"] = "unapproved query"
+        path.write_text(json.dumps(state))
+        result = run_cli("research", "run", str(self.study))
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("changed", result.stdout)
+
+    def test_interrupted_collection_is_not_replayed(self):
+        actions = self.actions()
+        run_cli("research", "plan", str(self.study), "--actions", str(actions))
+        run_cli("research", "authorize", str(self.study), "--by", "operator")
+        path = self.study / "04-findings/research-run.json"
+        state = json.loads(path.read_text())
+        state["actions"][0]["state"] = "running"
+        path.write_text(json.dumps(state))
+        result = run_cli("research", "run", str(self.study))
+        self.assertEqual("blocked", json.loads(result.stdout)["status"])
+        self.assertFalse((self.study / "02-data/raw/github").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

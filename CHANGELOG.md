@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — execution and economics reliability
+
+- Harden interruption/evidence handling and add regression coverage.
+- Align product positioning and publish the feature implementation status.
+
 
 ## Unreleased — 2026-10-31
 
@@ -15,7 +20,7 @@
 
 ### Validation
 
-- 158 tests pass, including nested-evidence negative cases, fresh-audit delivery, signoff refusal, multi-option comparison, and Research Run authorization/hash/fixture/step tests.
+- 160 tests pass, including nested-evidence negative cases, fresh-audit delivery, signoff refusal, multi-option comparison, and Research Run authorization/hash/fixture/step/interruption tests.
 
 ## 2.5.0 — 2026-10-31
 
