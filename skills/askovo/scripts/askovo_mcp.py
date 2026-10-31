@@ -24,6 +24,11 @@ from pathlib import Path
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
+# Run both from a Git checkout and from the bundled askovo/runtime/scripts.
+# The standalone MCP entry must locate the shared package, not duplicate it.
+_PACKAGE_PARENT = HERE.parents[2]
+if str(_PACKAGE_PARENT) not in sys.path:
+    sys.path.insert(0, str(_PACKAGE_PARENT))
 ASKOVO_CLI_PATH = HERE / "askovo.py"
 
 _spec = importlib.util.spec_from_file_location("askovo_cli", ASKOVO_CLI_PATH)
