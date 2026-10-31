@@ -338,3 +338,18 @@ tests/                         CLI、主链、路由、平台、队列、MCP 测
 ## License
 
 MIT。第三方组件与数据权利边界见 [LICENSE](LICENSE) 与 [docs/connectors.md](docs/connectors.md)。
+
+## Local document intake (optional Docling adapter)
+
+Study a PDF or Office file without copying it into the chat. This **local, opt-in extraction** turns a file into Markdown with a SHA-256 provenance sidecar. It does not claim to validate the document, source permission, or any business conclusion.
+
+```bash
+# Python 3.10+ for current Docling; Askovo's base installation remains dependency-free
+pip install docling
+askovo document ./research-report.pdf --out ./report-extracted.md
+# Read provenance and check source rights before treating its text as evidence.
+askovo import ./my-study ./report-extracted.md --source-family imported
+askovo audit ./my-study
+```
+
+Plain UTF-8 `.txt` / `.md` work without Docling. The resulting `.provenance.json` records the original file hash and marks the extraction `unreviewed`. It does **not** make unsupported public-platform scraping permissible. See [feature status](docs/feature-status.md).
