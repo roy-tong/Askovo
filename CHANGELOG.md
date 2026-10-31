@@ -1,6 +1,13 @@
 # Changelog
 
 
+## 2.4.1 — 2026-10-31
+
+### Fixed
+
+- `deliver --kind signoff` crashed on a freshly initialized study: the template `evidence.jsonl` starts with `#` comment lines and the sign-off page parsed every line as JSON. Non-JSON lines are now skipped; regression test covers the fresh-init path.
+
+
 ## 2.4.0 — 2026-10-31
 
 ### Added

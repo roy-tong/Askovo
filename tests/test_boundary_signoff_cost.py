@@ -145,3 +145,25 @@ class CostLogTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SignoffOnFreshStudyTests(unittest.TestCase):
+    def test_signoff_works_on_fresh_init_with_comment_header_evidence(self):
+        env = os.environ.copy()
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        with tempfile.TemporaryDirectory() as tmp:
+            study = Path(tmp) / "s1"
+            init = subprocess.run(
+                [sys.executable, str(CLI), "init", str(study),
+                 "--study-id", "fresh", "--title", "t", "--decision", "d"],
+                capture_output=True, text=True, env=env,
+            )
+            self.assertEqual(0, init.returncode, init.stdout + init.stderr)
+            done = subprocess.run(
+                [sys.executable, str(CLI), "deliver", str(study), "--kind", "signoff"],
+                capture_output=True, text=True, env=env,
+            )
+            self.assertEqual(0, done.returncode, done.stdout + done.stderr)
+            payload = json.loads(done.stdout)
+            page = Path(payload["path"]).read_text(encoding="utf-8")
+            self.assertIn("干系人签收页", page)

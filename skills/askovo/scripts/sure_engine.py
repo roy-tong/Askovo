@@ -3866,21 +3866,22 @@ def cli_doctor(args: Any) -> int:
 def _signoff_page(study: dict[str, Any], reasoning: dict[str, Any], study_dir: Path) -> str:
     """F3 stakeholder sign-off one-pager: conclusion, levels, boundaries, blanks to sign."""
     evidence_levels: dict[str, str] = {}
+    reviewed = unreviewed = 0
     evidence_path = Path(study_dir) / "02-data" / "evidence.jsonl"
     if evidence_path.is_file():
         for line in evidence_path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue  # 模板注释行等非 JSON 行
+            try:
                 rec = json.loads(line)
-                evidence_levels[str(rec.get("record_id"))] = str(rec.get("evidence_level") or "")
-    reviewed = unreviewed = 0
-    if evidence_path.is_file():
-        for line in evidence_path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                rec = json.loads(line)
-                if rec.get("human_review_status") == "reviewed":
-                    reviewed += 1
-                else:
-                    unreviewed += 1
+            except json.JSONDecodeError:
+                continue
+            evidence_levels[str(rec.get("record_id"))] = str(rec.get("evidence_level") or "")
+            if rec.get("human_review_status") == "reviewed":
+                reviewed += 1
+            else:
+                unreviewed += 1
     chains = reasoning.get("chains", []) if isinstance(reasoning, dict) else []
     lines = [
         "# 干系人签收页",
