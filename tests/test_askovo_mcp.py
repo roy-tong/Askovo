@@ -191,6 +191,25 @@ class AskvoMcpServerTests(unittest.TestCase):
             self.assertEqual(1, collected["exit_code"])
             self.assertEqual("design_gate_failed", collected["result"]["status"])
 
+    def test_document_tool_extracts_local_text_with_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "research.txt"
+            destination = Path(directory) / "research.md"
+            source.write_text("Observed support request", encoding="utf-8")
+            responses = run_mcp(
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                 "params": {"name": "askovo_document",
+                            "arguments": {"source": str(source), "output": str(destination)}}},
+            )
+            names = {row["name"] for row in responses[0]["result"]["tools"]}
+            self.assertIn("askovo_document", names)
+            payload = tool_payload(responses[1])
+            self.assertEqual(0, payload["exit_code"])
+            self.assertEqual("unreviewed", payload["result"]["review_status"])
+            self.assertEqual("Observed support request", destination.read_text())
+            self.assertTrue(Path(payload["result"]["manifest"]).exists())
+
     def test_missing_required_argument_returns_invalid_params(self) -> None:
         responses = run_mcp(
             {
