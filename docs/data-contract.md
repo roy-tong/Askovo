@@ -77,7 +77,7 @@ chain 字段：
 
 business 使用 `market_definition`、`geographies`、`time_window`、`included_markets`、`excluded_markets`、`target_segment`、`segments`、`payer`、`positioning`、`revenue_model`、`pricing_hypothesis`、`pricing`、`channels`、`competitive_alternatives`、`cost_drivers`、`market_estimates`、`unit_economics_inputs`、`success_metrics`、`non_goals` 和 `gate`。市场规模条目必须有总体定义、时间窗、单位、方法、假设；有数值时还要有公式和来源。价格、支付意愿、交易与续约分层记录，未知保留 `null` 并登记缺口。
 
-节点证据必须是 linked judgment 已登记证据的子集：scene/user/pain/need 只能引用 problem 或 counter；feature 只能引用 solution 或 counter；product 只能引用 solution、commercial 或 counter；business 只能引用 commercial 或 counter。节点 validated 还需满足对应 E-level；decided chain 要求七节点 validated、linked judgment validated、反证与替代解释齐全，并要求商业门与优先级记录。
+节点证据必须是 linked judgment 已登记证据的子集：scene/user/pain/need 只能引用 problem 或 counter；feature 只能引用 solution 或 counter；product 只能引用 solution、commercial 或 counter；business 只能引用 commercial 或 counter。节点 validated 还需满足对应 E-level；decided chain 要求七节点 validated、linked judgment validated、反证与替代解释齐全，并要求商业门与优先级记录。嵌套引用同样受约束：`segments[].evidence_ids` 可用 problem/commercial/counter 中与细分相关的已登记证据，`pricing[].evidence_ids` 可用 solution/commercial/counter，`change_log[].reason_evidence_ids` 必须是该 judgment 四个证据组之一的已登记证据；三者都必须存在且 context_key 一致。
 
 `decided` 只记录当前产品/商业选择，不表示发布就绪、实验因果或商业成功。完整语义见[产品推理主链](product-reasoning.md)。
 

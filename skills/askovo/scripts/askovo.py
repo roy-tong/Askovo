@@ -27,6 +27,7 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 import sure_engine  # noqa: E402
+import research_run  # noqa: E402
 
 
 def _read_version() -> str:
@@ -2217,6 +2218,39 @@ def _check_product_reasoning(
                     "(substitute, workaround, or failure); stated pain alone (E1) stays needs-validation"
                 )
 
+        # Nested business evidence is still evidence. A segment/pricing line and
+        # a change-log rationale may not cite an unknown record or a record from
+        # another context just because they are one level below the node.
+        # This is schema-aware: metric_refs/release_plan_ref/experiment_refs are
+        # external references, not evidence ids, so they are deliberately excluded.
+        segment_refs: set[str] = set()
+        pricing_refs: set[str] = set()
+        business_node = nodes.get("business") if isinstance(nodes.get("business"), dict) else {}
+        for field_name, target_set in (("segments", segment_refs), ("pricing", pricing_refs)):
+            entries = business_node.get(field_name) if isinstance(business_node, dict) else []
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                ids = entry.get("evidence_ids", [])
+                if not isinstance(ids, list):
+                    errors.append(f"{chain_id}.business.{field_name}[].evidence_ids must be an array")
+                    continue
+                target_set.update(str(value) for value in ids if str(value).strip())
+        nested_business_refs = segment_refs | pricing_refs
+        nested_change_refs: set[str] = set()
+        for entry in chain.get("change_log", []) if isinstance(chain.get("change_log"), list) else []:
+            if not isinstance(entry, dict):
+                continue
+            ids = entry.get("reason_evidence_ids", [])
+            if not isinstance(ids, list):
+                errors.append(f"{chain_id}.change_log[{entry.get('id')}].reason_evidence_ids must be an array")
+                continue
+            nested_change_refs.update(str(value) for value in ids if str(value).strip())
+        all_references.update(nested_business_refs)
+        all_references.update(nested_change_refs)
+
         counter_ids = chain.get("counter_evidence_ids") if isinstance(chain.get("counter_evidence_ids"), list) else []
         all_references.update(str(value) for value in counter_ids)
         context_key = str(chain.get("context_key") or "").strip()
@@ -2264,6 +2298,40 @@ def _check_product_reasoning(
                             f"{chain_id}.{node_name} evidence is not registered in the linked demand judgment: "
                             + ", ".join(escaped)
                         )
+                segment_allowed = (
+                    {str(value) for value in allowed_by_node["scene"]}
+                    | {str(value) for value in allowed_by_node["business"]}
+                )
+                escaped_segments = sorted(segment_refs - segment_allowed)
+                if escaped_segments:
+                    errors.append(
+                        f"{chain_id}.business.segments evidence is not registered in the linked demand judgment: "
+                        + ", ".join(escaped_segments)
+                    )
+                pricing_allowed = (
+                    {str(value) for value in allowed_by_node["feature"]}
+                    | {str(value) for value in allowed_by_node["business"]}
+                )
+                escaped_pricing = sorted(pricing_refs - pricing_allowed)
+                if escaped_pricing:
+                    errors.append(
+                        f"{chain_id}.business.pricing evidence is not registered in the linked demand judgment: "
+                        + ", ".join(escaped_pricing)
+                    )
+                change_allowed = {
+                    str(value)
+                    for group in (
+                        "problem_evidence_ids", "solution_evidence_ids",
+                        "commercial_evidence_ids", "counter_evidence_ids",
+                    )
+                    for value in (judgment.get(group) or [])
+                }
+                escaped_change = sorted(nested_change_refs - change_allowed)
+                if escaped_change:
+                    errors.append(
+                        f"{chain_id}.change_log reason_evidence_ids is not registered in the linked demand judgment: "
+                        + ", ".join(escaped_change)
+                    )
                 unregistered_counter = sorted(
                     {str(value) for value in counter_ids} - {str(value) for value in judgment.get("counter_evidence_ids", [])}
                 )
@@ -2364,6 +2432,72 @@ def _design_gate_failure(study_dir: Path) -> dict[str, Any] | None:
         "checks": [item.as_dict() for item in audit.findings],
         "next_step": "complete the design contract, then run: askovo check STUDY --stage design",
     }
+
+
+def command_research(args: argparse.Namespace) -> int:
+    """Plan, explicitly authorize and execute a bounded research action list."""
+    try:
+        study_dir = Path(args.study_dir).resolve()
+        if args.action == "plan":
+            if not args.actions:
+                raise research_run.ResearchRunError("research plan requires --actions FILE")
+            state = research_run.prepare(study_dir, Path(args.actions), reset=args.reset)
+            print(json.dumps(state, ensure_ascii=False, indent=2))
+            return 0
+        if args.action == "authorize":
+            state = research_run.authorize(study_dir, by=args.by)
+            print(json.dumps({"status": "authorized",
+                              "authorization": state.get("authorization"),
+                              "run_id": state.get("run_id")}, ensure_ascii=False, indent=2))
+            return 0
+        if args.action == "status":
+            print(json.dumps(research_run.status(study_dir), ensure_ascii=False, indent=2))
+            return 0
+        if args.action != "run":
+            raise research_run.ResearchRunError("unknown research action: %s" % args.action)
+        if args.actions:
+            research_run.prepare(study_dir, Path(args.actions), reset=args.reset)
+        state = research_run.load_state(study_dir)
+        if args.authorize:
+            state = research_run.authorize(study_dir, by=args.by)
+        if not state.get("authorization"):
+            raise research_run.ResearchRunError(
+                "research actions are not authorized; run `askovo research authorize STUDY --by NAME` "
+                "or pass --authorize")
+        failure = _design_gate_failure(study_dir)
+        if failure is not None:
+            print(json.dumps(failure, ensure_ascii=False, indent=2))
+            return 1
+        result = research_run.run(
+            study_dir, max_steps=args.max_steps, analyze=args.analyze)
+        summary = research_run.status(study_dir)
+        payload = {"status": summary["status"], "run_id": summary["run_id"],
+                   "counts": summary["counts"], "budget": summary["budget"],
+                   "analysis": result.get("analysis") is not None}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 3 if summary["status"] == "blocked" else 0
+    except research_run.ResearchRunError as exc:
+        print(json.dumps({"status": "error", "reason": str(exc)},
+                         ensure_ascii=False, indent=2))
+        message = str(exc).lower()
+        return 4 if ("not authorized" in message or "authorization" in message) else 2
+    except (OSError, ValueError, json.JSONDecodeError, RuntimeError) as exc:
+        print(json.dumps({"status": "error", "reason": "%s: %s" %
+                          (type(exc).__name__, exc)}, ensure_ascii=False, indent=2))
+        return 2
+
+
+def command_deliver(args: argparse.Namespace) -> int:
+    """Deliver from a fresh full audit, never from a stale audit.json."""
+    study_dir = Path(args.study_dir).resolve()
+    try:
+        audit = audit_study(study_dir, "full")
+        result = sure_engine.deliver(study_dir, args.kind, audit=audit)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 1 if result.get("status") == "blocked" else 0
 
 
 def command_collect(args: argparse.Namespace) -> int:
@@ -4371,6 +4505,25 @@ def build_parser() -> argparse.ArgumentParser:
     collect_parser.add_argument("--ack-terms", action="store_true", help="acknowledge platform terms and authorized session")
     collect_parser.set_defaults(func=command_collect)
 
+    research_parser = subparsers.add_parser(
+        "research",
+        help="plan, authorize and execute a bounded research action list; no source is "
+             "collected until the operator explicitly authorizes the current plan",
+    )
+    research_parser.add_argument("action", choices=("plan", "authorize", "run", "status"))
+    research_parser.add_argument("study_dir")
+    research_parser.add_argument("--actions", help="action-list JSON (plan/run)")
+    research_parser.add_argument("--reset", action="store_true", help="replace an existing run state")
+    research_parser.add_argument("--authorize", action="store_true",
+                                 help="authorize the current action-list hash before running")
+    research_parser.add_argument("--by", default="operator",
+                                 help="named operator recorded in the authorization (default: operator)")
+    research_parser.add_argument("--max-steps", type=int, default=1,
+                                 help="execute at most N pending actions (default 1, max 20)")
+    research_parser.add_argument("--analyze", action="store_true",
+                                 help="run descriptive analysis after successful collection")
+    research_parser.set_defaults(func=command_research)
+
     analyze_parser = subparsers.add_parser(
         "analyze", help="normalize, dedup and describe collected material"
     )
@@ -4426,7 +4579,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     deliver_parser.add_argument("study_dir")
     deliver_parser.add_argument("--kind", choices=("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff"), default="memo")
-    deliver_parser.set_defaults(func=sure_engine.cli_deliver)
+    deliver_parser.set_defaults(func=command_deliver)
 
     boundary_parser = subparsers.add_parser(
         "boundary",
@@ -4550,7 +4703,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "do", "domains",
-    "methods", "catalog", "platforms", "collect", "analyze", "instruments", "import", "queue",
+    "methods", "catalog", "platforms", "collect", "research", "analyze", "instruments", "import", "queue",
     "codebook", "chain", "economics", "psm", "deliver", "boundary", "cost", "doctor", "audit", "check", "connectors",
     "stage", "label", "build",
 }

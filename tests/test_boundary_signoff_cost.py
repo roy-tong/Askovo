@@ -148,7 +148,7 @@ if __name__ == "__main__":
 
 
 class SignoffOnFreshStudyTests(unittest.TestCase):
-    def test_signoff_works_on_fresh_init_with_comment_header_evidence(self):
+    def test_signoff_is_blocked_on_fresh_init_without_a_passing_audit(self):
         env = os.environ.copy()
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         with tempfile.TemporaryDirectory() as tmp:
@@ -163,7 +163,9 @@ class SignoffOnFreshStudyTests(unittest.TestCase):
                 [sys.executable, str(CLI), "deliver", str(study), "--kind", "signoff"],
                 capture_output=True, text=True, env=env,
             )
-            self.assertEqual(0, done.returncode, done.stdout + done.stderr)
+            self.assertEqual(1, done.returncode, done.stdout + done.stderr)
             payload = json.loads(done.stdout)
-            page = Path(payload["path"]).read_text(encoding="utf-8")
-            self.assertIn("干系人签收页", page)
+            self.assertEqual("blocked", payload["status"])
+            self.assertEqual("fail", payload["audit_status"])
+            self.assertIn("cannot be issued", payload["reason"])
+            self.assertFalse((study / "06-report" / "signoff.md").exists())

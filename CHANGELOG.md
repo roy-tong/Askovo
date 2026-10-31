@@ -1,6 +1,22 @@
 # Changelog
 
 
+## Unreleased — 2026-10-31
+
+### Added
+
+- **Research Run**: `askovo research plan/authorize/run/status` executes a bounded, machine-readable action list supplied by the Skill/agent. Every action is bound to a platform allowed in `study.scope.allowed_sources`, a reasoning node and an action-list hash; fixtures must stay inside the study; `run` requires the Design gate and stops on the first blocked action. Collection still uses the existing `collect_platform` path, so adapter, policy and source checks are unchanged. State is `04-findings/research-run.json`; optional `--analyze` runs the existing descriptive analysis only.
+- Nested business evidence is now audited: `segments[].evidence_ids`, `pricing[].evidence_ids` and `change_log[].reason_evidence_ids` must exist, share the chain `context_key`, and belong to the linked demand judgment under their schema-specific roles. Unknown or unregistered nested IDs no longer pass a full audit.
+- `deliver` now runs a fresh full audit through the CLI/MCP path instead of trusting an old `05-audit/audit.json`. Decision Packages show an audit-failure banner and do not render `decided` chains as recommendations when the audit fails; `signoff` is blocked without a passing audit and an existing product-reasoning chain.
+
+### Changed
+
+- Decision Package option comparison now uses one field set for every candidate: readiness, evidence count, counter-evidence, business gate, resource commitment, prioritization method/factors, gaps and next test. It explicitly does not compute a composite score.
+
+### Validation
+
+- 158 tests pass, including nested-evidence negative cases, fresh-audit delivery, signoff refusal, multi-option comparison, and Research Run authorization/hash/fixture/step tests.
+
 ## 2.5.0 — 2026-10-31
 
 ### Added

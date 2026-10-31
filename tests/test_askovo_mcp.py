@@ -79,7 +79,8 @@ class AskvoMcpServerTests(unittest.TestCase):
         self.assertIn("askovo_lexicon", tool_names)
         self.assertIn("askovo_audit", tool_names)
         self.assertIn("askovo_chain", tool_names)
-        for name in ("askovo_route", "askovo_do", "askovo_platforms", "askovo_collect", "askovo_analyze"):
+        for name in ("askovo_route", "askovo_do", "askovo_platforms", "askovo_collect",
+                     "askovo_research", "askovo_analyze"):
             self.assertIn(name, tool_names)
 
         connectors = tool_payload(by_id[3])

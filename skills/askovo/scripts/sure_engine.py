@@ -1841,6 +1841,7 @@ def _decision_package_lines(
     study: dict[str, Any],
     reasoning: dict[str, Any] | None,
     evidence: dict[str, Any],
+    audit_status: str = "not_run",
 ) -> list[str]:
     """Decision Package：同一条推理链/需求判断的五个决策侧视图。
 
@@ -1865,10 +1866,17 @@ def _decision_package_lines(
         "",
         f"- 决策问题：{decision.get('question') or study.get('decision_question') or study.get('title', '待确认')}",
         f"- 决策负责人：{decision.get('owner') or '待确认'}；截止：{decision.get('deadline') or '未设置'}",
+        f"- 审计状态：`{audit_status}`（full audit）",
         "",
         "> 本包是研究投影：所有判断、证据与缺口以 `04-findings/` 为准；证据强度不等于商业或发布证明。",
         "",
     ]
+    if audit_status != "pass":
+        lines.extend([
+            "> **审计未通过：本决策包不是可签收推荐。** 已决链仅作为待修正草案；"
+            "请先修复 `askovo check --stage full` 的失败项。",
+            "",
+        ])
 
     # ── 1. 机会地图 ────────────────────────────────────────────
     lines.extend(["## 1. 机会地图（Opportunity Map）", ""])
@@ -1972,22 +1980,49 @@ def _decision_package_lines(
     if len(chains) >= 2:
         lines.extend(
             [
-                "| 选项（主链） | 状态 | 优先级理由 | 主要反证 | 替代解释 |",
-                "|---|---|---|---|---|",
+                "同一组字段横向比较，不计算综合分，也不把字段齐全当成方案更优：",
+                "",
+                "| 选项（主链） | 状态 | 节点就绪 | 证据数 | 反证数 | 商业门 | 资源承诺 | 优先级方法与因素 | 关键缺口 | 下一验证 |",
+                "|---|---|---|---|---|---|---|---|---|---|",
             ]
         )
+        flow_value = (reasoning or {}).get("flow")
+        flow = tuple(flow_value) if isinstance(flow_value, list) and flow_value else REASONING_NODES
         for chain in chains:
-            alternatives = chain.get("alternative_explanations", [])
-            counter_ids = [str(item) for item in chain.get("counter_evidence_ids", [])]
-            prioritization = chain.get("prioritization", {})
-            rationale = (prioritization or {}).get("rationale") if isinstance(prioritization, dict) else ""
-            lines.append(
-                f"| `{chain.get('id', 'PR?')}` {chain.get('title', '')} | `{chain.get('status', 'unknown')}` | "
-                f"{_markdown_cell(str(rationale or '未记录'))} | "
-                f"{_markdown_cell(', '.join(f'`{i}`' for i in counter_ids) or '未记录')} | "
-                f"{_markdown_cell('；'.join(str(a) for a in alternatives) or '未记录')} |"
+            nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
+            validated = sum(
+                1 for name in flow
+                if isinstance(nodes.get(name), dict) and nodes.get(name, {}).get("status") == "validated"
             )
-        lines.append("")
+            evidence_count = sum(
+                len(nodes.get(name, {}).get("evidence_ids", []))
+                for name in flow if isinstance(nodes.get(name), dict)
+                and isinstance(nodes.get(name, {}).get("evidence_ids"), list)
+            )
+            business = nodes.get("business", {}) if isinstance(nodes.get("business"), dict) else {}
+            gate = business.get("gate", {}) if isinstance(business.get("gate"), dict) else {}
+            prioritization = chain.get("prioritization", {})
+            if not isinstance(prioritization, dict):
+                prioritization = {}
+            factors = prioritization.get("factors")
+            factors_text = json.dumps(factors, ensure_ascii=False) if factors else "未记录"
+            method = prioritization.get("method") or "未记录"
+            counter_count = len(chain.get("counter_evidence_ids") or [])
+            lines.append(
+                f"| `{chain.get('id', 'PR?')}` {_markdown_cell(chain.get('title', ''))} | "
+                f"`{chain.get('status', 'unknown')}` | {validated}/{len(flow)} | {evidence_count} | "
+                f"{counter_count} | `{gate.get('stage', 'G0')}` / `{gate.get('decision', 'hypothesis')}` | "
+                f"{_markdown_cell(gate.get('resource_commitment') or '未记录')} | "
+                f"{_markdown_cell(method + '；' + factors_text)} | "
+                f"{_markdown_cell('；'.join(str(g) for g in chain.get('gaps', [])) or '未记录')} | "
+                f"{_markdown_cell(chain.get('next_test') or '未记录')} |"
+            )
+        lines.extend([
+            "",
+            "证据数只表示引用数量，不表示证据质量；反证数只表示记录数量，不表示严重性。"
+            "方案取舍仍需逐条阅读证据等级、适用条件和未验证假设。",
+            "",
+        ])
     elif len(chains) == 1:
         chain = chains[0]
         alternatives = chain.get("alternative_explanations", [])
@@ -2008,10 +2043,14 @@ def _decision_package_lines(
 
     # ── 4. 决策备忘 ────────────────────────────────────────────
     lines.extend(["## 4. 决策备忘（Decision Memo）", ""])
-    decided = [chain for chain in chains if chain.get("status") == "decided"]
+    decided = [chain for chain in chains if chain.get("status") == "decided"] \
+        if audit_status == "pass" else []
     rejected = [chain for chain in chains if chain.get("status") in ("rejected", "deprioritized")]
     if not decided:
-        lines.append("**尚无可决策主链**（没有 `decided` 状态的链）。决策备忘降级为缺口清单：")
+        if audit_status != "pass":
+            lines.append("**当前审计未通过，不能形成已决推荐。** 以下为已决链的待修正缺口：")
+        else:
+            lines.append("**尚无可决策主链**（没有 `decided` 状态的链）。决策备忘降级为缺口清单：")
         lines.append("")
         for chain in chains:
             nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
@@ -2110,14 +2149,22 @@ def _decision_package_lines(
     return lines
 
 
-def deliver(study_dir: Path, kind: str = "memo") -> dict[str, Any]:
+def deliver(study_dir: Path, kind: str = "memo", audit: Any | None = None) -> dict[str, Any]:
     study_dir = study_dir.resolve()
     study = load_json(study_dir / "study.json")
     route = study.get("route") or {}
     evidence = _evidence_summary(study_dir)
     reasoning = load_product_reasoning(study_dir)
-    audit_path = study_dir / "05-audit" / "audit.json"
-    audit = load_json(audit_path) if audit_path.is_file() else None
+    if audit is not None and hasattr(audit, "as_dict"):
+        audit_info = audit.as_dict()
+    elif isinstance(audit, dict):
+        audit_info = audit
+    else:
+        # Direct library callers do not get a fresh pass silently: absence of an
+        # audit is reported as not_run, not as a successful audit.
+        audit_info = {"status": "not_run", "generated_at": "", "checks": []}
+    audit_status = str(audit_info.get("status") or "not_run")
+    audit_failed = audit_status != "pass"
     out_dir = study_dir / "06-report"
     out_dir.mkdir(parents=True, exist_ok=True)
     if kind == "tracker":
@@ -2167,23 +2214,45 @@ def deliver(study_dir: Path, kind: str = "memo") -> dict[str, Any]:
     if kind == "decision":
         path = out_dir / "decision-package.md"
         path.write_text(
-            "\n".join(_decision_package_lines(study, reasoning, evidence)) + "\n",
+            "\n".join(_decision_package_lines(study, reasoning, evidence, audit_status)) + "\n",
             encoding="utf-8",
         )
         return {
             "status": "written",
             "path": str(path),
             "kind": kind,
+            "audit_status": audit_status,
+            "audit_generated_at": audit_info.get("generated_at", ""),
             "evidence_count": evidence["count"],
             "product_reasoning": product_reasoning_summary(reasoning),
         }
-    if kind == "signoff" and reasoning is not None:
+    if kind == "signoff":
+        if reasoning is not None and audit_failed:
+            return {
+                "status": "blocked",
+                "kind": kind,
+                "audit_status": audit_status,
+                "reason": "full audit failed or was not run; a sign-off page cannot be issued",
+                "checks": [c for c in audit_info.get("checks", []) if c.get("status") == "fail"],
+            }
+        if reasoning is None:
+            return {
+                "status": "blocked",
+                "kind": kind,
+                "audit_status": audit_status,
+                "reason": "no product-reasoning chain exists; run askovo chain before sign-off",
+            }
         path = out_dir / "signoff.md"
-        path.write_text(_signoff_page(study, reasoning, study_dir), encoding="utf-8")
+        path.write_text(
+            _signoff_page(study, reasoning, study_dir, audit_status=audit_status),
+            encoding="utf-8",
+        )
         return {
             "status": "written",
             "path": str(path),
             "kind": kind,
+            "audit_status": audit_status,
+            "audit_generated_at": audit_info.get("generated_at", ""),
             "evidence_count": evidence["count"],
             "product_reasoning": product_reasoning_summary(reasoning),
         }
@@ -2192,8 +2261,15 @@ def deliver(study_dir: Path, kind: str = "memo") -> dict[str, Any]:
         "",
         f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label', study.get('product_domain', ''))}；"
         f"阶段：{route.get('stage_label', study.get('lifecycle_stage', ''))}。",
+        f"> 审计状态：`{audit_status}`（生成时间：{audit_info.get('generated_at') or '未运行'}）。",
         "",
     ]
+    if audit_failed:
+        lines.extend([
+            "> **审计未通过：本文件不能作为已审核结论或签收依据。** "
+            "请先运行 `askovo check --stage full` 并修复失败项。",
+            "",
+        ])
     if kind == "report":
         lines.extend(
             [
@@ -4149,7 +4225,8 @@ def cli_doctor(args: Any) -> int:
     return doctor()
 
 
-def _signoff_page(study: dict[str, Any], reasoning: dict[str, Any], study_dir: Path) -> str:
+def _signoff_page(study: dict[str, Any], reasoning: dict[str, Any],
+                  study_dir: Path, audit_status: str = "not_run") -> str:
     """F3 stakeholder sign-off one-pager: conclusion, levels, boundaries, blanks to sign."""
     evidence_levels: dict[str, str] = {}
     reviewed = unreviewed = 0
@@ -4175,6 +4252,7 @@ def _signoff_page(study: dict[str, Any], reasoning: dict[str, Any], study_dir: P
         f"> 研究：{study.get('title', '')}（{study.get('study_id', '')}）",
         f"> 决策问题：{(study.get('decision') or {}).get('question', '')}",
         f"> 责任人：{(study.get('decision') or {}).get('owner', '')} · 截止：{(study.get('decision') or {}).get('deadline', '')}",
+        f"> full audit：`{audit_status}`（仅 pass 才可进入签收；签收不替代专业复核）",
         "",
     ]
     for chain in chains if isinstance(chains, list) else []:

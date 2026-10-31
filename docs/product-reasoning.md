@@ -157,6 +157,8 @@ PM 可以在证据不足时决定推进，但应保留 `needs-validation`，记�
 
 `prioritization` 记录需求分析的方法、因素、负责人、日期和理由；`change_log` 记录变更依据、受影响节点、影响判断和投影同步状态。优先级不能由词频直接决定，变更必须先改唯一主链，再同步 MRD/PRD/BRD。
 
+嵌套商业证据也必须闭合：`segments[].evidence_ids`、`pricing[].evidence_ids` 和 `change_log[].reason_evidence_ids` 不是自由文本，必须存在于证据库、满足 context_key，并属于 linked demand judgment 的相应证据角色。`deliver` 会在写决策包/签收页前重新运行 full audit；审计失败时决策包明确降级，签收页拒绝生成，不能沿用旧 audit 文件。
+
 ## 7. 工作闭环
 
 ```text

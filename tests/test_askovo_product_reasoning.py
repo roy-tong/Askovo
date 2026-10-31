@@ -360,6 +360,21 @@ class ProductReasoningTests(unittest.TestCase):
         check = self.assert_product_check(json.loads(completed.stdout), "fail")
         self.assertIn("references unknown evidence: R404", check["detail"])
 
+    def test_nested_business_evidence_must_exist_and_be_registered(self) -> None:
+        data = valid_product_reasoning()
+        business = data["chains"][0]["nodes"]["business"]
+        business["segments"][0]["evidence_ids"] = ["R404"]
+        business["pricing"][0]["evidence_ids"] = ["R01"]  # problem evidence, not commercial/solution
+        data["chains"][0]["change_log"][0]["reason_evidence_ids"] = ["R405"]
+        self.write_reasoning(data)
+
+        completed = run_cli("check", str(self.target), "--stage", "full")
+        self.assertEqual(1, completed.returncode, completed.stdout + completed.stderr)
+        detail = self.assert_product_check(json.loads(completed.stdout), "fail")["detail"]
+        self.assertIn("R404", detail)
+        self.assertIn("R405", detail)
+        self.assertIn("business.pricing evidence is not registered", detail)
+
     def test_node_evidence_must_be_registered_for_that_node_in_linked_judgment(self) -> None:
         data = valid_product_reasoning()
         data["chains"][0]["nodes"]["feature"]["evidence_ids"] = ["R01", "R03"]
@@ -572,6 +587,47 @@ class ProductReasoningTests(unittest.TestCase):
         self.assertTrue(cited <= evidence_ids, cited - evidence_ids)
         # 单链时选项节如实声明，不虚构多方案对比
         self.assertIn("单一主链", text)
+
+    def test_decision_package_compares_multiple_options_without_fake_score(self) -> None:
+        data = valid_product_reasoning()
+        second = json.loads(json.dumps(data["chains"][0]))
+        second["id"] = "PR02"
+        second["title"] = "Add fixed cameras instead"
+        second["demand_judgment_id"] = "D02"
+        second["prioritization"]["factors"] = {"consequence": "installation cost"}
+        second["nodes"]["business"]["segments"][0]["user_refs"] = ["PR02.user"]
+        second["change_log"][0]["affected_refs"] = ["PR02.feature"]
+        data["chains"].append(second)
+        self.write_reasoning(data)
+        judgments = self.read_judgments()
+        second_judgment = json.loads(json.dumps(judgments[0]))
+        second_judgment["id"] = "D02"
+        judgments.append(second_judgment)
+        self.write_judgments(judgments)
+
+        delivered = run_cli("deliver", str(self.target), "--kind", "decision")
+        self.assertEqual(0, delivered.returncode, delivered.stdout + delivered.stderr)
+        text = (self.target / "06-report/decision-package.md").read_text(encoding="utf-8")
+        section = text[text.index("## 3."):text.index("## 4.")]
+        self.assertIn("PR02", section)
+        self.assertIn("installation cost", section)
+        self.assertIn("Synthetic gate prioritization", section)
+        self.assertIn("G0", section)
+        self.assertIn("不计算综合分", section)
+
+    def test_decision_package_uses_fresh_audit_not_stale_artifacts(self) -> None:
+        (self.target / "02-data/evidence.jsonl").write_text("", encoding="utf-8")
+        delivered = run_cli("deliver", str(self.target), "--kind", "decision")
+        self.assertEqual(0, delivered.returncode, delivered.stdout + delivered.stderr)
+        payload = json.loads(delivered.stdout)
+        self.assertEqual("fail", payload["audit_status"])
+        text = (self.target / "06-report/decision-package.md").read_text(encoding="utf-8")
+        self.assertIn("审计未通过", text)
+        self.assertNotIn("产品/商业选择记录", text)
+
+        signed = run_cli("deliver", str(self.target), "--kind", "signoff")
+        self.assertEqual(1, signed.returncode, signed.stdout + signed.stderr)
+        self.assertEqual("blocked", json.loads(signed.stdout)["status"])
 
     def test_decision_package_degrades_without_decided_chain(self) -> None:
         data = json.loads(self.reasoning_path.read_text(encoding="utf-8"))

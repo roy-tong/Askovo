@@ -302,6 +302,25 @@ def _build_psm(arguments: dict[str, Any]) -> argparse.Namespace:
     )
 
 
+def _build_research(arguments: dict[str, Any]) -> argparse.Namespace:
+    action = _string(arguments.get("action"), "action")
+    if action not in ("plan", "status", "run"):
+        raise ValueError("action must be plan, status or run")
+    actions = _optional_string(arguments, "actions")
+    if action == "plan" and not actions:
+        raise ValueError("actions is required for research plan")
+    return _namespace(
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        action=action,
+        actions=actions,
+        reset=False,
+        authorize=False,   # human-only CLI operation; MCP never self-authorizes
+        by="",
+        max_steps=int(arguments.get("max_steps", 1)),
+        analyze=_boolean(arguments, "analyze"),
+    )
+
+
 def _build_analyze(arguments: dict[str, Any]) -> argparse.Namespace:
     return _namespace(
         study_dir=_string(arguments.get("study_dir"), "study_dir"),
@@ -617,6 +636,25 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "askovo_research",
+        "description": (
+            "Plan or run a bounded research action list. MCP can create/plan/status and run only "
+            "an action list that a human already authorized in the CLI; it cannot authorize a new "
+            "list or bypass the study Design gate."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "study_dir": {"type": "string"},
+                "action": {"enum": ["plan", "status", "run"]},
+                "actions": {"type": "string", "description": "action-list JSON for plan/run"},
+                "max_steps": {"type": "integer", "minimum": 1, "maximum": 20, "default": 1},
+                "analyze": {"type": "boolean", "default": False},
+            },
+            "required": ["study_dir", "action"],
+        },
+    },
+    {
         "name": "askovo_analyze",
         "description": (
             "Normalize, dedup and describe collected material: platform/claim/form distributions, "
@@ -799,11 +837,12 @@ TOOL_BUILDERS = {
     "askovo_do": (askovo_cli.sure_engine.cli_do, _build_do),
     "askovo_platforms": (askovo_cli.sure_engine.cli_platforms, _build_platforms),
     "askovo_collect": (askovo_cli.command_collect, _build_collect),
+    "askovo_research": (askovo_cli.command_research, _build_research),
     "askovo_analyze": (askovo_cli.sure_engine.cli_analyze, _build_analyze),
     "askovo_instruments": (askovo_cli.sure_engine.cli_instruments, _build_instruments),
     "askovo_codebook": (askovo_cli.sure_engine.cli_codebook, _build_codebook),
     "askovo_chain": (askovo_cli.sure_engine.cli_chain, _build_codebook),
-    "askovo_deliver": (askovo_cli.sure_engine.cli_deliver, _build_deliver),
+    "askovo_deliver": (askovo_cli.command_deliver, _build_deliver),
     "askovo_methods": (askovo_cli.sure_engine.cli_methods, _build_methods),
     "askovo_domains": (askovo_cli.sure_engine.cli_domains, _build_domains),
     "askovo_queue_add": (askovo_cli.sure_engine.cli_queue_add, _build_queue_add),

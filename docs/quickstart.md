@@ -119,6 +119,30 @@ askovo import ./cam-study interviews.jsonl --source-family interview
 
 每次平台采集写 raw envelope、normalized 和 manifest；它们不是自动可用的需求证据。无适配器时返回 `3` 并保留路线缺口，不做未授权抓取。
 
+### 有授权的 Research Run
+
+Agent 可以先生成机器可读的 research action list，再由人显式授权执行；CLI 不会自行创造来源或绕过平台策略：
+
+```json
+{
+  "schema_version": "1.0",
+  "run_id": "run-001",
+  "actions": [
+    {"id": "A1", "node": "pain", "platform": "github",
+     "query": "camera motion alert", "limit": 50}
+  ]
+}
+```
+
+```bash
+askovo research plan ./cam-study --actions actions.json
+askovo research authorize ./cam-study --by "研究负责人"
+askovo research run ./cam-study --actions actions.json --max-steps 1 --analyze
+askovo research status ./cam-study
+```
+
+规则：每个 action 的平台必须在 `study.scope.allowed_sources` 中、节点必须存在；fixture 必须位于 study 目录内；授权绑定 action-list hash，修改 action 后必须重新授权；`run` 仍要求 Design gate；任何 blocked 状态都会停止并保留原因。研究产物仍是草稿，不等于需求已被证明。
+
 ## 第五步：分析、编码、更新判断与主链
 
 ```bash
