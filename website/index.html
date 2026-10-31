@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Askovo | 问得更好，让决策有据</title>
+  <meta name="description" content="面向产品经理、用户研究与市场/需求/商业分析的产品与商业推理助手：场景→用户→痛点→需求→特性→产品→商业七节点推理链，每条结论标 E0–E5 证据等级，超证结论直接点名。">
+  <link rel="canonical" href="https://roy-tong.github.io/askovo/">
+  <meta name="theme-color" content="#090C10">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Askovo">
+  <meta property="og:title" content="Askovo | 问得更好，让决策有据">
+  <meta property="og:description" content="AI 调研报告每句话同样自信——Askovo 给每条结论标证据等级，超证的直接说超证。开源 CLI / Agent Skill / MCP。">
+  <meta property="og:url" content="https://roy-tong.github.io/askovo/">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Askovo",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "macOS, Linux, Windows",
+    "description": "产品与商业推理交付助手：七节点推理链、E0–E5 证据分级、超证审计。CLI / Agent Skill / MCP，MIT 开源。",
+    "url": "https://roy-tong.github.io/askovo/",
+    "codeRepository": "https://github.com/roy-tong/askovo",
+    "license": "https://opensource.org/license/mit",
+    "author": { "@type": "Person", "name": "Roy Tong", "url": "https://github.com/roy-tong" },
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  }
+  </script>
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="./">Askovo<span class="cursor">_</span></a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="#chain">推理链</a>
+        <a href="#today">今天可用什么</a>
+        <a href="#try">本地验证</a>
+        <a href="./first-look.html">提交任务</a>
+        <a href="https://github.com/roy-tong/askovo">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="hero" id="top">
+      <p class="kicker">PRODUCT &amp; BUSINESS REASONING, WITH EVIDENCE</p>
+      <h1>AI 调研报告每句话同样自信。<br>Askovo 告诉你哪句有证据，哪句是编的。</h1>
+      <p class="lead">Askovo 把产品判断拆成一条可检查的推理链，每个判断写清"凭什么从上一步推到这一步、依据哪些证据"；证据按 E0–E5 分级，结论超出证据，<code>askovo audit</code> 直接点名，退出码 1 可以进 CI。面向产品经理、用户研究、用户运营与市场/需求/商业分析，覆盖软件、硬件、消费品、汽车、手机五域。</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#try">30 秒本地验证</a>
+        <a class="btn" href="./first-look.html">描述一个需求验证任务</a>
+        <a class="btn" href="./claims.html">我们主张什么，不主张什么</a>
+      </div>
+    </div>
+
+    <section id="chain">
+      <h2>一条主链，从用户推理到商业<span class="en">SCENE → BUSINESS</span></h2>
+      <p class="sub">数据收集、访谈、实验、平台连接都只是支撑步骤——它们验证某个节点或推导关系，不代替推理本身。</p>
+      <div class="chain" aria-label="七节点推理链">
+        <span class="node">场景</span><span class="arrow">→</span>
+        <span class="node">用户</span><span class="arrow">→</span>
+        <span class="node">痛点</span><span class="arrow">→</span>
+        <span class="node">需求</span><span class="arrow">→</span>
+        <span class="node">特性</span><span class="arrow">→</span>
+        <span class="node">产品</span><span class="arrow">→</span>
+        <span class="node">商业</span>
+      </div>
+      <p>每个节点必须填写：当前判断（statement）、推导理由（rationale）、成立假设（assumptions）、支撑证据（evidence_ids）与状态。同一份机器真值（<code>product-reasoning.json</code>）投影出 MRD、PRD、BRD 与决策 memo——不是四套平行事实源。六类结论不混：need 不冒充 acceptance，usability 不冒充 commercial，口头意愿永远不是付费行为。</p>
+    </section>
+
+    <section id="today">
+      <h2>今天可用什么<span class="en">WHAT IS AVAILABLE TODAY</span></h2>
+      <table>
+        <thead><tr><th>能力</th><th>当前边界</th></tr></thead>
+        <tbody>
+          <tr><td>七节点推理链与 MRD/PRD/BRD 投影</td><td>结构与证据引用自动校验；<strong>语义复核仍由人负责</strong></td></tr>
+          <tr><td>证据分级审计（E0–E5，退出码进 CI）</td><td>只验结构与配置门，不证明需求普遍率、市场成功或发布可行性</td></tr>
+          <tr><td>平台雷达与采集（GitHub / Reddit 官方 API）</td><td>blocked 平台不绕过；CDP 仅限授权可见页；采集前须过 Design gate</td></tr>
+          <tr><td>单位经济与 PSM 价格敏感度投影</td><td>确定性口径计算；PSM 是陈述意向，不是付费行为</td></tr>
+          <tr><td>人工交付（需求验证 study / 团队工作坊）</td><td>范围与费用按具体任务商定；商业复购与规模化仍在验证中</td></tr>
+        </tbody>
+      </table>
+      <p class="scope">引擎、CLI、Agent Skill、MCP 与五域基础领域包为 MIT 开源，无功能阉割版。付费的只可能是深度领域资产与人工交付，不是引擎本身。</p>
+    </section>
+
+    <section id="try">
+      <h2>30 秒本地验证<span class="en">NO SIGNUP, NO UPLOAD</span></h2>
+      <p class="sub">离线合成样例，验证结构与推理链自洽——不证明真实需求或市场。Python 3.9+，标准库实现；PyPI 包发布前从源码安装（2026-10-31 核实）。</p>
+      <pre><code>pipx install git+https://github.com/roy-tong/askovo.git
+askovo do "家用摄像头夜间告警误报，想验证样机" --dry-run
+askovo demo</code></pre>
+      <p>预期关键结果：<span class="tag-ok">status: pass</span> · <span class="tag-ok">supported: 1</span> · <span class="tag-ok">overclaims: 0</span>。所有命令本地运行，不上传数据。也可以作为 Agent Skill 或 MCP server 接入你的 agent 工作流。</p>
+      <div class="note">想要人来做？<a href="./first-look.html">描述一个需求验证任务</a>——范围与费用在委托前逐案商定，不公布标准价目。</div>
+    </section>
+
+    <section>
+      <h2>工程与主张纪律<span class="en">CLAIMS</span></h2>
+      <p>135 个测试、Python 3.9–3.12 CI 矩阵、自动化发布流。合成样例只证明结构自洽，我们在 <a href="./claims.html">claims 页</a>逐条列明每个数字与结论能主张什么、不能冒充什么——这和引擎本身是同一个产品。</p>
+      <p><a href="https://github.com/roy-tong/askovo">GitHub 仓库</a> · <a href="https://github.com/roy-tong/askovo/blob/main/docs/quickstart.md">快速开始</a> · <a href="https://github.com/roy-tong/askovo/blob/main/llms.txt">llms.txt（agent 入口）</a> · <a href="https://github.com/roy-tong/askovo/actions/workflows/tests.yml">CI</a></p>
+    </section>
+  </main>
+
+  <footer class="footer wrap">
+    <p>开源引擎永久免费（MIT）。人工交付范围与费用按任务商定。</p>
+    <p class="row"><span>© 2026 Askovo</span><span>·</span><a href="https://github.com/roy-tong/askovo">GitHub</a><span>·</span><a href="./first-look.html">提交任务</a><span>·</span><a href="./claims.html">Claims</a><span>·</span><span>复核日期 2026-10-31</span></p>
+  </footer>
+</body>
+</html>

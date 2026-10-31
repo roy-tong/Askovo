@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>我们主张什么，不主张什么 | Askovo</title>
+  <meta name="description" content="Askovo 的 claims 纪律：每类结论能主张什么、不能冒充什么；测试与合成样例证明什么、不证明什么。">
+  <link rel="canonical" href="https://roy-tong.github.io/askovo/claims.html">
+  <meta name="theme-color" content="#090C10">
+  <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="./">Askovo<span class="cursor">_</span></a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="./#chain">推理链</a>
+        <a href="./#today">今天可用什么</a>
+        <a href="./#try">本地验证</a>
+        <a href="./first-look.html">提交任务</a>
+        <a href="https://github.com/roy-tong/askovo">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="hero" id="top">
+      <p class="kicker">CLAIMS &amp; BOUNDARIES</p>
+      <h1>我们主张什么，不主张什么</h1>
+      <p class="lead">Askovo 的价值在于知道证据能支持到哪里。这一页把产品自己的主张也放进同一条纪律里：能主张的写清楚，不能冒充的直接说不。</p>
+    </div>
+
+    <section>
+      <h2>六类结论不能混<span class="en">SIX CONCLUSION TYPES</span></h2>
+      <table>
+        <thead><tr><th>类型</th><th>回答</th><th>不能替代</th></tr></thead>
+        <tbody>
+          <tr><td>need</td><td>谁在什么场景有什么未满足任务</td><td>功能请求、个案、普遍率</td></tr>
+          <tr><td>acceptance</td><td>用户是否理解/接受方案</td><td>喜欢 ≠ 会用 / 会买</td></tr>
+          <tr><td>usability</td><td>能否完成任务、是否易学低错</td><td>好用 ≠ 需求成立</td></tr>
+          <tr><td>performance</td><td>明确条件下是否达标</td><td>跑分 ≠ 体验</td></tr>
+          <tr><td>commercial</td><td>购买、留存、复购、退换</td><td>口头意愿 ≠ 交易</td></tr>
+          <tr><td>safety</td><td>使用风险与合规缺口</td><td>用户试验 ≠ 认证</td></tr>
+        </tbody>
+      </table>
+      <p>E0–E5 只描述需求与商业证据强度，不是产品/商业推理得分；可用性、工程性能、安全、可行性分别有各自的验证要求。</p>
+    </section>
+
+    <section>
+      <h2>测试与样例证明什么<span class="en">WHAT TESTS PROVE</span></h2>
+      <table>
+        <thead><tr><th>证据</th><th>能主张</th><th>不能冒充</th></tr></thead>
+        <tbody>
+          <tr><td>135 个单元测试（Python 3.9–3.12）</td><td>命令行为、结构校验、门逻辑符合规格</td><td>真实需求成立、产品质量、市场规模</td></tr>
+          <tr><td>离线合成样例（askovo demo）</td><td>主链、证据引用与审计逻辑自洽</td><td>任何真实用户或商业事实</td></tr>
+          <tr><td>CI 通过（tests.yml）</td><td>上述行为在受支持版本上可复现</td><td>发布可行性、合规或认证</td></tr>
+          <tr><td>GitHub/Reddit 官方 API 采集</td><td>授权来源的原始记录与偏差留痕</td><td>样本代表总体、记录数=用户数</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>永远不做的推断<span class="en">NEVER</span></h2>
+      <ul>
+        <li>不把购买意愿当真实购买，不把采用率当产品结果，不把一次喜欢当复购</li>
+        <li>不把便利样本外推普遍率或市场规模；市场估计必须写全口径、边界与来源，null 是未知不是零</li>
+        <li>不把 <code>decided</code>（记录了当前选择）冒充发布批准、商业成立或因果效果——交付、结果、因果是三个独立状态</li>
+        <li>不做未授权抓取，不绕过 blocked 连接器、登录墙或平台挑战</li>
+        <li>所有自动交付默认草稿；CLI 通过不替代人工语义复核、产品签收或风险接受</li>
+      </ul>
+      <p class="scope">完整边界见仓库 <a href="https://github.com/roy-tong/askovo/blob/main/README.md#边界">README 边界节</a>与 <a href="https://github.com/roy-tong/askovo/blob/main/docs/concepts.md">核心概念</a>。</p>
+    </section>
+
+    <section>
+      <h2>如果这次检查对你有用<span class="en">STAR, NEVER REQUIRED</span></h2>
+      <p>如果 Askovo 帮到了你，给 <a href="https://github.com/roy-tong/askovo">仓库</a>一个 star 能帮更多人找到它——完全自愿，不设任何前提。</p>
+    </section>
+  </main>
+
+  <footer class="footer wrap">
+    <p>开源引擎永久免费（MIT）。</p>
+    <p class="row"><span>© 2026 Askovo</span><span>·</span><a href="./">首页</a><span>·</span><a href="./first-look.html">提交任务</a><span>·</span><span>复核日期 2026-10-31</span></p>
+  </footer>
+</body>
+</html>

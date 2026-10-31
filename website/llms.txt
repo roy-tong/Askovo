@@ -1,0 +1,7 @@
+# Askovo site
+
+> Askovo is the product/business reasoning and delivery product for PM, user research, user operations, and market/requirements/business analysis. Evidence-graded conclusions (E0-E5) on a seven-node chain: scene → user → pain → need → feature → product → business. Open-source CLI / Agent Skill / MCP (MIT). This site is the Chinese-facing landing + task intake; the repository is the canonical source.
+
+Pages: / (landing, capability boundaries table, local 30s verification) · /first-look.html (task intake: mailto draft with 5-field template; scope and fee agreed per task, no public price list) · /claims.html (what we claim and never claim; six conclusion types; what tests prove).
+
+Canonical repo and full agent entry: https://github.com/roy-tong/askovo (see repo-root llms.txt for commands, protocols, and data contracts). Synthetic demo proves structure self-consistency only — never real demand, market size, release readiness, or commercial truth.
