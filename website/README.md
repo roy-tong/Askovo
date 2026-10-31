@@ -10,7 +10,7 @@
 ## 部署（一次性开通）
 
 1. GitHub 仓库 → Settings → Pages → Source 选 **GitHub Actions**（`.github/workflows/pages.yml` 已就位，`website/**` 变更即部署）
-2. 部署后地址：`https://roy-tong.github.io/askovo/`
+2. 部署后地址：`https://roy-tong.github.io/Askovo/`
 3. README 顶部已链接官网地址；部署前该链接 404 属预期
 
 ## 维护纪律
