@@ -12,6 +12,6 @@ Reviewed 2026-10-31 against the repository implementation. Available means local
 | A12 | Reports, MRD/PRD/BRD and decision package | Available; refreshed audit guards delivery |
 | A13–A15 | Continuous validation, evaluation and industry packs | Existing tests/domain packs; continuous research is not shipped |
 
-Build: SURE reasoning, evidence contracts, authorization, acceptance and delivery. Reuse: existing source connectors; evaluate Crawl4AI/Scrapy for collection and Docling for documents only as optional adapters. Core remains standard-library-only. New document ingestion uses an optional Docling installation; no vendored fork or mandatory core dependency.
+Build: SURE reasoning, evidence contracts, authorization, acceptance and delivery. Reuse: existing source connectors; evaluate Crawl4AI/Scrapy for collection and Docling for documents only as optional adapters. Core remains standard-library-only. The optional `askovo_document` MCP tool shares the same local extraction adapter as `askovo document`, and writes only to explicit local paths. New document ingestion uses an optional Docling installation; no vendored fork or mandatory core dependency.
 
 Recovery: completed actions are checkpointed before analysis; an interrupted `running` action blocks replay. Inspect collected files and provenance before preparing a replacement plan. Never reset blindly. Execution is serialized using an OS file lock on macOS/Linux. Authorization binds the actual action fields, not just a stored digest.
