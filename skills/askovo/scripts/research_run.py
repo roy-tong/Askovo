@@ -176,6 +176,11 @@ def state_path(study_dir: Path) -> Path:
 
 
 def prepare(study_dir: Path, actions_path: Path, *, reset: bool = False) -> Dict[str, Any]:
+    with _run_lock(study_dir):
+        return _prepare(study_dir, actions_path, reset=reset)
+
+
+def _prepare(study_dir: Path, actions_path: Path, *, reset: bool = False) -> Dict[str, Any]:
     data = load_actions(actions_path)
     state = validate_actions(study_dir, data)
     path = state_path(study_dir)
@@ -216,6 +221,11 @@ def load_state(study_dir: Path) -> Dict[str, Any]:
 
 
 def authorize(study_dir: Path, *, by: str) -> Dict[str, Any]:
+    with _run_lock(study_dir):
+        return _authorize(study_dir, by=by)
+
+
+def _authorize(study_dir: Path, *, by: str) -> Dict[str, Any]:
     if not str(by or "").strip():
         raise ResearchRunError("authorization requires a named operator")
     state = load_state(study_dir)

@@ -16,7 +16,7 @@ Askovo 面向产品经理、用户研究和业务分析人员。你提供业务�
 
 AI 研究工具的产出，每一句听起来都同样自信——有据的和编的看起来一样，签字的人看不出哪句能信。askovo 给每条结论标证据等级（E0–E5）；结论超出证据时，`askovo audit` 直接说出来，退出码 1 可以进 CI。
 
-[官网](https://roy-tong.github.io/askovo/) · [快速开始](docs/quickstart.md) · [产品与商业推理主链](docs/product-reasoning.md) · [岗位方法论](docs/product-methodology.md) · [平台与连接器](docs/connectors.md)
+[官网](https://roy-tong.github.io/Askovo/) · [快速开始](docs/quickstart.md) · [产品与商业推理主链](docs/product-reasoning.md) · [岗位方法论](docs/product-methodology.md) · [平台与连接器](docs/connectors.md)
 
 [![Agent Skill](https://img.shields.io/badge/Agent_Skill-Askovo-111111)](skills/askovo/SKILL.md)
 [![CI](https://github.com/roy-tong/askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/askovo/actions/workflows/tests.yml)
@@ -289,7 +289,7 @@ MCP 暴露 `askovo_route`、`askovo_do`、`askovo_chain`、`askovo_platforms`、
 | 平台雷达与采集 | blocked 平台不绕过；采集前须过 Design gate 与授权检查 |
 | 人工交付（需求验证 study / 团队工作坊） | 范围与费用按任务商定；商业复购仍在验证 |
 
-人工交付**不公布标准价目**：先邮件 <a href="mailto:tongroy18@gmail.com?subject=Askovo%20%E9%9C%80%E6%B1%82%E9%AA%8C%E8%AF%81%20%E2%80%94%20%E4%BB%BB%E5%8A%A1%E5%88%9D%E5%88%A4&body=%E4%BA%A7%E5%93%81%E4%B8%8E%E9%A2%86%E5%9F%9F%EF%BC%88%E8%BD%AF%E4%BB%B6/%E7%A1%AC%E4%BB%B6/%E6%B6%88%E8%B4%B9%E5%93%81/%E6%B1%BD%E8%BD%A6/%E6%89%8B%E6%9C%BA%EF%BC%89%EF%BC%9A%0A%E6%83%B3%E9%AA%8C%E8%AF%81%E7%9A%84%E9%9C%80%E6%B1%82%E6%88%96%E5%86%B3%E7%AD%96%E9%97%AE%E9%A2%98%EF%BC%9A%0A%E5%86%B3%E7%AD%96%E6%88%96%E8%AF%84%E5%AE%A1%E6%97%A5%E6%9C%9F%EF%BC%9A%0A%E5%B7%B2%E6%9C%89%E7%9A%84%E8%B5%84%E6%96%99%E7%B1%BB%E5%9E%8B%EF%BC%88%E9%A6%96%E5%B0%81%E9%82%AE%E4%BB%B6%E8%AF%B7%E5%8B%BF%E9%99%84%E5%8E%9F%E5%A7%8B%E6%95%B0%E6%8D%AE%EF%BC%89%EF%BC%9A%0A%E8%B0%81%E5%AF%B9%E7%BB%93%E6%9E%9C%E8%B4%9F%E8%B4%A3%EF%BC%9A%0A">tongroy18@gmail.com</a> 描述任务（领域、决策问题、日期、已有资料、谁拍板），合适就给书面报价，确认后开工——[接单页](https://roy-tong.github.io/askovo/first-look.html)。商业交付与开源引擎守同一条纪律：结论不超出证据表述，语义复核与产品签收由决策人负责。免费支持走 [GitHub Issues](https://github.com/roy-tong/askovo/issues)，响应不承诺 SLA。
+人工交付**不公布标准价目**：先邮件 <a href="mailto:tongroy18@gmail.com?subject=Askovo%20%E9%9C%80%E6%B1%82%E9%AA%8C%E8%AF%81%20%E2%80%94%20%E4%BB%BB%E5%8A%A1%E5%88%9D%E5%88%A4&body=%E4%BA%A7%E5%93%81%E4%B8%8E%E9%A2%86%E5%9F%9F%EF%BC%88%E8%BD%AF%E4%BB%B6/%E7%A1%AC%E4%BB%B6/%E6%B6%88%E8%B4%B9%E5%93%81/%E6%B1%BD%E8%BD%A6/%E6%89%8B%E6%9C%BA%EF%BC%89%EF%BC%9A%0A%E6%83%B3%E9%AA%8C%E8%AF%81%E7%9A%84%E9%9C%80%E6%B1%82%E6%88%96%E5%86%B3%E7%AD%96%E9%97%AE%E9%A2%98%EF%BC%9A%0A%E5%86%B3%E7%AD%96%E6%88%96%E8%AF%84%E5%AE%A1%E6%97%A5%E6%9C%9F%EF%BC%9A%0A%E5%B7%B2%E6%9C%89%E7%9A%84%E8%B5%84%E6%96%99%E7%B1%BB%E5%9E%8B%EF%BC%88%E9%A6%96%E5%B0%81%E9%82%AE%E4%BB%B6%E8%AF%B7%E5%8B%BF%E9%99%84%E5%8E%9F%E5%A7%8B%E6%95%B0%E6%8D%AE%EF%BC%89%EF%BC%9A%0A%E8%B0%81%E5%AF%B9%E7%BB%93%E6%9E%9C%E8%B4%9F%E8%B4%A3%EF%BC%9A%0A">tongroy18@gmail.com</a> 描述任务（领域、决策问题、日期、已有资料、谁拍板），合适就给书面报价，确认后开工——[接单页](https://roy-tong.github.io/Askovo/first-look.html)。商业交付与开源引擎守同一条纪律：结论不超出证据表述，语义复核与产品签收由决策人负责。免费支持走 [GitHub Issues](https://github.com/roy-tong/askovo/issues)，响应不承诺 SLA。
 
 <!-- 真实案例（脱敏后回填，沉淀规则见 marketing/services/services.md §4；每单交付后更新）
 ## 真实案例
