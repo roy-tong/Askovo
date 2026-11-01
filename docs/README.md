@@ -17,6 +17,7 @@ askovo 用同一主链服务五域产品经理、用户研究、用户运营及�
 11. [决策复盘](cli.md#review决策复盘) —— 审计门、决策就绪、可证伪、偏差与交付物核验。
 12. [SURE 引擎](sure-engine.md) —— 产品主链与研究支撑引擎的关系。
 13. [故障排查](troubleshooting.md) —— 安装、断链、门禁、采集与 MCP。
+14. [开源集成清单](open-source-integrations.md) —— 三个产品对 Docling/Playwright/Stagehand 等组件的实际接入状态与取舍。
 
 | 你想做什么 | 去哪 |
 | --- | --- |
