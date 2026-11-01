@@ -200,6 +200,22 @@ Cover the evidence roles configured in `study.json`:
 
 Multiple routes, communities, queries, channels, or videos inside one platform create within-platform coverage, not independent source families. Pilot each route, record its yield and bias, and redesign routes with zero critical-evidence yield before scaling.
 
+## Run a research loop when the gap is already evidenced
+
+`askovo loop` automates orchestration, not judgment. Use it when the audit already names the open gap, or when the weakest node is not obvious:
+
+```bash
+askovo loop plan <study>                          # gaps + eligible sources + envelope
+askovo loop authorize <study> --by "<operator>"   # a human act; MCP can never authorize
+askovo loop run <study>
+askovo loop report <study>
+```
+
+- It may plan only from `study.scope.allowed_sources` with an enabled adapter or a declared fixture; the Design gate still applies.
+- Authorization binds the envelope (allowed platforms, per-action cap, round and record budgets). Changing the envelope invalidates the authorization.
+- Collected records are candidates (`04-findings/loop-candidates.json`) with `proposed_evidence_level: null`. You still read them, assign E0–E5, link them to a judgment, and change status yourself; a record never becomes evidence just because the loop ran.
+- `loop report` separates audit-supported claims from open hypotheses, blocked sources and next actions. Quote that separation instead of compressing it into one progress number.
+
 ## Gate demand judgments
 
 Use **demand judgment** / **需求判断**, not a translated “opportunity card,” unless the user explicitly requests that format.

@@ -15,6 +15,8 @@ askovo --help
 | `route "<需求>"` | 只路由，不写文件 | 0/2 |
 | `platforms "<需求>"` | 平台雷达：数据在哪、能否合规拿到、能证明什么 | 0/2 |
 | `collect <study>` | 通过 design gate 后运行采集适配器/本地导出/CDP，写 raw、manifest 与 normalized | 0/1/2/3/4 |
+| `research plan/authorize/run/status` | 宿主给定动作清单的逐条授权与受控执行 | 0/1/2/3/4 |
+| `loop plan/authorize/run/status/report` | 缺口驱动的多轮受控采集、每轮复审、候选证据与复盘 | 0/1/2/3/4 |
 | `queue init/add/run/status/retry` | SQLite 队列、worker、重试、限速、断点续跑 | 0/1/2 |
 | `analyze <study>` | 归一化、去重、分布、候选主题、问题匹配 | 0/2 |
 | `chain <study>` | 生成/渲染“场景→用户→痛点→需求→特性→产品→商业”推理链 | 0/2 |
@@ -125,6 +127,29 @@ askovo collect ./study --platform amazon --query "night alert" \
 - 仅 amazon/instagram/bilibili/weibo 开放；X/YouTube 只走官方 API，blocked 平台不开放；
 - CDP 仅允许回环端点与默认端口 HTTP(S) 平台 URL，WebSocket 不得跳到其他主机或端口；
 - 不伪造指纹、不绕验证码、不做无限翻页。
+
+## research / loop（受控采集与研究闭环）
+
+```bash
+# 宿主 Agent 给出动作清单：逐条绑定哈希，人授权后才执行
+askovo research plan ./study --actions actions.json
+askovo research authorize ./study --by "researcher"
+askovo research run ./study --max-steps 3 --analyze
+
+# 缺口驱动：自动规划、信封授权、多轮执行并每轮复审
+askovo loop plan ./study --max-rounds 3 --max-actions 3 --max-records 300
+askovo loop authorize ./study --by "researcher"
+askovo loop run ./study
+askovo loop status ./study
+askovo loop report ./study
+```
+
+- 两者都先过 Design gate，再走 `collect_platform`，平台策略、来源适配器与 `scope.allowed_sources` 校验完全一致；
+- `research` 适合宿主 Agent 已经确定动作清单的场景：动作清单哈希变化后必须重新授权；
+- `loop` 从审计缺口生成查询，授权对象是「信封」（允许平台、单条上限、轮次与记录预算），信封变化后授权失效；
+- `loop` 每轮重新审计，停止原因见[研究闭环](research-loop.md)；
+- `loop` 只产出候选证据（`04-findings/loop-candidates.json`），不分配证据等级、不改判断状态、不标 `validated`；
+- MCP 可 `plan` / `status` / `report` / `run`，但不能授权。
 
 ## queue
 

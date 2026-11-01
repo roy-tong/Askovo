@@ -13,8 +13,9 @@ askovo 用同一主链服务五域产品经理、用户研究、用户运营及�
 7. [数据契约](data-contract.md) —— product-reasoning、study、evidence、judgments、商业节点与报告写入权。
 8. [CLI 参考](cli.md) —— 命令、参数、产物和退出码。
 9. [平台与连接器](connectors.md) —— 数据在哪、如何合规补证、哪些路线被阻断。
-10. [SURE 引擎](sure-engine.md) —— 产品主链与研究支撑引擎的关系。
-11. [故障排查](troubleshooting.md) —— 安装、断链、门禁、采集与 MCP。
+10. [研究闭环](research-loop.md) —— 缺口检测、信封授权、多轮复审与候选证据。
+11. [SURE 引擎](sure-engine.md) —— 产品主链与研究支撑引擎的关系。
+12. [故障排查](troubleshooting.md) —— 安装、断链、门禁、采集与 MCP。
 
 | 你想做什么 | 去哪 |
 | --- | --- |

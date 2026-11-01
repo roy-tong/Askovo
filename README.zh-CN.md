@@ -12,7 +12,7 @@
 
 Askovo 面向产品经理、用户研究和业务分析人员。你提供业务目标、背景与允许的数据来源，Agent 制定研究动作，Askovo 执行获授权的采集、描述性分析和证据审计，生成研究报告、MRD、PRD 或 BRD，帮助团队决定下一步做什么、还需要验证什么。
 
-当前支持 CLI、Skill 和 MCP；研究动作由宿主 Agent 规划，执行器按授权计划运行。来源缺口和人工语义复核会明确保留。[能力进度与技术取舍](docs/feature-status.md)。
+当前支持 CLI、Skill 和 MCP；研究动作可由宿主 Agent 规划，也可由 `askovo loop` 从审计缺口生成信封授权下的多轮动作，执行器只运行获批内容。来源缺口和人工语义复核会明确保留。[能力进度与技术取舍](docs/feature-status.md)。
 
 > **场景 → 用户 → 痛点 → 需求 → 特性 → 产品 → 商业**
 
@@ -141,6 +141,15 @@ askovo analyze ./study --question "夜间误报"
 `source-plan.csv` 用 `reasoning_nodes` 标明每条路线服务哪个节点，避免为了凑数据量而采集。真实采集前仍必须通过 Design gate、来源授权和适配器检查。
 
 `analyze` 只做归一化、去重、分布、高频候选词和问题匹配片段；它不会自动生成场景、需求、特性或产品结论。
+
+最弱节点不明显时，`askovo loop` 从审计结果推出缺口，按「缺口 × 合规来源」生成查询，在授权信封内分轮执行，每轮重新审计。采集结果只作为候选证据，闭环不分配证据等级、不修改判断。
+
+```bash
+askovo loop plan ./study
+askovo loop authorize ./study --by "researcher"
+askovo loop run ./study
+askovo loop report ./study
+```
 
 ### 3. 同时审计“证据是否够”和“推理是否断”
 

@@ -19,6 +19,11 @@ dist/
 **/04-findings/signals.json
 **/04-findings/analysis.json
 **/04-findings/analysis.md
+**/04-findings/research-run.json
+**/04-findings/research-loop.json
+**/04-findings/research-loop.lock
+**/04-findings/loop-candidates.json
+**/05-audit/research-loop-summary.md
 **/05-audit/latest.*
 **/05-audit/audit.json
 **/05-audit/audit.md

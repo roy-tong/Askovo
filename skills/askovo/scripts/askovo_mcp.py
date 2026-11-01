@@ -326,6 +326,22 @@ def _build_research(arguments: dict[str, Any]) -> argparse.Namespace:
     )
 
 
+def _build_loop(arguments: dict[str, Any]) -> argparse.Namespace:
+    action = _string(arguments.get("action"), "action")
+    if action not in ("plan", "status", "report", "run"):
+        raise ValueError("action must be plan, status, report or run")
+    return _namespace(
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        action=action,
+        reset=False,
+        authorize=False,   # human-only CLI operation; MCP never self-authorizes
+        by="",
+        max_rounds=int(arguments.get("max_rounds", 3)),
+        max_actions=int(arguments.get("max_actions", 3)),
+        max_records=int(arguments.get("max_records", 300)),
+    )
+
+
 def _build_analyze(arguments: dict[str, Any]) -> argparse.Namespace:
     return _namespace(
         study_dir=_string(arguments.get("study_dir"), "study_dir"),
@@ -660,6 +676,25 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "askovo_research_loop",
+        "description": (
+            "Detect research gaps, plan round actions and run only the envelope a human already "
+            "authorized in the CLI. Collected records become review candidates; the loop never "
+            "assigns an evidence level, validates a claim, or bypasses the Design gate."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "study_dir": {"type": "string"},
+                "action": {"enum": ["plan", "status", "report", "run"]},
+                "max_rounds": {"type": "integer", "minimum": 1, "maximum": 20, "default": 3},
+                "max_actions": {"type": "integer", "minimum": 1, "maximum": 20, "default": 3},
+                "max_records": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 300},
+            },
+            "required": ["study_dir", "action"],
+        },
+    },
+    {
         "name": "askovo_analyze",
         "description": (
             "Normalize, dedup and describe collected material: platform/claim/form distributions, "
@@ -862,6 +897,7 @@ TOOL_BUILDERS = {
     "askovo_platforms": (askovo_cli.sure_engine.cli_platforms, _build_platforms),
     "askovo_collect": (askovo_cli.command_collect, _build_collect),
     "askovo_research": (askovo_cli.command_research, _build_research),
+    "askovo_research_loop": (askovo_cli.command_loop, _build_loop),
     "askovo_analyze": (askovo_cli.sure_engine.cli_analyze, _build_analyze),
     "askovo_instruments": (askovo_cli.sure_engine.cli_instruments, _build_instruments),
     "askovo_codebook": (askovo_cli.sure_engine.cli_codebook, _build_codebook),

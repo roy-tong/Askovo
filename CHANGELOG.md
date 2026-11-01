@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — autonomous research loop (2026-11-01)
+
+### Added
+
+- **Research Loop** (`askovo loop plan|authorize|run|status|report`): gap-driven rounds that turn `askovo audit` verdicts into collection actions, execute them inside an authorized envelope, re-audit after every round and stop with a review-ready summary. Gaps cover `exceeds_evidence`, `open_claim`, `missing_counter`, `node_without_evidence`, `unwritten_node`, `claim_needs_decision`, `source_concentration`, `missing_corpus_role` and `blocked_source`; queries are composed deterministically from the claim title or node statement plus an intent hint (no model call).
+- The loop only collects from platforms in `study.scope.allowed_sources` that the catalog does not block and that have an enabled bundled adapter or a declared offline fixture (`study.research_loop.fixtures`, path constrained to the study). The authorization envelope binds the platform set, per-action cap and round/record budgets; changing the envelope invalidates the authorization. Interrupted actions stop the run as `interrupted_run` and require inspection.
+- Collected records become **candidates** in `04-findings/loop-candidates.json` with `proposed_evidence_level: null`; they never enter audit counts, judgments or `validated` status. `05-audit/research-loop-summary.md` separates verified (audit-supported) claims, open hypotheses, blocked/unverifiable items and next actions.
+- `askovo audit` now exposes `audit_payload()` so the loop and the audit command share one verdict implementation instead of duplicating claim logic.
+- MCP `askovo_research_loop` exposes plan/status/report/run with the same exit codes; MCP cannot authorize an envelope.
+
+### Validation
+
+- 173 tests pass, including gap detection, envelope tamper rejection, unauthorized-run refusal, Design-gate refusal before any record is written, platform-without-adapter blocking, candidate/report generation, and MCP authorization refusal.
+
 ## Unreleased — execution and economics reliability
 
 - Harden interruption/evidence handling and add regression coverage.

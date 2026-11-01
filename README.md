@@ -12,7 +12,7 @@
 
 Askovo is built for product managers, user researchers, and business analysts. You bring the business goal, the context, and the permitted data sources; your agent plans the research actions, and Askovo executes the authorized collection, descriptive analysis, and evidence audits — producing research reports, MRD, PRD, or BRD that help the team decide what to do next and what still needs validation.
 
-CLI, Skill, and MCP surfaces are live today; research actions are planned by the host agent, and the executor runs only the authorized plan. Source gaps and human semantic review are kept explicit, never hidden. See [capability status and trade-offs](docs/feature-status.md) (Chinese).
+CLI, Skill, and MCP surfaces are live today. The host agent can author the action list, or `askovo loop` derives rounds from audit gaps inside an authorized envelope; the executor runs only what was authorized. Source gaps and human semantic review are kept explicit, never hidden. See [capability status and trade-offs](docs/feature-status.md) (Chinese).
 
 > **scene → user → pain → need → feature → product → business**
 
@@ -141,6 +141,15 @@ askovo analyze ./study --question "night false alerts"
 `source-plan.csv` marks which chain node each route serves via `reasoning_nodes`, so you never collect just to pump volume. Real collection still requires the Design gate, source authorization, and adapter checks.
 
 `analyze` only normalizes, deduplicates, computes distributions, frequent candidate terms, and question-matched snippets; it never auto-generates scene, need, feature, or product conclusions.
+
+When the weakest node is not obvious, `askovo loop` derives the gap from the audit, plans one query per gap and eligible source, runs rounds inside an authorized envelope, and re-audits after each round. Collected records stay review candidates — the loop never assigns an evidence level or edits a judgment.
+
+```bash
+askovo loop plan ./study
+askovo loop authorize ./study --by "researcher"
+askovo loop run ./study
+askovo loop report ./study
+```
 
 ### 3. Audit both "is the evidence enough" and "is the reasoning broken"
 

@@ -28,6 +28,9 @@ if str(_SCRIPT_DIR) not in sys.path:
 
 import sure_engine  # noqa: E402
 import research_run  # noqa: E402
+import research_loop  # noqa: E402
+
+research_loop.bind_cli(sys.modules[__name__])
 
 
 def _read_version() -> str:
@@ -2487,6 +2490,67 @@ def command_research(args: argparse.Namespace) -> int:
         return 2
 
 
+def command_loop(args: argparse.Namespace) -> int:
+    """Detect gaps, plan and run bounded research rounds inside an authorized envelope."""
+    try:
+        study_dir = Path(args.study_dir).resolve()
+        if args.action == "plan":
+            state = research_loop.plan(
+                study_dir,
+                max_rounds=args.max_rounds,
+                max_actions_per_round=args.max_actions,
+                max_records_total=args.max_records,
+                reset=args.reset,
+            )
+            print(json.dumps({
+                "status": state["status"],
+                "loop_id": state["loop_id"],
+                "envelope": state["envelope"],
+                "sources": state["sources"],
+                "gaps": research_loop.gap_counts(state["gaps"]),
+                "state_path": str(research_loop.state_path(study_dir)),
+            }, ensure_ascii=False, indent=2))
+            return 0
+        if args.action == "authorize":
+            state = research_loop.authorize(study_dir, by=args.by)
+            print(json.dumps({"status": "authorized",
+                              "authorization": state.get("authorization"),
+                              "loop_id": state.get("loop_id")}, ensure_ascii=False, indent=2))
+            return 0
+        if args.action == "status":
+            print(json.dumps(research_loop.status(study_dir), ensure_ascii=False, indent=2))
+            return 0
+        if args.action == "report":
+            result = research_loop.report(study_dir)
+            print(json.dumps({key: value for key, value in result.items() if key != "markdown"},
+                             ensure_ascii=False, indent=2))
+            return 0
+        if args.action != "run":
+            raise research_loop.LoopError("unknown loop action: %s" % args.action)
+        if args.authorize:
+            research_loop.authorize(study_dir, by=args.by)
+        result = research_loop.run(study_dir)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 3 if result.get("status") == "blocked" else 0
+    except research_loop.InterruptedRunError as exc:
+        print(json.dumps({"status": "needs_review", "reason": str(exc)},
+                         ensure_ascii=False, indent=2))
+        return 3
+    except research_loop.DesignGateError as exc:
+        print(json.dumps({"status": "design_gate_failed", "reason": str(exc)},
+                         ensure_ascii=False, indent=2))
+        return 1
+    except research_loop.LoopError as exc:
+        print(json.dumps({"status": "error", "reason": str(exc)},
+                         ensure_ascii=False, indent=2))
+        message = str(exc).lower()
+        return 4 if "authoriz" in message else 2
+    except (OSError, ValueError, json.JSONDecodeError, RuntimeError) as exc:
+        print(json.dumps({"status": "error", "reason": "%s: %s" %
+                          (type(exc).__name__, exc)}, ensure_ascii=False, indent=2))
+        return 2
+
+
 def command_deliver(args: argparse.Namespace) -> int:
     """Deliver from a fresh full audit, never from a stale audit.json."""
     study_dir = Path(args.study_dir).resolve()
@@ -2872,20 +2936,19 @@ def command_demo(args: argparse.Namespace) -> int:
         )
 
 
-def command_audit(args: argparse.Namespace) -> int:
-    root = Path(args.study_dir).resolve()
+def audit_payload(root: Path, *, claim: str = "") -> dict[str, Any]:
+    """Build the audit payload shared by `askovo audit` and the research loop.
+
+    Raises ValueError when the study is missing, malformed, or the claim filter
+    matches nothing; callers keep their own CLI error surface.
+    """
+    root = Path(root).resolve()
     study_path = root / "study.json"
     if not study_path.is_file():
-        print(f"missing study.json under {root}", file=sys.stderr)
-        return 2
-    try:
-        study = _load_json(study_path)
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"cannot parse study.json: {exc}", file=sys.stderr)
-        return 2
+        raise ValueError(f"missing study.json under {root}")
+    study = _load_json(study_path)
     if not isinstance(study, dict):
-        print("study.json must contain an object", file=sys.stderr)
-        return 2
+        raise ValueError("study.json must contain an object")
 
     audit = audit_study(root, "full")
     paths = _study_paths(root)
@@ -2909,7 +2972,7 @@ def command_audit(args: argparse.Namespace) -> int:
     require_counter = bool(gates.get("require_counter_evidence_for_validated", True))
     claims = _claim_verdicts(judgments, evidence_by_id, require_counter)
 
-    focus = str(getattr(args, "claim", "") or "").strip()
+    focus = str(claim or "").strip()
     if focus:
         needle = focus.casefold()
         claims = [
@@ -2920,8 +2983,7 @@ def command_audit(args: argparse.Namespace) -> int:
             ).casefold()
         ]
         if not claims:
-            print(f"no claim matched {focus!r}", file=sys.stderr)
-            return 2
+            raise ValueError(f"no claim matched {focus!r}")
 
     overclaims = [claim for claim in claims if claim["verdict"] == "exceeds_evidence"]
     status = "pass" if audit.status == "pass" and not overclaims else "fail"
@@ -2961,7 +3023,22 @@ def command_audit(args: argparse.Namespace) -> int:
         "meaning": AUDIT_BOUNDARY,
     }
     payload["next_actions"] = _audit_next_actions(payload)
+    return payload
 
+
+def command_audit(args: argparse.Namespace) -> int:
+    root = Path(args.study_dir).resolve()
+    try:
+        payload = audit_payload(root, claim=getattr(args, "claim", "") or "")
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"cannot parse study.json: {exc}", file=sys.stderr)
+        return 2
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    summary = payload["summary"]
+    paths = _study_paths(root)
     paths["audit_dir"].mkdir(parents=True, exist_ok=True)
     json_path = paths["audit_dir"] / "audit.json"
     md_path = paths["audit_dir"] / "audit.md"
@@ -2985,7 +3062,7 @@ def command_audit(args: argparse.Namespace) -> int:
         for action in payload["next_actions"][:3]:
             print(f"- 下一步：{action}")
         print(f"- 报告：{md_path}")
-    return 0 if status == "pass" else 1
+    return 0 if payload["status"] == "pass" else 1
 
 
 def command_check(args: argparse.Namespace) -> int:
@@ -4524,6 +4601,26 @@ def build_parser() -> argparse.ArgumentParser:
                                  help="run descriptive analysis after successful collection")
     research_parser.set_defaults(func=command_research)
 
+    loop_parser = subparsers.add_parser(
+        "loop",
+        help="detect research gaps and run bounded, re-audited collection rounds inside an "
+             "authorized envelope; candidates wait for human evidence review",
+    )
+    loop_parser.add_argument("action", choices=("plan", "authorize", "run", "status", "report"))
+    loop_parser.add_argument("study_dir")
+    loop_parser.add_argument("--reset", action="store_true", help="replace an existing loop state")
+    loop_parser.add_argument("--authorize", action="store_true",
+                             help="authorize the recorded envelope before running")
+    loop_parser.add_argument("--by", default="operator",
+                             help="named operator recorded in the authorization (default: operator)")
+    loop_parser.add_argument("--max-rounds", type=int, default=3,
+                             help="planning cap on rounds (default 3, max 20)")
+    loop_parser.add_argument("--max-actions", type=int, default=3,
+                             help="planning cap on actions per round (default 3, max 20)")
+    loop_parser.add_argument("--max-records", type=int, default=300,
+                             help="planning cap on collected records (default 300, max 5000)")
+    loop_parser.set_defaults(func=command_loop)
+
     analyze_parser = subparsers.add_parser(
         "analyze", help="normalize, dedup and describe collected material"
     )
@@ -4703,7 +4800,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "do", "domains",
-    "methods", "catalog", "platforms", "collect", "research", "analyze", "instruments", "import", "queue",
+    "methods", "catalog", "platforms", "collect", "research", "loop", "analyze", "instruments", "import", "queue",
     "codebook", "chain", "economics", "psm", "deliver", "boundary", "cost", "doctor", "audit", "check", "connectors",
     "stage", "label", "build",
 }
