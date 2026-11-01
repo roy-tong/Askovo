@@ -156,6 +156,7 @@ askovo loop report ./study
 ```bash
 askovo check ./study --stage full --write-report
 askovo audit ./study --json
+askovo review ./study                 # 决策复盘：决策就绪、可证伪、偏差与交付物新鲜度
 ```
 
 两份文件分工明确：

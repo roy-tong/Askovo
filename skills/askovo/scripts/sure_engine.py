@@ -3393,6 +3393,73 @@ def collect_platform(
     return {"status": "collected", "platform": platform, "records": len(normalized), **written}
 
 
+def _analysis_segments(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Descriptive segment counts; small cells stay visible but flagged."""
+    dimensions = {
+        "platform": lambda record: str(record.get("platform") or record.get("source_family") or "unknown"),
+        "claim_type": lambda record: str(record.get("claim_type") or "unknown"),
+        "evidence_form": lambda record: str(record.get("evidence_form") or "unknown"),
+        "corpus_role": lambda record: str(record.get("corpus_role") or "unknown"),
+    }
+    total = len(records) or 1
+    result: dict[str, Any] = {}
+    for name, key in dimensions.items():
+        buckets: dict[str, dict[str, Any]] = {}
+        for record in records:
+            value = key(record)
+            bucket = buckets.setdefault(value, {"n": 0, "evidence_levels": {}})
+            bucket["n"] += 1
+            level = str(record.get("evidence_level") or "unregistered")
+            bucket["evidence_levels"][level] = bucket["evidence_levels"].get(level, 0) + 1
+        result[name] = [
+            {
+                "value": value,
+                "n": bucket["n"],
+                "share": round(bucket["n"] / total, 4),
+                "low_n": bucket["n"] < 3,
+                "evidence_levels": bucket["evidence_levels"],
+            }
+            for value, bucket in sorted(buckets.items(), key=lambda item: (-item[1]["n"], item[0]))
+        ]
+    return result
+
+
+def _analysis_time_coverage(records: list[dict[str, Any]], study: dict[str, Any]) -> dict[str, Any]:
+    months = sorted({
+        str(record.get("created_at") or "")[:7]
+        for record in records
+        if len(str(record.get("created_at") or "")) >= 7
+    })
+    scope = study.get("scope") if isinstance(study.get("scope"), dict) else {}
+    window = scope.get("source_time_window") if isinstance(scope.get("source_time_window"), dict) else {}
+    start = str(window.get("start") or "")
+    end = str(window.get("end") or "")
+    outside = 0
+    valid = False
+    try:
+        start_day = datetime.strptime(start, "%Y-%m-%d").date()
+        end_day = datetime.strptime(end, "%Y-%m-%d").date()
+        valid = True
+    except (TypeError, ValueError):
+        start_day = end_day = None
+    if valid and start_day and end_day:
+        for record in records:
+            day = str(record.get("created_at") or "")[:10]
+            try:
+                parsed = datetime.strptime(day, "%Y-%m-%d").date()
+            except (TypeError, ValueError):
+                continue
+            if parsed < start_day or parsed > end_day:
+                outside += 1
+    return {
+        "months": months,
+        "month_count": len(months),
+        "window": {"start": start, "end": end} if valid else None,
+        "outside_window": outside,
+        "boundary": "时间覆盖只说明记录分布；不在窗口内的记录需要单独解释，不能当作总体趋势。",
+    }
+
+
 def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any]:
     study_dir = study_dir.resolve()
     records: list[dict[str, Any]] = []
@@ -3466,6 +3533,16 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
             if hit:
                 matches.append({"record_id": record.get("record_id"), "platform": record.get("platform"), "hits": hit, "excerpt": str(record.get("text") or "")[:300]})
         matches.sort(key=lambda item: (-len(item["hits"]), str(item["record_id"])))
+    try:
+        study = load_json(study_dir / "study.json")
+        if not isinstance(study, dict):
+            study = {}
+    except (OSError, json.JSONDecodeError):
+        study = {}
+    level_counts: dict[str, int] = {}
+    for record in unique:
+        level = str(record.get("evidence_level") or "unregistered")
+        level_counts[level] = level_counts.get(level, 0) + 1
     analysis = {
         "generated_at": now(),
         "question": question,
@@ -3473,6 +3550,10 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
         "invalid_records": invalid_records,
         "by_platform": by_platform,
         "by_claim_type": by_claim,
+        "by_evidence_level": dict(sorted(level_counts.items())),
+        "segments": _analysis_segments(unique),
+        "segments_note": "描述性计数，n<3 的分段标记 low_n；不做显著性、因果或总体推断。",
+        "time_coverage": _analysis_time_coverage(unique, study),
         "by_evidence_form": by_form,
         "by_month": dict(sorted(by_month.items())),
         "avg_text_length": round(sum(lengths) / len(lengths), 1) if lengths else 0,
@@ -3500,6 +3581,23 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
         lines.extend(["", "## 与问题的匹配片段", ""])
         for item in matches[:10]:
             lines.append(f"- `{item['record_id']}`（{item['platform']}）：{item['excerpt']}")
+    lines.extend(["", "## 分段（描述性）", ""])
+    for dimension in ("platform", "claim_type", "corpus_role"):
+        values = analysis["segments"].get(dimension) or []
+        rendered = "；".join(
+            f"{item['value']} {item['n']} 条" + ("（low_n）" if item["low_n"] else "")
+            for item in values[:8]
+        )
+        lines.append(f"- {dimension}：{rendered or '无'}")
+    coverage = analysis["time_coverage"]
+    lines.extend([
+        "",
+        "## 时间覆盖",
+        "",
+        f"- 覆盖月份：{'、'.join(coverage['months']) or '无'}（{coverage['month_count']} 个月）",
+        f"- 声明窗口：{json.dumps(coverage['window'], ensure_ascii=False) if coverage['window'] else '未配置'}",
+        f"- 窗口外记录：{coverage['outside_window']} 条；窗口外记录需要单独解释。",
+    ])
     lines.extend(["", "## 边界", "", analysis["boundary"]])
     (out_dir / "analysis.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return {"status": "analyzed", "analysis": str(out_dir / "analysis.json"), "markdown": str(out_dir / "analysis.md"), "records": len(unique)}

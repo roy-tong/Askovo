@@ -10,9 +10,13 @@
 - `askovo audit` now exposes `audit_payload()` so the loop and the audit command share one verdict implementation instead of duplicating claim logic.
 - MCP `askovo_research_loop` exposes plan/status/report/run with the same exit codes; MCP cannot authorize an envelope.
 
+- **Decision review** (`askovo review`): deterministic quality items over one study — audit gate, per-claim evidence verdicts, decision readiness (question, owner, deadline, options, minimum evidence, decided chains, business gate), falsifiability (falsified_if, next_test, gaps, alternative explanations), bias (minimum records, source concentration, duplicates, corpus roles, time window) and deliverable freshness (`06-report/*.md` mtime vs latest evidence, boundary section). Writes `05-audit/decision-review.json` and `.md`; exit 1 only when a `fail` item exists. It never decides, scores business success or replaces review.
+- **Deeper descriptive analysis**: `askovo analyze` now reports segment counts by platform/claim type/evidence form/corpus role with `low_n` flags, an evidence-level distribution, and source-time-window coverage (`outside_window`), all descriptive with no significance or causal test.
+- MCP gains `askovo_review`.
+
 ### Validation
 
-- 173 tests pass, including gap detection, envelope tamper rejection, unauthorized-run refusal, Design-gate refusal before any record is written, platform-without-adapter blocking, candidate/report generation, and MCP authorization refusal.
+- 181 tests pass, including gap detection, envelope tamper rejection, unauthorized-run refusal, Design-gate refusal before any record is written, platform-without-adapter blocking, candidate/report generation, and MCP authorization refusal.
 
 ## Unreleased — execution and economics reliability
 

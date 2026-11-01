@@ -7,10 +7,10 @@ Reviewed 2026-11-01 against the repository implementation. Available means local
 | A01–A02 | Business brief, reasoning chain, action planning | Available; host-authored plans plus `askovo loop`, which derives round actions from audit gaps |
 | A03–A05 | Source routing, authorization and bounded collection | Available for supported connectors and offline exports; the loop may only use `scope.allowed_sources` with an enabled adapter or a declared fixture; interrupted actions require review |
 | A06 | Local PDF/Office/image document intake | Optional Docling adapter via `askovo document`, with SHA-256 provenance and unreviewed status; not a validated research claim |
-| A07–A09 | Study workspace, descriptive analysis, evidence audit | Available; human semantic validation remains required |
+| A07–A09 | Study workspace, descriptive analysis, evidence audit | Available; `analyze` now adds segment counts by platform/claim/form/role with `low_n` flags and a source-time-window check (descriptive only, no significance). Human semantic validation remains required |
 | A10–A11 | Active follow-up research and option comparison | `askovo loop` runs gap-driven rounds inside an authorized envelope, re-audits after each round and stops with candidates awaiting semantic review; it never assigns evidence levels, edits judgments or marks a claim validated. Autonomous semantic judgment is not claimed; option comparison is available |
 | A12 | Reports, MRD/PRD/BRD and decision package | Available; refreshed audit guards delivery |
-| A13–A15 | Continuous validation, evaluation and industry packs | Existing tests/domain packs; scheduled continuous research is not shipped |
+| A13–A15 | Continuous validation, evaluation and industry packs | `askovo review` turns audit, evidence, decision readiness, falsifiability, bias and deliverable freshness into machine-readable items; this is a per-study quality review, not a benchmark of general research agents. Scheduled continuous research is not shipped |
 
 Build: SURE reasoning, evidence contracts, authorization, acceptance and delivery. Reuse: existing source connectors; evaluate Crawl4AI/Scrapy for collection and Docling for documents only as optional adapters. Core remains standard-library-only. The optional `askovo_document` MCP tool shares the same local extraction adapter as `askovo document`, and writes only to explicit local paths. New document ingestion uses an optional Docling installation; no vendored fork or mandatory core dependency.
 

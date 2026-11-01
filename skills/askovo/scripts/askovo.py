@@ -29,6 +29,7 @@ if str(_SCRIPT_DIR) not in sys.path:
 import sure_engine  # noqa: E402
 import research_run  # noqa: E402
 import research_loop  # noqa: E402
+import decision_review  # noqa: E402
 
 research_loop.bind_cli(sys.modules[__name__])
 
@@ -2551,6 +2552,30 @@ def command_loop(args: argparse.Namespace) -> int:
         return 2
 
 
+def command_review(args: argparse.Namespace) -> int:
+    """Deterministic decision review: evidence, readiness, falsifiability, bias, deliverables."""
+    study_dir = Path(args.study_dir).resolve()
+    try:
+        result = decision_review.review(study_dir)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(json.dumps({"status": "error", "reason": "%s: %s" % (type(exc).__name__, exc)},
+                         ensure_ascii=False, indent=2))
+        return 2
+    if getattr(args, "json", False):
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"Askovo 决策复盘：{result.get('study_id')} — {result['status']}")
+        print(f"- 不通过 {result['counts']['fail']}；待补强 {result['counts']['warn']}；"
+              f"通过 {result['counts']['pass']}")
+        for item in result["items"]:
+            if item["status"] in ("fail", "warn"):
+                print(f"- [{item['status']}] {item['detail']}")
+                if item.get("next_action"):
+                    print(f"  下一步：{item['next_action']}")
+        print(f"- 报告：{result['markdown_path']}")
+    return 1 if result["status"] == "fail" else 0
+
+
 def command_deliver(args: argparse.Namespace) -> int:
     """Deliver from a fresh full audit, never from a stale audit.json."""
     study_dir = Path(args.study_dir).resolve()
@@ -4621,6 +4646,15 @@ def build_parser() -> argparse.ArgumentParser:
                              help="planning cap on collected records (default 300, max 5000)")
     loop_parser.set_defaults(func=command_loop)
 
+    review_parser = subparsers.add_parser(
+        "review",
+        help="deterministic decision review: audit gate, evidence, decision readiness, "
+             "falsifiability, bias and deliverable freshness",
+    )
+    review_parser.add_argument("study_dir")
+    review_parser.add_argument("--json", action="store_true", help="machine-readable review")
+    review_parser.set_defaults(func=command_review)
+
     analyze_parser = subparsers.add_parser(
         "analyze", help="normalize, dedup and describe collected material"
     )
@@ -4801,7 +4835,7 @@ def build_parser() -> argparse.ArgumentParser:
 CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "do", "domains",
     "methods", "catalog", "platforms", "collect", "research", "loop", "analyze", "instruments", "import", "queue",
-    "codebook", "chain", "economics", "psm", "deliver", "boundary", "cost", "doctor", "audit", "check", "connectors",
+    "codebook", "chain", "economics", "psm", "deliver", "boundary", "cost", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }
 

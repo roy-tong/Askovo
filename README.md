@@ -156,6 +156,7 @@ askovo loop report ./study
 ```bash
 askovo check ./study --stage full --write-report
 askovo audit ./study --json
+askovo review ./study                 # decision review: readiness, falsifiability, bias, deliverable freshness
 ```
 
 Two files, two owners:

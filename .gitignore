@@ -24,6 +24,8 @@ dist/
 **/04-findings/research-loop.lock
 **/04-findings/loop-candidates.json
 **/05-audit/research-loop-summary.md
+**/05-audit/decision-review.json
+**/05-audit/decision-review.md
 **/05-audit/latest.*
 **/05-audit/audit.json
 **/05-audit/audit.md

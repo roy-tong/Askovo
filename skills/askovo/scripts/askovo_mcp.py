@@ -342,6 +342,13 @@ def _build_loop(arguments: dict[str, Any]) -> argparse.Namespace:
     )
 
 
+def _build_review(arguments: dict[str, Any]) -> argparse.Namespace:
+    return _namespace(
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        json=_boolean(arguments, "json"),
+    )
+
+
 def _build_analyze(arguments: dict[str, Any]) -> argparse.Namespace:
     return _namespace(
         study_dir=_string(arguments.get("study_dir"), "study_dir"),
@@ -695,6 +702,22 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "askovo_review",
+        "description": (
+            "Deterministic decision review: audit gate, evidence sufficiency, decision readiness, "
+            "falsifiability, bias/coverage and deliverable freshness. It reports quality items; it "
+            "does not decide, score business success, or replace semantic review."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "study_dir": {"type": "string"},
+                "json": {"type": "boolean", "default": False},
+            },
+            "required": ["study_dir"],
+        },
+    },
+    {
         "name": "askovo_analyze",
         "description": (
             "Normalize, dedup and describe collected material: platform/claim/form distributions, "
@@ -912,6 +935,7 @@ TOOL_BUILDERS = {
     "askovo_init": (askovo_cli.command_init, _build_init),
     "askovo_check": (askovo_cli.command_check, _build_check),
     "askovo_audit": (askovo_cli.command_audit, _build_audit),
+    "askovo_review": (askovo_cli.command_review, _build_review),
     "askovo_signals": (askovo_cli.command_signals, _build_signals),
     "askovo_lexicon": (askovo_cli.command_lexicon, _build_lexicon),
     "askovo_report": (askovo_cli.command_report, _build_report),

@@ -36,6 +36,7 @@ askovo --help
 | `connectors` | 列开源连接器评审决策（含 blocked 及原因） | 0/2 |
 | `check <study>` | 单阶段门检查（design/evidence/decision/full） | 0/1/2 |
 | `audit` | 主链、证据与逐条需求判断的统一审计 | 0/1/2 |
+| `review <study>` | 决策复盘：审计门、证据、决策就绪、可证伪、偏差、交付物新鲜度 | 0/1/2 |
 | `plan` | 支撑入口：平台可行性、配额与补证路线 | 0/2/3 |
 | `stage <name>` | 转发到 `scripts/stages/` 数据集流水线工具 | 0/1/2 |
 | `label <dir>` | 一等命令：对分析项目 raw 记录做规则打标（候选发现，非金标证据） | 0/1/2 |
@@ -252,6 +253,24 @@ askovo deliver ./study --kind signoff
 `cost` 记录单次核验任务的人工分钟（可附同一任务的无工具基线口径），`report` 出算术汇总：任务数、总分钟、有基线任务的基线/实际比值。**比值不是效率证明**——基线是自报口径，样本量与可比性由人判断。
 
 `deliver --kind signoff` 从主链生成干系人签收一页纸：结论摘要、每节点判断与证据等级分布、未验证假设、边界声明、空白签收栏。超证据表述仍由 `check` 拦截；本页与主链不一致时以主链为准。三者均有 MCP 对应工具（`askovo_boundary` / `askovo_cost` / `askovo_deliver kind=signoff`）。
+
+## review（决策复盘）
+
+```bash
+askovo review ./study          # 人类可读摘要
+askovo review ./study --json   # 机器可读检查项
+```
+
+写出 `05-audit/decision-review.json` 与 `.md`，按六个维度给出 `pass` / `warn` / `fail` / `info` 检查项：
+
+- `audit`：审计失败项；
+- `evidence`：逐条判断的 verdict 与阻断原因；
+- `decision`：决策问题、负责人、截止时间、备选方案、最低证据清单、decided 主链、商业门；
+- `falsifiability`：假设的证伪条件、`next_test`、缺口与其它解释；
+- `bias`：最低记录数、单一来源、重复率、语料角色、时间窗口；
+- `deliverables`：`06-report/*.md` 是否过期、是否保留边界声明。
+
+退出码 `1` 表示存在 `fail` 项；`warn` 不阻塞但必须解释。复盘不判断业务成败，也不替代人工复核。
 
 ## 机器可读
 

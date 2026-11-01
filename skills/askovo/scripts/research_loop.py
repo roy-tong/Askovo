@@ -96,7 +96,7 @@ def _load_cli_module() -> Any:
     return module
 
 
-def _cli() -> Any:
+def cli_module() -> Any:
     global _CLI
     if _CLI is None:
         running = sys.modules.get("__main__")
@@ -475,7 +475,7 @@ def detect_gaps(study_dir: Path) -> List[Dict[str, Any]]:
     """Return every open gap, deterministically ordered and explained."""
     study_dir = Path(study_dir).resolve()
     study = _study(study_dir)
-    payload = _cli().audit_payload(study_dir)
+    payload = cli_module().audit_payload(study_dir)
     gates = study.get("quality_gates") if isinstance(study.get("quality_gates"), dict) else {}
     require_counter = bool(gates.get("require_counter_evidence_for_validated", True))
 
@@ -800,7 +800,7 @@ def _run(study_dir: Path) -> Dict[str, Any]:
             "the loop stopped mid-action and still needs review; inspect "
             "04-findings/research-loop.json and the collected files, then run "
             "`askovo loop plan --reset`")
-    gate = _cli().audit_study(study_dir, "design")
+    gate = cli_module().audit_study(study_dir, "design")
     if gate.status != "pass":
         raise DesignGateError(
             "Design gate does not pass; fix the study contract before any collection: "
@@ -952,7 +952,7 @@ def _execute_rounds(study_dir: Path, state: Dict[str, Any]) -> Dict[str, Any]:
             analysis = sure_engine.analyze_study(study_dir, None)
         except (OSError, ValueError, json.JSONDecodeError) as exc:  # analysis never blocks the loop
             analysis = {"status": "error", "reason": str(exc)}
-        payload = _cli().audit_payload(study_dir)
+        payload = cli_module().audit_payload(study_dir)
         after_gaps = detect_gaps(study_dir)
         record["analysis"] = {
             "records": int(analysis.get("records", 0) or 0) if isinstance(analysis, dict) else 0,
@@ -1048,7 +1048,7 @@ def report(study_dir: Path) -> Dict[str, Any]:
     """Write the review-ready loop summary and return it with its path."""
     study_dir = Path(study_dir).resolve()
     state = load_state(study_dir)
-    payload = _cli().audit_payload(study_dir)
+    payload = cli_module().audit_payload(study_dir)
     gaps = detect_gaps(study_dir)
     covered = _covered_keys(state)
     totals = state.get("totals") or {}
@@ -1116,7 +1116,7 @@ def report(study_dir: Path) -> Dict[str, Any]:
     if not next_actions:
         next_actions.append("没有待办；补充业务签收或开始写作。")
     lines.extend(f"- {action}" for action in next_actions)
-    lines.extend(["", "## 边界", "", _cli().AUDIT_BOUNDARY, ""])
+    lines.extend(["", "## 边界", "", cli_module().AUDIT_BOUNDARY, ""])
 
     path = summary_path(study_dir)
     path.parent.mkdir(parents=True, exist_ok=True)

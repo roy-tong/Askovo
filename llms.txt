@@ -11,6 +11,7 @@ Stable raw base: https://raw.githubusercontent.com/roy-tong/askovo/main/
 - For a new study, run `askovo do`, then `askovo chain <study>` and fill the hypothesis canvas before choosing collection volume.
 - Use `askovo platforms` before promising data; classify sources as supported / limited / blocked and map routes to `reasoning_nodes`.
 - Use `askovo audit <study>` when the user already has a corpus; it returns per-claim verdicts and product-chain gate results.
+- Use `askovo review <study>` to check decision quality deterministically: audit gate, evidence verdicts, readiness, falsifiability, bias and deliverable freshness; exit 1 only for `fail` items.
 - Use `askovo loop plan|authorize|run|status|report` when the next collection step is a gap: it turns audit verdicts into deterministic queries, runs rounds inside an authorized envelope, and stops with review candidates. It never assigns evidence levels or edits judgments.
 - [Product reasoning protocol](skills/askovo/references/product-reasoning.md): canonical seven-node schema, rationale/alternative/review rules, evidence joins, and independent delivery/outcome/causal states.
 - [Agent runbook](skills/askovo/references/agent-runbook.md): file-level execution steps, stage gates, and inter-agent handoff format.

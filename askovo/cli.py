@@ -45,6 +45,7 @@ research:
   deliver <study>      memo / report / MRD / PRD / BRD / user ops / tracker
   report <study>       write the user-research status projection
   audit <study>        product/business chain gates + signals + per-claim verdicts
+  review <study>       decision review: evidence, readiness, falsifiability, bias, deliverables
   loop <action> <study>  gap-driven research rounds: plan/authorize/run/status/report
   plan <study>         supporting platform/feasibility plan
   demo                 run the bundled offline sample
