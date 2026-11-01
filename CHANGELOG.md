@@ -1,46 +1,31 @@
 # Changelog
 
-## Unreleased — autonomous research loop (2026-11-01)
+## 2.6.0 — 2026-11-01
+
+First published release since v2.4.1. It carries the prepared 2.5.0 Decision
+Package work (documented below) plus the research loop and the decision review.
 
 ### Added
 
 - **Research Loop** (`askovo loop plan|authorize|run|status|report`): gap-driven rounds that turn `askovo audit` verdicts into collection actions, execute them inside an authorized envelope, re-audit after every round and stop with a review-ready summary. Gaps cover `exceeds_evidence`, `open_claim`, `missing_counter`, `node_without_evidence`, `unwritten_node`, `claim_needs_decision`, `source_concentration`, `missing_corpus_role` and `blocked_source`; queries are composed deterministically from the claim title or node statement plus an intent hint (no model call).
 - The loop only collects from platforms in `study.scope.allowed_sources` that the catalog does not block and that have an enabled bundled adapter or a declared offline fixture (`study.research_loop.fixtures`, path constrained to the study). The authorization envelope binds the platform set, per-action cap and round/record budgets; changing the envelope invalidates the authorization. Interrupted actions stop the run as `interrupted_run` and require inspection.
 - Collected records become **candidates** in `04-findings/loop-candidates.json` with `proposed_evidence_level: null`; they never enter audit counts, judgments or `validated` status. `05-audit/research-loop-summary.md` separates verified (audit-supported) claims, open hypotheses, blocked/unverifiable items and next actions.
-- `askovo audit` now exposes `audit_payload()` so the loop and the audit command share one verdict implementation instead of duplicating claim logic.
-- MCP `askovo_research_loop` exposes plan/status/report/run with the same exit codes; MCP cannot authorize an envelope.
-- `docs/open-source-integrations.md` records the cross-product integration ledger: Docling/invoice2data/Playwright are optional or existing dependencies; Stagehand/Midscene remain operator-supplied providers; no upstream fork was created.
-
-- **Decision review** (`askovo review`): deterministic quality items over one study — audit gate, per-claim evidence verdicts, decision readiness (question, owner, deadline, options, minimum evidence, decided chains, business gate), falsifiability (falsified_if, next_test, gaps, alternative explanations), bias (minimum records, source concentration, duplicates, corpus roles, time window) and deliverable freshness (`06-report/*.md` mtime vs latest evidence, boundary section). Writes `05-audit/decision-review.json` and `.md`; exit 1 only when a `fail` item exists. It never decides, scores business success or replaces review.
+- **Decision review** (`askovo review`): deterministic quality items over one study — audit gate, per-claim evidence verdicts, decision readiness (question, owner, deadline, options, minimum evidence, decided chains, business gate), falsifiability (`falsified_if`, `next_test`, gaps, alternative explanations), bias (minimum records, source concentration, duplicates, corpus roles, time window) and deliverable freshness (`06-report/*.md` mtime vs latest evidence, boundary section). Writes `05-audit/decision-review.json` and `.md`; exit 1 only when a `fail` item exists. It never decides, scores business success or replaces review.
 - **Deeper descriptive analysis**: `askovo analyze` now reports segment counts by platform/claim type/evidence form/corpus role with `low_n` flags, an evidence-level distribution, and source-time-window coverage (`outside_window`), all descriptive with no significance or causal test.
-- MCP gains `askovo_review`.
-
-### Validation
-
-- 181 tests pass, including gap detection, envelope tamper rejection, unauthorized-run refusal, Design-gate refusal before any record is written, platform-without-adapter blocking, candidate/report generation, and MCP authorization refusal.
-
-## Unreleased — execution and economics reliability
-
-- Harden interruption/evidence handling and add regression coverage.
-- Align product positioning and publish the feature implementation status.
-- Ship a bilingual README: English is now the repo-default `README.md`, with the full Chinese mirror in `README.zh-CN.md` (language switch at the top of both). English example commands verified against the router; `--domain` is passed where the Chinese-first keyword tables don't match English queries.
-
-
-## Unreleased — 2026-10-31
-
-### Added
-
-- **Research Run**: `askovo research plan/authorize/run/status` executes a bounded, machine-readable action list supplied by the Skill/agent. Every action is bound to a platform allowed in `study.scope.allowed_sources`, a reasoning node and an action-list hash; fixtures must stay inside the study; `run` requires the Design gate and stops on the first blocked action. Collection still uses the existing `collect_platform` path, so adapter, policy and source checks are unchanged. State is `04-findings/research-run.json`; optional `--analyze` runs the existing descriptive analysis only.
-- Nested business evidence is now audited: `segments[].evidence_ids`, `pricing[].evidence_ids` and `change_log[].reason_evidence_ids` must exist, share the chain `context_key`, and belong to the linked demand judgment under their schema-specific roles. Unknown or unregistered nested IDs no longer pass a full audit.
-- `deliver` now runs a fresh full audit through the CLI/MCP path instead of trusting an old `05-audit/audit.json`. Decision Packages show an audit-failure banner and do not render `decided` chains as recommendations when the audit fails; `signoff` is blocked without a passing audit and an existing product-reasoning chain.
+- **Research Run** (`askovo research plan/authorize/run/status`): executes a bounded, machine-readable action list supplied by the Skill/agent. Every action is bound to a platform allowed in `study.scope.allowed_sources`, a reasoning node and an action-list hash; fixtures must stay inside the study; `run` requires the Design gate and stops on the first blocked action. State is `04-findings/research-run.json`; optional `--analyze` runs the descriptive analysis only.
+- Nested business evidence is now audited: `segments[].evidence_ids`, `pricing[].evidence_ids` and `change_log[].reason_evidence_ids` must exist, share the chain `context_key`, and belong to the linked demand judgment under their schema-specific roles.
+- MCP parity: `askovo_research_loop` (plan/status/report/run; never authorizes) and `askovo_review`; `askovo_audit` now exposes the shared `audit_payload()` used by the loop.
+- `docs/open-source-integrations.md` records the cross-product integration ledger: Docling/invoice2data/Playwright are optional or existing dependencies; Stagehand/Midscene remain operator-supplied providers; no upstream fork was created.
 
 ### Changed
 
-- Decision Package option comparison now uses one field set for every candidate: readiness, evidence count, counter-evidence, business gate, resource commitment, prioritization method/factors, gaps and next test. It explicitly does not compute a composite score.
+- `deliver` runs a fresh full audit through the CLI/MCP path instead of trusting an old `05-audit/audit.json`; Decision Packages show an audit-failure banner, and `signoff` is blocked without a passing audit and an existing product-reasoning chain.
+- Decision Package option comparison uses one field set for every candidate (readiness, evidence count, counter-evidence, business gate, resource commitment, prioritization, gaps, next test) and does not compute a composite score.
+- Interruption/evidence handling hardened with regression coverage; the bilingual README keeps English as the repo default with a full Chinese mirror (`README.zh-CN.md`).
 
 ### Validation
 
-- 163 tests pass, including nested-evidence negative cases, fresh-audit delivery, signoff refusal, multi-option comparison, Research Run authorization/hash/fixture/step/interruption tests, and local Docling document intake.
+- 181 tests pass, including gap detection, envelope tamper rejection, unauthorized-run refusal, Design-gate refusal before any record is written, platform-without-adapter blocking, candidate/report generation, MCP authorization refusal, decision-review fail/warn items, nested-evidence negatives, fresh-audit delivery and signoff refusal.
 
 ## 2.5.0 — 2026-10-31
 
