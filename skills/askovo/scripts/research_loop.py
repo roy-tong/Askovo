@@ -43,7 +43,8 @@ DEFAULT_MAX_ROUNDS = 3
 DEFAULT_MAX_ACTIONS_PER_ROUND = 3
 DEFAULT_MAX_RECORDS = 300
 ACTION_LIMIT_CAP = 100
-CANDIDATE_SAMPLE_IDS = 20
+CANDIDATE_SAMPLE_IDS = 20  # display sample in reports
+MAX_RECORD_IDS = 200  # stored ids per candidate, so a mapping can cite any record
 
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 NODE_INTENT = {
@@ -58,6 +59,13 @@ NODE_INTENT = {
 CHAIN_INTENT = {"problem": "problem", "solution": "solution", "commercial": "commercial"}
 COLLECTED = {"collected"}
 FATAL_RESULTS = {"review_expired", "lease_lost"}
+GAP_STATES = ("open", "collected", "analyzed", "resolved", "unresolvable")
+ASSESS_VERDICTS = ("resolved", "unresolvable")
+ANALYSIS_RELATIVE = Path("04-findings/loop-analysis")
+EVALUATIONS_RELATIVE = Path("04-findings/loop-evaluations.json")
+MAPPINGS_RELATIVE = Path("04-findings/loop-mappings.json")
+MAPPING_STANCES = ("supports", "contradicts", "contextual")
+ANALYSIS_VERSION = "1"
 PLACEHOLDERS = {"", "tbd", "todo", "待填写", "待确认", "待补充", "n/a", "na", "none", "null"}
 
 _CLI: Any = None
@@ -144,6 +152,71 @@ def state_path(study_dir: Path) -> Path:
 
 def candidates_path(study_dir: Path) -> Path:
     return Path(study_dir).resolve() / CANDIDATES_RELATIVE
+
+
+def evaluations_path(study_dir: Path) -> Path:
+    return Path(study_dir).resolve() / EVALUATIONS_RELATIVE
+
+
+def mappings_path(study_dir: Path) -> Path:
+    return Path(study_dir).resolve() / MAPPINGS_RELATIVE
+
+
+def gap_state(state: Dict[str, Any], key: str) -> str:
+    """Return the lifecycle state of one gap.
+
+    States are ``open → collected → analyzed → resolved / unresolvable``.
+    A collected candidate is never treated as a resolved gap: only an explicit
+    assessment (or a later rule-based check) may close it. Loop state written
+    by older versions has no ``gap_states`` map, so candidates fall back to
+    ``collected`` instead of ``resolved``.
+    """
+    entry = (state.get("gap_states") or {}).get(str(key))
+    if isinstance(entry, dict) and entry.get("state") in GAP_STATES:
+        return str(entry["state"])
+    for candidate in state.get("candidates") or []:
+        if isinstance(candidate, dict) and str(candidate.get("gap_key")) == str(key):
+            return "collected"
+    return "open"
+
+
+def _set_gap_state(state: Dict[str, Any], key: str, new_state: str, **extra: Any) -> None:
+    if new_state not in GAP_STATES:
+        raise LoopError(f"unknown gap state {new_state!r}")
+    states = state.setdefault("gap_states", {})
+    entry = states.setdefault(str(key), {})
+    entry["state"] = new_state
+    entry["updated_at"] = _now()
+    for name, value in extra.items():
+        if value not in (None, "", [], {}):
+            entry[name] = value
+
+
+def _resolved_keys(state: Dict[str, Any]) -> set:
+    """Gaps closed by an assessment; candidates alone never close a gap."""
+    return {
+        str(key) for key in (state.get("gap_states") or {})
+        if isinstance((state.get("gap_states") or {}).get(key), dict)
+        and (state.get("gap_states") or {}).get(key, {}).get("state") == "resolved"
+    }
+
+
+def _candidate_entries(state: Dict[str, Any], key: str) -> List[Dict[str, Any]]:
+    return [
+        item for item in state.get("candidates") or []
+        if isinstance(item, dict) and str(item.get("gap_key")) == str(key)
+    ]
+
+
+def _gap_state_counts(state: Dict[str, Any], gaps: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts = {name: 0 for name in GAP_STATES}
+    for gap in gaps:
+        counts[gap_state(state, str(gap.get("key")))] += 1
+    return counts
+
+
+def _slug(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-")[:80] or "gap"
 
 
 def _study(study_dir: Path) -> Dict[str, Any]:
@@ -532,14 +605,50 @@ def build_actions(
     attempted: Dict[str, Any],
     limit_actions: int,
     remaining_records: int,
+    gap_states: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, Any]]:
-    """Turn uncovered gaps into collection actions, one query per source."""
+    """Plan typed actions: deterministic analysis first, then collection.
+
+    Analysis never consumes the record budget and never closes a gap on its own;
+    it only turns ``collected`` material into a reviewable ``analyzed`` record.
+    Collection only runs for gaps whose state is still ``open``.
+    """
+    states = gap_states or {}
     actions: List[Dict[str, Any]] = []
     seen_queries: set[str] = set()
+
+    # 1. deterministic analysis for gaps that already have candidates
+    for gap in gaps:
+        if len(actions) >= limit_actions:
+            break
+        if not gap.get("actionable"):
+            continue
+        if states.get(str(gap["key"]), "open") != "collected":
+            continue
+        attempt_key = f"analysis|{gap['key']}"
+        if attempt_key in attempted:
+            continue
+        actions.append({
+            "id": "",
+            "kind": "analyze",
+            "gap_key": gap["key"],
+            "gap_kind": gap["kind"],
+            "node": gap.get("node"),
+            "judgment_id": gap.get("judgment_id"),
+            "intent": gap.get("intent"),
+            "analysis_mode": "deterministic",
+            "attempt_key": attempt_key,
+            "state": "planned",
+            "result": None,
+        })
+
+    # 2. collection for gaps that are still open
     for gap in gaps:
         if len(actions) >= limit_actions or remaining_records <= 0:
             break
         if not gap.get("actionable") or not gap.get("query_seed"):
+            continue
+        if states.get(str(gap["key"]), "open") != "open":
             continue
         for source in sources:
             if len(actions) >= limit_actions or remaining_records <= 0:
@@ -554,6 +663,7 @@ def build_actions(
                 continue
             actions.append({
                 "id": "",
+                "kind": "collect",
                 "gap_key": gap["key"],
                 "gap_kind": gap["kind"],
                 "node": gap.get("node"),
@@ -638,8 +748,11 @@ def plan(
             "envelope": envelope,
             "sources": sources,
             "gaps": gaps,
+            "gap_states": {},
             "rounds": [],
             "candidates": [],
+            "evaluations": [],
+            "mappings": [],
             "attempted": {},
             "totals": {"records": 0, "actions": 0, "blocked": 0},
         }
@@ -697,6 +810,16 @@ def authorize(study_dir: Path, *, by: str) -> Dict[str, Any]:
 
 def _validate_action(study_dir: Path, state: Dict[str, Any], action: Dict[str, Any]) -> None:
     envelope = state.get("envelope") if isinstance(state.get("envelope"), dict) else {}
+    gap_keys = {str(gap.get("key")) for gap in state.get("gaps") or [] if isinstance(gap, dict)}
+    if str(action.get("gap_key")) not in gap_keys:
+        raise LoopError("action does not map to a recorded gap")
+    kind = str(action.get("kind") or "collect")
+    if kind == "analyze":
+        if action.get("analysis_mode") != "deterministic":
+            raise LoopError("only deterministic analysis is authorized inside the envelope")
+        return
+    if kind != "collect":
+        raise LoopError(f"unknown action kind {kind!r}")
     platform = str(action.get("platform") or "")
     if platform not in (envelope.get("allowed_platforms") or []):
         raise LoopError(f"action platform {platform!r} is outside the authorized envelope")
@@ -707,9 +830,6 @@ def _validate_action(study_dir: Path, state: Dict[str, Any], action: Dict[str, A
         raise LoopError("action limit is outside the authorized per-action cap")
     if not str(action.get("query") or "").strip():
         raise LoopError("action has no query")
-    gap_keys = {str(gap.get("key")) for gap in state.get("gaps") or [] if isinstance(gap, dict)}
-    if str(action.get("gap_key")) not in gap_keys:
-        raise LoopError("action does not map to a recorded gap")
     if action.get("fixture"):
         candidate = Path(str(action["fixture"])).resolve()
         try:
@@ -720,7 +840,7 @@ def _validate_action(study_dir: Path, state: Dict[str, Any], action: Dict[str, A
             raise LoopError("fixture action is missing its authorized export")
 
 
-def _record_ids(raw_file: Optional[str], limit: int = CANDIDATE_SAMPLE_IDS) -> List[str]:
+def _record_ids(raw_file: Optional[str], limit: int = MAX_RECORD_IDS) -> List[str]:
     if not raw_file:
         return []
     path = Path(raw_file)
@@ -775,7 +895,12 @@ def gap_counts(gaps: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def _covered_keys(state: Dict[str, Any]) -> set:
-    return {str(item.get("gap_key")) for item in state.get("candidates") or [] if isinstance(item, dict)}
+    """Backward-compatible name for the set of *resolved* gaps.
+
+    Older callers used this to mean "a candidate was collected"; that is exactly
+    the conflation this module now refuses. Only an assessment closes a gap.
+    """
+    return _resolved_keys(state)
 
 
 def run(study_dir: Path) -> Dict[str, Any]:
@@ -820,6 +945,76 @@ def _run(study_dir: Path) -> Dict[str, Any]:
             _save(state_path(study_dir), state)
 
 
+def _analyze_gap(study_dir: Path, state: Dict[str, Any], action: Dict[str, Any]) -> Dict[str, Any]:
+    """Describe collected candidates deterministically; never grade or close the gap."""
+    key = str(action["gap_key"])
+    entries = _candidate_entries(state, key)
+    record_ids: List[str] = []
+    platforms: set[str] = set()
+    for item in entries:
+        record_ids.extend(str(value) for value in item.get("record_ids") or [])
+        platforms.add(str(item.get("platform") or ""))
+    unique = list(dict.fromkeys(record_ids))
+    fingerprint = _sha({
+        "gap_key": key,
+        "records": sum(int(item.get("records") or 0) for item in entries),
+        "record_ids": unique,
+        "platforms": sorted(item for item in platforms if item),
+    })
+    target = Path(study_dir).resolve() / ANALYSIS_RELATIVE / (_slug(key) + ".json")
+    relative = str(target.relative_to(Path(study_dir).resolve()))
+    if target.is_file():
+        try:
+            previous = _load_json(target)
+        except (OSError, json.JSONDecodeError):
+            previous = None
+        if isinstance(previous, dict) and previous.get("input_fingerprint") == fingerprint:
+            _set_gap_state(state, key, "analyzed", analysis_ref=relative,
+                           records=int(previous.get("records") or 0))
+            return {
+                "status": "analyzed",
+                "reused": True,
+                "records": int(previous.get("records") or 0),
+                "verdict": previous.get("verdict"),
+                "path": str(target),
+            }
+    analysis: Dict[str, Any] = {
+        "analysis_version": ANALYSIS_VERSION,
+        "gap_key": key,
+        "gap_kind": action.get("gap_kind"),
+        "intent": action.get("intent"),
+        "node": action.get("node"),
+        "judgment_id": action.get("judgment_id"),
+        "candidate_groups": len(entries),
+        "records": sum(int(item.get("records") or 0) for item in entries),
+        "record_ids": unique[:MAX_RECORD_IDS],
+        "platforms": sorted(item for item in platforms if item),
+        "duplicate_record_ids": len(record_ids) - len(unique),
+        "input_fingerprint": fingerprint,
+        "verdict": "review_ready" if entries else "insufficient_material",
+        "boundary": (
+            "Deterministic description only: it does not assign an evidence level, judge support "
+            "or counter-evidence, or close the gap."
+        ),
+    }
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _save(target, analysis)
+    _set_gap_state(
+        state, key, "analyzed",
+        analysis_ref=relative,
+        records=analysis["records"],
+    )
+    state.setdefault("totals", {})
+    state["totals"]["analyses"] = int(state["totals"].get("analyses") or 0) + 1
+    return {
+        "status": "analyzed",
+        "reused": False,
+        "records": analysis["records"],
+        "verdict": analysis["verdict"],
+        "path": str(target),
+    }
+
+
 def _execute_rounds(study_dir: Path, state: Dict[str, Any]) -> Dict[str, Any]:
     envelope = state["envelope"]
     sources = state.get("sources") or []
@@ -832,38 +1027,55 @@ def _execute_rounds(study_dir: Path, state: Dict[str, Any]) -> Dict[str, Any]:
         gaps = detect_gaps(study_dir)
         state["gaps"] = gaps
         actionable = [gap for gap in gaps if gap.get("actionable")]
-        covered = _covered_keys(state)
-        uncovered = [gap for gap in actionable if gap["key"] not in covered]
-        if not uncovered:
-            if not actionable:
+        states = {str(gap["key"]): gap_state(state, str(gap["key"])) for gap in actionable}
+        pending_collect = [gap for gap in actionable if states[str(gap["key"])] == "open"]
+        pending_analyze = [gap for gap in actionable if states[str(gap["key"])] == "collected"]
+        remaining = int(envelope["max_records_total"]) - int(state["totals"]["records"])
+        if not pending_collect and not pending_analyze:
+            analyzed = [gap for gap in actionable if states[str(gap["key"])] == "analyzed"]
+            if analyzed:
+                state["status"] = "completed"
+                state["stop_reason"] = "awaiting_semantic_review"
+                decision = "stop_with_reason"
+            elif not actionable:
                 if gaps:
                     state["status"] = "blocked"
                     state["stop_reason"] = "no_actionable_source"
+                    decision = "request_external_evidence"
                 else:
                     state["status"] = "completed"
                     state["stop_reason"] = "converged"
+                    decision = "stop_with_reason"
             else:
                 state["status"] = "completed"
-                state["stop_reason"] = "awaiting_semantic_review"
+                state["stop_reason"] = "converged"
+                decision = "stop_with_reason"
+            state["last_decision"] = decision
             break
-        remaining = int(envelope["max_records_total"]) - int(state["totals"]["records"])
-        if remaining <= 0:
-            state["status"] = "completed"
-            state["stop_reason"] = "record_budget"
-            break
+        decision = "analyze_existing" if pending_analyze else (
+            "continue_collecting" if remaining > 0 else "stop_with_reason")
+        state["last_decision"] = decision
         actions = build_actions(
-            uncovered, sources,
+            actionable, sources,
             attempted=state.get("attempted") or {},
             limit_actions=int(envelope["max_actions_per_round"]),
-            remaining_records=remaining,
+            remaining_records=max(0, remaining),
+            gap_states=states,
         )
         if not actions:
-            if state.get("candidates"):
+            if pending_analyze:
+                state["status"] = "completed"
+                state["stop_reason"] = "awaiting_analysis"
+            elif remaining <= 0:
+                state["status"] = "completed"
+                state["stop_reason"] = "record_budget"
+            elif state.get("candidates"):
                 state["status"] = "completed"
                 state["stop_reason"] = "partial_coverage"
             else:
                 state["status"] = "blocked"
                 state["stop_reason"] = "sources_exhausted"
+            state["last_decision"] = "stop_with_reason"
             break
         round_index = len(state["rounds"]) + 1
         for index, action in enumerate(actions, start=1):
@@ -873,6 +1085,7 @@ def _execute_rounds(study_dir: Path, state: Dict[str, Any]) -> Dict[str, Any]:
             _validate_action(study_dir, state, action)
         record: Dict[str, Any] = {
             "round": round_index,
+            "decision": decision,
             "started_at": _now(),
             "status": "running",
             "before": gap_counts(gaps),
@@ -888,6 +1101,16 @@ def _execute_rounds(study_dir: Path, state: Dict[str, Any]) -> Dict[str, Any]:
             action["state"] = "running"
             state["attempted"][action["attempt_key"]] = {"round": round_index, "state": "running"}
             _save(state_path(study_dir), state)
+            if str(action.get("kind")) == "analyze":
+                result = _analyze_gap(study_dir, state, action)
+                action["result"] = result
+                action["state"] = "completed"
+                executed += 1
+                state["totals"]["actions"] += 1
+                state["attempted"][action["attempt_key"]]["state"] = "analyzed"
+                state["updated_at"] = _now()
+                _save(state_path(study_dir), state)
+                continue
             try:
                 kwargs: Dict[str, Any] = {
                     "study_dir": study_dir,
@@ -936,6 +1159,8 @@ def _execute_rounds(study_dir: Path, state: Dict[str, Any]) -> Dict[str, Any]:
                         "proposed_evidence_level": None,
                         "note": "Human review assigns the evidence level and links the record to a judgment.",
                     })
+                    _set_gap_state(state, str(action["gap_key"]), "collected",
+                                   candidate_run=result.get("run_id"), records=added)
                     _save(candidates_path(study_dir), _candidates_document(state))
             else:
                 action["state"] = "blocked"
@@ -970,7 +1195,8 @@ def _execute_rounds(study_dir: Path, state: Dict[str, Any]) -> Dict[str, Any]:
             state["status"] = "blocked"
             state["stop_reason"] = "connector_blocked"
             break
-        if record["records_added"] == 0:
+        collected_in_round = any(str(item.get("kind") or "collect") == "collect" for item in actions)
+        if record["records_added"] == 0 and collected_in_round:
             state["status"] = "completed" if state.get("candidates") else "blocked"
             state["stop_reason"] = "no_new_material"
             break
@@ -981,23 +1207,288 @@ def _execute_rounds(study_dir: Path, state: Dict[str, Any]) -> Dict[str, Any]:
     return status(study_dir)
 
 
+def _evaluations_document(state: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "kind": KIND + ".evaluations",
+        "study_id": state.get("study_id"),
+        "boundary": (
+            "Named human assessments only. The loop never assigns an evidence level, never edits a "
+            "judgment and never marks a claim validated."
+        ),
+        "evaluations": state.get("evaluations") or [],
+    }
+
+
+def assess(
+    study_dir: Path,
+    *,
+    gap_key: str,
+    verdict: str,
+    by: str,
+    reason: str = "",
+    evidence_ids: Any = (),
+    hypothesis_id: str = "",
+) -> Dict[str, Any]:
+    """Record a named operator's judgment that a gap is closed or unverifiable.
+
+    This is the only path from ``analyzed`` to ``resolved``. The CLI can check
+    that evidence references exist, but the semantic judgment stays human: it is
+    recorded, not inferred.
+    """
+    verdict = str(verdict or "").strip()
+    if verdict not in ASSESS_VERDICTS:
+        raise LoopError("verdict must be one of: " + ", ".join(ASSESS_VERDICTS))
+    operator = str(by or "").strip()
+    if not operator:
+        raise LoopError("an assessment requires a named operator")
+    refs = [str(item).strip() for item in (evidence_ids or []) if str(item).strip()]
+    if verdict == "resolved" and not refs:
+        raise LoopError("a resolved gap requires at least one evidence reference")
+    if verdict == "unresolvable" and not str(reason or "").strip():
+        raise LoopError("an unresolvable gap requires a recorded reason")
+    with _lock(study_dir):
+        study_dir = Path(study_dir).resolve()
+        state = load_state(study_dir)
+        study = _study(study_dir)
+        if verdict == "resolved":
+            evidence_file = study_dir / "02-data" / "evidence.jsonl"
+            known: set[str] = set()
+            if evidence_file.is_file():
+                for line in evidence_file.read_text(encoding="utf-8").splitlines():
+                    if not line.strip():
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(record, dict) and record.get("record_id"):
+                        known.add(str(record["record_id"]))
+                unknown = [ref for ref in refs if ref not in known]
+                if unknown:
+                    raise LoopError(
+                        "resolved evidence is not registered in 02-data/evidence.jsonl: "
+                        + ", ".join(unknown)
+                    )
+        if str(hypothesis_id or "").strip():
+            declared = {
+                str(item.get("id")) for item in (study.get("hypotheses") or [])
+                if isinstance(item, dict)
+            }
+            if str(hypothesis_id) not in declared:
+                raise LoopError(
+                    f"unknown hypothesis {hypothesis_id!r}; study.json declares: "
+                    + (", ".join(sorted(declared)) or "none")
+                )
+        gaps = detect_gaps(study_dir)
+        state["gaps"] = gaps
+        keys = {str(gap.get("key")) for gap in gaps}
+        if gap_key not in keys:
+            raise LoopError(f"unknown gap {gap_key!r}; run `askovo loop status` for current gaps")
+        current = gap_state(state, gap_key)
+        if current in ("resolved", "unresolvable"):
+            raise LoopError(f"gap {gap_key} is already {current}")
+        _set_gap_state(
+            state, gap_key, verdict,
+            by=operator, at=_now(), reason=str(reason or ""),
+            evidence_ids=refs, hypothesis_id=str(hypothesis_id or ""),
+        )
+        evaluations = state.setdefault("evaluations", [])
+        evaluation = {
+            "id": f"EV{len(evaluations) + 1:02d}",
+            "gap_key": gap_key,
+            "verdict": verdict,
+            "level": "human_assessment",
+            "hypothesis_id": str(hypothesis_id or ""),
+            "evidence_ids": refs,
+            "reason": str(reason or ""),
+            "by": operator,
+            "at": _now(),
+            "previous_state": current,
+        }
+        evaluations.append(evaluation)
+        state["updated_at"] = _now()
+        _save(state_path(study_dir), state)
+        _save(evaluations_path(study_dir), _evaluations_document(state))
+        result = status(study_dir)
+        result["evaluation"] = evaluation
+        return result
+
+
+def _mappings_document(state: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "kind": KIND + ".mappings",
+        "study_id": state.get("study_id"),
+        "boundary": (
+            "Mappings are supplied by a host agent or a reviewer and only carry provenance: "
+            "record id, hypothesis id, verbatim quote and stance. They are not an evidence "
+            "level, a judgment status or a validated claim."
+        ),
+        "mappings": state.get("mappings") or [],
+    }
+
+
+def map_candidates(study_dir: Path, *, mappings: Any, by: str) -> Dict[str, Any]:
+    """Validate host-supplied evidence mappings against collected candidates.
+
+    The semantic link (which quote supports or contradicts which hypothesis) is
+    supplied by a host agent or reviewer. This function only checks that the
+    quote exists in a collected record, that the hypothesis is declared in
+    ``study.json``, and that the stance is one of the allowed values.
+    """
+    operator = str(by or "").strip()
+    if not operator:
+        raise LoopError("evidence mapping requires a named operator")
+    if not isinstance(mappings, list) or not mappings:
+        raise LoopError("mappings must be a non-empty array")
+    with _lock(study_dir):
+        study_dir = Path(study_dir).resolve()
+        state = load_state(study_dir)
+        study = _study(study_dir)
+        declared = {
+            str(item.get("id")) for item in (study.get("hypotheses") or [])
+            if isinstance(item, dict)
+        }
+        record_gap: Dict[str, str] = {}
+        for candidate in state.get("candidates") or []:
+            if not isinstance(candidate, dict):
+                continue
+            for record_id in candidate.get("record_ids") or []:
+                record_gap[str(record_id)] = str(candidate.get("gap_key"))
+        prepared: List[Dict[str, Any]] = []
+        existing = len(state.get("mappings") or [])
+        for index, raw in enumerate(mappings, start=1):
+            if not isinstance(raw, dict):
+                raise LoopError(f"mapping {index} must be an object")
+            hypothesis_id = str(raw.get("hypothesis_id") or "").strip()
+            if hypothesis_id not in declared:
+                raise LoopError(
+                    f"mapping {index}: unknown hypothesis {hypothesis_id!r}; declare it in study.json"
+                )
+            record_id = str(raw.get("record_id") or "").strip()
+            if record_id not in record_gap:
+                raise LoopError(
+                    f"mapping {index}: record {record_id!r} is not among collected candidates"
+                )
+            quote = str(raw.get("quote") or "").strip()
+            if len(quote) < 5:
+                raise LoopError(f"mapping {index}: quote must be at least 5 characters")
+            stance = str(raw.get("stance") or "").strip()
+            if stance not in MAPPING_STANCES:
+                raise LoopError(
+                    f"mapping {index}: stance must be one of: " + ", ".join(MAPPING_STANCES)
+                )
+            prepared.append({
+                "id": f"M{existing + index:02d}",
+                "gap_key": record_gap[record_id],
+                "record_id": record_id,
+                "hypothesis_id": hypothesis_id,
+                "stance": stance,
+                "quote": quote[:500],
+                "locator": str(raw.get("locator") or record_id),
+                "by": operator,
+                "at": _now(),
+                "level": "host_supplied_mapping",
+            })
+        state.setdefault("mappings", []).extend(prepared)
+        state["updated_at"] = _now()
+        _save(state_path(study_dir), state)
+        _save(mappings_path(study_dir), _mappings_document(state))
+        return {
+            "status": "mapped",
+            "added": len(prepared),
+            "total": len(state.get("mappings") or []),
+            "path": str(mappings_path(study_dir)),
+            "by_gap": {
+                gap: sum(1 for item in prepared if item["gap_key"] == gap)
+                for gap in sorted({item["gap_key"] for item in prepared})
+            },
+        }
+
+
+def advise(study_dir: Path) -> Dict[str, Any]:
+    """Suggest, never decide: a deterministic reading of recorded mappings.
+
+    The advice only reflects what a reviewer already mapped. It cannot close a
+    gap, cannot promote a candidate to evidence and cannot mark a claim
+    validated; ``loop assess`` remains the only path.
+    """
+    state = load_state(study_dir)
+    gaps = state.get("gaps") or []
+    mappings = [item for item in state.get("mappings") or [] if isinstance(item, dict)]
+    items: List[Dict[str, Any]] = []
+    for gap in gaps:
+        key = str(gap.get("key"))
+        if not gap.get("actionable"):
+            continue
+        current = gap_state(state, key)
+        if current != "analyzed":
+            continue
+        related = [item for item in mappings if str(item.get("gap_key")) == key]
+        supports = [item for item in related if item.get("stance") == "supports"]
+        contradicts = [item for item in related if item.get("stance") == "contradicts"]
+        contextual = [item for item in related if item.get("stance") == "contextual"]
+        if not related:
+            recommendation = "insufficient"
+            reason = "no evidence mapping recorded for this gap"
+        elif supports and not contradicts:
+            recommendation = "resolved_candidate"
+            reason = "mapped passages support the hypothesis and none contradict it"
+        elif contradicts and not supports:
+            recommendation = "unresolvable_candidate"
+            reason = "mapped passages contradict the hypothesis and none support it"
+        else:
+            recommendation = "conflicted"
+            reason = "mapped passages disagree; a reviewer must weigh them"
+        items.append({
+            "gap_key": key,
+            "gap_kind": gap.get("kind"),
+            "state": current,
+            "recommendation": recommendation,
+            "reason": reason,
+            "supports": len(supports),
+            "contradicts": len(contradicts),
+            "contextual": len(contextual),
+            "hypothesis_ids": sorted({str(item.get("hypothesis_id")) for item in related
+                                      if item.get("hypothesis_id")}),
+            "record_ids": sorted({str(item.get("record_id")) for item in related
+                                  if item.get("record_id")})[:20],
+        })
+    return {
+        "loop_id": state.get("loop_id"),
+        "advice": items,
+        "boundary": (
+            "Advice is a deterministic summary of reviewer-supplied mappings. It is not an "
+            "evidence level, not a judgment and not an assessment; only `loop assess` closes a gap."
+        ),
+    }
+
+
 def status(study_dir: Path) -> Dict[str, Any]:
     state = load_state(study_dir)
     gaps = state.get("gaps") or []
-    covered = _covered_keys(state)
+    resolved = _resolved_keys(state)
     actionable = [gap for gap in gaps if gap.get("actionable")]
+    states = _gap_state_counts(state, actionable)
     return {
         "loop_id": state.get("loop_id"),
         "study_id": state.get("study_id"),
         "status": state.get("status"),
         "stop_reason": state.get("stop_reason"),
+        "last_decision": state.get("last_decision"),
         "authorized": bool(state.get("authorization")),
         "authorization": state.get("authorization"),
         "envelope": state.get("envelope"),
         "gaps": {
             "total": len(gaps),
             "actionable": len(actionable),
-            "covered": sum(1 for gap in actionable if gap.get("key") in covered),
+            "resolved": len(resolved),
+            "covered": len(resolved),
+            "open": states["open"],
+            "collected": states["collected"],
+            "analyzed": states["analyzed"],
+            "unresolvable": states["unresolvable"],
             "by_kind": gap_counts(gaps)["by_kind"],
         },
         "rounds": [
@@ -1013,8 +1504,12 @@ def status(study_dir: Path) -> Dict[str, Any]:
         ],
         "totals": state.get("totals"),
         "candidates": len(state.get("candidates") or []),
+        "evaluations": len(state.get("evaluations") or []),
+        "mappings": len(state.get("mappings") or []),
         "state_path": str(state_path(study_dir)),
         "candidates_path": str(candidates_path(study_dir)),
+        "evaluations_path": str(evaluations_path(study_dir)),
+        "mappings_path": str(mappings_path(study_dir)),
         "summary_path": str(summary_path(study_dir)) if summary_path(study_dir).is_file() else None,
     }
 
@@ -1050,7 +1545,7 @@ def report(study_dir: Path) -> Dict[str, Any]:
     state = load_state(study_dir)
     payload = cli_module().audit_payload(study_dir)
     gaps = detect_gaps(study_dir)
-    covered = _covered_keys(state)
+    resolved = _resolved_keys(state)
     totals = state.get("totals") or {}
 
     verified = [claim for claim in payload.get("claims") or []
@@ -1058,7 +1553,11 @@ def report(study_dir: Path) -> Dict[str, Any]:
     unverified = [claim for claim in payload.get("claims") or []
                   if isinstance(claim, dict) and claim.get("verdict") in ("open", "exceeds_evidence")]
     blocked = [gap for gap in gaps if not gap.get("actionable")]
-    pending = [gap for gap in gaps if gap.get("actionable") and gap.get("key") not in covered]
+    pending = [gap for gap in gaps if gap.get("actionable") and gap.get("key") not in resolved]
+    needs_collection = [gap for gap in pending if gap_state(state, str(gap["key"])) == "open"]
+    needs_analysis = [gap for gap in pending if gap_state(state, str(gap["key"])) == "collected"]
+    needs_assessment = [gap for gap in pending if gap_state(state, str(gap["key"])) == "analyzed"]
+    state_counts = _gap_state_counts(state, [gap for gap in gaps if gap.get("actionable")])
 
     lines: List[str] = [
         f"# 研究闭环报告：{payload.get('study_title') or state.get('study_id')}",
@@ -1066,8 +1565,11 @@ def report(study_dir: Path) -> Dict[str, Any]:
         f"- 闭环：`{state.get('loop_id')}`",
         f"- 状态：{state.get('status')} / 停止原因：{state.get('stop_reason') or '-'}",
         f"- 轮次：{len(state.get('rounds') or [])}；采集记录：{totals.get('records', 0)}；"
-        f"候选证据组：{len(state.get('candidates') or [])}",
+        f"候选证据组：{len(state.get('candidates') or [])}；人工评估：{len(state.get('evaluations') or [])}",
         f"- 授权：{(state.get('authorization') or {}).get('by') or '未授权'}",
+        f"- 缺口状态：open {state_counts['open']} / collected {state_counts['collected']} / "
+        f"analyzed {state_counts['analyzed']} / resolved {state_counts['resolved']} / "
+        f"unresolvable {state_counts['unresolvable']}",
         "",
         "## 已验证结论（仅指现有材料通过审计门）",
         "",
@@ -1087,12 +1589,28 @@ def report(study_dir: Path) -> Dict[str, Any]:
     else:
         lines.append("- 无记录在案的阻断项。")
     lines.extend(["", "## 仍需补证", ""])
-    if pending:
-        for gap in pending:
-            lines.append(f"- [{gap.get('id')} {gap.get('kind')}] {gap.get('detail')}"
+    open_gaps = needs_collection + needs_analysis
+    if open_gaps:
+        for gap in open_gaps:
+            stage = "待采集" if gap_state(state, str(gap["key"])) == "open" else "待分析"
+            lines.append(f"- [{gap.get('id')} {gap.get('kind')} / {stage}] {gap.get('detail')}"
                          + (f"；建议查询：`{gap.get('query_seed')}`" if gap.get("query_seed") else ""))
     else:
         lines.append("- 无未覆盖的可采集缺口。")
+    lines.extend(["", "## 待人工评估（采集与分析已不能自动闭合）", ""])
+    if needs_assessment:
+        for gap in needs_assessment:
+            entry = (state.get("gap_states") or {}).get(str(gap["key"])) or {}
+            lines.append(
+                f"- [{gap.get('id')} {gap.get('kind')}] {gap.get('detail')}；"
+                f"分析：`{entry.get('analysis_ref') or '-'}`；"
+                f"评估：`askovo loop assess STUDY --gap {gap.get('key')} "
+                f"--verdict resolved|unresolvable --by NAME`"
+            )
+        lines.append("")
+        lines.append("评估是人工语义判断，系统只记录；未评估的分析结果不会被当成缺口已闭合。")
+    else:
+        lines.append("- 无待评估缺口。")
     lines.extend(["", "## 候选证据（待人工定级与关联）", ""])
     candidates = state.get("candidates") or []
     if candidates:
@@ -1108,8 +1626,12 @@ def report(study_dir: Path) -> Dict[str, Any]:
         lines.append("- 本轮没有新增候选材料。")
     lines.extend(["", "## 下一步", ""])
     next_actions = list(payload.get("next_actions") or [])
-    for gap in pending[:5]:
-        next_actions.append(f"补采 {gap.get('key')}：" + (gap.get("query_seed") or gap.get("detail") or ""))
+    for gap in open_gaps[:5]:
+        action = "补采" if gap_state(state, str(gap["key"])) == "open" else "分析"
+        next_actions.append(f"{action} {gap.get('key')}：" + (gap.get("query_seed") or gap.get("detail") or ""))
+    for gap in needs_assessment[:3]:
+        next_actions.append(
+            f"评估缺口 {gap.get('key')}：`askovo loop assess` 记录 resolved 或 unresolvable")
     for item in candidates[:3]:
         next_actions.append(
             f"复核 {item.get('run_id')} 的 {item.get('records')} 条候选记录，定级后写入判断 {item.get('judgment_id') or ''}".strip())
@@ -1125,4 +1647,5 @@ def report(study_dir: Path) -> Dict[str, Any]:
     return {"status": state.get("status"), "stop_reason": state.get("stop_reason"),
             "path": str(path), "markdown": markdown,
             "verified": len(verified), "unverified": len(unverified),
-            "blocked": len(blocked), "pending": len(pending)}
+            "blocked": len(blocked), "pending": len(pending),
+            "awaiting_assessment": len(needs_assessment)}

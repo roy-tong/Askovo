@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+Research loop: collected material no longer counts as a closed gap.
+
+### Added
+
+- **Gap lifecycle** (`open → collected → analyzed → resolved / unresolvable`) stored per gap key in `research-loop.json`. A candidate record only advances a gap to `collected`; only a named operator's assessment can close it. Loop state written by older versions falls back to `collected` from candidates, never to `resolved`.
+- **Typed analysis action**: `build_actions` emits `analyze` before further collection for `collected` gaps. The deterministic executor writes `04-findings/loop-analysis/<gap>.json` (record count, platforms, duplicate ids, samples, `analysis_version`, `input_fingerprint`, explicit boundary) and consumes no collection budget. Re-running the same input fingerprint reuses the existing artifact instead of re-analyzing; analyses are counted separately in `totals.analyses`. Analysis never grades evidence, judges support/counter-evidence or closes a gap.
+- **`askovo loop assess`**: the only path from `analyzed` to `resolved`/`unresolvable`. Requires a named operator; `resolved` requires at least one evidence reference (checked against `02-data/evidence.jsonl` when present), `unresolvable` requires a recorded reason. Evaluations are appended to `research-loop.json` and `04-findings/loop-evaluations.json`; an optional `--hypothesis` id must exist in `study.hypotheses`.
+- **`askovo loop map`**: validates host-supplied evidence mappings (record id must be a collected candidate, hypothesis id must be declared in `study.json`, stance is `supports`/`contradicts`/`contextual`, quote must be verbatim). Writes `04-findings/loop-mappings.json`. A mapping only carries provenance; it is never an evidence level or a judgment status.
+- **`askovo loop advise`**: a deterministic, read-only summary of reviewer-supplied mappings per analyzed gap (`insufficient` / `resolved_candidate` / `unresolvable_candidate` / `conflicted`). It never closes a gap, assigns an evidence level or edits a judgment; `loop assess` remains the only close path.
+- **Typed planner decision** recorded per round and exposed as `last_decision`: `continue_collecting` / `analyze_existing` / `request_external_evidence` / `stop_with_reason`.
+- **New stop reasons** `awaiting_analysis` and redefined `awaiting_semantic_review` (analyzed gaps awaiting assessment), plus `gaps.resolved/open/collected/analyzed/unresolvable` counters and an `awaiting_assessment` report field.
+
+### Changed
+
+- `_covered_keys` now means *resolved* gaps; the previous "a candidate exists, therefore covered" inference is removed.
+- `loop report` adds a gap-state line and a "待人工评估" section that names the exact `loop assess` command; `loop status` reports evaluation counts and the evaluations path.
+- MCP still cannot authorize and deliberately cannot `assess` or `map`; semantic closure stays a named human CLI action.
+
+### Tests
+
+- Golden-case coverage: collect → `analyzed` (never auto-`resolved`), assessment requires evidence/reason, evaluation artifact written, report lists gaps awaiting assessment.
+
 ## 2.6.0 — 2026-11-01
 
 First published release since v2.4.1. It carries the prepared 2.5.0 Decision

@@ -16,7 +16,7 @@ askovo --help
 | `platforms "<需求>"` | 平台雷达：数据在哪、能否合规拿到、能证明什么 | 0/2 |
 | `collect <study>` | 通过 design gate 后运行采集适配器/本地导出/CDP，写 raw、manifest 与 normalized | 0/1/2/3/4 |
 | `research plan/authorize/run/status` | 宿主给定动作清单的逐条授权与受控执行 | 0/1/2/3/4 |
-| `loop plan/authorize/run/status/report` | 缺口驱动的多轮受控采集、每轮复审、候选证据与复盘 | 0/1/2/3/4 |
+| `loop plan/authorize/run/status/report/assess` | 缺口驱动的多轮受控采集、每轮复审、候选证据与复盘 | 0/1/2/3/4 |
 | `queue init/add/run/status/retry` | SQLite 队列、worker、重试、限速、断点续跑 | 0/1/2 |
 | `analyze <study>` | 归一化、去重、分布、候选主题、问题匹配 | 0/2 |
 | `chain <study>` | 生成/渲染“场景→用户→痛点→需求→特性→产品→商业”推理链 | 0/2 |
@@ -143,14 +143,20 @@ askovo loop authorize ./study --by "researcher"
 askovo loop run ./study
 askovo loop status ./study
 askovo loop report ./study
+askovo loop assess ./study --gap "claim:D02:commercial" --verdict resolved --by "researcher" --evidence R01
+askovo loop map ./study --file mappings.json --by "researcher"
+askovo loop advise ./study
 ```
 
 - 两者都先过 Design gate，再走 `collect_platform`，平台策略、来源适配器与 `scope.allowed_sources` 校验完全一致；
 - `research` 适合宿主 Agent 已经确定动作清单的场景：动作清单哈希变化后必须重新授权；
 - `loop` 从审计缺口生成查询，授权对象是「信封」（允许平台、单条上限、轮次与记录预算），信封变化后授权失效；
-- `loop` 每轮重新审计，停止原因见[研究闭环](research-loop.md)；
-- `loop` 只产出候选证据（`04-findings/loop-candidates.json`），不分配证据等级、不改判断状态、不标 `validated`；
-- MCP 可 `plan` / `status` / `report` / `run`，但不能授权。
+- `loop` 每轮重新审计，缺口按 `open → collected → analyzed → resolved/unresolvable` 推进，停止原因见[研究闭环](research-loop.md)；
+- `loop` 只产出候选证据（`04-findings/loop-candidates.json`）和确定性分析（`04-findings/loop-analysis/`），不分配证据等级、不改判断状态、不标 `validated`；
+- `loop assess` 是关闭缺口的唯一路径：`resolved` 至少需要一条证据引用，`unresolvable` 必须写明原因；
+- `loop advise` 只根据已记录映射给出只读建议，不关闭缺口、不评级；
+- `loop map` 只校验映射出处（候选记录、`study.hypotheses` 中声明的假设、原文片段与立场），不做语义评级；
+- MCP 可 `plan` / `status` / `report` / `run`，但不能授权，也不能 `assess` / `map`。
 
 ## queue
 

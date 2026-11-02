@@ -2526,6 +2526,29 @@ def command_loop(args: argparse.Namespace) -> int:
             print(json.dumps({key: value for key, value in result.items() if key != "markdown"},
                              ensure_ascii=False, indent=2))
             return 0
+        if args.action == "assess":
+            result = research_loop.assess(
+                study_dir,
+                gap_key=args.gap,
+                verdict=args.verdict,
+                by=args.by,
+                reason=args.reason or "",
+                evidence_ids=args.evidence or [],
+                hypothesis_id=args.hypothesis or "",
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        if args.action == "advise":
+            print(json.dumps(research_loop.advise(study_dir), ensure_ascii=False, indent=2))
+            return 0
+        if args.action == "map":
+            if not args.file:
+                raise research_loop.LoopError("map requires --file with a mappings JSON")
+            document = json.loads(Path(args.file).read_text(encoding="utf-8"))
+            items = document.get("mappings") if isinstance(document, dict) else document
+            result = research_loop.map_candidates(study_dir, mappings=items, by=args.by)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
         if args.action != "run":
             raise research_loop.LoopError("unknown loop action: %s" % args.action)
         if args.authorize:
@@ -4631,7 +4654,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="detect research gaps and run bounded, re-audited collection rounds inside an "
              "authorized envelope; candidates wait for human evidence review",
     )
-    loop_parser.add_argument("action", choices=("plan", "authorize", "run", "status", "report"))
+    loop_parser.add_argument("action",
+                             choices=("plan", "authorize", "run", "status", "report", "assess", "map", "advise"))
     loop_parser.add_argument("study_dir")
     loop_parser.add_argument("--reset", action="store_true", help="replace an existing loop state")
     loop_parser.add_argument("--authorize", action="store_true",
@@ -4644,6 +4668,18 @@ def build_parser() -> argparse.ArgumentParser:
                              help="planning cap on actions per round (default 3, max 20)")
     loop_parser.add_argument("--max-records", type=int, default=300,
                              help="planning cap on collected records (default 300, max 5000)")
+    loop_parser.add_argument("--gap", default="",
+                             help="assess: gap key, e.g. claim:D02:commercial")
+    loop_parser.add_argument("--verdict", default="",
+                             help="assess: resolved or unresolvable")
+    loop_parser.add_argument("--reason", default="",
+                             help="assess: why the gap is closed or cannot be closed")
+    loop_parser.add_argument("--evidence", action="append", default=[],
+                             help="assess: evidence id that closes the gap (repeatable)")
+    loop_parser.add_argument("--hypothesis", default="",
+                             help="assess: optional study hypothesis id this gap tests")
+    loop_parser.add_argument("--file", default="",
+                             help="map: JSON file with host-supplied evidence mappings")
     loop_parser.set_defaults(func=command_loop)
 
     review_parser = subparsers.add_parser(

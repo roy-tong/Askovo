@@ -32,7 +32,7 @@ def tool_payload(response: dict) -> dict:
     return json.loads(response["result"]["content"][0]["text"])
 
 
-class ResearchLoopTests(unittest.TestCase):
+class LoopHelpers:
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -102,6 +102,9 @@ class ResearchLoopTests(unittest.TestCase):
         return run_cli("loop", "authorize", str(self.study), "--by", by)
 
     # -- tests ------------------------------------------------------------ #
+
+
+class ResearchLoopTests(LoopHelpers, unittest.TestCase):
 
     def test_plan_reports_gaps_sources_and_envelope(self) -> None:
         self.write_study(gap="two")
@@ -253,6 +256,228 @@ class ResearchLoopTests(unittest.TestCase):
         result = tool_payload(by_id[3])
         self.assertEqual(4, result["exit_code"])
         self.assertIn("not authorized", result["result"]["reason"])
+
+
+class GapLifecycleTests(LoopHelpers, unittest.TestCase):
+    """Golden case: collected material must be analyzed, then assessed by a human."""
+
+    def _run_and_status(self) -> dict:
+        self.write_study(gap="one")
+        self.plan()
+        self.authorize()
+        completed = run_cli("loop", "run", str(self.study))
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        return json.loads(completed.stdout)
+
+    def _analyzed_gap(self, status: dict) -> str:
+        state = json.loads((self.study / "04-findings" / "research-loop.json")
+                           .read_text(encoding="utf-8"))
+        keys = [key for key, entry in (state.get("gap_states") or {}).items()
+                if isinstance(entry, dict) and entry.get("state") == "analyzed"]
+        self.assertTrue(keys, state.get("gap_states"))
+        return keys[0]
+
+    def test_collected_material_is_analyzed_but_never_auto_resolved(self) -> None:
+        status = self._run_and_status()
+        self.assertEqual("awaiting_semantic_review", status["stop_reason"])
+        self.assertGreaterEqual(status["gaps"]["analyzed"], 1)
+        self.assertEqual(0, status["gaps"]["resolved"])
+        self.assertEqual(0, status["gaps"]["covered"])
+        self.assertTrue((self.study / "04-findings" / "loop-analysis").is_dir())
+        analyses = list((self.study / "04-findings" / "loop-analysis").glob("*.json"))
+        self.assertTrue(analyses)
+        analysis = json.loads(analyses[0].read_text(encoding="utf-8"))
+        self.assertEqual("review_ready", analysis["verdict"])
+        self.assertEqual("1", analysis["analysis_version"])
+        self.assertTrue(analysis["input_fingerprint"])
+        self.assertIn("does not assign an evidence level", analysis["boundary"])
+        state = json.loads((self.study / "04-findings" / "research-loop.json")
+                           .read_text(encoding="utf-8"))
+        self.assertEqual(1, state["totals"]["analyses"])
+        kinds = [action.get("kind") for round_ in state["rounds"] for action in round_["actions"]]
+        self.assertIn("analyze", kinds)
+        analyze_actions = [action for round_ in state["rounds"] for action in round_["actions"]
+                           if action.get("kind") == "analyze"]
+        self.assertFalse(analyze_actions[0]["result"]["reused"])
+
+    def test_analysis_reuses_identical_input_fingerprint(self) -> None:
+        status = self._run_and_status()
+        gap = self._analyzed_gap(status)
+        state_path = self.study / "04-findings" / "research-loop.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state["gap_states"][gap]["state"] = "collected"
+        state["attempted"].pop(f"analysis|{gap}", None)
+        state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+        rerun = run_cli("loop", "run", str(self.study))
+        self.assertEqual(0, rerun.returncode, rerun.stdout + rerun.stderr)
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        analyze_actions = [action for round_ in state["rounds"] for action in round_["actions"]
+                           if action.get("kind") == "analyze"]
+        self.assertGreaterEqual(len(analyze_actions), 2)
+        self.assertTrue(analyze_actions[-1]["result"]["reused"])
+        self.assertEqual(1, state["totals"]["analyses"])
+
+    def test_assess_resolves_gap_and_writes_evaluation(self) -> None:
+        status = self._run_and_status()
+        gap = self._analyzed_gap(status)
+        completed = run_cli("loop", "assess", str(self.study), "--gap", gap,
+                            "--verdict", "resolved", "--by", "reviewer",
+                            "--evidence", "R01", "--reason", "two paid records close the gap")
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(1, payload["gaps"]["resolved"])
+        self.assertEqual("resolved", payload["evaluation"]["verdict"])
+        self.assertEqual("human_assessment", payload["evaluation"]["level"])
+        evaluations = json.loads((self.study / "04-findings" / "loop-evaluations.json")
+                                 .read_text(encoding="utf-8"))
+        self.assertEqual("human_assessment", evaluations["evaluations"][0]["level"])
+
+    def test_assess_links_declared_hypothesis(self) -> None:
+        status = self._run_and_status()
+        gap = self._analyzed_gap(status)
+        completed = run_cli("loop", "assess", str(self.study), "--gap", gap,
+                            "--verdict", "resolved", "--by", "reviewer",
+                            "--evidence", "R01", "--hypothesis", "H1")
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertEqual("H1", payload["evaluation"]["hypothesis_id"])
+
+    def test_assess_rejects_unknown_hypothesis(self) -> None:
+        status = self._run_and_status()
+        gap = self._analyzed_gap(status)
+        rejected = run_cli("loop", "assess", str(self.study), "--gap", gap,
+                           "--verdict", "resolved", "--by", "reviewer",
+                           "--evidence", "R01", "--hypothesis", "H404")
+        self.assertEqual(2, rejected.returncode, rejected.stdout)
+        self.assertIn("unknown hypothesis", json.loads(rejected.stdout)["reason"])
+
+    def test_assess_rejects_resolved_without_evidence(self) -> None:
+        status = self._run_and_status()
+        gap = self._analyzed_gap(status)
+        completed = run_cli("loop", "assess", str(self.study), "--gap", gap,
+                            "--verdict", "resolved", "--by", "reviewer")
+        self.assertEqual(2, completed.returncode, completed.stdout)
+        self.assertIn("evidence reference", json.loads(completed.stdout)["reason"])
+
+    def test_assess_rejects_unregistered_evidence(self) -> None:
+        status = self._run_and_status()
+        gap = self._analyzed_gap(status)
+        completed = run_cli("loop", "assess", str(self.study), "--gap", gap,
+                            "--verdict", "resolved", "--by", "reviewer",
+                            "--evidence", "R99")
+        self.assertEqual(2, completed.returncode, completed.stdout)
+        self.assertIn("not registered", json.loads(completed.stdout)["reason"])
+
+    def test_assess_rejects_unresolvable_without_reason(self) -> None:
+        status = self._run_and_status()
+        gap = self._analyzed_gap(status)
+        completed = run_cli("loop", "assess", str(self.study), "--gap", gap,
+                            "--verdict", "unresolvable", "--by", "reviewer")
+        self.assertEqual(2, completed.returncode, completed.stdout)
+        self.assertIn("reason", json.loads(completed.stdout)["reason"])
+
+    def test_report_lists_gaps_awaiting_assessment(self) -> None:
+        self._run_and_status()
+        report = run_cli("loop", "report", str(self.study))
+        self.assertEqual(0, report.returncode, report.stdout + report.stderr)
+        payload = json.loads(report.stdout)
+        self.assertGreaterEqual(payload["awaiting_assessment"], 1)
+        markdown = Path(payload["path"]).read_text(encoding="utf-8")
+        self.assertIn("待人工评估", markdown)
+        self.assertIn("loop assess", markdown)
+
+    def test_planner_decisions_are_typed(self) -> None:
+        status = self._run_and_status()
+        state = json.loads((self.study / "04-findings" / "research-loop.json")
+                           .read_text(encoding="utf-8"))
+        decisions = [round_.get("decision") for round_ in state["rounds"]]
+        self.assertIn("continue_collecting", decisions)
+        self.assertIn("analyze_existing", decisions)
+        self.assertEqual("stop_with_reason", status["last_decision"])
+
+    def test_map_validates_provenance_and_never_assigns_evidence_level(self) -> None:
+        self._run_and_status()
+        candidates = json.loads((self.study / "04-findings" / "loop-candidates.json")
+                                .read_text(encoding="utf-8"))["candidates"]
+        record_id = candidates[0]["record_ids"][0]
+        mapping_file = self.dir / "mappings.json"
+        mapping_file.write_text(json.dumps({"mappings": [{
+            "record_id": record_id,
+            "hypothesis_id": "H1",
+            "stance": "supports",
+            "quote": "privacy matters more than a camera roaming the house",
+            "locator": "https://github.com/o/r/issues/10",
+        }]}), encoding="utf-8")
+        completed = run_cli("loop", "map", str(self.study),
+                            "--file", str(mapping_file), "--by", "researcher")
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(1, payload["added"])
+        document = json.loads((self.study / "04-findings" / "loop-mappings.json")
+                              .read_text(encoding="utf-8"))
+        mapping = document["mappings"][0]
+        self.assertEqual("host_supplied_mapping", mapping["level"])
+        self.assertNotIn("evidence_level", mapping)
+        self.assertFalse(document["boundary"].startswith("validated"))
+
+    def test_advise_reports_insufficient_before_mapping(self) -> None:
+        self._run_and_status()
+        completed = run_cli("loop", "advise", str(self.study))
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertGreaterEqual(len(payload["advice"]), 1)
+        self.assertEqual("insufficient", payload["advice"][0]["recommendation"])
+        self.assertIn("not an assessment", payload["boundary"])
+
+    def test_advise_reads_mapped_support_and_contradiction(self) -> None:
+        status = self._run_and_status()
+        candidates = json.loads((self.study / "04-findings" / "loop-candidates.json")
+                                .read_text(encoding="utf-8"))["candidates"]
+        record_id = candidates[0]["record_ids"][0]
+        mapping_file = self.dir / "advice-map.json"
+        for stance, expected in (("supports", "resolved_candidate"),
+                                 ("contradicts", "conflicted")):
+            mapping_file.write_text(json.dumps({"mappings": [{
+                "record_id": record_id,
+                "hypothesis_id": "H1",
+                "stance": stance,
+                "quote": "privacy matters more than a camera roaming the house",
+            }]}), encoding="utf-8")
+            mapped = run_cli("loop", "map", str(self.study),
+                             "--file", str(mapping_file), "--by", "researcher")
+            self.assertEqual(0, mapped.returncode, mapped.stdout + mapped.stderr)
+            advised = run_cli("loop", "advise", str(self.study))
+            self.assertEqual(0, advised.returncode, advised.stdout + advised.stderr)
+            advice = json.loads(advised.stdout)["advice"][0]
+            self.assertEqual(expected, advice["recommendation"])
+            self.assertEqual(1, advice["supports"])
+            self.assertEqual(1 if stance == "contradicts" else 0, advice["contradicts"])
+
+    def test_map_rejects_unknown_hypothesis_and_short_quote(self) -> None:
+        self._run_and_status()
+        candidates = json.loads((self.study / "04-findings" / "loop-candidates.json")
+                                .read_text(encoding="utf-8"))["candidates"]
+        record_id = candidates[0]["record_ids"][0]
+        bad = self.dir / "bad-map.json"
+        bad.write_text(json.dumps({"mappings": [{
+            "record_id": record_id, "hypothesis_id": "H404",
+            "stance": "supports", "quote": "privacy matters more",
+        }]}), encoding="utf-8")
+        completed = run_cli("loop", "map", str(self.study),
+                            "--file", str(bad), "--by", "researcher")
+        self.assertEqual(2, completed.returncode, completed.stdout)
+        self.assertIn("unknown hypothesis", json.loads(completed.stdout)["reason"])
+
+        short = self.dir / "short-map.json"
+        short.write_text(json.dumps({"mappings": [{
+            "record_id": record_id, "hypothesis_id": "H1",
+            "stance": "supports", "quote": "ok",
+        }]}), encoding="utf-8")
+        completed = run_cli("loop", "map", str(self.study),
+                            "--file", str(short), "--by", "researcher")
+        self.assertEqual(2, completed.returncode, completed.stdout)
+        self.assertIn("quote", json.loads(completed.stdout)["reason"])
 
 
 if __name__ == "__main__":

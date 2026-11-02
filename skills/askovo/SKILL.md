@@ -209,12 +209,18 @@ askovo loop plan <study>                          # gaps + eligible sources + en
 askovo loop authorize <study> --by "<operator>"   # a human act; MCP can never authorize
 askovo loop run <study>
 askovo loop report <study>
+askovo loop assess <study> --gap <gap-key> --verdict resolved|unresolvable --by "<operator>"
+askovo loop map <study> --file mappings.json --by "<operator>"
+askovo loop advise <study>                        # read-only suggestion, never a verdict
 ```
 
 - It may plan only from `study.scope.allowed_sources` with an enabled adapter or a declared fixture; the Design gate still applies.
 - Authorization binds the envelope (allowed platforms, per-action cap, round and record budgets). Changing the envelope invalidates the authorization.
 - Collected records are candidates (`04-findings/loop-candidates.json`) with `proposed_evidence_level: null`. You still read them, assign E0–E5, link them to a judgment, and change status yourself; a record never becomes evidence just because the loop ran.
-- `loop report` separates audit-supported claims from open hypotheses, blocked sources and next actions. Quote that separation instead of compressing it into one progress number.
+- Gaps have a lifecycle: `open → collected → analyzed → resolved / unresolvable`. Collection marks `collected`; the deterministic analysis action only describes what was collected (counts, platforms, duplicates) and marks `analyzed`; only `loop assess` may close a gap, and a `resolved` verdict needs at least one evidence reference while `unresolvable` needs a reason.
+- When you do read a candidate and can quote the passage that bears on a hypothesis, record it with `loop map` (`record_id`, `hypothesis_id`, `stance`, `quote`, `locator`). The CLI checks provenance only: it does not grade the quote, and a mapping is not a validated claim.
+- `loop advise` summarizes recorded mappings per analyzed gap (`insufficient` / `resolved_candidate` / `unresolvable_candidate` / `conflicted`); it never closes a gap or grades evidence.
+- `loop report` separates audit-supported claims from open hypotheses, blocked sources and gaps awaiting assessment. Quote that separation instead of compressing it into one progress number.
 
 ## Gate demand judgments
 
