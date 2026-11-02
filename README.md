@@ -34,6 +34,13 @@ askovo do "home security camera false alerts at night, want to validate the prot
 askovo demo
 ```
 
+No `pipx`? Use a virtualenv instead (verified from a clean venv on 2026-11-02, ~85s including download):
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install "git+https://github.com/roy-tong/askovo.git"
+.venv/bin/askovo demo
+```
+
 <!-- Hero demo GIF: record with marketing/demo/askovo-demo.tape (vhs), copy the artifact to assets/demo/askovo-demo.gif, then uncomment.
 <p align="center">
   <img src="assets/demo/askovo-demo.gif" alt="askovo demo: one-line routing, chain skeleton, overclaim audit" width="860">
