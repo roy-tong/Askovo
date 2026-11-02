@@ -42,6 +42,8 @@ askovo demo
 
 You can also route directly: `askovo "SaaS subscription churn is dropping, want to know why users don't renew" --dry-run`. `--dry-run` only routes and writes nothing; `demo` runs the built-in synthetic sample. Router keyword tables are Chinese-first — English queries work, and `--domain` pins the product type whenever English keywords don't match.
 
+**Language note (2026-11-02):** CLI *output* is Chinese today; `docs/` are Chinese too. The command surface, JSON output and audit exit codes are language-independent, so it is usable from an English workflow, but the rendered text will not be English. English localisation is not scheduled yet. Verified from a clean `venv` install on 2026-11-02: install ~85s, `askovo demo` exits 0.
+
 Expected key results: `status: pass`, `supported: 1`, `overclaims: 0`. This only proves that the synthetic sample is self-consistent in structure, chain, and evidence references. It proves **nothing about real demand, product quality, market size, or release readiness**.
 
 ## From research question to decision result: what a full delivery looks like
