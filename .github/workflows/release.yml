@@ -105,3 +105,46 @@ jobs:
           else
             gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "Askovo ${TAG#v}" --notes-file /tmp/notes.md dist/*.whl dist/*.tar.gz
           fi
+
+  # ── PyPI: `pipx install askovo` ──
+  # Uses PyPI trusted publishing (OIDC): no API token to store or leak.
+  # One-time setup on PyPI (account owner): Publishing → Add a pending publisher
+  #   PyPI project name: askovo
+  #   owner: roy-tong · repository: Askovo · workflow: release.yml
+  #   environment: (leave empty)
+  pypi-publish:
+    runs-on: ubuntu-latest
+    needs: release
+    permissions:
+      id-token: write
+    steps:
+      # On a tag push github.ref is the tag itself; on a release/* branch it is
+      # the branch. Both carry the VERSION file this job publishes.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.ref }}
+      - name: Skip if this version is already live on PyPI (idempotent re-runs)
+        run: |
+          VER="$(cat VERSION)"
+          LIVE="$(curl -sf "https://pypi.org/pypi/askovo/json" | python3 -c "import json,sys; print(json.load(sys.stdin)['info']['version'])" 2>/dev/null || echo none)"
+          echo "local=$VER live=$LIVE"
+          if [[ "$VER" == "$LIVE" ]]; then
+            echo "askovo $VER already live on PyPI — skipping publish"
+            echo "pypi_skip=true" >> "$GITHUB_ENV"
+          else
+            echo "pypi_skip=false" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        if: ${{ env.pypi_skip != 'true' }}
+        with:
+          python-version: "3.9"
+      - name: Build wheel and sdist
+        if: ${{ env.pypi_skip != 'true' }}
+        run: |
+          python3 -m pip install --upgrade pip build
+          python3 -m build
+      - name: Publish askovo to PyPI
+        if: ${{ env.pypi_skip != 'true' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
