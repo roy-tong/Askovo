@@ -268,7 +268,7 @@ def detect_intent(text: str, explicit: str | None = None) -> dict[str, Any]:
     low = text.casefold()
     rules = (
         ("audit", ("审计", "评估", "能不能支持", "证据够不够", "复核", "review")),
-        ("deliver", ("memo", "报告", "prd", "交付物", "决策纪要", "写一份")),
+        ("deliver", ("memo", "报告", "prd", "交付物", "决策纪要", "写一份", "业务方案")),
         ("instruments", ("提纲", "问卷", "协议", "招募", "脚本", "consent")),
         ("sources", ("哪些平台", "在哪里找", "哪里有数据", "数据源", "平台有数据", "在哪找数据")),
         ("collect", ("爬取", "抓取", "采集", "批量获取", "大量数据", "collect", "scrape")),
@@ -513,7 +513,7 @@ def product_reasoning_template(title: str = "") -> dict[str, Any]:
     nodes["user"].update({"role": "待填写", "state": "待填写", "decision_role": "待填写"})
     nodes["pain"].update({"current_substitute": "待填写", "friction_cost": "待填写", "consequence": "待填写"})
     nodes["need"].update({"desired_outcome": "待填写", "constraints": [], "measure": "待填写"})
-    nodes["feature"].update({"capability": "待填写", "acceptance_conditions": [], "alternatives_considered": []})
+    nodes["feature"].update({"capability": "待填写", "capabilities": [], "acceptance_conditions": [], "alternatives_considered": []})
     nodes["product"].update({"form": "待填写", "scope": "待填写", "non_goals": [], "acceptance_criteria": []})
     nodes["business"].update(
         {
@@ -783,7 +783,16 @@ def _product_chain_lines(data: dict[str, Any]) -> list[str]:
 
 
 def product_reasoning_markdown(data: dict[str, Any], title: str = "产品推理链") -> str:
-    return "\n".join([f"# {title}", ""] + _product_chain_lines(data)) + "\n"
+    body = _product_chain_lines(data)
+    return "\n".join(
+        [f"# {title}", ""] + body + [
+            "",
+            "## 边界",
+            "",
+            "本文件是七节点链的直接渲染，不证明总体比例、市场规模、因果或产品成功；"
+            "节点状态是研究口径，不是发布依据；决定与签收仍由负责人完成并留痕。",
+        ]
+    ) + "\n"
 
 
 def _write_route(study_dir: Path, route: dict[str, Any]) -> None:
@@ -1371,8 +1380,8 @@ def _evidence_summary(study_dir: Path) -> dict[str, Any]:
     by_form: dict[str, int] = {}
     by_claim: dict[str, int] = {}
     for record in records:
-        form = str(record.get("evidence_form") or "unknown")
-        claim = str(record.get("claim_type") or "unknown")
+        form = _evidence_form(record)
+        claim = _evidence_claim(record)
         by_form[form] = by_form.get(form, 0) + 1
         by_claim[claim] = by_claim.get(claim, 0) + 1
     return {"count": len(records), "by_form": by_form, "by_claim": by_claim, "records": records}
@@ -1702,6 +1711,14 @@ def unit_economics_report(reasoning: dict[str, Any], title: str) -> tuple[str, d
         lines.append("（当前没有包含商业节点的 chain；`askovo chain` 脚手架后填写 business 节点。）")
         lines.append("")
     lines.extend(sections)
+    lines.extend([
+        "## 边界",
+        "",
+        "本文件是 business 节点数值输入的算术投影：null 表示未知，不是零；计算成立不等于商业成立。"
+        "它不证明需求、付费意愿、市场规模、单位经济可持续、发布就绪或因果；"
+        "E4+/E5 商业证据、财务评审与人工决策保持独立。",
+        "",
+    ])
     return "\n".join(lines), {"chains": stats}
 
 
@@ -2149,11 +2166,1187 @@ def _decision_package_lines(
     return lines
 
 
+# Evidence-strength markers for the business plan (Roy's hand-written prototype
+# notation, absorbed 2026-11-03). The rule is deterministic and data-first:
+# strength is computed only from the records a node cites, never hand-set, and
+# is a reading aid — not proof of prevalence, market size or causality.
+_PLAN_STRENGTH_OBSERVED = {"E2", "E3", "E4", "E4+", "E5"}  # observed behavior/acceptance/payment; E4- is counter behavior
+_PLAN_STRENGTH_WITH_LEADS = _PLAN_STRENGTH_OBSERVED | {"E1"}
+
+
+def _plan_strength_level(record: dict[str, Any]) -> str:
+    return str(record.get("evidence_level") or "").strip().upper()
+
+
+def _plan_strength_families(records: list[dict[str, Any]]) -> set:
+    families: set = set()
+    for record in records:
+        families.add(str(record.get("source_family") or "").strip() or "未记录")
+    return families
+
+
+def _evidence_text(record: dict[str, Any]) -> str:
+    """Canonical evidence stores `text_excerpt`; imported/legacy rows may store `text`."""
+    return str(
+        record.get("text")
+        or record.get("text_excerpt")
+        or record.get("body")
+        or record.get("selftext")
+        or ""
+    ).strip()
+
+
+def _evidence_form(record: dict[str, Any]) -> str:
+    """Fall back to corpus_role: canonical records do not carry evidence_form."""
+    return str(record.get("evidence_form") or record.get("corpus_role") or "unknown").strip() or "unknown"
+
+
+_CLAIM_BY_LEVEL = {
+    "E0": "context", "E1": "need", "E2": "need", "E3": "acceptance",
+    "E4+": "commercial", "E5": "commercial", "E4-": "counter",
+}
+
+
+def _evidence_claim(record: dict[str, Any]) -> str:
+    """Use an explicit claim_type, else derive a coarse one from the evidence level."""
+    explicit = str(record.get("claim_type") or "").strip()
+    if explicit:
+        return explicit
+    level = str(record.get("evidence_level") or "").strip().upper()
+    return _CLAIM_BY_LEVEL.get(level, "未标注")
+
+
+def _plan_observed_levels(node_name: str | None = None) -> set:
+    """Which levels count as observed behavior for a node's strength marker.
+
+    Business strength must come from commercial/paid behavior (E4+/E5), never
+    from counter-evidence that happens to be E1/E2. Feature/product strength
+    must come from acceptance (E3+), not from complaints about substitutes.
+    """
+    if node_name == "business":
+        return {"E4", "E4+", "E5"}
+    if node_name in {"feature", "product"}:
+        return {"E3", "E4", "E4+", "E5"}
+    return set(_PLAN_STRENGTH_OBSERVED)
+
+
+def _plan_strength(records: list[dict[str, Any]], node_name: str | None = None) -> tuple:
+    """Return (marker, label, why) for one node's cited records.
+
+    ● 已观察到 — at least two observed-level records from at least two source
+    families (independent observations). The observed levels are node-aware:
+    scene/user/pain/need accept E2+, feature/product require E3+, and business
+    requires E4+/E5 (commercial evidence), so counter-evidence cannot make a
+    commercial node look observed.
+    ◐ 有线索 — some node-appropriate lead record exists but the ● bar is not met.
+    ○ 假设 — no node-appropriate record at all; the statement is still a hypothesis.
+    """
+    observed_levels = _plan_observed_levels(node_name)
+    lead_levels = observed_levels if node_name in {"business", "feature", "product"} else observed_levels | {"E1"}
+    observed = [r for r in records if _plan_strength_level(r) in observed_levels]
+    leads = [r for r in records if _plan_strength_level(r) in lead_levels]
+    observed_families = _plan_strength_families(observed)
+    if len(observed) >= 2 and len(observed_families) >= 2:
+        return "●", "已观察到", f"多来源独立观察：{len(observed_families)} 个平台 · 观察记录 {len(observed)} 条"
+    if leads:
+        lead_families = _plan_strength_families(leads)
+        if node_name == "business":
+            return "◐", "有商业线索", f"商业线索 {len(leads)} 条 · {len(lead_families)} 个平台（未达多来源独立观察）"
+        return "◐", "有线索", f"单案例或口头线索：线索记录 {len(leads)} 条 · {len(lead_families)} 个平台（未达多来源独立观察）"
+    if node_name == "business":
+        return "○", "假设（商业门未验证）", "尚无 E4+/E5 商业证据；商业判断仍待验证"
+    return "○", "假设（待验证）", "尚无采集到的直接记录"
+
+
+def _plan_time_span(records: list[dict[str, Any]]) -> str:
+    stamps: list[str] = []
+    for record in records:
+        for field in ("source_time", "collected_at"):
+            value = str(record.get(field) or "").strip()
+            if value:
+                stamps.append(value[:10])
+    if not stamps:
+        return ""
+    return f"{min(stamps)}–{max(stamps)}"
+
+
+def _plan_source_label(record: dict[str, Any]) -> str:
+    family = str(record.get("source_family") or "").strip()
+    family = PLAN_SOURCE_LABELS.get(family, family)
+    source_ref = str(record.get("source_ref") or "").strip()
+    if source_ref:
+        return f"{family}（{source_ref[:40]}）" if family else source_ref[:40]
+    return family or "未记录来源"
+
+
+def _plan_basis(records: list[dict[str, Any]]) -> str:
+    """Deterministic per-section data basis in business language."""
+    if not records:
+        return "数据基础：本节判断暂无采集数据支撑（来自导入材料或待验证假设）——这表示还没研究到，不是没有需求。"
+    families: list[str] = []
+    for record in records:
+        family = str(record.get("source_family") or "未记录").strip() or "未记录"
+        family = PLAN_SOURCE_LABELS.get(family, family)
+        if family not in families:
+            families.append(family)
+    span = _plan_time_span(records)
+    basis = f"数据基础：{len(records)} 条语料 · 来源：{'/'.join(families)}"
+    if span:
+        basis += f" · 时间：{span}"
+    return basis
+
+
+def _plan_quotes(records: list[dict[str, Any]], limit: int = 2) -> list[str]:
+    """Voices from the corpus in business-report style.
+
+    Prefers verbatim excerpts (原话); falls back to the coded situation fields
+    (典型情况) so the section stays concrete without faking a verbatim quote.
+    """
+    quotes: list[str] = []
+    seen: set[str] = set()
+    for record in records:
+        if len(quotes) >= limit:
+            break
+        excerpt = str(record.get("text_excerpt") or "").strip()
+        kind = "原话"
+        text = excerpt
+        if len(text) < 8:
+            text = str(record.get("friction_cost") or record.get("scene_trigger") or "").strip()
+            kind = "典型情况"
+        if len(text) < 8:
+            continue
+        marker = text[:40]
+        if marker in seen:
+            continue
+        seen.add(marker)
+        when = str(record.get("source_time") or record.get("collected_at") or "").strip()
+        suffix = f"，{when}" if when else ""
+        if kind == "原话":
+            quotes.append(f'> {kind}｜“{text}” —— {_plan_source_label(record)}{suffix}')
+        else:
+            quotes.append(f"> {kind}｜{text} —— {_plan_source_label(record)}{suffix}")
+    return quotes
+
+
+def _plan_node_records(node: dict[str, Any], by_id: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record_id in node.get("evidence_ids", []) if isinstance(node.get("evidence_ids"), list) else []:
+        record = by_id.get(str(record_id))
+        if record is not None and str(record_id) not in seen:
+            records.append(record)
+            seen.add(str(record_id))
+    return records
+
+
+def _plan_section(
+    title: str,
+    node: dict[str, Any] | None,
+    by_id: dict[str, dict[str, Any]],
+    field_rows: list[tuple[str, Any]],
+    quote_limit: int = 2,
+    extra_lines: list[str] | None = None,
+) -> list[str]:
+    lines: list[str] = [f"## {title}", ""]
+    if not isinstance(node, dict) or not node:
+        lines.extend(["七节点推理中该环节尚未填写；补齐后再进入本节。", ""])
+        return lines
+    records = _plan_node_records(node, by_id)
+    node_key = {"2": "scene", "3": "user", "4": "pain", "5": "need",
+                "6": "feature", "7": "product", "8": "business"}.get(title.split(".")[0].strip())
+    marker, strength_label, strength_detail = _plan_strength(records, node_key)
+    lines.extend([f"**{marker} {strength_label}｜{node.get('statement') or '待填写'}**", ""])
+    for label, value in field_rows:
+        if value is None:
+            continue
+        if isinstance(value, list):
+            if not value:
+                continue
+            rendered = "；".join(
+                str(item.get("definition") or item.get("criteria") or item) if isinstance(item, dict) else str(item)
+                for item in value
+            )
+        else:
+            rendered = str(value)
+        if rendered.strip():
+            lines.append(f"- {label}：{rendered}")
+    if extra_lines:
+        lines.extend(extra_lines)
+    why = node.get("rationale")
+    if why:
+        lines.append(f"- 为什么这么判断：{why}")
+    lines.append("")
+    lines.append(_plan_basis(records))
+    metrics = _plan_node_metrics(records)
+    if metrics:
+        lines.append(metrics)
+    lines.append(f"依据强度：{marker} {strength_label} —— {strength_detail}")
+    quotes = _plan_quotes(records, limit=quote_limit)
+    if quotes:
+        lines.append("来自语料的声音：")
+        lines.extend(quotes)
+    lines.append("")
+    return lines
+
+
+PLAN_STATUS_LABELS = {
+    "draft": "草稿",
+    "hypothesis": "假设（还没有采集数据）",
+    "needs-validation": "待验证（有线索，证据还不够下结论）",
+    "validated": "已验证（证据达到结构门槛，仍需人工复核）",
+    "decided": "已定（记录的是选择，不等于已经验证）",
+    "rejected": "已否决",
+    "deprioritized": "暂缓",
+}
+
+
+MONEY_RE = (
+    r"(?:[$€£¥]\s?\d[\d,.]*"
+    r"|\d[\d,.]*\s?(?:美元|USD|EUR|欧元|万元|万|%|倍)"
+    r"|\d[\d,.]*\s?(?:per month|/month|a month|an hour|/hour|per hour))"
+)
+
+
+def _plan_node_metrics(records: list[dict[str, Any]]) -> str:
+    """数据读出：把该环节引用的记录变成一句可读的数量事实。"""
+    if not records:
+        return ""
+    total = len(records)
+    observed = sum(1 for record in records if str(record.get("evidence_level") or "") in {"E2", "E3", "E4+", "E5"})
+    platforms = {str(record.get("source_family") or "") for record in records if record.get("source_family")}
+    money = sum(1 for record in records if re.search(MONEY_RE, str(record.get("text_excerpt") or ""), re.I))
+    parts = [f"{total} 条中有 {observed} 条是观察级记录（做过、接受或付过钱）"]
+    if platforms:
+        parts.append(f"来自 {len(platforms)} 个平台")
+    if money:
+        parts.append(f"{money} 条带金额或比例")
+    return "数据读出：" + "，".join(parts) + "。"
+
+
+def _plan_money_evidence(records: list[dict[str, Any]], limit: int = 5) -> list[str]:
+    """把带金额或比例的原文摘成短句，供商业与 GTM 一节引用。"""
+    snippets: list[str] = []
+    seen: set[str] = set()
+    for record in records:
+        text = str(record.get("text_excerpt") or "").replace("\n", " ")
+        match = re.search(MONEY_RE, text, re.I)
+        if not match:
+            continue
+        start = max(0, match.start() - 50)
+        end = min(len(text), match.end() + 50)
+        snippet = re.sub(r"\s+", " ", text[start:end]).strip()
+        if start > 0:
+            cut = snippet.find(" ")
+            if 0 <= cut < 40:
+                snippet = "…" + snippet[cut + 1:]
+        if end < len(text):
+            cut = snippet.rfind(" ")
+            if cut > len(snippet) - 40:
+                snippet = snippet[:cut] + "…"
+        snippet = snippet.strip(" ,.;:—-，。；：")
+        key = re.sub(r"[^0-9a-zA-Z]", "", snippet)[:60]
+        if key in seen:
+            continue
+        seen.add(key)
+        snippets.append(snippet)
+        if len(snippets) >= limit:
+            break
+    if not snippets:
+        return []
+    lines = ["**金额与比例线索**", ""]
+    for snippet in snippets:
+        lines.append(f"- {snippet}")
+    lines.append("")
+    return lines
+
+
+def _plan_narrative(chain: dict[str, Any]) -> list[str]:
+    """推理主线：用短字段把七段串成一段业务叙述，不引入新事实。"""
+    nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
+
+    def node(name: str) -> dict[str, Any]:
+        value = nodes.get(name, {})
+        return value if isinstance(value, dict) else {}
+
+    def text(value: Any, limit: int = 80) -> str:
+        cleaned = re.sub(r"\s+", " ", str(value or "")).strip().rstrip("。；，")
+        return cleaned[:limit]
+
+    scene = node("scene")
+    user = node("user")
+    pain = node("pain")
+    need = node("need")
+    feature = node("feature")
+    product = node("product")
+    business = node("business")
+    capabilities = feature.get("capabilities") if isinstance(feature.get("capabilities"), list) else []
+    capability = capabilities[0] if capabilities and isinstance(capabilities[0], dict) else {}
+
+    trigger = text(scene.get("trigger")) or text(scene.get("statement"))
+    role = text(user.get("role")) or text(user.get("statement"))
+    substitute = text(pain.get("current_substitute"), 100)
+    friction = text(pain.get("friction_cost"), 100)
+    want = text(need.get("desired_outcome")) or text(need.get("statement"))
+    name = text(capability.get("name"), 30)
+    what = text(capability.get("what"), 100)
+    solves = text(capability.get("solves"), 100)
+    form = text(product.get("form"), 60)
+    revenue = text(business.get("revenue_model"), 60)
+    payer = text(business.get("payer"), 40)
+
+    if not (trigger or role or want):
+        return []
+    sentence = ""
+    if trigger:
+        sentence += f"在{trigger}，"
+    if role:
+        sentence += f"{role}"
+    if substitute:
+        sentence += f"现在靠{substitute}"
+    if friction:
+        sentence += f"，代价是{friction}"
+    sentence += "。"
+    if want:
+        sentence += f"他们要的是{want}。"
+    if name:
+        sentence += f"对应的能力是{name}"
+        sentence += f"：{what}。" if what else "。"
+        if solves:
+            sentence += f"它能成立，是因为{solves}。"
+    if form:
+        sentence += f"落到产品上，是{form}。"
+    if revenue:
+        sentence += f"商业上{revenue}"
+        sentence += f"，付费者是{payer}。" if payer else "。"
+    return ["**推理主线**：" + sentence, ""]
+
+
+def _plan_chain_records(chain: dict[str, Any], by_id: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Unique records a chain cites across its seven nodes, in node order."""
+    nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
+    ordered: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for node_name in REASONING_NODES:
+        node = nodes.get(node_name, {})
+        if not isinstance(node, dict):
+            continue
+        for record in _plan_node_records(node, by_id):
+            record_id = str(record.get("record_id"))
+            if record_id not in seen:
+                seen.add(record_id)
+                ordered.append(record)
+    return ordered
+
+
+def _plan_conclusion_items(chain: dict[str, Any], chain_records: list[dict[str, Any]]) -> list[str]:
+    nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
+    business = nodes.get("business", {}) if isinstance(nodes.get("business"), dict) else {}
+    product = nodes.get("product", {}) if isinstance(nodes.get("product"), dict) else {}
+    feature = nodes.get("feature", {}) if isinstance(nodes.get("feature"), dict) else {}
+    gate = business.get("gate", {}) if isinstance(business.get("gate"), dict) else {}
+    items: list[str] = []
+    families = {str(record.get("source_family") or "") for record in chain_records if record.get("source_family")}
+    span = _plan_time_span(chain_records)
+    if chain_records:
+        basis = f"{len(chain_records)} 条可核对原话 · {len(families)} 类来源" + (f" · 时间窗 {span}" if span else "")
+        items.append(f"- **判断依据**：{basis}（每条出处见文末方法档案）")
+    what = str(feature.get("statement") or product.get("statement") or "").strip()
+    if what:
+        items.append(f"- **先做哪一段**：{what}")
+    feature_why = str(feature.get("rationale") or "").strip()
+    if feature_why:
+        items.append(f"- **为什么是这段特性**：{feature_why}")
+    product_why = str(product.get("rationale") or "").strip()
+    if product_why:
+        items.append(f"- **为什么是这个形态**：{product_why}")
+    segment = str(business.get("target_segment") or "").strip()
+    payer = str(business.get("payer") or "").strip()
+    if segment or payer:
+        items.append(f"- **先卖给谁**：{segment or '待确认'}" + (f"（付费者：{payer}）" if payer else ""))
+    revenue = str(business.get("revenue_model") or "").strip()
+    pricing = str(business.get("pricing_hypothesis") or "").strip()
+    if revenue or pricing:
+        items.append(f"- **怎么收钱**：{revenue or '待确认'}" + (f"；定价方向：{pricing}" if pricing else ""))
+    next_test = str(chain.get("next_test") or "").strip()
+    if next_test:
+        items.append(f"- **30 天内怎么验证**：{next_test}")
+    gate_decision = str(gate.get("decision") or "").strip()
+    if gate_decision:
+        items.append(f"- **什么算过关**：{gate_decision}")
+    failure = str(chain.get("failure_condition") or "").strip()
+    if failure:
+        items.append(f"- **什么算失败**：{failure}")
+    non_goals = product.get("non_goals") or ""
+    if isinstance(non_goals, list):
+        non_goals_text = "；".join(str(item) for item in non_goals if str(item).strip())
+    else:
+        non_goals_text = str(non_goals).strip()
+    if non_goals_text:
+        items.append("- **明确不做**：" + non_goals_text)
+    status = str(chain.get("status") or "").strip()
+    label = PLAN_STATUS_LABELS.get(status, status or "待确认")
+    assumptions = business.get("assumptions") or []
+    premise = "；".join(str(item) for item in assumptions[:2] if str(item).strip()) if isinstance(assumptions, list) else ""
+    strength = f"- **结论强度**：{label}" + (f"；成立的前提：{premise}" if premise else "")
+    items.append(strength)
+    return items
+
+
+def _plan_conclusion_lines(
+    chains: list[dict[str, Any]],
+    records: list[dict[str, Any]] | None = None,
+    by_id: dict[str, dict[str, Any]] | None = None,
+) -> list[str]:
+    """把七段推理收成可执行的决定：做什么、卖给谁、怎么收钱、先验证什么。
+
+    纯投影：只读链上的 product / business 节点与 next_test、failure_condition，
+    不产生新判断，也不引入证据编码。多链时先给比较表，再逐链给结论，避免
+    只渲染第一条主链、把其他候选链的结论丢掉。
+    """
+    by_id = by_id or {}
+    entries: list[tuple[dict[str, Any], list[dict[str, Any]], list[str]]] = []
+    for chain in chains:
+        nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
+        business = nodes.get("business", {}) if isinstance(nodes.get("business"), dict) else {}
+        statement = str(business.get("statement") or "").strip()
+        if not statement:
+            continue
+        chain_records = _plan_chain_records(chain, by_id) if by_id else list(records or [])
+        items = _plan_conclusion_items(chain, chain_records)
+        if items:
+            entries.append((chain, chain_records, items))
+    if not entries:
+        return []
+
+    intro = ("这一节把后面的七段推理收成可执行的决定：做什么、卖给谁、怎么收钱、先验证什么。"
+             "判断的依据、数据基础和用户原话仍在后面各节。")
+    if len(entries) == 1:
+        chain, _, items = entries[0]
+        business = chain.get("nodes", {}).get("business", {})
+        return [
+            "## 0. 结论与推进建议", "",
+            f"> {intro}", "",
+            f"**结论：{business.get('statement')}**", "",
+            *_plan_narrative(chain),
+            *items,
+            "",
+        ]
+
+    lines: list[str] = [
+        "## 0. 多链结论与推进建议", "",
+        f"> {intro} 本节先横向比较各条候选链，再逐链给出结论；正文的七环节只展开优先级最高的一条，其余链路见“其他候选链路”与决策包。",
+        "",
+        "| 链路 | 状态 | 依据强度 | 先做哪一段 | 下一步验证 | 失败线 | 优先级判断 |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for chain, chain_records, _ in entries:
+        nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
+        feature = nodes.get("feature", {}) if isinstance(nodes.get("feature"), dict) else {}
+        product = nodes.get("product", {}) if isinstance(nodes.get("product"), dict) else {}
+        marker, strength, _ = _plan_strength(chain_records)
+        priority = str((chain.get("prioritization") or {}).get("rationale") or "未排序").replace("|", "\\|")
+        what = str(feature.get("statement") or product.get("statement") or "待确认").replace("|", "\\|")
+        next_test = str(chain.get("next_test") or "待确认").replace("|", "\\|")
+        failure = str(chain.get("failure_condition") or "待确认").replace("|", "\\|")
+        status = str(chain.get("status") or "待确认")
+        chain_id = str(chain.get("id") or "PR?")
+        title_safe = str(chain.get("title") or "").replace("|", "\\|")
+        lines.append(
+            f"| `{chain_id}` {title_safe} | `{status}` | {marker} {strength} "
+            f"| {what} | {next_test} | {failure} | {priority} |"
+        )
+    lines.append("")
+    for chain, _, items in entries:
+        business = chain.get("nodes", {}).get("business", {})
+        lines.extend([
+            f"### 结论 · {chain.get('id', 'PR?')} · {chain.get('title', '未命名主线')}", "",
+            f"**结论：{business.get('statement')}**", "",
+            *_plan_narrative(chain),
+            *items,
+            "",
+        ])
+    return lines
+
+
+PLAN_SOURCE_LABELS = {
+    "hackernews": "Hacker News",
+    "reddit_arctic_shift": "Reddit（历史归档）",
+    "reddit": "Reddit",
+    "stackexchange": "Stack Exchange",
+}
+
+
+PLAN_ROLE_LABELS = {
+    "open_scene": "场景与问题自述",
+    "direct_solution": "解法使用与接受",
+    "substitute_rejector": "替代、放弃与拒绝",
+    "post_purchase_support": "已购后的使用与维护",
+    "control": "对照与不认同",
+}
+
+
+def _plan_corpus_profile(records: list[dict[str, Any]]) -> list[str]:
+    """语料画像：来源、年份、用途三类分布，只描述“看了多少”，不推人群比例。"""
+    if not records:
+        return []
+    families: dict[str, int] = {}
+    years: dict[str, int] = {}
+    roles: dict[str, int] = {}
+    for record in records:
+        family = str(record.get("source_family") or "").strip() or "未记录"
+        family = PLAN_SOURCE_LABELS.get(family, family)
+        families[family] = families.get(family, 0) + 1
+        year = str(record.get("created_at") or record.get("source_time") or "")[:4]
+        if year.isdigit():
+            years[year] = years.get(year, 0) + 1
+        role = str(record.get("corpus_role") or "").strip()
+        label = PLAN_ROLE_LABELS.get(role, "其他")
+        roles[label] = roles.get(label, 0) + 1
+    lines: list[str] = ["### 语料画像", ""]
+    lines.append("- 来源构成：" + " · ".join(f"{name} {count} 条" for name, count in sorted(families.items(), key=lambda item: -item[1])))
+    if years:
+        lines.append("- 年份分布：" + " · ".join(f"{year} 年 {count} 条" for year, count in sorted(years.items())))
+    lines.append("- 用途构成：" + " · ".join(f"{label} {count} 条" for label, count in sorted(roles.items(), key=lambda item: -item[1])))
+    lines.append("- 读法：这些数字说明“看了多少、看到哪几类人”，不代表人群比例，也不能外推市场规模。")
+    lines.append("")
+    return lines
+
+
+def _plan_capability_lines(feature: dict[str, Any]) -> list[str]:
+    """逐条特性：每个能力做什么、为什么能解决对应痛点、依据是什么。"""
+    capabilities = feature.get("capabilities")
+    if not isinstance(capabilities, list) or not capabilities:
+        return []
+    lines: list[str] = ["", "**逐条特性**", ""]
+    for capability in capabilities:
+        if not isinstance(capability, dict):
+            continue
+        name = str(capability.get("name") or "").strip()
+        what = str(capability.get("what") or "").strip()
+        solves = str(capability.get("solves") or "").strip()
+        proof = str(capability.get("proof") or "").strip()
+        if not name:
+            continue
+        text = f"- **{name}**：{what}" if what else f"- **{name}**"
+        if what and not what.endswith(("。", "；", "！", "？")):
+            text += "。"
+        if solves:
+            text += f"为什么能解决：{solves}"
+            if not solves.endswith(("。", "；", "！", "？")):
+                text += "。"
+        if proof:
+            text += f"（依据：{proof}）"
+        lines.append(text)
+    lines.append("")
+    return lines if len(lines) > 2 else []
+
+
+def _plan_lines(
+    study: dict[str, Any],
+    reasoning: dict[str, Any] | None,
+    evidence: dict[str, Any],
+    audit_status: str = "not_run",
+) -> list[str]:
+    """业务方案 Business Plan：同一条七节点推理链的业务用户视图。
+
+    正文只使用业务语言：每个环节给一句话结论与业务字段，判断的支撑以
+    “数据基础”（来源/语料量/时间窗）与“用户之声”（原话引语）呈现；
+    证据分级与状态枚举只进入文末的研究方法档案。本函数是纯投影：
+    全部内容来自 study.json / 04-findings / 02-data，不产生新事实。
+    """
+    route = study.get("route") or {}
+    decision = study.get("decision") or {}
+    records = evidence.get("records", [])
+    by_id = {str(record.get("record_id")): record for record in records}
+    chains = reasoning.get("chains", []) if isinstance(reasoning, dict) else []
+    chains = [chain for chain in chains if isinstance(chain, dict)]
+
+    lines: list[str] = [
+        f"# 业务方案 Business Plan：{study.get('title', '')}",
+        "",
+        f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label', study.get('product_domain', ''))}；"
+        f"阶段：{route.get('stage_label', study.get('lifecycle_stage', ''))}。",
+        "",
+        "> 读法：每个判断都标注**依据强度**——● 已观察到（多来源独立观察）· ◐ 有线索（单案例或口头线索）· ○ 假设（尚无采集记录，待验证）——"
+        "以及**数据基础**（来源、语料量、时间窗）与**来自语料的声音**（用户原话或典型情况）。"
+        "“暂无采集数据”表示还没研究到这一步，不等于没有需求。",
+        "",
+    ]
+    if audit_status != "pass":
+        lines.extend([
+            "> **审计未通过：本方案不能作为已审核结论或签收依据。** "
+            "请先运行 `askovo check --stage full` 并修复失败项。",
+            "",
+        ])
+
+    conclusion = _plan_conclusion_lines(chains, records, by_id)
+    if conclusion:
+        lines.extend(conclusion)
+
+    # ── 1. 方案导读 ────────────────────────────────────────────
+    lines.extend(["## 1. 方案导读", ""])
+    lines.append(f"- 研究问题：{decision.get('question') or study.get('title', '待确认')}")
+    lines.append(f"- 负责人：{decision.get('owner') or '待确认'}；截止：{decision.get('deadline') or '未设置'}")
+    overall = _plan_basis(records)
+    lines.append(f"- {overall}")
+    lines.append("")
+    if not chains:
+        lines.extend([
+            "尚未建立七节点推理（场景 → 用户 → 痛点 → 需求 → 特性 → 产品 → 商业）。"
+            "先用 `askovo do` 建立研究框架并采集数据，再输出业务方案。",
+            "",
+        ])
+    for chain in chains:
+        nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
+        chain_records: list[dict[str, Any]] = []
+        chain_seen: set[str] = set()
+        for node_name in REASONING_NODES:
+            node = nodes.get(node_name, {})
+            if not isinstance(node, dict):
+                continue
+            for record in _plan_node_records(node, by_id):
+                record_id = str(record.get("record_id"))
+                if record_id not in chain_seen:
+                    chain_records.append(record)
+                    chain_seen.add(record_id)
+        chain_marker, chain_strength, _ = _plan_strength(chain_records)
+        lines.append(f"**{chain.get('id', 'PR?')} · {chain.get('title', '未命名主线')}**"
+                     f"（整体依据强度：{chain_marker} {chain_strength}）")
+        lines.append("")
+        lines.append("| 环节 | 结论（一句话） | 依据强度 | 数据基础 |")
+        lines.append("|---|---|---|---|")
+        for node_name in REASONING_NODES:
+            node = nodes.get(node_name, {})
+            if not isinstance(node, dict):
+                continue
+            node_records = _plan_node_records(node, by_id)
+            basis = f"{len(node_records)} 条语料" if node_records else "暂无采集数据"
+            node_marker, node_strength, _ = _plan_strength(node_records, node_name)
+            statement = str(node.get("statement") or "待填写").replace("|", "\\|")
+            lines.append(
+                f"| {REASONING_NODE_LABELS.get(node_name, node_name)} | {statement} "
+                f"| {node_marker} {node_strength} | {basis} |"
+            )
+        lines.append("")
+
+    profile = _plan_corpus_profile(records)
+    if profile:
+        lines.extend(profile)
+    if len(chains) > 1:
+        lines.extend([
+            "> 多链说明：第 2–8 节只展开优先级最高的一条主线；其余候选链路的状态、下一步与失败线见第 0 节比较表和第 9 节，完整七环节见决策包或 `04-findings/product-reasoning.json`。",
+            "",
+        ])
+
+    # ── 2–8. 七节点正文（逐链展开，业务语言） ──────────────────
+    detail_chains = chains if len(chains) == 1 else chains[:1]
+    for index, chain in enumerate(detail_chains, start=1):
+        nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
+        chain_records: list[dict[str, Any]] = []
+        chain_seen: set[str] = set()
+        for node_name in REASONING_NODES:
+            candidate = nodes.get(node_name, {})
+            if not isinstance(candidate, dict):
+                continue
+            for record in _plan_node_records(candidate, by_id):
+                record_id = str(record.get("record_id"))
+                if record_id not in chain_seen:
+                    chain_seen.add(record_id)
+                    chain_records.append(record)
+        if len(chains) > 1:
+            lines.extend([f"### 方案主线 {index}：{chain.get('title', '未命名主线')}", ""])
+        scene = nodes.get("scene", {}) if isinstance(nodes.get("scene"), dict) else {}
+        lines.extend(_plan_section("2. 目标场景：哪些场景值得做", scene, by_id, [
+            ("什么时候发生（触发）", scene.get("trigger")),
+            ("在什么环境下", scene.get("environment")),
+            ("用户当时在做什么（任务背景）", scene.get("task_context")),
+        ]))
+        user = nodes.get("user", {}) if isinstance(nodes.get("user"), dict) else {}
+        segments = []
+        business_node = nodes.get("business", {}) if isinstance(nodes.get("business"), dict) else {}
+        for segment in business_node.get("segments", []) if isinstance(business_node.get("segments"), list) else []:
+            if isinstance(segment, dict):
+                segments.append(f"{segment.get('id', '分层')}：{segment.get('criteria', '')}（付费者：{segment.get('payer', '待确认')}）")
+        lines.extend(_plan_section("3. 目标用户：谁有这个需求", user, by_id, [
+            ("角色", user.get("role")),
+            ("现状", user.get("state")),
+            ("在决策中的角色", user.get("decision_role")),
+            ("用户分层", segments or None),
+        ]))
+        pain = nodes.get("pain", {}) if isinstance(nodes.get("pain"), dict) else {}
+        lines.extend(_plan_section("4. 痛点：现在怎么办、痛在哪", pain, by_id, [
+            ("现在的替代做法", pain.get("current_substitute")),
+            ("代价", pain.get("friction_cost")),
+            ("不解决的后果", pain.get("consequence")),
+        ]))
+        need = nodes.get("need", {}) if isinstance(nodes.get("need"), dict) else {}
+        lines.extend(_plan_section("5. 需求：他们要的到底是什么", need, by_id, [
+            ("期望的结果", need.get("desired_outcome")),
+            ("约束", need.get("constraints")),
+            ("怎么衡量做好了", need.get("measure")),
+        ]))
+        feature = nodes.get("feature", {}) if isinstance(nodes.get("feature"), dict) else {}
+        lines.extend(_plan_section("6. 产品特性：哪些特性能满足", feature, by_id, [
+            ("特性", feature.get("capability")),
+            ("生效条件与验收", feature.get("acceptance_conditions")),
+            ("考虑过的替代做法", feature.get("alternatives_considered")),
+        ], quote_limit=1, extra_lines=_plan_capability_lines(feature)))
+        product = nodes.get("product", {}) if isinstance(nodes.get("product"), dict) else {}
+        lines.extend(_plan_section("7. 产品形态：推演出的产品", product, by_id, [
+            ("形态", product.get("form")),
+            ("范围", product.get("scope")),
+            ("明确不做", product.get("non_goals")),
+            ("上线验收", product.get("acceptance_criteria")),
+        ], quote_limit=0))
+        gate = business_node.get("gate", {}) if isinstance(business_node.get("gate"), dict) else {}
+        success_metrics = []
+        for metric in business_node.get("success_metrics", []) if isinstance(business_node.get("success_metrics"), list) else []:
+            if isinstance(metric, dict):
+                success_metrics.append(
+                    f"{metric.get('metric_id', '指标')}：{metric.get('definition', '')}"
+                    f"（口径：{metric.get('numerator', '—')}/{metric.get('denominator', '—')}，"
+                    f"窗口：{metric.get('window', '待确认')}，护栏：{metric.get('guardrail', '待确认')}）"
+                )
+        pricing_points = []
+        for price in business_node.get("pricing", []) if isinstance(business_node.get("pricing"), list) else []:
+            if isinstance(price, dict):
+                parts = [
+                    str(price.get(field))
+                    for field in ("model", "amount", "currency", "unit", "term", "note")
+                    if price.get(field) is not None and str(price.get(field)).strip()
+                ]
+                pricing_points.append("，".join(parts) if parts else "记录未含金额（见方法档案）")
+            else:
+                pricing_points.append(str(price))
+        lines.extend(_plan_section("8. 商业与 GTM：怎么走向市场", business_node, by_id, [
+            ("市场边界", business_node.get("market_definition")),
+            ("区域与时间窗", f"{('、'.join(business_node.get('geographies', [])) or '待确认')}；{business_node.get('time_window', '待确认')}"),
+            ("目标人群", business_node.get("target_segment")),
+            ("付费者", business_node.get("payer")),
+            ("定位", business_node.get("positioning")),
+            ("渠道", business_node.get("channels")),
+            ("定价方向", business_node.get("pricing_hypothesis")),
+            ("已验证的价格点", pricing_points or "待验证（尚无成交数据）"),
+            ("成本结构", business_node.get("cost_drivers")),
+            ("成功指标", success_metrics or None),
+            ("资源门禁", f"{gate.get('stage', '待确认')}：{gate.get('decision', '待确认')}（负责人：{gate.get('owner', '待确认')}；复审条件：{gate.get('revisit_trigger', '待确认')}）" if gate else None),
+        ], quote_limit=0, extra_lines=_plan_money_evidence(chain_records)))
+
+    # ── 9. 风险与下一步 ────────────────────────────────────────
+    lines.extend(["## 9. 风险与下一步", ""])
+    for chain in chains:
+        if len(chains) > 1:
+            lines.append(f"**{chain.get('id', 'PR?')} · {chain.get('title', '')}**")
+            lines.append("")
+        alternatives = chain.get("alternative_explanations", [])
+        if isinstance(alternatives, list) and alternatives:
+            lines.append("换个角度怎么看（还没被排除的替代解释）：")
+            for item in alternatives:
+                lines.append(f"- {item}")
+            lines.append("")
+        counter_ids = chain.get("counter_evidence_ids", [])
+        if isinstance(counter_ids, list) and counter_ids:
+            lines.append("数据里已经亮红灯的方向（反面信号）：")
+            for record_id in counter_ids:
+                record = by_id.get(str(record_id))
+                if record is None:
+                    continue
+                excerpt = str(record.get("text_excerpt") or record.get("evidence_basis") or "").strip()
+                lines.append(f"- {_plan_source_label(record)}：{excerpt[:100]}")
+            lines.append("")
+        if chain.get("next_test"):
+            lines.append(f"- 下一步最便宜、最能改变决策的验证：{chain.get('next_test')}")
+        if chain.get("failure_condition"):
+            lines.append(f"- 什么情况说明这个方向错了：{chain.get('failure_condition')}")
+        gaps = chain.get("gaps", [])
+        if isinstance(gaps, list) and gaps:
+            lines.append("- 待补的研究缺口：")
+            for item in gaps:
+                lines.append(f"  - {item}")
+        lines.append("")
+    if not chains:
+        lines.append("（建立七节点推理后，本节给出替代解释、反面信号与下一步验证。）")
+        lines.append("")
+
+    # ── 附录：研究方法档案（引擎词汇只出现在这里） ─────────────
+    lines.extend(["## 附录：研究方法档案", ""])
+    family_counts: dict[str, int] = {}
+    review_counts: dict[str, int] = {}
+    level_counts: dict[str, int] = {}
+    for record in records:
+        family = str(record.get("source_family") or "未记录")
+        family_counts[family] = family_counts.get(family, 0) + 1
+        review = str(record.get("human_review_status") or "未记录")
+        review_counts[review] = review_counts.get(review, 0) + 1
+        level = str(record.get("evidence_level") or "unclassified")
+        level_counts[level] = level_counts.get(level, 0) + 1
+    lines.append("| 来源 | 条数 |")
+    lines.append("|---|---|")
+    for family in sorted(family_counts):
+        lines.append(f"| {family} | {family_counts[family]} |")
+    lines.append("")
+    lines.append(f"- 样本量：{len(records)} 条语料；时间窗：{_plan_time_span(records) or '未记录'}")
+    lines.append(f"- 证据等级分布：{json.dumps(level_counts, ensure_ascii=False)}；人工复核状态：{json.dumps(review_counts, ensure_ascii=False)}")
+    lines.append("- 依据强度规则（确定性，从各环节引用记录计算，非人工指定）：● = 观察级记录（E2/E3/E4+/E5："
+                 "行为、接受或付费）≥2 条且来自 ≥2 个来源族；◐ = 存在 E1 及以上记录但未达 ●；"
+                 "○ = 无 E1 及以上记录。E4-（拒绝/退订等反向行为）计入反面信号，不计入强度。"
+                 "强度是阅读辅助，不证明总体比例、市场规模或因果。")
+    chain_states = "；".join(f"{chain.get('id', 'PR?')}={chain.get('status', '')}" for chain in chains) or "未建立"
+    lines.append(f"- 链/判定状态（原始口径）：{chain_states}")
+    lines.append(f"- 结构审计：{audit_status}（`askovo check --stage full`）")
+    prohibited = (study.get("scope") or {}).get("prohibited_inferences", [])
+    if isinstance(prohibited, list) and prohibited:
+        lines.append("- 本方案禁止的推断：")
+        for item in prohibited:
+            lines.append(f"  - {item}")
+    lines.append("")
+
+    lines.extend([
+        "## 边界",
+        "",
+        "本方案是七节点推理链的业务视图，不证明总体比例、市场规模或因果；"
+        "“暂无采集数据”的判断待数据补齐后更新；最终产品与商业决定由负责人做出并留痕。",
+    ])
+    return lines
+
+
+
+def _collection_summary(study_dir: Path) -> dict[str, Any]:
+    """Optional researcher-written funnel totals for multi-wave/multi-study corpora."""
+    path = study_dir / "01-sources" / "collection-summary.json"
+    if not path.is_file():
+        return {}
+    try:
+        data = load_json(path)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _analysis_lines(study: dict[str, Any], reasoning: dict[str, Any] | None, evidence: dict[str, Any], study_dir: Path) -> list[str]:
+    """语料分析：采集漏斗、来源与时间、用途、判断覆盖、集中度与反证。
+
+    只做确定性统计，不推断人群比例、市场规模或因果。数字来自 02-data 与
+    04-findings，任何缺项都如实显示为 0 或“未采集”。
+    """
+    records = evidence.get("records", []) if isinstance(evidence, dict) else []
+    by_id = {str(record.get("record_id")): record for record in records}
+    chains = reasoning.get("chains", []) if isinstance(reasoning, dict) else []
+    chains = [chain for chain in chains if isinstance(chain, dict)]
+    lines: list[str] = [
+        f"# 语料分析：{study.get('title', '')}",
+        "",
+        "> 这份报告只描述采集到什么、覆盖到谁，不推算人群比例或市场规模；判断是否成立仍以证据链与人工复核为准。",
+        "",
+    ]
+
+    # 1. 漏斗
+    raw_ids: set[str] = set()
+    raw_total = 0
+    raw_files = sorted((study_dir / "02-data" / "raw").glob("**/*.jsonl"))
+    for path in raw_files:
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                raw_total += 1
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                key = str(item.get("id") or item.get("record_id") or item.get("objectID") or "")
+                if key:
+                    raw_ids.add(key)
+        except OSError:
+            continue
+    raw_lines = len(raw_ids) or raw_total
+    funnel_source = "02-data/raw 去重后的条数（跨波次重复已合并）"
+    summary = _collection_summary(study_dir)
+    if summary.get("raw_records"):
+        try:
+            raw_lines = int(summary["raw_records"])
+            funnel_source = "01-sources/collection-summary.json 登记的五波累计口径"
+        except (TypeError, ValueError):
+            pass
+    screened_ids: set[str] = set()
+    for path in sorted((study_dir / "02-data").glob("screened-*.jsonl")):
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    screened_ids.add(str(json.loads(line).get("id") or ""))
+                except json.JSONDecodeError:
+                    continue
+        except OSError:
+            continue
+    judged: set[str] = set()
+    judgments = load_json(study_dir / "04-findings" / "demand-judgments.json")
+    if isinstance(judgments, list):
+        for judgment in judgments:
+            if not isinstance(judgment, dict):
+                continue
+            for key in ("problem_evidence_ids", "solution_evidence_ids", "commercial_evidence_ids", "counter_evidence_ids"):
+                for value in judgment.get(key) or []:
+                    judged.add(str(value))
+    screened_count = len([value for value in screened_ids if value])
+    if summary.get("screened_records"):
+        try:
+            screened_count = int(summary["screened_records"])
+        except (TypeError, ValueError):
+            pass
+    lines.extend([
+        "## 1. 采集漏斗", "",
+        "| 阶段 | 数量 | 口径 |",
+        "|---|---|---|",
+        f"| 原始记录 | {raw_lines} | {funnel_source} |",
+        f"| 关键词筛选 | {screened_count} | screened-*.jsonl 去重后的条数 |",
+        f"| 编码证据 | {len(records)} | 02-data/evidence.jsonl 的条数 |",
+        f"| 进入判断 | {len(judged)} | 需求判断引用的唯一条数 |",
+        "",
+    ])
+
+    # 2. 来源与时间
+    families: dict[str, int] = {}
+    years: dict[str, int] = {}
+    channels: dict[str, int] = {}
+    for record in records:
+        family = str(record.get("source_family") or "未记录").strip() or "未记录"
+        families[family] = families.get(family, 0) + 1
+        year = str(record.get("created_at") or record.get("source_time") or "")[:4]
+        if year.isdigit():
+            years[year] = years.get(year, 0) + 1
+        channel = str(record.get("source_channel") or "").strip()
+        if channel:
+            channels[channel] = channels.get(channel, 0) + 1
+    total = len(records) or 1
+    lines.extend(["## 2. 来源与时间", "", "| 来源 | 条数 | 占比 |", "|---|---|---|"])
+    for name, count in sorted(families.items(), key=lambda item: -item[1]):
+        lines.append(f"| {PLAN_SOURCE_LABELS.get(name, name)} | {count} | {count / total:.0%} |")
+    lines.append("")
+    if years:
+        lines.append("- 年份分布：" + " · ".join(f"{year} 年 {count} 条" for year, count in sorted(years.items())))
+    span = _plan_time_span(records)
+    if span:
+        lines.append(f"- 时间窗：{span}")
+    lines.append("")
+
+    # 3. 用途与强度
+    roles: dict[str, int] = {}
+    observed = 0
+    rejected = 0
+    for record in records:
+        role = str(record.get("corpus_role") or "").strip()
+        label = PLAN_ROLE_LABELS.get(role, "其他")
+        roles[label] = roles.get(label, 0) + 1
+        level = str(record.get("evidence_level") or "").strip()
+        if level in {"E2", "E3", "E4+", "E5"}:
+            observed += 1
+        if level == "E4-":
+            rejected += 1
+    lines.extend(["## 3. 语料用途", "", "| 用途 | 条数 | 占比 |", "|---|---|---|"])
+    for name, count in sorted(roles.items(), key=lambda item: -item[1]):
+        lines.append(f"| {name} | {count} | {count / total:.0%} |")
+    lines.append("")
+    lines.append(f"- 观察级记录（做过、接受或付费）：{observed} 条；拒绝与反向行为：{rejected} 条。")
+    top_families = [name for name, _ in sorted(families.items(), key=lambda item: -item[1])[:3]]
+    if top_families:
+        lines.extend(["", "### 来源 × 用途", "", "| 用途 | " + " | ".join(PLAN_SOURCE_LABELS.get(name, name) for name in top_families) + " |", "|---|" + "---|" * len(top_families)])
+        for role_name, _ in sorted(roles.items(), key=lambda item: -item[1]):
+            cells = []
+            for family in top_families:
+                count = 0
+                for record in records:
+                    record_role = PLAN_ROLE_LABELS.get(str(record.get("corpus_role") or "").strip(), "其他")
+                    record_family = str(record.get("source_family") or "未记录").strip() or "未记录"
+                    if record_role == role_name and record_family == family:
+                        count += 1
+                cells.append(str(count))
+            lines.append(f"| {role_name} | " + " | ".join(cells) + " |")
+        lines.append("")
+    lines.append("")
+
+    # 4. 判断覆盖
+    lines.extend(["## 4. 判断覆盖", "", "| 环节 | 引用条数 | 观察条数 | 平台数 | 依据强度 |", "|---|---|---|---|---|"])
+    empty_nodes: list[str] = []
+    for chain in chains:
+        nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
+        for node_name in REASONING_NODES:
+            node = nodes.get(node_name, {}) if isinstance(nodes.get(node_name), dict) else {}
+            node_records = _plan_node_records(node, by_id)
+            if not node_records:
+                empty_nodes.append(REASONING_NODE_LABELS.get(node_name, node_name))
+            marker, strength, _ = _plan_strength(node_records, node_name)
+            observed_levels = _plan_observed_levels(node_name)
+            observed_count = sum(1 for record in node_records if str(record.get("evidence_level") or "") in observed_levels)
+            platforms = {str(record.get("source_family") or "") for record in node_records if record.get("source_family")}
+            lines.append(
+                f"| {REASONING_NODE_LABELS.get(node_name, node_name)} | {len(node_records)} | {observed_count} | {len(platforms)} | {marker} {strength} |"
+            )
+    lines.append("")
+    if empty_nodes:
+        lines.append("- 尚未有证据的环节：" + "、".join(empty_nodes) + "。")
+    lines.append("")
+
+    # 5. 集中度与重复
+    top_family = max(families.items(), key=lambda item: item[1]) if families else ("", 0)
+    top_channel = max(channels.items(), key=lambda item: item[1]) if channels else ("", 0)
+    hashes: dict[str, int] = {}
+    for record in records:
+        value = str(record.get("normalized_text_hash") or "")
+        if value:
+            hashes[value] = hashes.get(value, 0) + 1
+    duplicates = sum(1 for count in hashes.values() if count > 1)
+    lines.extend(["## 5. 集中度与重复", ""])
+    if top_family[0]:
+        lines.append(f"- 最大来源：{PLAN_SOURCE_LABELS.get(top_family[0], top_family[0])}，占 {top_family[1] / total:.0%}。")
+    if top_channel[0]:
+        lines.append(f"- 最大渠道/子版：{top_channel[0]}，{top_channel[1]} 条。")
+    lines.append(f"- 重复文本：{duplicates} 组。")
+    if top_family[1] / total > 0.65:
+        lines.append("- 提示：单一来源超过三分之二，结论只能算这个平台的观察，不能外推。")
+    lines.append("")
+
+    # 6. 反证
+    counter_ids: set[str] = set()
+    for chain in chains:
+        for value in chain.get("counter_evidence_ids") or []:
+            counter_ids.add(str(value))
+    counter_records = [by_id[value] for value in counter_ids if value in by_id]
+    lines.extend(["## 6. 反证", ""])
+    lines.append(f"- 链上登记的反证：{len(counter_records)} 条。")
+    for record in counter_records[:8]:
+        excerpt = str(record.get("text_excerpt") or record.get("evidence_basis") or "").strip()
+        lines.append(f"  - {PLAN_SOURCE_LABELS.get(str(record.get('source_family') or ''), str(record.get('source_family') or ''))}：{excerpt[:80]}")
+    gaps: list[str] = []
+    for chain in chains:
+        for item in chain.get("gaps") or []:
+            gaps.append(str(item))
+    if gaps:
+        lines.append("- 已登记的缺口：")
+        for item in gaps[:8]:
+            lines.append(f"  - {item}")
+    lines.append("")
+
+    # 7. 能回答与不能回答
+    lines.extend([
+        "## 7. 这份数据能回答什么",
+        "",
+        "- 能回答：谁在什么场景遇到什么问题、他们现在怎么做、哪些做法被反复判无效、这些说法出现在哪个平台。",
+        "- 不能回答：这类人占多大比例、市场规模多大、他们愿意为本品付多少钱；最后一条只能靠真实报价与成交来验。",
+        "",
+        "## 边界",
+        "",
+        "本报告是语料的描述性统计，不证明总体比例、市场规模或因果；样本来自公开社区，说话的人不等于目标人群，条数不等于需求强度。",
+        "",
+    ])
+    return lines
+
+
+def _report_risk_lines(reasoning: dict[str, Any] | None, by_id: dict[str, dict[str, Any]]) -> list[str]:
+    """Fill the combined report's counter-evidence / gap / next-step section."""
+    chains = reasoning.get("chains", []) if isinstance(reasoning, dict) else []
+    chains = [chain for chain in chains if isinstance(chain, dict)]
+    lines = [
+        "## 反证、缺口与下一步", "",
+        "> 这一节只列已登记的替代解释、反面信号、缺口与验证动作；没有记录的方向写“未登记”，不补假设。", "",
+    ]
+    if not chains:
+        lines.extend(["（尚未建立七节点链，暂无反证与缺口。）", ""])
+        return lines
+    for chain in chains:
+        lines.extend([f"### {chain.get('id', 'PR?')} · {chain.get('title', '')}", ""])
+        alternatives = chain.get("alternative_explanations") or []
+        lines.append("**替代解释**")
+        if isinstance(alternatives, list) and alternatives:
+            for item in alternatives:
+                lines.append(f"- {item}")
+        else:
+            lines.append("- 未登记")
+        lines.append("")
+        lines.append("**反面信号**")
+        counter_ids = chain.get("counter_evidence_ids") or []
+        printed = 0
+        for record_id in counter_ids if isinstance(counter_ids, list) else []:
+            record = by_id.get(str(record_id))
+            if record is None:
+                continue
+            excerpt = _evidence_text(record)[:110]
+            lines.append(f"- `{record_id}` · {_plan_source_label(record)}：{excerpt}")
+            printed += 1
+            if printed >= 5:
+                lines.append(f"- 其余 {max(0, len(counter_ids) - printed)} 条见 `02-data/evidence.jsonl`")
+                break
+        if not printed:
+            lines.append("- 未登记")
+        lines.append("")
+        lines.append("**缺口**")
+        gaps = chain.get("gaps") or []
+        if isinstance(gaps, list) and gaps:
+            for item in gaps:
+                lines.append(f"- {item}")
+        else:
+            lines.append("- 未登记")
+        lines.append("")
+        if chain.get("next_test"):
+            lines.append(f"**下一验证**：{chain.get('next_test')}")
+            lines.append("")
+        if chain.get("failure_condition"):
+            lines.append(f"**失败线**：{chain.get('failure_condition')}")
+            lines.append("")
+    return lines
+
+
+def _report_decision_lines(reasoning: dict[str, Any] | None, by_id: dict[str, dict[str, Any]]) -> list[str]:
+    """Fill the combined report's decision section instead of leaving placeholders."""
+    chains = reasoning.get("chains", []) if isinstance(reasoning, dict) else []
+    chains = [chain for chain in chains if isinstance(chain, dict)]
+    lines = ["## 2. 产品决策", ""]
+    decided = [chain for chain in chains if str(chain.get("status") or "") == "decided"]
+    if not decided:
+        lines.extend([
+            "> 没有任何链达到 `decided`。以下是待验证建议与缺口，不是产品/商业决定记录；"
+            "“先做哪条”是当前证据下的排序建议，不证明需求、付费或因果。",
+            "",
+        ])
+    else:
+        lines.extend([f"> 已记录的 `decided` 链：{', '.join(str(chain.get('id')) for chain in decided)}。"
+                      "`decided` 只记录产品/商业选择，不等于发布就绪或商业成功。", ""])
+    lines.extend([
+        "| 链路 | 状态 | 依据强度 | 建议 | 下一步验证 | 失败线 |",
+        "|---|---|---|---|---|---|",
+    ])
+    for chain in chains:
+        chain_records = _plan_chain_records(chain, by_id)
+        marker, strength, _ = _plan_strength(chain_records)
+        priority = str((chain.get("prioritization") or {}).get("rationale") or "未排序").replace("|", "\\|")
+        next_test = str(chain.get("next_test") or "待补").replace("|", "\\|")
+        failure = str(chain.get("failure_condition") or "待补").replace("|", "\\|")
+        title = str(chain.get("title") or "").replace("|", "\\|")
+        lines.append(
+            f"| `{chain.get('id', 'PR?')}` {title} | `{chain.get('status', 'unknown')}` | {marker} {strength} "
+            f"| {priority} | {next_test} | {failure} |"
+        )
+    lines.append("")
+    gaps = []
+    for chain in chains:
+        for gap in chain.get("gaps", []) if isinstance(chain.get("gaps"), list) else []:
+            gaps.append(f"- {chain.get('id', 'PR?')}：{gap}")
+    if gaps:
+        lines.extend(["**待补缺口**", "", *gaps, ""])
+    lines.extend([
+        "**决定前的最低动作**：先完成上一节各链的 `next_test`；任何声称“已验证”的结论都需要 E3（方案接受）与 E4+/E5（付费/采购）证据，且证据与判断共享同一 `context_key`。",
+        "",
+    ])
+    return lines
+
+
 def deliver(study_dir: Path, kind: str = "memo", audit: Any | None = None) -> dict[str, Any]:
     study_dir = study_dir.resolve()
     study = load_json(study_dir / "study.json")
     route = study.get("route") or {}
     evidence = _evidence_summary(study_dir)
+    by_id = {str(record.get("record_id")): record for record in evidence.get("records", [])}
     reasoning = load_product_reasoning(study_dir)
     if audit is not None and hasattr(audit, "as_dict"):
         audit_info = audit.as_dict()
@@ -2209,8 +3402,36 @@ def deliver(study_dir: Path, kind: str = "memo", audit: Any | None = None) -> di
                         ])
         return {"status": "written", "path": str(path), "kind": kind}
 
-    titles = {"memo": "决策备忘", "report": "产品推理报告", "mrd": "MRD 市场需求文档", "prd": "PRD 产品需求文档", "brd": "BRD 商业需求文档", "ops": "用户运营交付", "decision": "决策包 Decision Package", "signoff": "干系人签收页"}
+    titles = {"memo": "决策备忘", "report": "产品推理报告", "mrd": "MRD 市场需求文档", "prd": "PRD 产品需求文档", "brd": "BRD 商业需求文档", "ops": "用户运营交付", "decision": "决策包 Decision Package", "signoff": "干系人签收页", "plan": "业务方案 Business Plan", "analysis": "语料分析 Corpus Analysis"}
     title = titles.get(kind, "交付物")
+    if kind == "plan":
+        path = out_dir / "plan.md"
+        path.write_text(
+            "\n".join(_plan_lines(study, reasoning, evidence, audit_status)) + "\n",
+            encoding="utf-8",
+        )
+        return {
+            "status": "written",
+            "path": str(path),
+            "kind": kind,
+            "audit_status": audit_status,
+            "audit_generated_at": audit_info.get("generated_at", ""),
+            "evidence_count": evidence["count"],
+            "product_reasoning": product_reasoning_summary(reasoning),
+        }
+    if kind == "analysis":
+        path = out_dir / "analysis.md"
+        path.write_text(
+            "\n".join(_analysis_lines(study, reasoning, evidence, study_dir)) + "\n",
+            encoding="utf-8",
+        )
+        return {
+            "status": "written",
+            "path": str(path),
+            "kind": kind,
+            "audit_status": audit_status,
+            "evidence_count": evidence["count"],
+        }
     if kind == "decision":
         path = out_dir / "decision-package.md"
         path.write_text(
@@ -2271,12 +3492,20 @@ def deliver(study_dir: Path, kind: str = "memo", audit: Any | None = None) -> di
             "",
         ])
     if kind == "report":
+        funnel = _collection_summary(study_dir)
+        methods = ", ".join(study.get("selected_methods", [])) or "未登记"
+        sample_bits = []
+        if funnel.get("raw_records"):
+            sample_bits.append(f"原始 {funnel.get('raw_records')} 条")
+        if funnel.get("screened_records"):
+            sample_bits.append(f"筛选 {funnel.get('screened_records')} 条")
+        sample_bits.append(f"编码 {evidence.get('count', 0)} 条")
         lines.extend(
             [
                 "## 研究方法与样本（支撑层）",
                 "",
-                f"- 方法：{', '.join(study.get('selected_methods', []))}",
-                "- 样本与流失：待补",
+                f"- 方法：{methods}",
+                f"- 样本与流失：{' → '.join(sample_bits)}（漏斗与偏差见 `06-report/analysis.md`）",
                 "",
             ]
         )
@@ -2296,6 +3525,8 @@ def deliver(study_dir: Path, kind: str = "memo", audit: Any | None = None) -> di
         lines.extend(_mrd_lines(reasoning))
     elif kind == "ops" and reasoning is not None:
         lines.extend(_user_ops_lines(reasoning))
+    elif kind == "report" and reasoning is not None:
+        lines.extend(_report_decision_lines(reasoning, by_id))
     else:
         lines.extend(
             [
@@ -2319,23 +3550,31 @@ def deliver(study_dir: Path, kind: str = "memo", audit: Any | None = None) -> di
         basis = str(
             record.get("evidence_basis")
             or record.get("title")
-            or record.get("text")
+            or _evidence_text(record)
             or ""
         )[:120].replace("|", "\\|")
         lines.append(
-            f"| `{record.get('record_id')}` | {record.get('claim_type')} | "
-            f"{record.get('evidence_form')} | {basis} |"
+            f"| `{record.get('record_id')}` | {_evidence_claim(record)} | "
+            f"{_evidence_form(record)} | {basis} |"
         )
     if not evidence["records"]:
         lines.append("| — | — | — | 尚无导入证据 |")
+    if kind == "report" and reasoning is not None:
+        lines.extend(_report_risk_lines(reasoning, by_id))
+    else:
+        lines.extend(
+            [
+                "",
+                "## 反证、缺口与下一步",
+                "",
+                "- 缺口（按推理节点和推导关系列）：",
+                "- 反证与替代解释：",
+                "- 最便宜且能改变决策的下一验证：",
+                "",
+            ]
+        )
     lines.extend(
         [
-            "",
-            "## 反证、缺口与下一步",
-            "",
-            "- 缺口（按推理节点和推导关系列）：",
-            "- 反证与替代解释：",
-            "- 最便宜且能改变决策的下一验证：",
             "",
             "## 附录：证据概况",
             "",
@@ -3397,8 +4636,8 @@ def _analysis_segments(records: list[dict[str, Any]]) -> dict[str, Any]:
     """Descriptive segment counts; small cells stay visible but flagged."""
     dimensions = {
         "platform": lambda record: str(record.get("platform") or record.get("source_family") or "unknown"),
-        "claim_type": lambda record: str(record.get("claim_type") or "unknown"),
-        "evidence_form": lambda record: str(record.get("evidence_form") or "unknown"),
+        "claim_type": lambda record: _evidence_claim(record),
+        "evidence_form": lambda record: _evidence_form(record),
         "corpus_role": lambda record: str(record.get("corpus_role") or "unknown"),
     }
     total = len(records) or 1
@@ -3426,9 +4665,9 @@ def _analysis_segments(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _analysis_time_coverage(records: list[dict[str, Any]], study: dict[str, Any]) -> dict[str, Any]:
     months = sorted({
-        str(record.get("created_at") or "")[:7]
+        str(record.get("created_at") or record.get("source_time") or "")[:7]
         for record in records
-        if len(str(record.get("created_at") or "")) >= 7
+        if len(str(record.get("created_at") or record.get("source_time") or "")) >= 7
     })
     scope = study.get("scope") if isinstance(study.get("scope"), dict) else {}
     window = scope.get("source_time_window") if isinstance(scope.get("source_time_window"), dict) else {}
@@ -3444,7 +4683,7 @@ def _analysis_time_coverage(records: list[dict[str, Any]], study: dict[str, Any]
         start_day = end_day = None
     if valid and start_day and end_day:
         for record in records:
-            day = str(record.get("created_at") or "")[:10]
+            day = str(record.get("created_at") or record.get("source_time") or "")[:10]
             try:
                 parsed = datetime.strptime(day, "%Y-%m-%d").date()
             except (TypeError, ValueError):
@@ -3504,16 +4743,16 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
     text_blob: list[str] = []
     for record in unique:
         platform = str(record.get("platform") or record.get("source_family") or "unknown")
-        claim = str(record.get("claim_type") or "unknown")
-        form = str(record.get("evidence_form") or "unknown")
+        claim = _evidence_claim(record)
+        form = _evidence_form(record)
         by_platform[platform] = by_platform.get(platform, 0) + 1
         by_claim[claim] = by_claim.get(claim, 0) + 1
         by_form[form] = by_form.get(form, 0) + 1
-        created = str(record.get("created_at") or "")
+        created = str(record.get("created_at") or record.get("source_time") or "")
         if len(created) >= 7:
             month = created[:7]
             by_month[month] = by_month.get(month, 0) + 1
-        text = str(record.get("text") or "")
+        text = _evidence_text(record)
         lengths.append(len(text))
         text_blob.append(text)
     stop = set("the and for with that this from are was were you your our not but have has had will can could should about into over under more most some such than then them they their there here what when where which who whom why how all any both each few other own same so too very just also".split())
@@ -3528,10 +4767,10 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
     if question:
         q_terms = [t for t in re.findall(r"[A-Za-z]{3,}|[\u4e00-\u9fff]{2,4}", question.lower()) if t not in stop]
         for record in unique:
-            text = str(record.get("text") or "").lower()
+            text = _evidence_text(record).lower()
             hit = [term for term in q_terms if term in text]
             if hit:
-                matches.append({"record_id": record.get("record_id"), "platform": record.get("platform"), "hits": hit, "excerpt": str(record.get("text") or "")[:300]})
+                matches.append({"record_id": record.get("record_id"), "platform": record.get("platform"), "hits": hit, "excerpt": _evidence_text(record)[:300]})
         matches.sort(key=lambda item: (-len(item["hits"]), str(item["record_id"])))
     try:
         study = load_json(study_dir / "study.json")

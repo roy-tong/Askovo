@@ -1725,6 +1725,30 @@ def _check_evidence(
         errors.append(
             f"normalized duplicate rate {duplicate_rate:.1%} exceeds {max_duplicate_rate:.1%}"
         )
+    # A duplicate source means the same external locator (URL) cited twice.
+    # Ops documents legitimately back several distinct quotes, so bare
+    # source_ref values are not treated as identity.
+    source_keys: list[str] = []
+    for record in by_id.values():
+        key = str(record.get("source_url") or "").strip().casefold()
+        if key:
+            source_keys.append(" ".join(key.split()))
+    source_duplicate_count = len(source_keys) - len(set(source_keys))
+    source_duplicate_rate = source_duplicate_count / len(source_keys) if source_keys else 0.0
+    max_source_duplicate_rate = float(gates.get("max_source_duplicate_rate", 0.0))
+    if source_duplicate_rate > max_source_duplicate_rate:
+        seen_keys: set[str] = set()
+        examples: list[str] = []
+        for record in by_id.values():
+            key = " ".join(str(record.get("source_url") or "").strip().casefold().split())
+            if key and key in seen_keys and len(examples) < 5:
+                examples.append(str(record.get("record_id")))
+            if key:
+                seen_keys.add(key)
+        errors.append(
+            f"source duplicate rate {source_duplicate_rate:.1%} exceeds {max_source_duplicate_rate:.1%} "
+            "(same source_url cited by multiple records: " + ", ".join(examples) + ")"
+        )
     dominant_share = max(source_counts.values()) / len(records) if records and source_counts else 0.0
     max_source_share = float(gates.get("max_source_family_share", 1.0))
     if dominant_share > max_source_share:
@@ -1737,6 +1761,7 @@ def _check_evidence(
             "corpus_roles": dict(sorted(role_counts.items())),
             "source_families": dict(sorted(source_counts.items())),
             "normalized_duplicate_rate": round(duplicate_rate, 6),
+            "source_duplicate_rate": round(source_duplicate_rate, 6),
             "dominant_source_family_share": round(dominant_share, 6),
         }
     )
@@ -2104,6 +2129,21 @@ def _check_product_reasoning(
             for field_name in ("evidence_ids", "assumptions"):
                 if not isinstance(node.get(field_name), list):
                     errors.append(f"{prefix}.{field_name} must be an array")
+            if node_name == "feature" and "capabilities" in node:
+                capabilities = node.get("capabilities")
+                if not isinstance(capabilities, list):
+                    errors.append(f"{prefix}.capabilities must be an array")
+                else:
+                    for cap_index, capability in enumerate(capabilities):
+                        if not isinstance(capability, dict):
+                            errors.append(f"{prefix}.capabilities[{cap_index}] must be an object")
+                            continue
+                        for field_name in ("name", "what", "solves"):
+                            if _is_missing(capability.get(field_name)):
+                                errors.append(f"{prefix}.capabilities[{cap_index}] missing {field_name}")
+                        proof = capability.get("proof")
+                        if proof is not None and not isinstance(proof, str):
+                            errors.append(f"{prefix}.capabilities[{cap_index}].proof must be a string")
             evidence_ids = node.get("evidence_ids") if isinstance(node.get("evidence_ids"), list) else []
             node_references[node_name] = {str(value) for value in evidence_ids}
             all_references.update(node_references[node_name])
@@ -3301,11 +3341,117 @@ def _platform_prerequisites(connector: dict[str, Any]) -> list[str]:
     return items
 
 
+def _write_plan_proposal(
+    target: Path,
+    args: argparse.Namespace,
+    study: dict[str, Any],
+    requested_types: list[str],
+    platform_quotas: dict[str, int],
+    resolved: list[dict[str, Any]],
+    enabled: list[dict[str, Any]],
+    unavailable: list[dict[str, Any]],
+    window: dict[str, str],
+    share_warnings: list[str],
+) -> dict[str, Any]:
+    """Write a plan proposal into an existing study without touching its truth files.
+
+    Retrofitting a design onto a study that already has evidence is legitimate,
+    but ``plan`` must not overwrite ``study.json``, ``source-plan.csv`` or the
+    route templates. The proposal is a reviewable draft; the researcher merges
+    it explicitly.
+    """
+    out = target / "01-sources" / "plan-proposal"
+    out.mkdir(parents=True, exist_ok=True)
+    plan = {
+        "mode": args.mode,
+        "goal": args.goal,
+        "region": args.region,
+        "market": args.market,
+        "sample_target": args.sample_size,
+        "raw_target_estimate": args.sample_size * 4,
+        "platform_types": requested_types,
+        "planned_at": datetime.now(timezone.utc).isoformat(),
+        "platform_quotas": platform_quotas,
+        "feasible_platforms": [item["platform"] for item in enabled],
+        "unavailable_platforms": [
+            {"platform": item["platform"], "status": item["status"], "reason": item["reason"]}
+            for item in unavailable
+        ],
+        "notes": [
+            "proposal only: existing study.json and source-plan.csv were not modified",
+            "region and market are sampling context, not verified residence",
+            "sample target is a collection ceiling, not a claim of independent users",
+        ],
+    }
+    proposal = {
+        "status": "proposed",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "study_id": study.get("study_id") or args.study_id or "",
+        "goal": args.goal,
+        "region": args.region,
+        "market": args.market,
+        "sample_target": args.sample_size,
+        "time_window": window,
+        "plan": plan,
+        "platforms": resolved,
+        "warnings": list(share_warnings),
+        "meaning": (
+            "This is a reviewable design proposal for an existing study. "
+            "It does not change study.json, source-plan.csv or route templates; "
+            "merge the rows you accept and then re-run askovo check --stage design."
+        ),
+    }
+    proposal_path = out / "plan-proposal.json"
+    proposal_path.write_text(json.dumps(proposal, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    source_plan_path = out / "source-plan.proposed.csv"
+    _write_planned_source_plan(source_plan_path, platform_quotas)
+    tasks = [
+        "# Plan proposal tasks",
+        "",
+        f"Study: `{study.get('study_id') or args.study_id or ''}` — {args.goal}",
+        "",
+        "> Proposal only. Merge accepted rows into `01-sources/source-plan.csv` and `study.json`, then re-run `askovo check --stage design`.",
+        "",
+        f"- Region: `{args.region}`" + (f" (market: `{args.market}`)" if args.market else ""),
+        f"- Sample target: {args.sample_size}",
+        f"- Feasible platforms: {', '.join(item['platform'] for item in enabled) or 'none'}",
+        "",
+    ]
+    for item in enabled:
+        tasks.extend([
+            f"## {item['platform']} ({item['platform_type']}) — proposed {item['quota']} records",
+            "",
+            f"- Connector: `{item['connector_id']}` @ `{item['connector_revision']}` "
+            f"({item['connector_license']}, registry decision `{item['registry_decision']}`)",
+            "- Merge: copy the accepted rows from `source-plan.proposed.csv` into `source-plan.csv`; "
+            "enable the adapter fields only after access review.",
+            "",
+        ])
+    if unavailable:
+        tasks.extend(["## Unavailable routes (do not enable)", ""])
+        for item in unavailable:
+            tasks.append(f"- {item['platform']} ({item['platform_type']}): `{item['status']}` — {item['reason']}")
+        tasks.append("")
+    tasks_path = out / "tasks.proposed.md"
+    tasks_path.write_text("\n".join(tasks), encoding="utf-8")
+    return {
+        "status": "proposed",
+        "proposal": str(proposal_path),
+        "source_plan": str(source_plan_path),
+        "tasks": str(tasks_path),
+        "note": "existing study.json, source-plan.csv and route templates were not modified",
+    }
+
+
 def command_plan(args: argparse.Namespace) -> int:
     target = Path(args.study_dir).resolve()
     args.mode = str(getattr(args, "mode", "standard") or "standard").replace("-", "_")
-    if target.exists() and any(target.iterdir()):
-        print(f"refusing to overwrite non-empty directory: {target}", file=sys.stderr)
+    if target.exists() and any(target.iterdir()) and not getattr(args, "force", False):
+        print(
+            f"refusing to overwrite non-empty directory: {target} "
+            "(use --force to write a plan proposal without overwriting the study)",
+            file=sys.stderr,
+        )
         return 2
     try:
         platform_map = _load_platform_map()
@@ -3447,6 +3593,25 @@ def command_plan(args: argparse.Namespace) -> int:
             "start": (today - timedelta(days=365)).isoformat(),
             "end": today.isoformat(),
         }
+
+    if target.exists() and any(target.iterdir()):
+        if not (target / "study.json").is_file():
+            print(
+                "--force on a non-empty directory requires an existing study.json; "
+                "create a new workspace without --force instead",
+                file=sys.stderr,
+            )
+            return 2
+        existing = json.loads((target / "study.json").read_text(encoding="utf-8"))
+        if not isinstance(existing, dict):
+            print("study.json must be an object", file=sys.stderr)
+            return 2
+        result = _write_plan_proposal(
+            target, args, existing, requested_types, platform_quotas,
+            resolved, enabled, unavailable, window, share_warnings,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
 
     study_id = args.study_id or (
         "study-"
@@ -4531,6 +4696,12 @@ def build_parser() -> argparse.ArgumentParser:
     plan_parser.add_argument("--decision", help="decision question this study must inform")
     plan_parser.add_argument("--study-id", help="defaults to a generated dated id")
     plan_parser.add_argument("--title", help="defaults to the goal text")
+    plan_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="existing study: write a plan proposal under 01-sources/plan-proposal/ "
+        "without overwriting study.json or source-plan.csv",
+    )
     plan_parser.set_defaults(func=command_plan)
 
     signals_parser = subparsers.add_parser(
@@ -4742,10 +4913,10 @@ def build_parser() -> argparse.ArgumentParser:
     psm_parser.set_defaults(func=sure_engine.cli_psm)
 
     deliver_parser = subparsers.add_parser(
-        "deliver", help="assemble chain-led PM, PRD, BRD, user-operations and tracker deliverables"
+        "deliver", help="assemble the business plan, decision package, MRD, PRD, BRD, memo and tracker deliverables"
     )
     deliver_parser.add_argument("study_dir")
-    deliver_parser.add_argument("--kind", choices=("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff"), default="memo")
+    deliver_parser.add_argument("--kind", choices=("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis"), default="memo")
     deliver_parser.set_defaults(func=command_deliver)
 
     boundary_parser = subparsers.add_parser(

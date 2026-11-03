@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.8.0 - 2026-11-03
+
+Business Plan projection, the data-first narrative, and the multi-chain analysis fixes.
+
+### Added
+
+- **Business Plan (`askovo deliver --kind plan` → `06-report/plan.md`)**: the business-user default view of the same seven-node chain — nine business sections (方案导读 / 目标场景 / 目标用户 / 痛点 / 需求 / 产品特性 / 产品形态 / 商业与 GTM / 风险与下一步) rendered in business language. Every judgment carries a deterministic **数据基础** line (sources · corpus size · time window, computed from `02-data/evidence.jsonl`) and **来自语料的声音** (verbatim user excerpts, falling back honestly to coded 典型情况); sections without collected data say so plainly. Evidence codes (E0–E5) and raw statuses appear only in the closing 研究方法档案, never in the narrative body. Registered across CLI, MCP (`askovo_deliver`), and the router (`业务方案` keyword).
+- **Evidence-strength markers (●◐○) in the Business Plan**: every judgment and every chain roll-up now carries a deterministic strength marker (node-aware levels: see Fixed) — ● 已观察到 (≥2 observed-level records from ≥2 source families), ◐ 有线索 (E1+ material that has not met the ● bar), ○ 假设 (no E1+ record yet; includes nodes backed only by E4- counter behavior). Absorbed from the hand-written prototype; computed only from the records a node cites, never hand-set. The exact rule and thresholds live in the 研究方法档案; the narrative body stays free of evidence codes.
+- Tests: `--kind plan` rendering (nine sections, data-basis lines, voices, body free of engine tokens, boundary footer) and the MCP round-trip; three-tier strength markers with the body/archive vocabulary split.
+- **Data-driven business reasoning in the Business Plan**: each node section now carries a 数据读出 line computed from the records it cites (observed-level share, platform count, money/proportion mentions); the plan opens with a 推理主线 paragraph threading scene → user → pain → need → capability → product → revenue from short fields; the 商业与 GTM section extracts up to five 金额与比例线索 from the cited records. All values are deterministic projections, never hand-set numbers.
+- **`--kind analysis` cross-tab**: adds a 来源 × 用途 table so the analysis shows not just totals but which platform carries which kind of record.
+- **结论与推进建议 in the Business Plan**: `--kind plan` now opens with a deterministic decision block — 判断依据, 先做哪一段, 为什么是这段特性, 为什么是这个形态, 先卖给谁, 怎么收钱, 30 天验证, 过关线, 失败线, 明确不做, 结论强度与成立前提 — projected from the same chain (feature/product/business nodes plus `next_test` / `failure_condition`). The 方案导读 also carries a 语料画像 (source, year and corpus-role distribution) with an explicit "not population shares" reading note.
+- **Feature capabilities (`feature.capabilities`)**: an optional array of `{name, what, solves, proof}` on the feature node, validated structurally, scaffolded in new studies and rendered as 逐条特性 in the Business Plan — each capability says what it does, which pain it answers and what the evidence is. `askovo review` adds a `reasoning_depth` item that warns when a capability or node rationale is missing.
+- **Corpus analysis deliverable (`askovo deliver --kind analysis` → `06-report/analysis.md`)**: deterministic funnel (raw → screened → coded → cited), source/year/role distributions, per-node coverage and strength, concentration and duplicate groups, counter-evidence and a can/cannot-answer split. Registered across CLI, MCP (`askovo_deliver kind=analysis`) and docs.
+- Tests: analysis deliverable content, capability rendering and validation failure, MCP analysis round-trip, review depth item.
+
+### Fixed
+
+- **`analyze` reads canonical evidence**: without a `text` column the CLI produced an empty descriptive analysis (unknown types, zero average length, no terms or matches). It now falls back to `text_excerpt`, derives a coarse `claim_type` from the evidence level when absent (E0 context / E1–E2 need / E3 acceptance / E4+–E5 commercial / E4- counter) and falls back `evidence_form` to `corpus_role`.
+- **Multi-chain conclusions**: the Business Plan only rendered the first chain's 结论与推进建议. It now renders a cross-chain comparison table plus one conclusion block per chain; detailed sections 2–8 render once for the priority chain (other chains stay in the comparison table and section 9).
+- **Report decision section**: `deliver --kind report` left “产品决策” as empty placeholders. It now fills chain state, strength, recommendation, next test and failure line, and states explicitly when no chain is `decided`; the method/sample line uses the collection funnel.
+- **Cumulative funnel**: `deliver --kind analysis` counted only the local `02-data/raw` directory. It now reads `01-sources/collection-summary.json` (`raw_records`, `screened_records`) for multi-wave or merged corpora, falling back to local raw files.
+- **Duplicate sources**: the evidence gate only compared text hashes, so the same post could be coded twice under different ids. It now rejects duplicate `source_url` citations, reports `source_duplicate_rate`, and honours `quality_gates.max_source_duplicate_rate` (default 0).
+- **Node-aware strength markers**: business nodes counted E1/E2 counter-evidence as observed (● even with no commercial evidence); feature/product did the same with complaints. Business now counts only E4+/E5 and feature/product only E3+, so counter-evidence cannot inflate the marker.
+- **Report risk section**: the combined report now fills 反证、缺口与下一步 with each chain's alternatives, counter-evidence excerpts, gaps, next test and failure line instead of leaving three empty bullets.
+- **Chain render boundary**: `askovo chain` now writes a 边界 footer into `06-report/product-reasoning.md`.
+- **Plan retrofit (`askovo plan --force`)**: `plan` can now run against an existing study and writes a reviewable proposal under `01-sources/plan-proposal/` (`plan-proposal.json`, `source-plan.proposed.csv`, `tasks.proposed.md`). It never overwrites `study.json`, `source-plan.csv` or route templates; a non-empty directory without `study.json` is still refused.
+- **MCP plan parity**: `askovo_plan` exposes `force`; the MCP handler and CLI share the same proposal path.
+- **Unit-economics boundary**: `askovo economics` now closes `unit-economics.md` with a 边界 section so the projection cannot be read as commercial proof.
+- Tests: eight regression tests cover `analyze` schema fallbacks, multi-chain conclusions, report decision/risk fill, cumulative funnel, duplicate `source_url` rejection, node-aware strength, and the chain boundary.
+
+### Changed
+
+- **Data-first narrative**: SKILL.md, both READMEs, AGENTS.md, llms.txt and docs/ now lead with the business promise — bring a product/market question, get a business plan built on collected data (frame → collection plan → collect → analyze → judge → `deliver --kind plan`), with evidence grading repositioned as the quality engine under the hood plus an explicit expression rule for business-facing deliverables (business logic as the subject, judgments tied to data basis, engine vocabulary confined to the method archive).
+- `askovo-discover` closes with `deliver --kind plan`; the Decision Package remains the decision-side deep-dive for validate/decide.
+
 ## 2.7.0 - 2026-11-02
 
 Research loop: collected material no longer counts as a closed gap.

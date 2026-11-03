@@ -1,13 +1,17 @@
 ---
 name: askovo
-description: Build and audit product and business reasoning with Askovo and its SURE evidence engine for product managers, user researchers, user operations, market research/analysis, requirements analysis, and business analysis. Use for 软件/硬件/消费品/汽车/手机五域的场景→用户→痛点→需求→特性→产品→商业推理、产品发现、市场研究/MRD、需求研究/PRD、商业分析/BRD、需求验证、可用性、价格、Beta、留存运营、JTBD、研究计划、调研报告，以及 Reddit/X/YouTube/Instagram/Amazon/GitHub/评论/论坛/工单/访谈数据的补证分析。Every feature must link to a solution-neutral need, every product to scope/non-goals, and every business case to market/price/cost/resource evidence; collection and analysis only support the chain. Do not use for generic market sizing, invented personas, automatic text-to-PRD generation, or treating feature mentions and frequency as demand.
+description: Build and audit product and business reasoning with Askovo and its SURE evidence engine for product managers, user researchers, user operations, market research/analysis, requirements analysis, and business analysis. Use for 软件/硬件/消费品/汽车/手机五域的场景→用户→痛点→需求→特性→产品→商业推理、给一个产品出业务方案/business plan（目标场景/画像/痛点/需求/特性/产品形态/GTM）、数据爬取方案与大规模采集、产品发现、市场研究/MRD、需求研究/PRD、商业分析/BRD、需求验证、可用性、价格、Beta、留存运营、JTBD、研究计划、调研报告，以及 Reddit/X/YouTube/Instagram/Amazon/GitHub/评论/论坛/工单/访谈数据的补证分析。Every feature must link to a solution-neutral need, every product to scope/non-goals, and every business case to market/price/cost/resource evidence; collection and analysis only support the chain. Do not use for generic market sizing, invented personas, automatic text-to-PRD generation, or treating feature mentions and frequency as demand.
 metadata:
   short-description: Reason from scenes to products with auditable evidence
 ---
 
 # Askovo
 
-askovo serves product managers, user researchers, user operations, and market/requirements/business analysis work with one spine: **scene → user → pain → need → feature → product → business**. It uses **SURE — Structured User Research with Evidence** — as the supporting research engine. Build the reasoning first, then collect and analyze only the material needed to test a weak node or inference. Collection volume is an input, never proof of demand, product validity, or commercial viability.
+askovo serves product managers, user researchers, user operations, and market/requirements/business analysis work with one spine: **scene → user → pain → need → feature → product → business**. The promise to business users: **bring a product or market question, get back a business plan** — target scenes, personas, pains, demands, a feature map, a product form, and a GTM path, with every judgment showing its data basis (sources, corpus size, time window) and user voices from the corpus.
+
+**Data-first sequence**: judgments are built on collected data, not invented. ① `askovo do` frames the question and a seven-node hypothesis canvas (hypotheses, not conclusions); ② `askovo platforms` + `askovo plan` design the data-collection plan (platforms, queries, quotas, feasibility) — collection runs only after the Design gate; ③ `askovo collect`/`queue`/`loop` gather a large corpus through permitted routes (owned material imports are a supplementary source); ④ `askovo analyze`/`signals` describe the corpus and the Skill codes it back into the seven nodes; ⑤ `askovo deliver --kind plan` renders the business plan. SURE — Structured User Research with Evidence — is the quality engine under this sequence: evidence grading and gates stay in the engine and the method archive, not in the business narrative. Collection volume is an input, never proof of demand, product validity, or commercial viability.
+
+**Expression rule (business deliverables)**: when the audience is a business user (PM, user researcher, market manager), the narrative is the business logic — scenes, personas, pains, demands, features, product form, GTM. Judgments are supported by "data basis" lines and verbatim user voices, never by evidence codes (`E2`, `needs-validation`, `context_key`); those belong in the method archive. A section without collected data says so plainly ("no collected data yet" means not researched yet, not no demand) — substance over form.
 
 The canonical artifact is `04-findings/product-reasoning.json`; read [references/product-reasoning.md](references/product-reasoning.md) before creating or changing it. Every feature needs a solution-neutral need and explicit rationale; every product needs scope, non-goals, and acceptance criteria; every business node needs a market boundary, payer, price/cost hypotheses, unit-economics inputs, success metrics, and a resource gate. Evidence supports reasoning; it does not replace it.
 
@@ -27,6 +31,8 @@ askovo route "<request>" --json                # route only
 askovo platforms "<request>" --domain …        # where supporting data lives
 askovo collect <study> --platform …            # collect/import against a chain gap
 askovo analyze <study> --question …            # normalize/describe
+askovo deliver <study> --kind plan            # Business Plan (conclusions + data basis + user voices)
+askovo deliver <study> --kind analysis        # corpus analysis (funnel, sources, coverage, counter-evidence)
 askovo deliver <study> --kind decision         # Decision Package (chain-led, five decision views)
 askovo deliver <study> --kind mrd              # market research/analysis projection
 askovo deliver <study> --kind prd              # requirements research/analysis projection
@@ -66,11 +72,11 @@ Users arrive with three recurring task shapes. They map onto the modes above and
 
 | Task entry | User asks | Loop | Deliverable |
 | --- | --- | --- | --- |
-| `askovo-discover` | “研究这个市场/问题，什么值得做” | Frame/Grounding → collection against chain gaps → chain draft with demand judgments | `deliver --kind decision` (Opportunity Map + Evidence Graph); MRD view when market boundary matters |
+| `askovo-discover` | “研究这个市场/问题，什么值得做” | Frame/Grounding → data-collection plan → collection against chain gaps → chain with demand judgments | `deliver --kind plan` (Business Plan: nine business sections, data basis, user voices); `--kind decision` when the reader needs the decision-side views |
 | `askovo-validate` | “审查这个产品设想，哪些假设没证据” | Audit → import missing evidence → re-run `audit` against level gates | `deliver --kind decision` (Validation Backlog: gaps, needs-validation nodes, cheapest decision-changing test) |
 | `askovo-decide` | “比较候选方向，给决策建议” | One chain per candidate → `decided` on the chosen one → synthesize | `deliver --kind decision` (Decision Memo: prioritization, rejected options, confidence bounds, delivery/outcome/causal states kept separate) |
 
-The Decision Package (`askovo deliver --kind decision` → `06-report/decision-package.md`) is the shared decision-side projection of the same chain. MRD/PRD/BRD/ops remain its market/requirements/business/operations views, not independent conclusions, and a `decided` chain is a choice record — never release or commercial proof.
+The Business Plan (`askovo deliver --kind plan` → `06-report/plan.md`) is the default view for business users: it opens with **结论与推进建议** — what to build first, who to sell it to, how to charge, the 30-day test, pass/fail lines and explicit non-goals — then a 语料画像 (source, year and corpus-role distribution, explicitly not population shares), then a 推理主线 paragraph that threads scene → user → pain → need → capability → product → revenue through short fields, then renders the seven nodes as business sections in business language, each judgment showing its 数据读出 (observed-level share, platform count, money-mention rate), its evidence-strength marker (● 已观察到 / ◐ 有线索 / ○ 假设， computed deterministically from cited records, never hand-set), its data basis and user voices; evidence codes and raw statuses stay in the method archive at the end. Feature nodes may carry a `capabilities` array (`name` / `what` / `solves` / optional `proof`), rendered as 逐条特性 — each capability says what it does, which pain it answers and what the evidence is. `deliver --kind analysis` writes `06-report/analysis.md`: the deterministic funnel (raw → screened → coded → cited), source/time/role distributions, per-node coverage, concentration and duplicates, counter-evidence and the explicit can/cannot-answer split. The Decision Package (`askovo deliver --kind decision` → `06-report/decision-package.md`) is the decision-side projection of the same chain. MRD/PRD/BRD/ops remain its market/requirements/business/operations views, not independent conclusions, and a `decided` chain is a choice record — never release or commercial proof.
 
 When a supported platform is in scope, read [references/open-source-connectors.md](references/open-source-connectors.md) and [references/connector-contract.md](references/connector-contract.md) before choosing acquisition code. Then read the shared adapter and matching platform reference:
 
@@ -89,7 +95,7 @@ python3 scripts/askovo.py do "AI 眼镜在海外社媒的用户不满与替代�
 python3 scripts/askovo.py chain /ABSOLUTE/PATH/TO/STUDY
 ```
 
-The first deliverable is a hypothesis canvas, not a crawler. Fill every node's `statement`, `rationale`, `status`, and `assumptions`; keep unknowns open instead of inventing them. Add feature alternatives and product scope/non-goals. Only then identify the most decision-critical weak node or incoming edge and design the evidence plan.
+The first deliverable is the research design — a seven-node hypothesis canvas plus the data-collection plan — not conclusions and not a crawler. Fill every node's `statement`, `rationale`, `status`, and `assumptions` as hypotheses; keep unknowns open instead of inventing them. Add feature alternatives and product scope/non-goals. Then design the collection plan (`platforms` → `plan`) and gather data before turning hypotheses into judgments; every judgment written back into the chain must stand on collected or imported material.
 
 `init` remains available when the caller already has a study ID, title, decision, and platform scope. `plan` is a supporting intake for region, sample target, and platform types:
 
@@ -124,6 +130,8 @@ The generated paths are the handoff contract:
 - `04-findings/demand-judgments.json` — demand and commercial evidence eligibility;
 - `04-findings/signals.json` — deterministic corpus signals;
 - `05-audit/` — machine-readable and human-readable checks;
+- `06-report/plan.md` — business plan (business-user default view) from `deliver --kind plan`;
+- `06-report/analysis.md` — corpus analysis from `deliver --kind analysis`;
 - `06-report/report.md` — combined product/business report from `deliver --kind report`;
 - `06-report/decision-package.md` — decision-side projection from `deliver --kind decision`;
 - `06-report/mrd.md` — market research/analysis projection from `deliver --kind mrd`;
@@ -145,6 +153,7 @@ After evidence exists, compute signals and render role projections:
 ```bash
 python3 scripts/askovo.py signals STUDY
 python3 scripts/askovo.py report STUDY
+python3 scripts/askovo.py deliver STUDY --kind plan
 python3 scripts/askovo.py deliver STUDY --kind report
 python3 scripts/askovo.py deliver STUDY --kind decision
 python3 scripts/askovo.py deliver STUDY --kind ops
@@ -164,7 +173,7 @@ Treat each chain as one value thread with a clear role × scene × task context.
 6. **Product**: explain why capabilities form a coherent offer; record form, scope, non-goals, and acceptance criteria.
 7. **Business**: define market boundary, geographies, time window, segments, payer, positioning, revenue/pricing hypotheses, channels, costs, market-estimate method, unit-economics inputs, success metrics, resource gate, and business non-goals.
 
-For every incoming edge, ask whether the rationale truly follows. Node evidence does not prove the edge. Record alternative explanations and counter-evidence, then obtain human semantic review for decision-critical claims. **Market analysis → MRD**, **requirements analysis → PRD**, and **business analysis → BRD** are projections of this chain, not independent truth stores.
+For every incoming edge, ask whether the rationale truly follows. Node evidence does not prove the edge. Record alternative explanations and counter-evidence, then obtain human semantic review for decision-critical claims. **Business plan → `deliver --kind plan`** (business-user default view), **market analysis → MRD**, **requirements analysis → PRD**, and **business analysis → BRD** are projections of this chain, not independent truth stores.
 
 Use `decided` only for a recorded product/business choice, not for product truth, PRD/BRD sign-off, release readiness, commercial success, or causal effect. Keep delivery, observed outcome, and causal states in `supporting_states`; E3 cannot release a product and E5 cannot prove an intervention caused an outcome or a sustainable business. Business evidence must be E4+/E5 and cannot replace a market sampling frame, costs, or resources. Full field and evidence-join rules: [references/product-reasoning.md](references/product-reasoning.md).
 

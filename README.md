@@ -8,9 +8,9 @@
 
 # Askovo
 
-**Start from a business question, collect data, verify judgments, and deliver traceable research outcomes.**
+**Bring a product or market question, get back a business plan — built on collected data, not invented judgments.**
 
-Askovo is built for product managers, user researchers, and business analysts. You bring the business goal, the context, and the permitted data sources; your agent plans the research actions, and Askovo executes the authorized collection, descriptive analysis, and evidence audits — producing research reports, MRD, PRD, or BRD that help the team decide what to do next and what still needs validation.
+Askovo is built for product managers, user researchers, and business analysts. The default run: ① frame the question as a seven-node hypothesis canvas, ② design the data-collection plan (platforms, queries, quotas), ③ collect a large corpus through permitted routes, ④ turn the data into scene/user/pain/need/feature/product/GTM judgments, ⑤ render the **Business Plan** (`askovo deliver --kind plan`) — every judgment showing its data basis (sources, corpus size, time window) and user voices from the corpus, in business language. MRD/PRD/BRD and the Decision Package remain projections of the same chain for analyst and decision-side readers.
 
 CLI, Skill, and MCP surfaces are live today. The host agent can author the action list, or `askovo loop` derives rounds from audit gaps inside an authorized envelope; the executor runs only what was authorized. Source gaps and human semantic review are kept explicit, never hidden. See [capability status and trade-offs](docs/feature-status.md) (Chinese).
 
@@ -18,7 +18,7 @@ CLI, Skill, and MCP surfaces are live today. The host agent can author the actio
 
 Data collection, descriptive analysis, interviews, experiments, evidence grading, and platform connectors are supporting steps only: they validate a node or an inference edge — they never substitute for the product and business reasoning itself.
 
-Every line an AI research tool produces sounds equally confident — the evidenced and the invented look identical, and whoever signs off cannot tell which sentence to trust. Askovo grades every conclusion with an evidence level (E0–E5); when a conclusion outruns its evidence, `askovo audit` says so outright, and its exit code 1 can gate CI.
+Quality is enforced under the hood: every conclusion carries an internal evidence grade, and when a conclusion outruns its evidence, `askovo audit` says so outright (exit code 1 can gate CI). In business-facing deliverables those grades stay in the method archive — the narrative is the business logic itself, with "no collected data yet" flags where a judgment still waits for data.
 
 [Website](https://roy-tong.github.io/Askovo/) · [Quickstart](docs/quickstart.md) · [Product & business reasoning chain](docs/product-reasoning.md) · [Role methodology](docs/product-methodology.md) · [Platforms & connectors](docs/connectors.md)
 
@@ -55,14 +55,22 @@ Expected key results: `status: pass`, `supported: 1`, `overclaims: 0`. This only
 
 ## From research question to decision result: what a full delivery looks like
 
-Feed in a decision question, get back a **Decision Package** — every judgment traceable along the seven-node chain to its evidence and counter-evidence. Using the built-in synthetic sample (`examples/sample-study`):
+Feed in a product question, get back a **Business Plan** — target scenes, personas, pains, demands, a feature map, a product form, and a GTM path, each judgment with its evidence-strength marker (● 已观察到 / ◐ 有线索 / ○ 假设， computed from cited records), data basis and user voices from the corpus. Using the built-in synthetic sample (`examples/sample-study`):
+
+```bash
+askovo chain examples/sample-study
+askovo deliver examples/sample-study --kind plan   # → 06-report/plan.md (business language)
+```
+
+The plan reads like a business document: "## 2. 目标场景：哪些场景值得做", "## 4. 痛点：现在怎么办、痛在哪", "## 8. 商业与 GTM：怎么走向市场" — with evidence-strength markers `● 已观察到 / ◐ 有线索 / ○ 假设`, `数据基础`（sources · corpus size · time window）and `来自语料的声音`（verbatim user quotes）under each judgment, and "暂无采集数据" flagged honestly where a judgment has no data yet. Evidence codes and raw statuses live in the method archive at the end, not in the narrative.
+
+When the reader is the decision maker rather than a business reader, the **Decision Package** renders the same chain decision-side — every judgment traceable to its evidence and counter-evidence:
 
 > Research question: for remote pet owners, is it worth running a two-week phone-based check-in pilot for "pet watch while away from home"?
 
 Once the chain is complete (all seven nodes validated, 2 counter-evidence items on record), one command produces the decision package:
 
 ```bash
-askovo chain examples/sample-study
 askovo deliver examples/sample-study --kind decision   # → 06-report/decision-package.md
 ```
 
@@ -78,15 +86,15 @@ The decision package gives the decision maker five views:
 
 Sample decision memo (excerpt, from the synthetic sample): prioritization method — "test privacy, acceptance and retained use before any scale decision"; rationale — "the smallest test that can reverse the concept; no market-size ranking is claimed"; confidence bounds — counter-evidence `R05`/`R07`, gaps include "Privacy controls are not tested in real homes"; three states — delivery `unplanned` / outcome `observing` / causality `not-claimed`. **`decided` is only a record of choice, not release or commercial proof** — the three states are independent and must not be inferred from one another.
 
-MRD/PRD/BRD are not three separate sets of conclusions — they are market/requirements/business projections of the same chain; the decision package is their decision-side summary view.
+The Business Plan, MRD/PRD/BRD, and the Decision Package are not separate sets of conclusions — they are business-user, market/requirements/business, and decision-side projections of the same chain.
 
-The three recurring tasks all run the same chain and differ only in what they deliver: **discover** (research question → Opportunity Map), **validate** (review a hypothesis → Validation Backlog), **decide** (compare candidates → Decision Memo).
+The three recurring tasks all run the same chain and differ only in what they deliver: **discover** (product question → Business Plan, with the Decision Package as the decision-side deep-dive), **validate** (review a hypothesis → Validation Backlog), **decide** (compare candidates → Decision Memo).
 
 ## One chain, many roles, five domains
 
 | Role | What they get from the same chain | Primary deliverables |
 |---|---|---|
-| Product manager | End-to-end trade-offs, scope, priorities, acceptance, risks, and business gates | Decision memo, product/business report, BRD, and final sign-off |
+| Product manager | End-to-end trade-offs, scope, priorities, acceptance, risks, and business gates | Business plan, decision memo, product/business report, BRD, and final sign-off |
 | User researcher | Scene, user, pain, and need evidence; counter-evidence and semantic review | Research status report, demand judgments, evidence ledger, evidence-backfill plan |
 | User operations | Scene × user segmentation, real behavior, objections, lifecycle interventions, feedback loops | User-ops projection, tracker, behavior and retention evidence |
 | Market research / analysis | Market boundaries, segments, competitor substitution, channels, pricing, sizing conventions, entry assumptions | MRD |
@@ -180,6 +188,8 @@ A complete chain still does not prove product/business success; complete evidenc
 ### 4. Project the same chain into role-specific deliverables
 
 ```bash
+askovo deliver ./study --kind plan    # business plan (business-user default): conclusions + nine sections + data basis + user voices
+askovo deliver ./study --kind analysis # corpus analysis: funnel, source/year/role distribution, node coverage, counter-evidence
 askovo deliver ./study --kind decision # decision package: opportunity map / evidence graph / options & trade-offs / decision memo / validation backlog
 askovo deliver ./study --kind report   # combined product & business reasoning report
 askovo deliver ./study --kind mrd      # market research & analysis → MRD
@@ -194,7 +204,9 @@ askovo deliver ./study --kind tracker  # behavior, acceptance, and business metr
 askovo report ./study                  # research status: 06-report/research-status.md
 ```
 
-`deliver --kind report` is the single writer of the combined product/business report; `askovo report` writes a separate research-status file. The decision package, MRD, PRD, BRD, and ops views are all projections of one seven-node chain — not parallel sources of truth.
+`deliver --kind report` is the single writer of the combined product/business report; `askovo report` writes a separate research-status file. The business plan, decision package, MRD, PRD, BRD, and ops views are all projections of one seven-node chain — not parallel sources of truth.
+
+With multiple candidate chains, the plan opens with a cross-chain decision table and one conclusion block per chain, then renders the detailed sections once for the priority chain; `--kind report` fills its product-decision section with the same chain states instead of leaving placeholders. When a study aggregates several collection waves, `01-sources/collection-summary.json` supplies the funnel totals. Business strength (●◐○) is node-aware: the commercial node only counts E4+/E5, so counter-evidence cannot make it look observed.
 
 ## Askovo and SURE
 

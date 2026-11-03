@@ -25,7 +25,7 @@ askovo --help
 | `instruments <study>` | 生成访谈/观察/任务/感官/价格/Beta/安全工具包 | 0/2 |
 | `import <study> <file>` | 导入 JSONL/CSV/文本为证据 | 0/2 |
 | `codebook <study>` | 生成六类结论的编码本 | 0/2 |
-| `deliver <study>` | 决策包 decision / 主链 memo / 总 report / MRD / PRD / BRD / 运营 ops / tracker / 签收 signoff | 0/2 |
+| `deliver <study>` | 业务方案 plan（业务用户默认）/ 决策包 decision / 主链 memo / 总 report / MRD / PRD / BRD / 运营 ops / tracker / 签收 signoff | 0/2 |
 | `report <study>` | 中文研究状态报告（UXR 视角）→ `06-report/research-status.md` | 0/2 |
 | `signals <study>` | 从 evidence.jsonl 计算确定性语料信号 | 0/2 |
 | `lexicon <study>` | 未命名体验模式：词表产出与充分性检查 | 0/1/2 |
@@ -76,6 +76,22 @@ askovo route "座舱语音接管" --domain automotive --stage validation
 ```
 
 输出：`product_reasoning`（七节点、当前阶段焦点、主链产物），以及 domain、stage、intent、risk_flags、safety_gate、recommended_methods、alternatives、decisions、deliverables、platform_preview、next_commands。主链先展示，方法与平台是支撑层。
+
+## plan
+
+```bash
+askovo plan ./new-study --goal "夜间误报与替代方案" --region overseas \
+  --sample-size 100000 --platform-types forum,social
+askovo plan ./existing-study --goal "补设计" --region overseas \
+  --sample-size 100000 --platform-types forum,social --force
+```
+
+新目录：写入 study.json、配额、可行性、采集任务与 `01-sources/source-plan.csv`。
+
+已有工位加 `--force`：**只写提案，不改真值文件**——输出到 `01-sources/plan-proposal/`：
+`plan-proposal.json`、`source-plan.proposed.csv`、`tasks.proposed.md`。`study.json`、
+`source-plan.csv` 与路由模板保持不变；人工合并接受的 rows 后，重新跑
+`askovo check --stage design`。非空目录没有 `study.json` 时 `--force` 也会拒绝。
 
 ## chain
 
@@ -192,6 +208,8 @@ askovo analyze ./study --question "夜间误报"
 - 与问题匹配的片段
 - 边界声明：描述性统计，不证明总体或因果
 
+规范性证据用 `text_excerpt` 存原文；没有 `text` 字段时 `analyze` 回退到 `text_excerpt`，没有 `evidence_form`/`claim_type` 时回退到 `corpus_role` 与证据等级（E0=context、E1/E2=need、E3=acceptance、E4+/E5=commercial、E4-=counter）。`deliver --kind analysis` 的漏斗优先读 `01-sources/collection-summary.json`（`raw_records` / `screened_records`），用于多波次或多工位合并的语料；缺省时回退到本工位 `02-data/raw`。
+
 ## instruments
 
 ```bash
@@ -211,6 +229,8 @@ askovo report ./study
 
 `deliver --kind`：
 
+- `plan`：业务方案（Business Plan），写 `06-report/plan.md`——业务用户默认视图：七节点渲染为"目标场景/目标用户/痛点/需求/特性/产品形态/商业与 GTM"九节业务章节，通篇业务语言；每个判断带**数据基础**（来源 · 语料量 · 时间窗）与**来自语料的声音**（用户原话或典型情况），尚无数据的判断如实标注"暂无采集数据"；证据编码与原始状态只进文末方法档案；
+- `analysis`：语料分析，写 `06-report/analysis.md`——采集漏斗（原始→筛选→编码→进入判断）、来源与年份分布、语料用途、七节点覆盖、集中度与重复、反证清单，以及"这份数据能回答/不能回答什么"；只做确定性统计，不推人群比例或市场规模；
 - `decision`：决策包（Decision Package），写 `06-report/decision-package.md`——机会地图/证据图/选项与权衡/决策备忘/验证清单五个决策侧视图，全部由同一条主链与需求判断投影；
 - `memo`：产品/商业决策 memo；
 - `report`：产品与商业推理总报告，写 `06-report/report.md`；
@@ -220,7 +240,9 @@ askovo report ./study
 - `ops`：场景×用户分群、痛点/异议和运营回流，写 `06-report/user-ops.md`；
 - `tracker`：从特性/产品验收和商业成功指标生成带 chain/node ID 的跟踪行，写 `06-report/postlaunch-tracker.csv`。
 
-`askovo report` 是用研支撑报告，写 `06-report/research-status.md`；它不与产品/商业 `deliver --kind report` 共用文件。所有交付都从同一七节点主链渲染，不另建语义真值。决策包是决策侧汇总视图；MRD、PRD、BRD 分别对应市场研究/分析、需求研究/分析、商业分析三条工作流，不是三个平行事实库。
+多链研究：`--kind plan` 先输出跨链比较表与逐链结论，七环节正文只展开优先级最高的一条；`--kind report` 的“产品决策”一节按链生成状态/依据强度/建议/下一步/失败线，没有 `decided` 链时明确标注为待验证建议，不再留空模板。`--kind analysis` 的漏斗支持 `01-sources/collection-summary.json` 的累计口径。
+
+`askovo report` 是用研支撑报告，写 `06-report/research-status.md`；它不与产品/商业 `deliver --kind report` 共用文件。所有交付都从同一七节点主链渲染，不另建语义真值。业务方案是业务用户的默认视图；决策包是决策侧汇总视图；MRD、PRD、BRD 分别对应市场研究/分析、需求研究/分析、商业分析三条工作流，不是三个平行事实库。
 
 `check --stage design/evidence/full` 分别检查设计、证据和完整决策结构；`audit` 另输出逐条需求判断 verdict。返回 1 是合法研究状态，应修复主链/证据缺口或明确下一步，不能绕过。
 

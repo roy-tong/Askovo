@@ -21,6 +21,8 @@ askovo 用同一主链服务五域产品经理、用户研究、用户运营及�
 
 | 你想做什么 | 去哪 |
 | --- | --- |
+| 出一份业务方案（给产品/市场问题） | `askovo deliver <study> --kind plan`（见 [CLI 参考](cli.md)） |
+| 看语料分布与判断覆盖 | `askovo deliver <study> --kind analysis` |
 | 让 Agent 按协议工作 | [../skills/askovo/SKILL.md](../skills/askovo/SKILL.md) |
 | 编写主链或证据记录 | [../skills/askovo/references/product-reasoning.md](../skills/askovo/references/product-reasoning.md) 与 [data-contract](../skills/askovo/references/data-contract.md) |
 | 生成 MRD/PRD/BRD | [整合模板](../skills/askovo/templates/integration-docs/runbook.md) |

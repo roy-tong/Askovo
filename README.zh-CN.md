@@ -8,9 +8,9 @@
 
 # Askovo
 
-**从业务问题出发，采集数据、验证判断，交付可追溯的研究成果。**
+**给我一个产品或市场问题，还你一份业务方案——判断建立在采集来的数据上，不是编出来的。**
 
-Askovo 面向产品经理、用户研究和业务分析人员。你提供业务目标、背景与允许的数据来源，Agent 制定研究动作，Askovo 执行获授权的采集、描述性分析和证据审计，生成研究报告、MRD、PRD 或 BRD，帮助团队决定下一步做什么、还需要验证什么。
+Askovo 面向产品经理、用户研究和业务分析人员。默认跑法五步：①把问题框成七节点假设画布；②制定数据爬取方案（平台、关键词、配额）；③经允许的渠道采集大量语料；④从数据里推出场景/用户/痛点/需求/特性/产品/GTM 判断；⑤渲染**业务方案**（`askovo deliver --kind plan`）——每个判断都标注依据强度（●已观察到/◐有线索/○假设，按引用记录自动计算）、数据基础（来源、语料量、时间窗）与来自语料的用户之声，通篇业务语言。MRD/PRD/BRD 与决策包仍是同一条主链面向分析师与决策侧的投影。
 
 当前支持 CLI、Skill 和 MCP；研究动作可由宿主 Agent 规划，也可由 `askovo loop` 从审计缺口生成信封授权下的多轮动作，执行器只运行获批内容。来源缺口和人工语义复核会明确保留。[能力进度与技术取舍](docs/feature-status.md)。
 
@@ -18,7 +18,7 @@ Askovo 面向产品经理、用户研究和业务分析人员。你提供业务�
 
 数据收集、描述性分析、访谈、实验、证据分级和平台连接都只是支撑步骤：它们用于验证某个节点或推导关系，不能代替产品与商业推理本身。
 
-AI 研究工具的产出，每一句听起来都同样自信——有据的和编的看起来一样，签字的人看不出哪句能信。askovo 给每条结论标证据等级（E0–E5）；结论超出证据时，`askovo audit` 直接说出来，退出码 1 可以进 CI。
+质量约束在引擎里：每条结论内部带证据等级，结论超出证据时 `askovo audit` 直接说出来（退出码 1 可进 CI）。面向业务的交付物里，这些等级只出现在文末方法档案——正文讲的是业务逻辑本身，尚无数据的判断会如实标注"暂无采集数据"。
 
 [官网](https://roy-tong.github.io/Askovo/) · [快速开始](docs/quickstart.md) · [产品与商业推理主链](docs/product-reasoning.md) · [岗位方法论](docs/product-methodology.md) · [平台与连接器](docs/connectors.md)
 
@@ -46,14 +46,22 @@ askovo demo
 
 ## 研究问题 → 决策结果：一次完整交付长什么样
 
-输入一个决策问题，输出一份**决策包（Decision Package）**——每个判断都能沿七节点主链回溯到证据和反证。以内置合成样例（`examples/sample-study`）为例：
+输入一个产品问题，输出一份**业务方案（Business Plan）**——目标场景、用户画像、痛点、需求、特性地图、产品形态与 GTM 路径，每个判断带依据强度（●已观察到/◐有线索/○假设，按引用记录自动计算）、数据基础与语料里的用户之声。以内置合成样例（`examples/sample-study`）为例：
+
+```bash
+askovo chain examples/sample-study
+askovo deliver examples/sample-study --kind plan   # → 06-report/plan.md（业务语言）
+```
+
+方案读起来是一份业务文档："## 2. 目标场景：哪些场景值得做"、"## 4. 痛点：现在怎么办、痛在哪"、"## 8. 商业与 GTM：怎么走向市场"——每个判断标依据强度`●已观察到 / ◐有线索 / ○假设`，下面是`数据基础`（来源 · 语料量 · 时间窗）与`来自语料的声音`（用户原话或典型情况）；尚无数据的判断如实标注"暂无采集数据"。证据编码与原始状态只出现在文末的方法档案，不进正文。
+
+当读者是决策者而不是业务读者时，**决策包（Decision Package）**把同一条主链渲染成决策侧视图——每个判断都能回溯到证据和反证：
 
 > 研究问题：养宠物的远程主人，是否值得为"离家时的宠物看护"跑一个两周的手机巡检试点？
 
 主链跑完（七节点全部 validated，2 条反证在案）后，一条命令生成决策包：
 
 ```bash
-askovo chain examples/sample-study
 askovo deliver examples/sample-study --kind decision   # → 06-report/decision-package.md
 ```
 
@@ -69,15 +77,15 @@ askovo deliver examples/sample-study --kind decision   # → 06-report/decision-
 
 样例决策备忘（节选，原文为英文合成数据）：优先级方法 "test privacy, acceptance and retained use before any scale decision"；理由 "the smallest test that can reverse the concept; no market-size ranking is claimed"；置信边界——反证 `R05`/`R07`，缺口含 "Privacy controls are not tested in real homes"；三态：交付 `unplanned` / 结果 `observing` / 因果 `not-claimed`。**`decided` 只是选择记录，不是发布或商业证明**——三态互相独立，不得互推。
 
-MRD/PRD/BRD 不是另外三套结论，而是同一条主链的市场/需求/商业投影；决策包是它们的决策侧汇总视图。
+业务方案、MRD/PRD/BRD 与决策包不是几套结论——它们是同一条主链的业务视图、市场/需求/商业投影与决策侧汇总视图。
 
-三个高频任务都走同一条链，只是收口交付不同：**发现**（研究问题 → 机会地图）、**验证**（审查设想 → 验证清单）、**决策**（候选比较 → 决策备忘）。
+三个高频任务都走同一条链，只是收口交付不同：**发现**（产品问题 → 业务方案，决策包作决策侧深读）、**验证**（审查设想 → 验证清单）、**决策**（候选比较 → 决策备忘）。
 
 ## 一条主链，多类职责，五个领域
 
 | 使用者 | 从同一主链获得什么 | 主要交付 |
 |---|---|---|
-| 产品经理 | 全链取舍、范围、优先级、验收、风险和商业门 | 决策 memo、产品/商业报告、BRD 与最终签收 |
+| 产品经理 | 全链取舍、范围、优先级、验收、风险和商业门 | 业务方案、决策 memo、产品/商业报告、BRD 与最终签收 |
 | 用户研究 | 场景、用户、痛点、需求证据，反证与语义复核 | 研究状态报告、需求判断、证据台账、补证计划 |
 | 用户运营 | 场景×用户分群、真实行为、异议、生命周期干预与反馈回流 | 用户运营投影、tracker、行为和留存证据 |
 | 市场研究 / 市场分析 | 市场边界、细分、竞品替代、渠道、价格、规模口径与进入假设 | MRD |
@@ -171,6 +179,8 @@ askovo review ./study                 # 决策复盘：决策就绪、可证伪�
 ### 4. 从同一主链生成不同分析与职责交付
 
 ```bash
+askovo deliver ./study --kind plan    # 业务方案（业务用户默认视图）：九节业务章节 + 依据强度●◐○ + 数据基础 + 用户之声
+askovo deliver ./study --kind analysis # 语料分析：采集漏斗、来源/年份/用途分布、节点覆盖与反证
 askovo deliver ./study --kind decision # 决策包：机会地图/证据图/选项与权衡/决策备忘/验证清单
 askovo deliver ./study --kind report   # 产品与商业推理总报告
 askovo deliver ./study --kind mrd      # 市场研究与分析 → MRD
@@ -185,7 +195,9 @@ askovo deliver ./study --kind tracker  # 行为、验收和商业指标跟踪
 askovo report ./study                  # 用研状态：06-report/research-status.md
 ```
 
-`deliver --kind report` 是产品/商业总报告的唯一写入者；`askovo report` 写独立的研究状态文件。决策包、MRD、PRD、BRD、运营视图全部由同一条七节点主链投影生成，不是几套平行事实源。
+`deliver --kind report` 是产品/商业总报告的唯一写入者；`askovo report` 写独立的研究状态文件。业务方案、决策包、MRD、PRD、BRD、运营视图全部由同一条七节点主链投影生成，不是几套平行事实源。
+
+多候选链时，业务方案先给跨链比较表与逐链结论，再把七环节正文只展开一次（优先级最高的那条）；`--kind report` 会填充产品决策一节，不再留占位。多波次语料由 `01-sources/collection-summary.json` 提供漏斗总量。依据强度按节点取级：商业节点只认 E4+/E5，反证不会把它抬成“已观察到”。
 
 ## Askovo 与 SURE
 

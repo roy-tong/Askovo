@@ -77,6 +77,7 @@ python3 -m pip install --force-reinstall /path/to/askovo-2.1.0-py3-none-any.whl
 - 记录数低于 `quality_gates.min_evidence_records`
 - 缺 `required_corpus_roles` 中的角色
 - 重复率超过 `max_normalized_duplicate_rate`
+- 同一 `source_url` 被多条记录引用，超过 `max_source_duplicate_rate`（默认 0；同一文档的不同引文应使用 `source_ref`，不要伪造 URL）
 - 主导来源占比超过 `max_source_family_share`
 - 来源族不在 `source-plan.csv` 中
 

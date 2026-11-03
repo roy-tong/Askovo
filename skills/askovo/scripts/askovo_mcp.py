@@ -51,8 +51,8 @@ SERVER_INSTRUCTIONS = (
     "(1) askovo_do scaffolds the study and product-reasoning.json; (2) askovo_chain renders the "
     "reasoning canvas; (3) askovo_platforms and askovo_collect gather permitted supporting "
     "material; (4) askovo_analyze describes it; (5) askovo_audit checks product/business "
-    "rationales, evidence gates and per-claim verdicts; (6) askovo_deliver assembles chain-led "
-    "memo, MRD, PRD, BRD, ops or tracker. Legacy text/platform planning remains available as "
+    "rationales, evidence gates and per-claim verdicts; (6) askovo_deliver assembles the "
+    "business plan (plan), corpus analysis (analysis), chain-led memo, MRD, PRD, BRD, ops or tracker. Legacy text/platform planning remains available as "
     "askovo_plan; askovo_check remains the low-level gate command. "
     "exit codes: 1 = failed gate or claim exceeding evidence, 3 = no feasible platform or "
     "adapter, 4 = safety/ethics gate not acknowledged. These are research statuses to report, "
@@ -131,6 +131,7 @@ def _build_plan(arguments: dict[str, Any]) -> argparse.Namespace:
         study_id=_optional_string(arguments, "study_id"),
         title=_optional_string(arguments, "title"),
         mode=mode,
+        force=bool(arguments.get("force", False)),
     )
 
 
@@ -366,8 +367,8 @@ def _build_codebook(arguments: dict[str, Any]) -> argparse.Namespace:
 
 def _build_deliver(arguments: dict[str, Any]) -> argparse.Namespace:
     kind = arguments.get("kind", "memo")
-    if kind not in ("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff"):
-        raise ValueError("kind must be memo, report, mrd, prd, brd, ops, decision, tracker or signoff")
+    if kind not in ("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis"):
+        raise ValueError("kind must be memo, report, mrd, prd, brd, ops, decision, tracker, signoff, plan or analysis")
     return _namespace(study_dir=_string(arguments.get("study_dir"), "study_dir"), kind=kind)
 
 
@@ -463,6 +464,10 @@ TOOLS: list[dict[str, Any]] = [
                 "decision": {"type": "string", "description": "decision question this study informs"},
                 "study_id": {"type": "string"},
                 "title": {"type": "string"},
+                "force": {
+                    "type": "boolean",
+                    "description": "existing study: write a plan proposal under 01-sources/plan-proposal/ without overwriting study.json or source-plan.csv",
+                },
             },
             "required": ["study_dir", "goal", "region", "sample_size", "platform_types"],
         },
@@ -749,12 +754,12 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "askovo_deliver",
-        "description": "Assemble a chain-led decision memo, product report, MRD, PRD, BRD, user-operations projection or post-launch tracker.",
+        "description": "Assemble the business plan (business-language view with data basis and user voices), a chain-led decision memo, product report, MRD, PRD, BRD, user-operations projection or post-launch tracker.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "study_dir": {"type": "string"},
-                "kind": {"enum": ["memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff"], "default": "memo"},
+                "kind": {"enum": ["memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis"], "default": "memo"},
             },
             "required": ["study_dir"],
         },

@@ -6,7 +6,9 @@ askovo 的主链是：
 
 不同岗位的交付物不同，但都必须完善同一条推理链。这里的“分析”不是某个岗位的专属文档工作，而是把研究证据转化为可验收、可追溯、可决策的产品与商业判断。
 
-## 1. 三条工作流，三份正式产出
+## 1. 三条工作流，三份正式产出，一份业务用户默认视图
+
+**业务方案（`deliver --kind plan` → `06-report/plan.md`）**是业务用户（产品经理、用户研究、市场经理）的默认视图：开头是"结论与推进建议"（做什么、卖给谁、怎么收钱、30 天验证、过关线与失败线），导读带语料画像，正文把同一条七节点主链渲染成"目标场景 / 目标用户 / 痛点 / 需求 / 特性 / 产品形态 / 商业与 GTM"九节业务章节；特性节点可以逐条写清"做什么、解决哪个痛点、依据是什么"。判断建立在采集数据上，每个判断配数据基础与来自语料的用户之声；证据编码只进文末方法档案。语料层面的分布与覆盖由 `deliver --kind analysis` 输出到 `06-report/analysis.md`。它是入口视图，不替代下面三条工作流的正式产出。
 
 | 工作流 | 过程 | 正式产出 | 回答的问题 |
 |---|---|---|---|
@@ -109,13 +111,14 @@ BRD 只投影这些内容，不另建数字。未知保留为未知，不能用 
 
 ```bash
 askovo chain ./study
+askovo deliver ./study --kind plan   # 业务方案（业务用户默认视图，业务语言+数据基础+用户之声）
 askovo deliver ./study --kind mrd
 askovo deliver ./study --kind prd
 askovo deliver ./study --kind brd
 askovo check ./study --stage full
 ```
 
-`mrd.md`、`prd.md`、`brd.md` 都从同一主链渲染。`chain decided` 只记录当前产品/商业选择；`delivery`、`outcome`、`causal` 仍是独立状态。
+`plan.md`、`mrd.md`、`prd.md`、`brd.md` 都从同一主链渲染。`chain decided` 只记录当前产品/商业选择；`delivery`、`outcome`、`causal` 仍是独立状态。
 
 ### 商业节点的两个支撑命令
 

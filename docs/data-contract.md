@@ -125,6 +125,7 @@ business 使用 `market_definition`、`geographies`、`time_window`、`included_
     "required_corpus_roles": ["direct_solution", "open_scene", "substitute_rejector", "post_purchase_support", "control"],
     "max_source_family_share": 0.65,
     "max_normalized_duplicate_rate": 0.02,
+    "max_source_duplicate_rate": 0.0,
     "require_counter_evidence_for_validated": true
   },
   "source_adapters": { "reddit": { "enabled": true, "…": "…" } },

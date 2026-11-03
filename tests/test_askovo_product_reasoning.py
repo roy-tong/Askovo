@@ -663,6 +663,183 @@ class ProductReasoningTests(unittest.TestCase):
         self.assertEqual("written", payload["result"]["status"])
         self.assertTrue((self.target / "06-report/decision-package.md").is_file())
 
+    def test_plan_renders_business_solution_sections(self) -> None:
+        delivered = run_cli("deliver", str(self.target), "--kind", "plan")
+        self.assertEqual(0, delivered.returncode, delivered.stdout + delivered.stderr)
+        payload = json.loads(delivered.stdout)
+        self.assertEqual("written", payload["status"])
+        text = (self.target / "06-report/plan.md").read_text(encoding="utf-8")
+        self.assertIn("# 业务方案 Business Plan", text)
+        self.assertIn("## 0. 结论与推进建议", text)
+        self.assertIn("### 语料画像", text)
+        self.assertIn("来源构成：", text)
+        self.assertIn("用途构成：", text)
+        self.assertIn("**推理主线**", text)
+        self.assertIn("数据读出：", text)
+        for line in ("先做哪一段", "先卖给谁", "怎么收钱", "30 天内怎么验证", "明确不做", "结论强度"):
+            self.assertIn(line, text)
+        for header in (
+            "## 1. 方案导读",
+            "## 2. 目标场景：哪些场景值得做",
+            "## 3. 目标用户：谁有这个需求",
+            "## 4. 痛点：现在怎么办、痛在哪",
+            "## 5. 需求：他们要的到底是什么",
+            "## 6. 产品特性：哪些特性能满足",
+            "## 7. 产品形态：推演出的产品",
+            "## 8. 商业与 GTM：怎么走向市场",
+            "## 9. 风险与下一步",
+            "## 附录：研究方法档案",
+        ):
+            self.assertIn(header, text)
+        self.assertIn("数据基础：", text)
+        self.assertIn("来自语料的声音", text)
+        self.assertIn("## 边界", text)
+        body = text[: text.index("## 附录")]
+        for token in ("E2", "E4+", "E4-", "needs-validation", "hypothesis", "context_key"):
+            self.assertNotIn(token, body)
+        archive = text[text.index("## 附录") :]
+        self.assertIn("证据等级分布", archive)
+        self.assertIn("人工复核状态", archive)
+        mrd = run_cli("deliver", str(self.target), "--kind", "mrd")
+        self.assertEqual(0, mrd.returncode, mrd.stdout + mrd.stderr)
+        mrd_text = (self.target / "06-report/mrd.md").read_text(encoding="utf-8")
+        self.assertNotEqual(text, mrd_text)
+
+    def test_deliver_analysis_kind_reports_corpus_funnel_and_coverage(self) -> None:
+        delivered = run_cli("deliver", str(self.target), "--kind", "analysis")
+        self.assertEqual(0, delivered.returncode, delivered.stdout + delivered.stderr)
+        payload = json.loads(delivered.stdout)
+        self.assertEqual("written", payload["status"])
+        self.assertEqual("analysis", payload["kind"])
+        text = (self.target / "06-report/analysis.md").read_text(encoding="utf-8")
+        for header in (
+            "## 1. 采集漏斗",
+            "## 2. 来源与时间",
+            "## 3. 语料用途",
+            "### 来源 × 用途",
+            "## 4. 判断覆盖",
+            "## 5. 集中度与重复",
+            "## 6. 反证",
+            "## 7. 这份数据能回答什么",
+            "## 边界",
+        ):
+            self.assertIn(header, text)
+        self.assertIn("原始记录", text)
+        self.assertIn("编码证据", text)
+        self.assertIn("进入判断", text)
+        self.assertIn("不证明总体比例", text)
+
+    def test_business_section_surfaces_money_evidence(self) -> None:
+        ev_path = self.target / "02-data/evidence.jsonl"
+        rows = [json.loads(line) for line in ev_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        for record in rows:
+            if record.get("record_id") == "R06":
+                record["text_excerpt"] = "The pilot deposit was $500 and it was refundable."
+        ev_path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
+        delivered = run_cli("deliver", str(self.target), "--kind", "plan")
+        self.assertEqual(0, delivered.returncode, delivered.stdout + delivered.stderr)
+        text = (self.target / "06-report/plan.md").read_text(encoding="utf-8")
+        self.assertIn("金额与比例线索", text)
+        self.assertIn("$500", text)
+
+    def test_feature_capabilities_render_and_are_validated(self) -> None:
+        data = json.loads(self.reasoning_path.read_text(encoding="utf-8")) if self.reasoning_path.is_file() else None
+        if data is None:
+            from tests.test_askovo_product_reasoning import valid_product_reasoning
+            data = valid_product_reasoning()
+        feature = data["chains"][0]["nodes"]["feature"]
+        feature["capabilities"] = [
+            {
+                "name": "会话式核验",
+                "what": "在一次明确开始的会话里移动到盲区并回传画面",
+                "solves": "固定摄像头看不到盲区，用户只能回家确认",
+                "proof": "一位用户在警报后仍然无法判断宠物位置",
+            }
+        ]
+        self.write_reasoning(data)
+
+        delivered = run_cli("deliver", str(self.target), "--kind", "plan")
+        self.assertEqual(0, delivered.returncode, delivered.stdout + delivered.stderr)
+        text = (self.target / "06-report/plan.md").read_text(encoding="utf-8")
+        self.assertIn("**逐条特性**", text)
+        self.assertIn("会话式核验", text)
+        self.assertIn("为什么能解决", text)
+
+        # A capability without a stated mechanism is a structural error.
+        feature["capabilities"] = [{"name": "会话式核验", "what": "移动到盲区"}]
+        self.write_reasoning(data)
+        checked = run_cli("check", str(self.target), "--stage", "design")
+        self.assertNotEqual(0, checked.returncode)
+        self.assertIn("capabilities[0] missing solves", checked.stdout + checked.stderr)
+
+    def test_plan_marks_evidence_strength_markers(self) -> None:
+        data = json.loads(self.reasoning_path.read_text(encoding="utf-8"))
+        nodes = data["chains"][0]["nodes"]
+        # scene cites only R05 (E4- counter behavior): ○ — rejection is not strength.
+        nodes["scene"]["evidence_ids"] = ["R05"]
+        # pain keeps R01 (E2) + R02 (E1), both from one source family: ◐.
+        # product keeps R03/R04/R06 (E3/E4+/E5 over two families): ●.
+        self.write_reasoning(data)
+
+        delivered = run_cli("deliver", str(self.target), "--kind", "plan")
+        self.assertEqual(0, delivered.returncode, delivered.stdout + delivered.stderr)
+        text = (self.target / "06-report/plan.md").read_text(encoding="utf-8")
+
+        # Legend and per-chain roll-up in the reading guide.
+        self.assertIn("依据强度", text.split("## 1.")[0])
+        self.assertIn("● 已观察到（多来源独立观察）", text)
+        self.assertIn("整体依据强度", text)
+        self.assertIn("| 环节 | 结论（一句话） | 依据强度 | 数据基础 |", text)
+
+        # Per-node statement prefixes cover all three tiers.
+        self.assertIn("**○ 假设（待验证）｜", text)
+        self.assertIn("**◐ 有线索｜", text)
+        self.assertIn("**● 已观察到｜", text)
+        self.assertIn("依据强度：● 已观察到 —— 多来源独立观察", text)
+        self.assertIn("依据强度：◐ 有线索 —— 单案例或口头线索", text)
+
+        # Engine vocabulary (levels, thresholds) stays in the method archive.
+        body = text[: text.index("## 附录")]
+        for token in ("E1", "E2", "E4+", "E4-", "来源族"):
+            self.assertNotIn(token, body)
+        archive = text[text.index("## 附录") :]
+        self.assertIn("依据强度规则", archive)
+        self.assertIn("不证明总体比例、市场规模或因果", archive)
+
+    def test_mcp_deliver_supports_analysis_kind(self) -> None:
+        responses = run_mcp(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "askovo_deliver",
+                    "arguments": {"study_dir": str(self.target), "kind": "analysis"},
+                },
+            }
+        )
+        payload = json.loads(responses[0]["result"]["content"][0]["text"])
+        self.assertEqual(0, payload["exit_code"], json.dumps(payload, ensure_ascii=False))
+        self.assertEqual("written", payload["result"]["status"])
+        self.assertTrue((self.target / "06-report/analysis.md").is_file())
+
+    def test_mcp_deliver_supports_plan_kind(self) -> None:
+        responses = run_mcp(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "askovo_deliver",
+                    "arguments": {"study_dir": str(self.target), "kind": "plan"},
+                },
+            }
+        )
+        payload = json.loads(responses[0]["result"]["content"][0]["text"])
+        self.assertEqual(0, payload["exit_code"], json.dumps(payload, ensure_ascii=False))
+        self.assertEqual("written", payload["result"]["status"])
+        self.assertTrue((self.target / "06-report/plan.md").is_file())
+
     def test_product_and_research_reports_have_distinct_writers(self) -> None:
         product = run_cli("deliver", str(self.target), "--kind", "report")
         self.assertEqual(0, product.returncode, product.stdout + product.stderr)

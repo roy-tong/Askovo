@@ -182,6 +182,7 @@ askovo audit ./cam-study --json
 ## 第七步：按分析工作流与职责交付
 
 ```bash
+askovo deliver ./cam-study --kind plan    # 业务方案（业务用户默认）：九节业务章节+数据基础+用户之声
 askovo deliver ./cam-study --kind report   # 产品/商业总报告
 askovo deliver ./cam-study --kind mrd      # 市场研究与分析 → MRD
 askovo deliver ./cam-study --kind prd      # 需求研究与分析 → PRD
@@ -192,7 +193,7 @@ askovo deliver ./cam-study --kind ops      # 06-report/user-ops.md
 askovo deliver ./cam-study --kind tracker  # 行为、验收与商业指标跟踪
 ```
 
-MRD/PRD/BRD 模板和访谈包见 [SKILL](../skills/askovo/SKILL.md) 的模板入口。三者是同一七节点主链的三个投影，详见[市场、需求与商业分析](business-analysis.md)。所有交付默认草稿，必须能回链主链和证据。
+业务方案是业务用户的默认视图（业务语言，判断挂数据基础与用户之声）；MRD/PRD/BRD 模板和访谈包见 [SKILL](../skills/askovo/SKILL.md) 的模板入口。它们是同一七节点主链的投影，详见[市场、需求与商业分析](business-analysis.md)。所有交付默认草稿，必须能回链主链和证据。
 
 ## 可选：CDP 与队列
 
@@ -221,10 +222,10 @@ askovo queue status ./cam-study
 ## 完整链路
 
 ```text
-决策问题 → do/chain 建立七节点假设 → Design gate
-→ 针对最弱节点选择方法与来源 → collect/import → analyze/编码
+产品/市场问题 → do/chain 建立七节点假设 → 数据爬取方案（platforms/plan）→ Design gate
+→ 针对最弱节点选择方法与来源 → collect/import 采集大量语料 → analyze/编码
 → evidence → demand judgment → product/business reasoning
-→ MRD / PRD / BRD 投影 → full audit
+→ 业务方案 plan / MRD / PRD / BRD 投影 → full audit
 → PM/研究/运营/市场/需求/商业职责交付 → 验证、发布与运营回流
 ```
 

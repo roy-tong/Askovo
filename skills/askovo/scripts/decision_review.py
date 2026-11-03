@@ -143,6 +143,28 @@ def _decision_items(study: Dict[str, Any], reasoning: Dict[str, Any]) -> List[Di
         f"商业门状态：{', '.join(sorted(set(gates))) or '未填写'}",
         "" if opened else "商业门仍是 hypothesis；商业判断不能只靠产品推理",
     ))
+    depth_issues: List[str] = []
+    for chain in chains:
+        if not isinstance(chain, dict):
+            continue
+        nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
+        feature = nodes.get("feature") if isinstance(nodes.get("feature"), dict) else {}
+        capabilities = feature.get("capabilities") if isinstance(feature.get("capabilities"), list) else []
+        if not capabilities:
+            depth_issues.append(f"{chain.get('id')} 的特性没有逐条说明")
+        for name, label in (
+            ("scene", "场景"), ("user", "用户"), ("pain", "痛点"), ("need", "需求"),
+            ("feature", "特性"), ("product", "产品"), ("business", "商业"),
+        ):
+            node = nodes.get(name) if isinstance(nodes.get(name), dict) else {}
+            if len(str(node.get("rationale") or "").strip()) < 20:
+                depth_issues.append(f"{chain.get('id')} 的{label}环节缺少推导理由")
+    items.append(_item(
+        "evidence", "reasoning_depth",
+        "warn" if depth_issues else "pass",
+        "；".join(depth_issues) if depth_issues else "七环节均有推导理由，特性已逐条说明",
+        "为每条特性写清做什么、为什么能解决、依据是什么" if depth_issues else "",
+    ))
     return items
 
 

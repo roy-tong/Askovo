@@ -1,6 +1,14 @@
 {
   "schema_version": "2.0",
-  "flow": ["scene", "user", "pain", "need", "feature", "product", "business"],
+  "flow": [
+    "scene",
+    "user",
+    "pain",
+    "need",
+    "feature",
+    "product",
+    "business"
+  ],
   "chains": [
     {
       "id": "PR01",
@@ -10,9 +18,18 @@
       "status": "hypothesis",
       "confidence": "low",
       "supporting_states": {
-        "delivery": {"status": "unplanned", "release_plan_ref": ""},
-        "outcome": {"status": "unmeasured", "metric_refs": []},
-        "causal": {"status": "not-claimed", "experiment_refs": []}
+        "delivery": {
+          "status": "unplanned",
+          "release_plan_ref": ""
+        },
+        "outcome": {
+          "status": "unmeasured",
+          "metric_refs": []
+        },
+        "causal": {
+          "status": "not-claimed",
+          "experiment_refs": []
+        }
       },
       "nodes": {
         "scene": {
@@ -63,7 +80,8 @@
           "assumptions": [],
           "capability": "待填写",
           "acceptance_conditions": [],
-          "alternatives_considered": []
+          "alternatives_considered": [],
+          "capabilities": []
         },
         "product": {
           "statement": "待填写",
@@ -106,7 +124,12 @@
       },
       "alternative_explanations": [],
       "counter_evidence_ids": [],
-      "human_review": {"status": "pending", "reviewer": "", "notes": "", "risk_acceptance": ""},
+      "human_review": {
+        "status": "pending",
+        "reviewer": "",
+        "notes": "",
+        "risk_acceptance": ""
+      },
       "prioritization": {
         "method": "待填写：优先级方法",
         "factors": {},
@@ -115,7 +138,9 @@
         "rationale": "待填写"
       },
       "change_log": [],
-      "gaps": ["待填写：当前最薄弱的推理节点或推导关系"],
+      "gaps": [
+        "待填写：当前最薄弱的推理节点或推导关系"
+      ],
       "next_test": "待填写：能最大幅度降低当前推理不确定性的最小验证"
     }
   ]
