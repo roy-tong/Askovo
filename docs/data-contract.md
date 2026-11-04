@@ -13,6 +13,7 @@ study/
 │   ├── tasks.md                  plan 生成：采集任务
 │   ├── *-routes.csv              平台路线模板
 │   ├── collection-manifest-template.json
+│   ├── role-workbench/           岗位目录引用、链绑定、SOP/KPI 状态与工作模板（非结论）
 │   └── manifests/                每次采集的运行清单
 ├── 02-data/
 │   ├── evidence.jsonl            证据记录（一行一条）
@@ -39,6 +40,8 @@ study/
     ├── prd.md                    deliver --kind prd：需求研究与分析投影
     ├── brd.md                    deliver --kind brd：商业分析投影
     ├── user-ops.md               deliver --kind ops：用户运营投影
+    ├── role-Rxx-Dyy.md           deliver --kind role：绑定主链的岗位只读投影
+    ├── lifecycle-board.md        deliver --kind lifecycle：十板块岗位导航
     └── postlaunch-tracker.csv    deliver --kind tracker：验收与回流跟踪
 ```
 
@@ -135,6 +138,29 @@ business 使用 `market_definition`、`geographies`、`time_window`、`included_
 ```
 
 `method_version` 由 `plan` 自动写入当前运行时版本；`{{method_version}}` 是模板占位符，不应留在成稿里。
+
+## role-workbench/workplan.json
+
+岗位执行包是支撑层，不是第二套研究真值。`roles scaffold` 要求已有主链：空链拒绝，单链自动绑定，多链必须 `--chain`；在临时目录完整构建后原子重命名，已有 stateful workbench 不用 `--force` 覆盖。
+
+| 字段 | 说明 |
+|---|---|
+| `task` | 本次任务类型 `decide/discover/define/design/validate/launch/operate/review`、识别来源与置信度 |
+| `scope` | `lean/standard/cross_functional`、人数上限、实际岗位数、被推迟岗位数 |
+| `output_plan` | 主交付、最多两个支撑产出、格式、篇幅、读者、章节、证据呈现、图表、表达禁忌、行业产出形态 |
+| `deferred_roles[]` | 本轮暂不纳入的岗位及原因；裁剪不得删除对应质量门或专业复核 |
+| `all_templates` | 是否显式要求生成全部岗位模板；默认 false，只生成主交付/支撑模板 |
+| `catalog_sha256` / `industry_context_sha256` | 当前岗位目录与行业资产指纹；变化后须复核迁移，过期投影/审计失败 |
+| `roles[].catalog_ref` | 岗位目录引用；不在 workplan 复制职责/SOP/KPI 全文 |
+| `roles[].owner` | 工作负责人，未分配为 null，不是“待分配”假人 |
+| `roles[].chain_targets[]` | 已存在的 `chain_id + node_id + edge_id`，`binding_status=bound` |
+| `roles[].sop_status[]` | `sop_id`、`work_status`、`reviewer`、`evidence_refs`；状态仅 not_started/in_progress/blocked/review_pending/done |
+| `roles[].kpi_targets[]` | KPI 引用及 baseline/target/window/denominator/data_source_ref/owner，初始 null |
+| `roles[].deliverable_refs` | 交付模板稳定 ID；模板七节点语义 `editable=false` |
+
+非 `not_started` 工作必须有岗位 Owner，`review_pending/done` 必须有 reviewer。KPI 填 target 时必须补齐窗口、分母、数据源和 Owner；收入、复购、ROI、转化等商业指标还必须有 `business_metric_ref`，指向主链 `business.success_metrics`。SOP `done` 不改变证据等级、chain/node 状态或 delivery/outcome/causal 状态。
+
+`deliver --kind role` 只投影 workplan 绑定节点；旧研究无 workplan 时仅支持单链或显式 `--chain`。`deliver --kind lifecycle` 渲染十板块入口/出口、交接与实际工作状态。workplan 纳入 full audit、review 和交付新鲜度；岗位目录/行业资产只影响 role/lifecycle 投影。详见[岗位操作系统](role-operating-system.md)。
 
 ## evidence.jsonl
 

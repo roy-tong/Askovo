@@ -1,6 +1,6 @@
 # Askovo: implementation status
 
-Reviewed 2026-11-04 against the **v2.10.0 release**. Available means local implementation, not production validation on every platform.
+Reviewed 2026-11-04 against the **v2.11.0 release**. Available means local implementation, not production validation on every platform.
 
 | Feature | Scope | Status |
 |---|---|---|
@@ -11,6 +11,16 @@ Reviewed 2026-11-04 against the **v2.10.0 release**. Available means local imple
 | A10–A11 | Active follow-up research and option comparison | `askovo loop` runs gap-driven rounds inside an authorized envelope, re-audits after each round and stops with candidates awaiting semantic review. Gaps follow `open → collected → analyzed → resolved/unresolvable`; a deterministic analysis action describes collected material, `askovo loop map` records host-supplied evidence mappings with provenance, `askovo loop advise` summarizes those mappings as a read-only suggestion, and only `askovo loop assess` (named operator, evidence or reason required) closes a gap. It never assigns evidence levels, edits judgments or marks a claim validated. Autonomous semantic judgment is not claimed; option comparison is available |
 | A12 | Reports, MRD/PRD/BRD and decision package | Available; refreshed audit guards delivery |
 | A13–A15 | Continuous validation, evaluation and industry packs | `askovo review` turns audit, evidence, decision readiness, falsifiability, bias and deliverable freshness into machine-readable items; this is a per-study quality review, not a benchmark of general research agents. Scheduled continuous research is not shipped |
+| A16 | 80 role families, 10 lifecycle modules, 10 industry overlays | Available: role duties, KPI formulas/guardrails, SOPs, handoffs, 257 deliverable templates, task-sized team recommendation, adaptive output/expression contracts, atomic bound workplans, role/lifecycle projections, freshness and full-audit validation. Professional engineering/clinical/safety/compliance/production approval remains human and external |
+
+## Role operating system depth
+
+- `skills/askovo/assets/role-catalog.json` is the single role-definition source: 80 exact role families, 340 KPI definitions, 517 SOP steps, 257 deliverables and 1,859 template sections. `industry-contexts.json` adds ten overlays without forking the five SURE base-domain packs.
+- `askovo roles list/show/recommend/scaffold/template` and `askovo_roles` share one CLI implementation. AI can be a capability overlay on a hardware primary industry; base-domain conflicts and ambiguous candidates stay visible.
+- Recommendation is task-sized: it infers decide/discover/define/design/validate/launch/operate/review, selects a minimum sufficient team, lists deferred roles with reasons, and produces an output contract for primary/supporting deliverables, format, length, audience, structure, evidence display, visuals and industry expression. `--task`/`--scale` override; default scaffolding generates only the task's output templates, with `--all-templates` as an explicit expansion.
+- Workplans contain task/scope/output contracts plus catalog/industry hashes, role/SOP/KPI/template references, bound `PRxx.node/edge` targets, owners and work states. Empty chains are rejected, multi-chain studies require `--chain`, stateful workplans cannot be force-overwritten, and atomic generation leaves no partial workbench.
+- `deliver --kind role` and `--kind lifecycle` are canonical projections, not template-authored findings. Workplan/catalog/industry freshness and reference validity join full audit and decision review; legacy studies without a workplan remain compatible.
+- KPI targets start null. Commercial KPI targets require canonical `business.success_metrics` references. SOP `done` never upgrades evidence, demand, decision, release, clinical, safety, compliance, production or causal states.
 
 ## v2.10.0 depth: A1–A3
 

@@ -97,7 +97,24 @@ askovo decision replay ./study --chain PR01
 
 第二条记录按确定性规则改为 `hold`，把主链/产品/商业重开为待验证，置信度降一级，并保留改前/改后建议、证据关系与快照。`--recommendation "..."` 只是可选人工覆盖，系统不会编一个新产品。只有 ID、没有已记录矛盾关系会被拒绝。新映射证据不会因此被提升为 validated 判断或因果证明。
 
-## 一条主链，多类职责，五个领域
+## 一条主链，80 个岗位族，10 类行业上下文，五个基础研究域
+
+Askovo 新增的是可执行的**产品创新岗位操作系统**，不是岗位名称附录。80 个岗位族覆盖机会研究、用户/需求研究、产品战略、概念/服务设计、数字体验、实体工程、消费品研发、分层验证、生命周期交付及 ResearchOps/DesignOps。每岗都有使命、职责、KPI 公式与护栏、输入→动作→输出→质量门 SOP、核心交付、工作模板、交接和人类专业边界；十类行业上下文覆盖消费软件、企业软件、AI、智能/传统硬件、快消、服装家居、工业机器人、汽车和医疗健康。
+
+```bash
+askovo roles list --json
+askovo roles show R52 --industry ai_native
+askovo roles recommend "AI 摄影应用概念" --stage concept --task design
+askovo roles recommend "仓储机器人现场工序与 ROI" --task decide --scale lean
+askovo roles scaffold ./study --role R29 --role R52 --role R72
+askovo roles template R52 --output agent-interaction-spec.md
+askovo deliver ./study --kind role --role R52  # 主链只读岗位投影
+askovo deliver ./study --kind lifecycle        # 十板块岗位导航
+```
+
+`do/route` 返回的是**按任务裁剪**的岗位建议，而不是默认上全套 80 岗。系统先判断本次属于决策、发现、定义、设计、验证、上市、运营或审查，再选最小充分岗位，列出暂不纳入岗位及原因，并生成输出合同：主交付物、格式、篇幅、读者、章节结构、证据呈现和行业表达方式。软件决策通常只需 1–3 个岗位；硬件 DVT、医疗器械等高风险任务才扩展为跨职能复核。确认主链后，`roles scaffold` 原子生成 `01-sources/role-workbench/`：任务/输出合同、RACI、绑定的 chain/node、SOP 质量门、KPI 空目标，以及只属于本轮主交付/必要支撑的未复核模板；多链必须加 `--chain`，需要全部岗位模板时显式加 `--all-templates`。它们只组织工作，不建立第二套市场/需求/产品/商业真值，也不会把 SOP 完成变成需求验证、工程批准、临床/安全/合规签收、量产就绪或因果证明。详见[产品创新岗位操作系统](docs/role-operating-system.md)和 [Agent 岗位协议](skills/askovo/references/role-operations.md)。
+
+五个 SURE 基础领域包仍负责方法路由；十个行业覆盖层只改变专业上下文，不分叉七节点 schema。以下主链投影继续服务各自读者：
 
 | 使用者 | 从同一主链获得什么 | 主要交付 |
 |---|---|---|
@@ -351,6 +368,7 @@ MCP 暴露 `askovo_route`、`askovo_do`、`askovo_chain`、`askovo_platforms`、
 |---|---|
 | [市场、需求与商业分析](docs/business-analysis.md) | 三类分析工作流、职责边界及 MRD/PRD/BRD 的关系 |
 | [岗位方法论](docs/product-methodology.md) | 五域 PM、UXR、用户运营与专业分析角色的方法依据 |
+| [产品创新岗位操作系统](docs/role-operating-system.md) | 80 岗位族 × 10 生命周期 × 10 行业的职责、KPI、SOP、交接和模板 |
 | [产品与商业推理主链](docs/product-reasoning.md) | 七节点、推导边、商业门、反证和人工复核 |
 | [快速开始](docs/quickstart.md) | 从 do 到主链、补证、审计和角色交付 |
 | [核心概念](docs/concepts.md) | 六类结论、证据形式和禁止推断 |

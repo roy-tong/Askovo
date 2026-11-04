@@ -37,7 +37,7 @@ askovo do "家用摄像头夜间告警误报，想验证样机" --dry-run
 
 > 场景 → 用户 → 痛点 → 需求 → 特性 → 产品 → 商业
 
-然后才是领域、生命周期、支撑方法、风险和平台预判。`dry-run` 不写文件。
+然后才是领域、生命周期、支撑方法、风险、平台预判，以及行业与岗位编排建议。`dry-run` 不写文件。
 
 ## 第二步：创建工作区与推理画布
 
@@ -69,6 +69,17 @@ route.json / route.md              领域与阶段路由依据
 7. **商业**：市场边界、目标细分、付费者、竞争定位、渠道、收入/价格、成本、单位经济、市场估计、成功指标和商业门。
 
 每个节点都写 `statement/rationale/status/assumptions`。不知道就保留 hypothesis，不要让 Agent 编造。商业数字必须有总体、时间窗、单位、公式和来源；未知保留为未知。再补全 `study.json` 的决策选项、负责人、截止日、证伪条件、样本理由和停止规则。
+
+主链确认后，可按目标、任务和产品生成**最小充分岗位组**与交付执行包：
+
+```bash
+askovo roles recommend "家用摄像头夜间误报样机验证" --base-domain hardware --stage validation --task validate
+askovo roles scaffold ./cam-study --task validate
+askovo deliver ./cam-study --kind role --role R75
+askovo deliver ./cam-study --kind lifecycle
+```
+
+执行包在 `01-sources/role-workbench/`：保存任务、协作规模、输出合同（主交付、格式、篇幅、读者、章节、证据呈现）、目录引用、真实链绑定、岗位 Owner、SOP 作业状态和 KPI 空目标，不复制主链结论。默认只为本次主交付+必要支撑生成模板，`--all-templates` 才生成全部；多链先加 `--chain PRxx`。80 个岗位的职责/KPI/SOP/模板见[岗位操作系统](role-operating-system.md)。
 
 ## 第三步：通过 Design gate，再设计补证
 

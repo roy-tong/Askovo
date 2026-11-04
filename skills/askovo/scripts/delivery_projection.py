@@ -24,6 +24,7 @@ INPUT_FILES = (
     "01-sources/collection-summary.json",
     "03-codebook/codebook.csv",
     "method-choice.json",
+    "01-sources/role-workbench/workplan.json",
 )
 FLOW = ("scene", "user", "pain", "need", "feature", "product", "business")
 GLOBAL_BOUNDARY = (
@@ -57,7 +58,17 @@ def _update_file_digest(digest: Any, path: Path) -> None:
             digest.update(chunk)
 
 
-def _fingerprint(study_dir: Path) -> str:
+def _role_asset_inputs(kind: str) -> list[tuple[str, Path]]:
+    if kind not in {"role", "lifecycle"}:
+        return []
+    assets = Path(__file__).resolve().parents[1] / "assets"
+    return [
+        ("role-catalog.json", assets / "role-catalog.json"),
+        ("industry-contexts.json", assets / "industry-contexts.json"),
+    ]
+
+
+def _fingerprint(study_dir: Path, kind: str = "") -> str:
     digest = hashlib.sha256()
     for relative in _input_files(study_dir):
         path = study_dir / relative
@@ -67,6 +78,13 @@ def _fingerprint(study_dir: Path) -> str:
                 _update_file_digest(digest, path)
             except OSError as exc:
                 digest.update(("unreadable:" + str(exc)).encode("utf-8"))
+        else:
+            digest.update(b"<missing>")
+        digest.update(b"\0")
+    for label, path in _role_asset_inputs(kind):
+        digest.update(("asset:" + label).encode("utf-8") + b"\0")
+        if path.is_file():
+            _update_file_digest(digest, path)
         else:
             digest.update(b"<missing>")
         digest.update(b"\0")
@@ -308,7 +326,15 @@ def build_chat_summary(
     records = [item for item in evidence.get("records") or [] if isinstance(item, dict)]
     audit_info = audit_info if isinstance(audit_info, dict) else {"status": "not_run", "checks": []}
     audit_status = str(audit_info.get("status") or "not_run")
-    reproduce_command = shlex.join(["askovo", "deliver", str(study_dir), "--kind", str(kind)])
+    command_parts = ["askovo", "deliver", str(study_dir), "--kind", str(kind)]
+    if kind == "role":
+        for flag, key in (("--role", "role_id"), ("--deliverable", "deliverable_id"), ("--industry", "industry_id"), ("--chain", "chain_id")):
+            value = result.get(key)
+            if key == "chain_id" and not value:
+                value = (result.get("projected_chain_ids") or [None])[0]
+            if value:
+                command_parts.extend([flag, str(value)])
+    reproduce_command = shlex.join(command_parts)
 
     artifact_value = result.get("path")
     artifact_path = None
@@ -324,6 +350,12 @@ def build_chat_summary(
         if path.is_file():
             try:
                 input_mtimes[relative] = path.stat().st_mtime
+            except OSError:
+                continue
+    for label, path in _role_asset_inputs(kind):
+        if path.is_file():
+            try:
+                input_mtimes["asset:" + label] = path.stat().st_mtime
             except OSError:
                 continue
     latest_input = max(input_mtimes.values()) if input_mtimes else None
@@ -388,7 +420,7 @@ def build_chat_summary(
         "actions": _action_projection(reasoning, audit_info, artifact_exists, stale, reproduce_command),
         "costs_and_boundaries": costs_and_boundaries,
         "unknowns": list(dict.fromkeys(unknowns)),
-        "input_fingerprint": _fingerprint(study_dir),
+        "input_fingerprint": _fingerprint(study_dir, kind),
         "freshness": {
             "status": freshness_status,
             "artifact_mtime": _iso(artifact_mtime),

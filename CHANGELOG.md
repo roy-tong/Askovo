@@ -1,5 +1,62 @@
 # Changelog
 
+## 2.11.0 - 2026-11-04
+
+### Added
+
+- **Product-innovation role operating system**: a single catalog for 80 role
+  families across 10 lifecycle areas, with responsibilities, KPI formulas and
+  anti-gaming guardrails, input/action/output/gate SOPs, deliverable templates,
+  handoffs and accountable-human boundaries.
+- **Task-sized staffing and adaptive output**: infers decide/discover/define/
+  design/validate/launch/operate/review from the product, goal, stage and task;
+  selects a minimum sufficient team, lists deferred roles and reasons, and sets
+  an output contract for primary/supporting deliverables, format, length,
+  audience, structure, evidence display, visual forms and industry expression.
+  `--task`/`--scale` override the inference; workplans generate only the task's
+  output templates by default (`--all-templates` expands).
+- **Ten industry context overlays**: consumer software, enterprise SaaS,
+  AI-native, smart/traditional hardware, CPG, apparel/home, industrial robotics,
+  automotive and medical/health. Overlays change stakeholders, design inputs,
+  prototypes, verification and professional gates without forking the five SURE
+  base-domain packs or the seven-node schema.
+- **`askovo roles` / `askovo_roles`**: list/search/show, team recommendation,
+  deliverable-template rendering and study workbench scaffolding through the
+  same CLI command function. `do/route` expose the industry and role plan;
+  `roles scaffold` explicitly and atomically writes an orchestration-only workbench.
+- **Reference-based workplans**: catalog/industry hashes, role/SOP/KPI/template
+  references, null KPI baselines/targets, bound chain/node/edge targets and
+  separate work status. Empty chains are rejected, multi-chain studies require
+  an explicit chain, stateful workplans cannot be force-overwritten, and
+  scaffolding verifies that reasoning, judgments and evidence stay unchanged.
+- **Role and lifecycle delivery**: flat `06-report/role-Rxx-Dyy.md` and
+  `lifecycle-board.md` are bound read-only projections, not template-authored
+  findings. Workplan/catalog/industry freshness and reference validity join full
+  audit and decision review; legacy studies without a workplan stay compatible.
+- **Role documentation and validation**: Chinese operating-system guide,
+  English Agent protocol, README/CLI/Skill guidance, catalog completeness checks
+  in `doctor`, and CLI/MCP/industry/scaffold regressions.
+
+### Boundaries
+
+- Role SOP completion does not assign evidence levels or validate demand;
+  value, usability, engineering, safety/compliance/clinical and production
+  validation remain separate. Templates and role workplans never become a
+  second market, requirements, product or business truth. Commercial KPI targets
+  require canonical `business.success_metrics` references.
+
+### Verification
+
+- The merged catalog contains 80 exact role families, 340 KPI definitions, 517
+  SOP steps, 257 deliverable templates and 1,859 template sections; `doctor`
+  validates all role/lifecycle/industry references and base-domain mappings.
+- `python3 -m unittest discover -s tests`: **254 tests pass** on Python 3.9.
+- Wheel and sdist build plus `twine check` pass. A non-editable wheel installed
+  outside the source tree passes `doctor`, `demo`, MCP tool discovery, role
+  scaffold, role delivery and lifecycle delivery on Python 3.9.6.
+- No real online collection, professional approval or external publication was
+  performed; generated studies and reports remained in temporary directories.
+
 ## 2.10.0 - 2026-11-04
 
 Depth release: research actions now have an independent stop gate, executable

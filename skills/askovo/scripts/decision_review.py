@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import research_loop
+import role_catalog
 import sure_engine
 
 REVIEW_JSON = Path("05-audit/decision-review.json")
@@ -262,13 +263,27 @@ def _bias_items(payload: Dict[str, Any], analysis: Optional[Dict[str, Any]]) -> 
 def _deliverables(study_dir: Path) -> List[Dict[str, Any]]:
     report_dir = study_dir / REPORT_DIR
     files = sorted(report_dir.glob("*.md")) if report_dir.is_dir() else []
+    items: List[Dict[str, Any]] = []
+    workplan_path = study_dir / "01-sources" / "role-workbench" / "workplan.json"
+    if workplan_path.is_file():
+        workplan = _load(workplan_path)
+        reasoning = _load(study_dir / "04-findings" / "product-reasoning.json")
+        try:
+            errors = role_catalog.validate_workplan(workplan, reasoning) if isinstance(reasoning, dict) else ["canonical reasoning missing"]
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            errors = [str(exc)]
+        items.append(_item(
+            "deliverables", "role_workplan", "fail" if errors else "pass",
+            "岗位执行包：" + ("；".join(errors[:5]) if errors else "目录版本、链绑定、引用与作业状态有效"),
+            "修复/迁移 workplan 后重新交付" if errors else "",
+        ))
     if not files:
-        return [_item("deliverables", "reports", "warn", "尚未生成交付物", "先 deliver 一个角色产物")]
+        items.append(_item("deliverables", "reports", "warn", "尚未生成交付物", "先 deliver 一个角色产物"))
+        return items
     newest_source = 0.0
-    for pattern in ("04-findings/*.json", "05-audit/audit.json", "02-data/*.jsonl"):
+    for pattern in ("04-findings/*.json", "05-audit/audit.json", "02-data/*.jsonl", "01-sources/role-workbench/workplan.json"):
         for path in study_dir.glob(pattern):
             newest_source = max(newest_source, path.stat().st_mtime)
-    items: List[Dict[str, Any]] = []
     for path in files:
         text = path.read_text(encoding="utf-8", errors="ignore")
         stale = path.stat().st_mtime < newest_source
