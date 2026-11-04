@@ -2549,6 +2549,7 @@ def command_loop(args: argparse.Namespace) -> int:
                 "envelope": state["envelope"],
                 "sources": state["sources"],
                 "gaps": research_loop.gap_counts(state["gaps"]),
+                "next_best_actions": research_loop.next_best_actions(state["gaps"]),
                 "state_path": str(research_loop.state_path(study_dir)),
             }, ensure_ascii=False, indent=2))
             return 0
@@ -2639,6 +2640,45 @@ def command_review(args: argparse.Namespace) -> int:
     return 1 if result["status"] == "fail" else 0
 
 
+def command_decision(args: argparse.Namespace) -> int:
+    """Record and replay versioned decisions inside the canonical reasoning chain."""
+    study_dir = Path(args.study_dir).resolve()
+    try:
+        if args.action == "record":
+            result = decision_review.record_decision(
+                study_dir,
+                chain_id=args.chain,
+                by=args.by,
+                decision=args.decision or "",
+                hypothesis_id=args.hypothesis or "",
+                observations=args.observation or [],
+                evidence_ids=args.evidence or [],
+                revision=args.revision or "",
+                next_action=args.next_action or "",
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        if args.action == "list":
+            result = decision_review.list_decision_records(study_dir, chain_id=args.chain or "")
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        result = decision_review.replay_decision(
+            study_dir,
+            chain_id=args.chain or "",
+            record_id=args.record_id or "",
+            version=args.version,
+        )
+        if getattr(args, "json", False):
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(result["markdown"])
+        return 0
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(json.dumps({"status": "error", "reason": "%s: %s" % (type(exc).__name__, exc)},
+                         ensure_ascii=False, indent=2))
+        return 2
+
+
 def command_deliver(args: argparse.Namespace) -> int:
     """Deliver from a fresh full audit, never from a stale audit.json."""
     study_dir = Path(args.study_dir).resolve()
@@ -2646,7 +2686,8 @@ def command_deliver(args: argparse.Namespace) -> int:
         audit = audit_study(study_dir, "full")
         result = sure_engine.deliver(study_dir, args.kind, audit=audit)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
-        print(str(exc), file=sys.stderr)
+        result = sure_engine.delivery_error(study_dir, args.kind, exc)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 1 if result.get("status") == "blocked" else 0
@@ -4912,6 +4953,27 @@ def build_parser() -> argparse.ArgumentParser:
     psm_parser.add_argument("--currency", default="未注明币种", help="currency label for the report only")
     psm_parser.set_defaults(func=sure_engine.cli_psm)
 
+    decision_parser = subparsers.add_parser(
+        "decision",
+        help="record, list and replay versioned DecisionRecords inside product-reasoning.json",
+    )
+    decision_parser.add_argument("action", choices=("record", "list", "replay"))
+    decision_parser.add_argument("study_dir")
+    decision_parser.add_argument("--chain", "--chain-id", dest="chain", default="", help="existing chain id, required for record")
+    decision_parser.add_argument("--record-id", default="", help="replay one DecisionRecord id")
+    decision_parser.add_argument("--version", type=int, help="replay a specific version")
+    decision_parser.add_argument("--by", "--decision-maker", dest="by", default="", help="record: named decision-maker")
+    decision_parser.add_argument("--decision", default="", help="record: chosen action; defaults to the chain gate")
+    decision_parser.add_argument("--hypothesis", default="", help="record: declared study hypothesis id")
+    decision_parser.add_argument("--observation", action="append", default=[],
+                                 help="record: observed note; repeatable, never an automatic evidence upgrade")
+    decision_parser.add_argument("--evidence", action="append", default=[],
+                                 help="record: registered evidence id supporting the observation; repeatable")
+    decision_parser.add_argument("--revision", default="", help="record: what changed since the parent version")
+    decision_parser.add_argument("--next-action", default="", help="record: defaults to chain.next_test")
+    decision_parser.add_argument("--json", action="store_true", help="replay JSON instead of readable Markdown")
+    decision_parser.set_defaults(func=command_decision)
+
     deliver_parser = subparsers.add_parser(
         "deliver", help="assemble the business plan, decision package, MRD, PRD, BRD, memo and tracker deliverables"
     )
@@ -5042,7 +5104,7 @@ def build_parser() -> argparse.ArgumentParser:
 CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "do", "domains",
     "methods", "catalog", "platforms", "collect", "research", "loop", "analyze", "instruments", "import", "queue",
-    "codebook", "chain", "economics", "psm", "deliver", "boundary", "cost", "doctor", "audit", "review", "check", "connectors",
+    "codebook", "chain", "economics", "psm", "decision", "deliver", "boundary", "cost", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }
 

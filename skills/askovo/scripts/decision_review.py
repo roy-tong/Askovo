@@ -10,6 +10,8 @@ substitute for semantic review or stakeholder sign-off.
 """
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -283,6 +285,387 @@ def _deliverables(study_dir: Path) -> List[Dict[str, Any]]:
             "重新 deliver 并保留边界" if reasons else "",
         ))
     return items
+
+
+# --------------------------------------------------------------------------- #
+# Versioned DecisionRecord history inside the canonical seven-node artifact
+# --------------------------------------------------------------------------- #
+
+DECISION_RECORD_KIND = "askovo.decision-record"
+DECISION_RECORD_SCHEMA = "1.0"
+
+
+def _fingerprint(value: Any) -> str:
+    payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _canonical(study_dir: Path) -> tuple[Dict[str, Any], Dict[str, Any], Path]:
+    study_dir = Path(study_dir).resolve()
+    study_path = study_dir / "study.json"
+    reasoning_path = study_dir / "04-findings" / "product-reasoning.json"
+    if not study_path.is_file():
+        raise ValueError(f"missing study.json under {study_dir}")
+    if not reasoning_path.is_file():
+        raise ValueError("missing 04-findings/product-reasoning.json; run `askovo chain` first")
+    study = json.loads(study_path.read_text(encoding="utf-8"))
+    reasoning = json.loads(reasoning_path.read_text(encoding="utf-8"))
+    if not isinstance(study, dict) or not isinstance(reasoning, dict):
+        raise ValueError("study.json and product-reasoning.json must be objects")
+    return study, reasoning, reasoning_path
+
+
+def _one_chain(reasoning: Dict[str, Any], chain_id: str) -> Dict[str, Any]:
+    chains = reasoning.get("chains") if isinstance(reasoning.get("chains"), list) else []
+    matches = [chain for chain in chains if isinstance(chain, dict) and str(chain.get("id")) == str(chain_id)]
+    if not matches:
+        raise ValueError(f"unknown chain {chain_id!r}; record a DecisionRecord against an existing seven-node chain")
+    return matches[0]
+
+
+def _chain_evidence_ids(chain: Dict[str, Any]) -> List[str]:
+    values: List[str] = []
+    nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
+    for node_name in sure_engine.REASONING_NODES:
+        node = nodes.get(node_name) if isinstance(nodes.get(node_name), dict) else {}
+        values.extend(str(item) for item in node.get("evidence_ids") or [])
+    values.extend(str(item) for item in chain.get("counter_evidence_ids") or [])
+    return list(dict.fromkeys(value for value in values if value))
+
+
+def _hypothesis_projection(study: Dict[str, Any], hypothesis_id: str = "") -> List[Dict[str, Any]]:
+    indexed = [(index, item) for index, item in enumerate(study.get("hypotheses") or []) if isinstance(item, dict)]
+    if hypothesis_id:
+        indexed = [(index, item) for index, item in indexed if str(item.get("id")) == str(hypothesis_id)]
+        if not indexed:
+            raise ValueError(f"unknown hypothesis {hypothesis_id!r}; use an id declared in study.json")
+    return [{
+        "id": item.get("id"),
+        "statement": item.get("statement"),
+        "falsified_if": item.get("falsified_if"),
+        "source_ref": f"study.hypotheses[{index}]",
+    } for index, item in indexed]
+
+
+def _candidate_actions(study: Dict[str, Any], reasoning: Dict[str, Any], chain: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Project existing options/alternatives; do not create another option truth."""
+    candidates: List[Dict[str, Any]] = []
+    decision = study.get("decision") if isinstance(study.get("decision"), dict) else {}
+    for index, option in enumerate(decision.get("options") or []):
+        candidates.append({"action": str(option), "chain_id": "", "source_ref": f"study.decision.options[{index}]"})
+    for chain_index, item in enumerate(reasoning.get("chains") or []):
+        if not isinstance(item, dict):
+            continue
+        nodes = item.get("nodes") if isinstance(item.get("nodes"), dict) else {}
+        business = nodes.get("business") if isinstance(nodes.get("business"), dict) else {}
+        gate = business.get("gate") if isinstance(business.get("gate"), dict) else {}
+        action = str(gate.get("decision") or business.get("statement") or item.get("title") or "")
+        if action:
+            candidates.append({
+                "action": action,
+                "chain_id": str(item.get("id") or ""),
+                "source_ref": f"chains[{chain_index}].nodes.business",
+            })
+        feature = nodes.get("feature") if isinstance(nodes.get("feature"), dict) else {}
+        for alt_index, alternative in enumerate(feature.get("alternatives_considered") or []):
+            candidates.append({
+                "action": str(alternative),
+                "chain_id": str(item.get("id") or ""),
+                "source_ref": f"chains[{chain_index}].nodes.feature.alternatives_considered[{alt_index}]",
+            })
+    unique: List[Dict[str, Any]] = []
+    seen: set = set()
+    for item in candidates:
+        key = (item["chain_id"], item["action"])
+        if not item["action"] or key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return unique
+
+
+def _registered_evidence_ids(study_dir: Path) -> set:
+    path = Path(study_dir).resolve() / "02-data" / "evidence.jsonl"
+    known: set = set()
+    if not path.is_file():
+        return known
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict) and item.get("record_id"):
+            known.add(str(item["record_id"]))
+    return known
+
+
+def record_decision(
+    study_dir: Path,
+    *,
+    chain_id: str,
+    by: str,
+    decision: str = "",
+    hypothesis_id: str = "",
+    observations: Any = (),
+    evidence_ids: Any = (),
+    revision: str = "",
+    next_action: str = "",
+) -> Dict[str, Any]:
+    """Append an immutable historical projection without changing chain status.
+
+    The current seven-node chain remains the only live product/business truth.
+    Snapshots exist solely to replay what the named decision-maker saw at each
+    version; observations never upgrade a node or a demand judgment.
+    """
+    operator = str(by or "").strip()
+    if not operator:
+        raise ValueError("decision record requires a named decision-maker via --by")
+    study_dir = Path(study_dir).resolve()
+    study, reasoning, reasoning_path = _canonical(study_dir)
+    chain = _one_chain(reasoning, chain_id)
+    records = reasoning.setdefault("decision_records", [])
+    if not isinstance(records, list):
+        raise ValueError("product-reasoning.json decision_records must be an array")
+    previous = [item for item in records if isinstance(item, dict) and str(item.get("chain_id")) == str(chain_id)]
+    previous.sort(key=lambda item: int(item.get("version") or 0))
+    version = int(previous[-1].get("version") or 0) + 1 if previous else 1
+    current_hypotheses = _hypothesis_projection(study, hypothesis_id)
+    original = copy.deepcopy(previous[0].get("original_hypothesis")) if previous else copy.deepcopy(current_hypotheses)
+    refs = [str(item).strip() for item in (evidence_ids or []) if str(item).strip()]
+    unknown = sorted(set(refs) - _registered_evidence_ids(study_dir))
+    if unknown:
+        raise ValueError("observation evidence is not registered in 02-data/evidence.jsonl: " + ", ".join(unknown))
+    observation_entries = [{
+        "text": str(item).strip(),
+        "evidence_ids": refs,
+        "status": "recorded_observation_not_an_evidence_upgrade",
+    } for item in (observations or []) if str(item).strip()]
+    nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
+    business = nodes.get("business") if isinstance(nodes.get("business"), dict) else {}
+    gate = business.get("gate") if isinstance(business.get("gate"), dict) else {}
+    prioritization = chain.get("prioritization") if isinstance(chain.get("prioritization"), dict) else {}
+    study_decision = study.get("decision") if isinstance(study.get("decision"), dict) else {}
+    record_id = f"DR-{chain_id}-{version:03d}"
+    record = {
+        "kind": DECISION_RECORD_KIND,
+        "schema_version": DECISION_RECORD_SCHEMA,
+        "record_id": record_id,
+        "chain_id": str(chain_id),
+        "version": version,
+        "parent_version": version - 1 if version > 1 else None,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "decision_maker": operator,
+        "accountable_owner": str(
+            prioritization.get("owner") or gate.get("owner") or study_decision.get("owner") or ""
+        ),
+        "decision": str(decision or gate.get("decision") or chain.get("status") or ""),
+        "original_hypothesis": original or [],
+        "hypotheses_at_version": current_hypotheses,
+        "candidate_actions": _candidate_actions(study, reasoning, chain),
+        "basis": {
+            "canonical_chain_ref": f"chains[id={chain_id}]",
+            "demand_judgment_id": chain.get("demand_judgment_id"),
+            "context_key": chain.get("context_key"),
+            "node_refs": [f"{chain_id}.{name}" for name in sure_engine.REASONING_NODES if name in nodes],
+            "evidence_ids": _chain_evidence_ids(chain),
+            "prioritization": copy.deepcopy(prioritization),
+        },
+        "observations": observation_entries,
+        "observed_supporting_states": copy.deepcopy(chain.get("supporting_states") or {}),
+        "revision": {
+            "note": str(revision or ""),
+            "parent_record_id": previous[-1].get("record_id") if previous else None,
+            "change_log": copy.deepcopy(chain.get("change_log") or []),
+        },
+        "next_action": str(next_action or chain.get("next_test") or ""),
+        "chain_fingerprint": _fingerprint(chain),
+        "chain_snapshot": copy.deepcopy(chain),
+        "boundary": (
+            "Immutable replay projection of the canonical chain. Recording a decision or observation "
+            "does not validate a node/judgment, establish causality, or imply release/commercial readiness."
+        ),
+    }
+    records.append(record)
+    reasoning_path.write_text(json.dumps(reasoning, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {
+        "status": "recorded",
+        "record": record,
+        "canonical_artifact": str(reasoning_path),
+        "chain_status_unchanged": chain.get("status"),
+        "replay_command": f"askovo decision replay {study_dir} --record-id {record_id} --json",
+    }
+
+
+def list_decision_records(study_dir: Path, *, chain_id: str = "") -> Dict[str, Any]:
+    _, reasoning, path = _canonical(Path(study_dir))
+    records = [item for item in reasoning.get("decision_records") or [] if isinstance(item, dict)]
+    if chain_id:
+        records = [item for item in records if str(item.get("chain_id")) == str(chain_id)]
+    records.sort(key=lambda item: (str(item.get("chain_id")), int(item.get("version") or 0)))
+    return {
+        "kind": "askovo.decision-record-list",
+        "canonical_artifact": str(path),
+        "count": len(records),
+        "records": [{key: item.get(key) for key in (
+            "record_id", "chain_id", "version", "parent_version", "recorded_at",
+            "decision_maker", "decision", "next_action", "chain_fingerprint",
+        )} for item in records],
+        "boundary": "Record metadata only; replay reads the historical chain snapshots in the same canonical artifact.",
+    }
+
+
+def _record_changes(previous: Optional[Dict[str, Any]], current: Dict[str, Any]) -> Dict[str, Any]:
+    if previous is None:
+        return {"type": "initial", "node_changes": []}
+    before = previous.get("chain_snapshot") if isinstance(previous.get("chain_snapshot"), dict) else {}
+    after = current.get("chain_snapshot") if isinstance(current.get("chain_snapshot"), dict) else {}
+    before_nodes = before.get("nodes") if isinstance(before.get("nodes"), dict) else {}
+    after_nodes = after.get("nodes") if isinstance(after.get("nodes"), dict) else {}
+    node_changes: List[Dict[str, Any]] = []
+    for name in sure_engine.REASONING_NODES:
+        old = before_nodes.get(name) if isinstance(before_nodes.get(name), dict) else {}
+        new = after_nodes.get(name) if isinstance(after_nodes.get(name), dict) else {}
+        if _fingerprint(old) == _fingerprint(new):
+            continue
+        node_changes.append({
+            "node": name,
+            "before": {key: old.get(key) for key in ("statement", "rationale", "status", "evidence_ids")},
+            "after": {key: new.get(key) for key in ("statement", "rationale", "status", "evidence_ids")},
+        })
+    old_evidence = set((previous.get("basis") or {}).get("evidence_ids") or [])
+    new_evidence = set((current.get("basis") or {}).get("evidence_ids") or [])
+    return {
+        "type": "revision",
+        "decision_before": previous.get("decision"),
+        "decision_after": current.get("decision"),
+        "next_action_before": previous.get("next_action"),
+        "next_action_after": current.get("next_action"),
+        "evidence_added": sorted(new_evidence - old_evidence),
+        "evidence_removed": sorted(old_evidence - new_evidence),
+        "node_changes": node_changes,
+    }
+
+
+def replay_decision(
+    study_dir: Path,
+    *,
+    chain_id: str = "",
+    record_id: str = "",
+    version: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Replay original hypotheses, options, basis, observations and revisions."""
+    study, reasoning, path = _canonical(Path(study_dir))
+    records = [item for item in reasoning.get("decision_records") or [] if isinstance(item, dict)]
+    if chain_id:
+        records = [item for item in records if str(item.get("chain_id")) == str(chain_id)]
+    if record_id:
+        records = [item for item in records if str(item.get("record_id")) == str(record_id)]
+    if version is not None:
+        records = [item for item in records if int(item.get("version") or 0) == int(version)]
+    records.sort(key=lambda item: (str(item.get("chain_id")), int(item.get("version") or 0)))
+    if (chain_id or record_id or version is not None) and not records:
+        raise ValueError("no DecisionRecord matched the requested chain/id/version")
+    timeline: List[Dict[str, Any]] = []
+    previous_by_chain: Dict[str, Dict[str, Any]] = {}
+    for item in records:
+        projected = copy.deepcopy(item)
+        projected["changes_from_previous"] = _record_changes(previous_by_chain.get(str(item.get("chain_id"))), item)
+        timeline.append(projected)
+        previous_by_chain[str(item.get("chain_id"))] = item
+    current_drift: List[Dict[str, Any]] = []
+    for current_chain_id, latest in previous_by_chain.items():
+        current = _one_chain(reasoning, current_chain_id)
+        current_drift.append({
+            "chain_id": current_chain_id,
+            "record_id": latest.get("record_id"),
+            "changed_since_record": _fingerprint(current) != latest.get("chain_fingerprint"),
+            "current_chain_fingerprint": _fingerprint(current),
+            "recorded_chain_fingerprint": latest.get("chain_fingerprint"),
+            "current_status": current.get("status"),
+            "current_next_action": current.get("next_test"),
+        })
+    payload = {
+        "kind": "askovo.decision-replay",
+        "schema_version": DECISION_RECORD_SCHEMA,
+        "study_id": study.get("study_id"),
+        "canonical_artifact": str(path),
+        "status": "replayed" if timeline else "empty",
+        "count": len(timeline),
+        "timeline": timeline,
+        "current_drift": current_drift,
+        "boundary": (
+            "Replay shows historical projections, not a second live truth. Current semantics remain in chains[]; "
+            "observations and decided records never auto-validate text, prove causality or imply release readiness."
+        ),
+    }
+    payload["markdown"] = render_decision_replay(payload)
+    return payload
+
+
+def render_decision_replay(payload: Dict[str, Any]) -> str:
+    lines = [
+        f"# 决策回放：{payload.get('study_id') or '未命名研究'}",
+        "",
+        f"- Canonical artifact：`{payload.get('canonical_artifact')}`",
+        f"- 版本数：{payload.get('count', 0)}；历史记录不是第二套当前真相。",
+        "",
+    ]
+    if not payload.get("timeline"):
+        lines.append("尚无 DecisionRecord；先运行 `askovo decision record STUDY --chain PR01 --by NAME`。")
+    for item in payload.get("timeline") or []:
+        lines.extend([
+            f"## {item.get('record_id')} · v{item.get('version')} · {item.get('chain_id')}",
+            "",
+            f"- 决策人：{item.get('decision_maker')}；负责人：{item.get('accountable_owner') or '未记录'}",
+            f"- 决定：{item.get('decision') or '未记录'}",
+            f"- 下一动作：{item.get('next_action') or '未记录'}",
+            "- 原假设：",
+        ])
+        hypotheses = item.get("original_hypothesis") or []
+        lines.extend(
+            f"  - {entry.get('id')}：{entry.get('statement')}；证伪：{entry.get('falsified_if')}"
+            for entry in hypotheses
+        ) if hypotheses else lines.append("  - 未登记")
+        lines.append("- 候选动作：")
+        candidates = item.get("candidate_actions") or []
+        lines.extend(
+            f"  - {entry.get('action')}（{entry.get('source_ref')}）" for entry in candidates
+        ) if candidates else lines.append("  - 未登记")
+        basis = item.get("basis") if isinstance(item.get("basis"), dict) else {}
+        lines.append(
+            f"- 依据：{basis.get('canonical_chain_ref')}；需求判断 `{basis.get('demand_judgment_id') or '未关联'}`；"
+            f"证据 {', '.join(basis.get('evidence_ids') or []) or '未登记'}"
+        )
+        lines.append("- 观察：")
+        observations = item.get("observations") or []
+        lines.extend(
+            f"  - {entry.get('text')}（证据：{', '.join(entry.get('evidence_ids') or []) or '无'}；不自动升级）"
+            for entry in observations
+        ) if observations else lines.append("  - 本版本无新增观察；支撑三态见记录 observed_supporting_states")
+        revision = item.get("revision") if isinstance(item.get("revision"), dict) else {}
+        lines.append(
+            f"- 修订：{revision.get('note') or '无新增说明'}；"
+            f"关联 change_log {len(revision.get('change_log') or [])} 条"
+        )
+        changes = item.get("changes_from_previous") if isinstance(item.get("changes_from_previous"), dict) else {}
+        lines.append(
+            f"- 与上一版：{changes.get('type')}；节点变化 {len(changes.get('node_changes') or [])}；"
+            f"证据新增 {', '.join(changes.get('evidence_added') or []) or '无'}；"
+            f"证据移除 {', '.join(changes.get('evidence_removed') or []) or '无'}"
+        )
+        lines.append("")
+    if payload.get("current_drift"):
+        lines.extend(["## 与当前七节点链的差异", ""])
+        for drift in payload["current_drift"]:
+            lines.append(
+                f"- {drift.get('chain_id')}：{'已变化' if drift.get('changed_since_record') else '未变化'}；"
+                f"当前状态 `{drift.get('current_status')}`；当前下一动作：{drift.get('current_next_action')}"
+            )
+        lines.append("")
+    lines.extend(["## 边界", "", str(payload.get("boundary") or ""), ""])
+    return "\n".join(lines)
 
 
 def review(study_dir: Path) -> Dict[str, Any]:

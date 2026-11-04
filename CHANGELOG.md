@@ -1,5 +1,57 @@
 # Changelog
 
+## 2.9.0 - 2026-11-04
+
+Research action selection, explicit method boundaries, versioned decisions and a
+single machine/chat delivery projection.
+
+### Added
+
+- **Next-best research action**: every gap, including `unwritten_node` and
+  `actionable:false`, produces `collect`, `analyze`, `experiment`,
+  `request_external_evidence` and `stop` candidates. The loop ranks them by
+  expected uncertainty reduction, relative cost and decision-changing potential
+  with a transparent formula; candidates never auto-execute and never mark a
+  judgment `validated`.
+- **Method choice projection**: route, `method-choice.json`, study plans and
+  action candidates carry research question → sample formation mechanism →
+  suitable method → conclusion boundary. Convenience samples cannot estimate
+  population rates, interviews cannot size a market, and public comments cannot
+  prove payment. Quote/delivery experiments record recruitment frame, exposure,
+  response, acceptance, paid/delivered and churn bias fields.
+- **Versioned DecisionRecord**: `askovo decision record/list/replay` and the
+  `askovo_decision` MCP tool store hypothesis, candidate actions, basis,
+  observations, revisions, next action, decision maker and read-only chain
+  snapshots inside canonical `04-findings/product-reasoning.json`. Replay shows
+  version differences and current drift without creating a second truth.
+- **Unified `chat_summary` for `deliver`**: every kind and error result carries
+  decision, basis, actions, costs/boundaries, unknowns, input fingerprint,
+  freshness, reproduce command and rendered text. `fresh`, `stale`,
+  `no_artifact` and `audit_failed` remain distinct.
+- **MCP delivery compatibility**: machine-readable JSON stays the first content
+  item for 2.8.0 compatibility; the same human-readable summary follows.
+
+### Changed
+
+- **Source-family wording**: “multiple source families observed” replaces
+  claims of independent observation. Different source-family strings are not
+  treated as proof of independence.
+- Research-loop status and reports expose the action ranking and why an action
+  cannot be executed automatically.
+
+### Fixed
+
+- Public commercial gaps no longer default to more comment collection when a
+  real quote, paid pilot or delivery experiment is the decisive next step.
+- Delivery freshness and audit failures are reported explicitly instead of
+  implying a current artifact exists.
+
+### Verification
+
+- `python3 -m unittest discover -s tests`: **229 tests pass** (216 baseline +
+  13 new P0 regression tests).
+- `git diff --check` passes.
+
 ## 2.8.0 - 2026-11-03
 
 Business Plan projection, the data-first narrative, and the multi-chain analysis fixes.

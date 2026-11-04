@@ -787,7 +787,7 @@ class ProductReasoningTests(unittest.TestCase):
 
         # Legend and per-chain roll-up in the reading guide.
         self.assertIn("依据强度", text.split("## 1.")[0])
-        self.assertIn("● 已观察到（多来源独立观察）", text)
+        self.assertIn("● 已观察到（多个来源族观察；相关性未证明独立）", text)
         self.assertIn("整体依据强度", text)
         self.assertIn("| 环节 | 结论（一句话） | 依据强度 | 数据基础 |", text)
 
@@ -795,12 +795,15 @@ class ProductReasoningTests(unittest.TestCase):
         self.assertIn("**○ 假设（待验证）｜", text)
         self.assertIn("**◐ 有线索｜", text)
         self.assertIn("**● 已观察到｜", text)
-        self.assertIn("依据强度：● 已观察到 —— 多来源独立观察", text)
+        self.assertIn("依据强度：● 已观察到 —— 多个来源族观察", text)
+        self.assertIn("相关性未证明独立", text)
+        self.assertNotIn("多来源独立观察", text)
         self.assertIn("依据强度：◐ 有线索 —— 单案例或口头线索", text)
 
-        # Engine vocabulary (levels, thresholds) stays in the method archive.
+        # Engine levels stay in the method archive; source-family independence
+        # boundaries remain visible because they are required claim semantics.
         body = text[: text.index("## 附录")]
-        for token in ("E1", "E2", "E4+", "E4-", "来源族"):
+        for token in ("E1", "E2", "E4+", "E4-"):
             self.assertNotIn(token, body)
         archive = text[text.index("## 附录") :]
         self.assertIn("依据强度规则", archive)

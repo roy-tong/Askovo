@@ -591,7 +591,141 @@ def detect_gaps(study_dir: Path) -> List[Dict[str, Any]]:
     ))
     for index, gap in enumerate(unique, start=1):
         gap["id"] = f"G{index:02d}"
+        candidates = research_action_candidates(gap, study, sources)
+        gap["research_action_candidates"] = candidates
+        gap["next_best_action"] = candidates[0]
     return unique
+
+
+RESEARCH_ACTION_KINDS = ("collect", "analyze", "experiment", "request_external_evidence", "stop")
+_ACTION_ORDER = {name: index for index, name in enumerate(RESEARCH_ACTION_KINDS)}
+
+
+def _cost_level(cost: float) -> str:
+    if cost <= 0.15:
+        return "low"
+    if cost <= 0.40:
+        return "medium"
+    return "high"
+
+
+def _action_profile(
+    action: str,
+    gap: Dict[str, Any],
+    *,
+    public_collection: bool,
+) -> tuple[float, float, float, str]:
+    """Relative planning heuristics, never empirical effect or value estimates."""
+    kind = str(gap.get("kind") or "")
+    intent = str(gap.get("intent") or "problem")
+    commercial_public = intent == "commercial" and public_collection
+    if action == "collect":
+        if commercial_public:
+            return 0.15, 0.45, 0.20, "继续采集公开评论无法观察真实报价接受、支付或交付，边际决策价值低"
+        return 0.85, 0.45, 0.85, "在已授权来源内补齐直接观察；仍须人工定级与语义复核"
+    if action == "analyze":
+        if kind in {"unwritten_node", "claim_needs_decision"}:
+            return 0.90, 0.15, 0.85, "先把已有材料整理成可证伪节点/判断与反例，不自动生成 validated 文本"
+        return 0.45, 0.15, 0.55, "先分析已有候选、重复、反例与覆盖，避免在未知边际收益时继续加量"
+    if action == "experiment":
+        if intent == "commercial":
+            return 0.95, 0.55, 0.95, "用真实报价、可拒绝的付费试点或交付实验观察行为，并登记选择偏差"
+        if str(gap.get("node") or "") in {"feature", "product"}:
+            return 0.75, 0.60, 0.80, "用任务/原型实验检验方案接受与关键推理，不把接受当付费或发布就绪"
+        return 0.55, 0.65, 0.55, "仅当明确假设、分母与停止线后，实验才可能改变当前决定"
+    if action == "request_external_evidence":
+        if intent == "commercial":
+            return 0.75, 0.45, 0.75, "请求授权的一方报价、订单、支付、续费或交付记录，不用公开评论替代"
+        return 0.80, 0.35, 0.80, "当前来源不可用或样本形成机制不适配时，请求有权使用的外部材料"
+    return 0.0, 0.05, 0.0, "当剩余不确定性的预期决策价值低于成本时停止，并保留 unknowns 与重启条件"
+
+
+def research_action_candidates(
+    gap: Dict[str, Any],
+    study: Dict[str, Any],
+    sources: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Compare five next-action candidates for every gap, including blocked gaps.
+
+    The scores are transparent relative heuristics for ordering tasks, not measured
+    uncertainty, money, probability or business value. Only an already actionable
+    collect candidate may enter the existing authorized loop; all other outputs
+    remain tasks for a human or host agent and never change evidence status.
+    """
+    decision = study.get("decision") if isinstance(study.get("decision"), dict) else {}
+    decision_question = str(decision.get("question") or study.get("title") or "当前产品/商业决定")
+    intent = str(gap.get("intent") or "problem")
+    question = str(gap.get("query_seed") or gap.get("detail") or decision_question)
+    public_collection = any(
+        str(item.get("platform") or "") in {"reddit", "github", "x", "youtube", "amazon"}
+        for item in sources
+    )
+    selected: List[Dict[str, Any]] = []
+    catalog = sure_engine.methods()
+    for method_id in study.get("selected_methods") or []:
+        method = catalog.get(str(method_id))
+        if method:
+            selected.append(sure_engine._method_view(method))
+    candidates: List[Dict[str, Any]] = []
+    for action in RESEARCH_ACTION_KINDS:
+        reduction, cost, decision_change, rationale = _action_profile(action, gap, public_collection=public_collection)
+        # Without a collection route, external evidence is more useful than a
+        # nominal collect task; commercial experiments still outrank public text.
+        if action == "collect" and not gap.get("actionable"):
+            reduction = min(reduction, 0.10)
+            decision_change = min(decision_change, 0.20)
+            rationale = "当前缺口没有可自动执行的合规采集路线；保留为候选，不进入既有 loop run"
+        score = round((reduction * decision_change) / (cost + 0.10), 4)
+        method_selection = sure_engine.research_method_selection(
+            question,
+            selected,
+            action=action,
+            intent=intent,
+            sources=sources if action in {"collect", "analyze"} else [],
+        )
+        executable = action == "collect" and bool(gap.get("actionable") and gap.get("query_seed"))
+        candidates.append({
+            "action": action,
+            "task": f"{action}：{question}",
+            "gap_key": str(gap.get("key") or ""),
+            "expected_uncertainty_reduction": reduction,
+            "cost": cost,
+            "cost_level": _cost_level(cost),
+            "decision_change_potential": decision_change,
+            "decision_it_can_change": decision_question,
+            "priority_score": score,
+            "scoring_rule": "(expected_uncertainty_reduction × decision_change_potential) / (cost + 0.10); relative heuristic only",
+            "rationale": rationale,
+            "candidate_only": True,
+            "executable_by_existing_loop": executable,
+            "method_selection": method_selection,
+            "validated_status_changed": False,
+        })
+    candidates.sort(key=lambda item: (
+        -float(item["priority_score"]),
+        float(item["cost"]),
+        _ACTION_ORDER[str(item["action"])],
+    ))
+    return candidates
+
+
+def next_best_actions(gaps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Return the winning candidate per gap without hiding the comparison set."""
+    result: List[Dict[str, Any]] = []
+    for gap in gaps:
+        best = gap.get("next_best_action")
+        if not isinstance(best, dict):
+            continue
+        result.append({
+            "gap_id": gap.get("id"),
+            "gap_key": gap.get("key"),
+            "gap_kind": gap.get("kind"),
+            "node": gap.get("node"),
+            "actionable_for_collection": bool(gap.get("actionable")),
+            "candidate": best,
+            "compared_actions": [item.get("action") for item in gap.get("research_action_candidates") or []],
+        })
+    return result
 
 
 # --------------------------------------------------------------------------- #
@@ -748,6 +882,7 @@ def plan(
             "envelope": envelope,
             "sources": sources,
             "gaps": gaps,
+            "next_best_actions": next_best_actions(gaps),
             "gap_states": {},
             "rounds": [],
             "candidates": [],
@@ -1026,6 +1161,7 @@ def _execute_rounds(study_dir: Path, state: Dict[str, Any]) -> Dict[str, Any]:
             break
         gaps = detect_gaps(study_dir)
         state["gaps"] = gaps
+        state["next_best_actions"] = next_best_actions(gaps)
         actionable = [gap for gap in gaps if gap.get("actionable")]
         states = {str(gap["key"]): gap_state(state, str(gap["key"])) for gap in actionable}
         pending_collect = [gap for gap in actionable if states[str(gap["key"])] == "open"]
@@ -1190,6 +1326,7 @@ def _execute_rounds(study_dir: Path, state: Dict[str, Any]) -> Dict[str, Any]:
         record["finished_at"] = _now()
         record["status"] = "blocked" if fatal else "completed"
         state["gaps"] = after_gaps
+        state["next_best_actions"] = next_best_actions(after_gaps)
         _save(candidates_path(study_dir), _candidates_document(state))
         if fatal:
             state["status"] = "blocked"
@@ -1480,6 +1617,7 @@ def status(study_dir: Path) -> Dict[str, Any]:
         "authorized": bool(state.get("authorization")),
         "authorization": state.get("authorization"),
         "envelope": state.get("envelope"),
+        "next_best_actions": next_best_actions(gaps),
         "gaps": {
             "total": len(gaps),
             "actionable": len(actionable),
@@ -1624,6 +1762,22 @@ def report(study_dir: Path) -> Dict[str, Any]:
         lines.append("候选记录没有证据等级，也不会被审计计入；人工定级并写入判断后才改变结论。")
     else:
         lines.append("- 本轮没有新增候选材料。")
+    lines.extend(["", "## 下一最佳研究动作候选（不自动执行）", ""])
+    for gap in gaps:
+        best = gap.get("next_best_action") if isinstance(gap.get("next_best_action"), dict) else {}
+        if not best:
+            continue
+        compared = ", ".join(str(item.get("action")) for item in gap.get("research_action_candidates") or [])
+        lines.append(
+            f"- [{gap.get('id')} {gap.get('key')}] **{best.get('action')}**：{best.get('rationale')}；"
+            f"不确定性下降 {best.get('expected_uncertainty_reduction')}，相对成本 {best.get('cost')}，"
+            f"决策改变潜力 {best.get('decision_change_potential')}，评分 {best.get('priority_score')}。"
+        )
+        lines.append(f"  - 可改变的决定：{best.get('decision_it_can_change')}；已比较：{compared}。")
+        if not gap.get("actionable"):
+            lines.append("  - 原缺口不可自动采集；这里仅新增任务候选，不改变 actionable 或 validated。")
+    if not any(isinstance(gap.get("next_best_action"), dict) for gap in gaps):
+        lines.append("- 当前没有缺口候选。")
     lines.extend(["", "## 下一步", ""])
     next_actions = list(payload.get("next_actions") or [])
     for gap in open_gaps[:5]:

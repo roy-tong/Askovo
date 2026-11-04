@@ -350,6 +350,30 @@ def _build_review(arguments: dict[str, Any]) -> argparse.Namespace:
     )
 
 
+def _build_decision(arguments: dict[str, Any]) -> argparse.Namespace:
+    action = _string(arguments.get("action"), "action")
+    if action not in ("record", "list", "replay"):
+        raise ValueError("action must be record, list or replay")
+    version = arguments.get("version")
+    if version is not None and (not isinstance(version, int) or isinstance(version, bool) or version < 1):
+        raise ValueError("version must be a positive integer")
+    return _namespace(
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        action=action,
+        chain=_optional_string(arguments, "chain") or "",
+        record_id=_optional_string(arguments, "record_id") or "",
+        version=version,
+        by=_optional_string(arguments, "by") or "",
+        decision=_optional_string(arguments, "decision") or "",
+        hypothesis=_optional_string(arguments, "hypothesis") or "",
+        observation=_string_list(arguments, "observation") or [],
+        evidence=_string_list(arguments, "evidence") or [],
+        revision=_optional_string(arguments, "revision") or "",
+        next_action=_optional_string(arguments, "next_action") or "",
+        json=_boolean(arguments, "json", True),
+    )
+
+
 def _build_analyze(arguments: dict[str, Any]) -> argparse.Namespace:
     return _namespace(
         study_dir=_string(arguments.get("study_dir"), "study_dir"),
@@ -753,6 +777,33 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {"type": "object", "properties": {"study_dir": {"type": "string"}}, "required": ["study_dir"]},
     },
     {
+        "name": "askovo_decision",
+        "description": (
+            "Record, list and replay versioned DecisionRecords inside the canonical seven-node "
+            "product-reasoning.json. Captures original hypotheses, candidate actions, basis, "
+            "observations, revisions, next action and decision-maker without auto-validating text."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "study_dir": {"type": "string"},
+                "action": {"enum": ["record", "list", "replay"]},
+                "chain": {"type": "string", "description": "existing chain id; required for record"},
+                "record_id": {"type": "string"},
+                "version": {"type": "integer", "minimum": 1},
+                "by": {"type": "string", "description": "record: named decision-maker"},
+                "decision": {"type": "string"},
+                "hypothesis": {"type": "string", "description": "declared study hypothesis id"},
+                "observation": {"type": "array", "items": {"type": "string"}},
+                "evidence": {"type": "array", "items": {"type": "string"}, "description": "registered evidence ids"},
+                "revision": {"type": "string"},
+                "next_action": {"type": "string"},
+                "json": {"type": "boolean", "default": True},
+            },
+            "required": ["study_dir", "action"],
+        },
+    },
+    {
         "name": "askovo_deliver",
         "description": "Assemble the business plan (business-language view with data basis and user voices), a chain-led decision memo, product report, MRD, PRD, BRD, user-operations projection or post-launch tracker.",
         "inputSchema": {
@@ -941,6 +992,7 @@ TOOL_BUILDERS = {
     "askovo_check": (askovo_cli.command_check, _build_check),
     "askovo_audit": (askovo_cli.command_audit, _build_audit),
     "askovo_review": (askovo_cli.command_review, _build_review),
+    "askovo_decision": (askovo_cli.command_decision, _build_decision),
     "askovo_signals": (askovo_cli.command_signals, _build_signals),
     "askovo_lexicon": (askovo_cli.command_lexicon, _build_lexicon),
     "askovo_report": (askovo_cli.command_report, _build_report),
@@ -1035,12 +1087,23 @@ def _handle_request(message: dict[str, Any]) -> str:
                 },
             )
         is_error = payload.get("exit_code") == 2
+        content = [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)}]
+        # Preserve the 2.8.0 machine-readable first item while also returning a
+        # readable projection for chat clients that do not render JSON bodies.
+        tool_result = payload.get("result")
+        readable = None
+        if isinstance(tool_result, dict):
+            summary = tool_result.get("chat_summary")
+            if isinstance(summary, dict) and isinstance(summary.get("text"), str):
+                readable = summary["text"]
+            elif isinstance(tool_result.get("markdown"), str):
+                readable = tool_result["markdown"]
+        if readable:
+            content.append({"type": "text", "text": readable})
         return _jsonrpc_result(
             request_id,
             {
-                "content": [
-                    {"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)}
-                ],
+                "content": content,
                 "isError": is_error,
             },
         )

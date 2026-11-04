@@ -13,6 +13,7 @@ import base64
 import csv
 import hashlib
 import hmac
+import importlib.util
 import os
 import socket
 import struct
@@ -33,6 +34,20 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
+
+try:
+    import delivery_projection
+except ModuleNotFoundError as exc:  # direct importlib loading used by embedders/tests
+    if exc.name != "delivery_projection":
+        raise
+    _projection_spec = importlib.util.spec_from_file_location(
+        "askovo_delivery_projection", Path(__file__).with_name("delivery_projection.py")
+    )
+    if _projection_spec is None or _projection_spec.loader is None:  # pragma: no cover
+        raise RuntimeError("cannot load delivery_projection.py beside sure_engine.py")
+    delivery_projection = importlib.util.module_from_spec(_projection_spec)
+    sys.modules.setdefault("askovo_delivery_projection", delivery_projection)
+    _projection_spec.loader.exec_module(delivery_projection)
 
 try:
     import fcntl
@@ -319,6 +334,150 @@ def _method_view(method: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+PUBLIC_COMMUNITY_BOUNDARY = (
+    "公开社区是发言者自选择的便利样本，只能描述本语料，不能推总体发生率、市场规模或真实付费。"
+)
+INTERVIEW_BOUNDARY = "访谈用于理解场景、机制与反例，不能推市场规模或总体比例。"
+PRICE_EXPERIMENT_BOUNDARY = (
+    "公开评论、购买意向和竞品标价都不能证明本品真实付费；优先真实报价、可拒绝的付费试点或交付实验。"
+)
+SELECTION_BIAS_FIELDS = [
+    "target_population",
+    "recruitment_frame",
+    "exposure_rule",
+    "invited_count",
+    "responded_count",
+    "offer_accepted_count",
+    "paid_count",
+    "delivered_count",
+    "nonresponse_and_attrition",
+    "known_confounders",
+]
+
+
+def _sample_mechanism(
+    method_id: str,
+    question: str,
+    *,
+    action: str = "",
+    intent: str = "",
+    sources: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Explain how observations enter a method before claiming what it can answer."""
+    low = question.casefold()
+    public = bool(sources) or any(
+        token in low for token in ("公开社区", "社区评论", "公开评论", "reddit", "论坛", "评论", "community")
+    )
+    commercial = intent == "commercial" or any(
+        token in low for token in ("付费", "价格", "定价", "成交", "报价", "purchase", "pricing", "payment", "paid")
+    )
+    experiment = (
+        action == "experiment"
+        or method_id in {"price-promo-test", "ab-test", "beta-soak"}
+        or (commercial and any(token in low for token in ("实验", "试验", "试点", "experiment", "pilot")))
+    )
+    interview = method_id in {"discovery-interview", "contextual-inquiry", "diary-study"} or "访谈" in low
+    if experiment:
+        mechanism = "recruited_offer_or_delivery_experiment"
+        description = "由招募框、曝光规则、报价/交付邀请和实际接受行为形成样本；逐层保留分母与流失。"
+        bias = ["招募自选择", "曝光分配不均", "接受者偏差", "未交付与退出偏差"]
+    elif interview:
+        mechanism = "purposive_self_selected_interviews"
+        description = "研究者按场景招募且受访者自愿参与，覆盖机制与反例，不构成总体抽样框。"
+        bias = ["招募自选择", "回忆与 social-desirability 偏差", "热心用户过度代表"]
+    elif public:
+        mechanism = "public_community_self_selection"
+        description = "平台可见性、搜索/排序与发言意愿共同决定哪些记录进入语料。"
+        bias = ["平台与排序偏差", "发言者自选择", "沉默用户和非购买者缺失"]
+    else:
+        mechanism = "stage_specific_purposive_sampling"
+        description = "按研究问题与生命周期阶段目的抽样；必须另行声明招募框、纳入规则和缺失 strata。"
+        bias = ["目的抽样覆盖偏差", "未记录的无回应与缺失 strata"]
+    return {
+        "id": mechanism,
+        "description": description,
+        "selection_bias": bias,
+        "public_community": public,
+        "commercial_question": commercial,
+        "interview_method": interview,
+        "experiment_method": experiment,
+    }
+
+
+def research_method_selection(
+    question: str,
+    selected_methods: list[dict[str, Any]] | None = None,
+    *,
+    action: str = "",
+    intent: str = "",
+    sources: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Project question → sample formation → applicable methods → claim boundaries.
+
+    This is deterministic methodological guidance, not a validation verdict. In
+    particular, public comments never become payment proof and offer experiments
+    always carry an explicit selection-bias register.
+    """
+    methods_value = selected_methods or []
+    if not methods_value:
+        low = question.casefold()
+        commercial = intent == "commercial" or any(
+            token in low for token in ("付费", "价格", "定价", "成交", "报价", "purchase", "pricing", "payment", "paid")
+        )
+        if action == "experiment" or commercial:
+            fallback_ids = ["price-promo-test", "beta-soak"]
+        elif "访谈" in low:
+            fallback_ids = ["discovery-interview"]
+        else:
+            fallback_ids = ["contextual-inquiry"]
+        catalog = methods()
+        methods_value = [_method_view(catalog[item]) for item in fallback_ids if item in catalog]
+    profiles: list[dict[str, Any]] = []
+    applicable: list[dict[str, Any]] = []
+    for method in methods_value:
+        method_id = str(method.get("id") or "")
+        profile = _sample_mechanism(method_id, question, action=action, intent=intent, sources=sources)
+        boundaries = [str(value) for value in method.get("does_not_support", [])]
+        if profile["public_community"]:
+            boundaries.append(PUBLIC_COMMUNITY_BOUNDARY)
+        if profile["interview_method"]:
+            boundaries.append(INTERVIEW_BOUNDARY)
+        if profile["commercial_question"]:
+            boundaries.append(PRICE_EXPERIMENT_BOUNDARY)
+        if profile["experiment_method"]:
+            boundaries.append("报价/交付实验只适用于实际曝光且满足纳入规则的人群；必须记录选择偏差，不能外推总体。")
+        entry = dict(method)
+        entry.update({
+            "research_question": question,
+            "sample_formation_mechanism": profile,
+            "conclusion_boundary": list(dict.fromkeys(boundaries)),
+            "selection_bias_record_required": bool(profile["experiment_method"]),
+            "selection_bias_fields": list(SELECTION_BIAS_FIELDS) if profile["experiment_method"] else [],
+        })
+        applicable.append(entry)
+        profiles.append(profile)
+    if not profiles:
+        profiles.append(_sample_mechanism("", question, action=action, intent=intent, sources=sources))
+    boundaries: list[str] = []
+    for profile in profiles:
+        if profile["public_community"]:
+            boundaries.append(PUBLIC_COMMUNITY_BOUNDARY)
+        if profile["interview_method"]:
+            boundaries.append(INTERVIEW_BOUNDARY)
+        if profile["commercial_question"]:
+            boundaries.append(PRICE_EXPERIMENT_BOUNDARY)
+    if any(profile["experiment_method"] for profile in profiles):
+        boundaries.append("报价实验必须记录招募、曝光、回应、接受、支付、交付与退出各环节的选择偏差。")
+    return {
+        "research_question": question,
+        "sample_formation_mechanisms": profiles,
+        "applicable_methods": applicable,
+        "conclusion_boundaries": list(dict.fromkeys(boundaries)),
+        "selection_bias_fields": list(SELECTION_BIAS_FIELDS),
+        "boundary": "方法选择只界定可回答的问题与结论边界，不自动升级任何节点或需求判断为 validated。",
+    }
+
+
 def product_reasoning_contract(stage: str) -> dict[str, Any]:
     """Declare the product-facing spine; methods and sources only support it."""
     return {
@@ -354,6 +513,7 @@ def route_request(
             "risk_flags": risks,
             "safety_gate": "review" if risks else "clear",
             "product_reasoning": product_reasoning_contract(stage_info["stage"]),
+            "method_selection": research_method_selection(text, [], intent=intent_info["intent"]),
             "questions": ["你要研究的是软件、硬件、消费品、汽车还是手机/可穿戴产品？"],
             "next_commands": ['askovo route "<需求>" --domain software'],
         }
@@ -417,6 +577,7 @@ def route_request(
         "safety_gate": "review" if requires_ack else "clear",
         "risk_notes": pack.get("risk_notes", []),
         "recommended_methods": selected,
+        "method_selection": research_method_selection(text, selected, intent=intent_name),
         "alternatives": list(alternatives.values()),
         "decisions": stage_data.get("decisions", []),
         "deliverables": stage_data.get("deliverables", []),
@@ -1010,6 +1171,19 @@ def research_plan_markdown(study: dict[str, Any], route: dict[str, Any]) -> str:
             f"证据形式 `{', '.join(item['evidence_forms'])}`；"
             f"不能证明 `{', '.join(item['does_not_support'])}`"
         )
+    method_choice = route.get("method_selection") if isinstance(route.get("method_selection"), dict) else {}
+    if method_choice:
+        lines.extend(["", "## 5A. 研究问题 → 样本形成 → 方法 → 结论边界", ""])
+        for profile in method_choice.get("sample_formation_mechanisms") or []:
+            lines.append(f"- 样本形成 `{profile.get('id')}`：{profile.get('description')}")
+            lines.append("  - 选择偏差：" + "；".join(str(item) for item in profile.get("selection_bias") or []))
+        for method in method_choice.get("applicable_methods") or []:
+            lines.append(f"- 适用方法 **{method.get('name') or method.get('id')}**：{method.get('research_question')}")
+            for boundary in method.get("conclusion_boundary") or []:
+                lines.append(f"  - 结论边界：{boundary}")
+        for boundary in method_choice.get("conclusion_boundaries") or []:
+            lines.append(f"- 总结边界：{boundary}")
+        lines.append("- 报价/交付实验的选择偏差登记字段：" + ", ".join(method_choice.get("selection_bias_fields") or []))
     lines.extend(["", "## 6. 本阶段要回答", ""])
     lines.extend(f"- {item}" for item in route.get("decisions", []))
     lines.extend(["", "## 7. 风险与停止规则", "", _risk_markdown(route.get("risk_flags", []))])
@@ -2234,7 +2408,7 @@ def _plan_strength(records: list[dict[str, Any]], node_name: str | None = None) 
     """Return (marker, label, why) for one node's cited records.
 
     ● 已观察到 — at least two observed-level records from at least two source
-    families (independent observations). The observed levels are node-aware:
+    families; family-name diversity does not prove statistical independence. The observed levels are node-aware:
     scene/user/pain/need accept E2+, feature/product require E3+, and business
     requires E4+/E5 (commercial evidence), so counter-evidence cannot make a
     commercial node look observed.
@@ -2247,12 +2421,12 @@ def _plan_strength(records: list[dict[str, Any]], node_name: str | None = None) 
     leads = [r for r in records if _plan_strength_level(r) in lead_levels]
     observed_families = _plan_strength_families(observed)
     if len(observed) >= 2 and len(observed_families) >= 2:
-        return "●", "已观察到", f"多来源独立观察：{len(observed_families)} 个平台 · 观察记录 {len(observed)} 条"
+        return "●", "已观察到", f"多个来源族观察：{len(observed_families)} 个来源族 · 观察记录 {len(observed)} 条；相关性未证明独立"
     if leads:
         lead_families = _plan_strength_families(leads)
         if node_name == "business":
-            return "◐", "有商业线索", f"商业线索 {len(leads)} 条 · {len(lead_families)} 个平台（未达多来源独立观察）"
-        return "◐", "有线索", f"单案例或口头线索：线索记录 {len(leads)} 条 · {len(lead_families)} 个平台（未达多来源独立观察）"
+            return "◐", "有商业线索", f"商业线索 {len(leads)} 条 · {len(lead_families)} 个来源族（未达多个来源族观察；相关性未证明独立）"
+        return "◐", "有线索", f"单案例或口头线索：线索记录 {len(leads)} 条 · {len(lead_families)} 个来源族（未达多个来源族观察；相关性未证明独立）"
     if node_name == "business":
         return "○", "假设（商业门未验证）", "尚无 E4+/E5 商业证据；商业判断仍待验证"
     return "○", "假设（待验证）", "尚无采集到的直接记录"
@@ -2413,11 +2587,11 @@ def _plan_node_metrics(records: list[dict[str, Any]]) -> str:
         return ""
     total = len(records)
     observed = sum(1 for record in records if str(record.get("evidence_level") or "") in {"E2", "E3", "E4+", "E5"})
-    platforms = {str(record.get("source_family") or "") for record in records if record.get("source_family")}
+    families = {str(record.get("source_family") or "") for record in records if record.get("source_family")}
     money = sum(1 for record in records if re.search(MONEY_RE, str(record.get("text_excerpt") or ""), re.I))
     parts = [f"{total} 条中有 {observed} 条是观察级记录（做过、接受或付过钱）"]
-    if platforms:
-        parts.append(f"来自 {len(platforms)} 个平台")
+    if families:
+        parts.append(f"来自 {len(families)} 个来源族（相关性未证明独立）")
     if money:
         parts.append(f"{money} 条带金额或比例")
     return "数据读出：" + "，".join(parts) + "。"
@@ -2767,7 +2941,7 @@ def _plan_lines(
         f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label', study.get('product_domain', ''))}；"
         f"阶段：{route.get('stage_label', study.get('lifecycle_stage', ''))}。",
         "",
-        "> 读法：每个判断都标注**依据强度**——● 已观察到（多来源独立观察）· ◐ 有线索（单案例或口头线索）· ○ 假设（尚无采集记录，待验证）——"
+        "> 读法：每个判断都标注**依据强度**——● 已观察到（多个来源族观察；相关性未证明独立）· ◐ 有线索（单案例或口头线索）· ○ 假设（尚无采集记录，待验证）——"
         "以及**数据基础**（来源、语料量、时间窗）与**来自语料的声音**（用户原话或典型情况）。"
         "“暂无采集数据”表示还没研究到这一步，不等于没有需求。",
         "",
@@ -2990,7 +3164,7 @@ def _plan_lines(
     lines.append("- 依据强度规则（确定性，从各环节引用记录计算，非人工指定）：● = 观察级记录（E2/E3/E4+/E5："
                  "行为、接受或付费）≥2 条且来自 ≥2 个来源族；◐ = 存在 E1 及以上记录但未达 ●；"
                  "○ = 无 E1 及以上记录。E4-（拒绝/退订等反向行为）计入反面信号，不计入强度。"
-                 "强度是阅读辅助，不证明总体比例、市场规模或因果。")
+                 "多个来源族只表示 source_family 字符串不同，相关性未证明独立；强度是阅读辅助，不证明总体比例、市场规模或因果。")
     chain_states = "；".join(f"{chain.get('id', 'PR?')}={chain.get('status', '')}" for chain in chains) or "未建立"
     lines.append(f"- 链/判定状态（原始口径）：{chain_states}")
     lines.append(f"- 结构审计：{audit_status}（`askovo check --stage full`）")
@@ -3341,7 +3515,7 @@ def _report_decision_lines(reasoning: dict[str, Any] | None, by_id: dict[str, di
     return lines
 
 
-def deliver(study_dir: Path, kind: str = "memo", audit: Any | None = None) -> dict[str, Any]:
+def _deliver_artifact(study_dir: Path, kind: str = "memo", audit: Any | None = None) -> dict[str, Any]:
     study_dir = study_dir.resolve()
     study = load_json(study_dir / "study.json")
     route = study.get("route") or {}
@@ -3598,6 +3772,68 @@ def deliver(study_dir: Path, kind: str = "memo", audit: Any | None = None) -> di
         "evidence_count": evidence["count"],
         "product_reasoning": product_reasoning_summary(reasoning),
     }
+
+
+def _delivery_audit_info(audit: Any | None) -> dict[str, Any]:
+    if audit is not None and hasattr(audit, "as_dict"):
+        return audit.as_dict()
+    if isinstance(audit, dict):
+        return audit
+    return {"status": "not_run", "generated_at": "", "checks": []}
+
+
+def _with_chat_summary(
+    study_dir: Path,
+    kind: str,
+    result: dict[str, Any],
+    audit: Any | None,
+) -> dict[str, Any]:
+    """Attach one canonical, structured and readable projection to every result."""
+    study_dir = Path(study_dir).resolve()
+    try:
+        study = load_json(study_dir / "study.json")
+        if not isinstance(study, dict):
+            study = {}
+    except (OSError, json.JSONDecodeError, ValueError):
+        study = {}
+    try:
+        reasoning = load_product_reasoning(study_dir)
+    except (OSError, json.JSONDecodeError, ValueError):
+        reasoning = None
+    try:
+        evidence = _evidence_summary(study_dir)
+    except (OSError, ValueError):
+        evidence = {"count": 0, "records": [], "by_form": {}, "by_claim": {}}
+    result["chat_summary"] = delivery_projection.build_chat_summary(
+        study_dir,
+        kind,
+        result,
+        study=study,
+        reasoning=reasoning,
+        evidence=evidence,
+        audit_info=_delivery_audit_info(audit),
+    )
+    return result
+
+
+def deliver(study_dir: Path, kind: str = "memo", audit: Any | None = None) -> dict[str, Any]:
+    result = _deliver_artifact(study_dir, kind, audit=audit)
+    return _with_chat_summary(study_dir, kind, result, audit)
+
+
+def delivery_error(study_dir: Path, kind: str, error: Exception) -> dict[str, Any]:
+    """Return an honest no-artifact projection for CLI/MCP execution failures."""
+    result = {
+        "status": "error",
+        "kind": kind,
+        "reason": f"{type(error).__name__}: {error}",
+    }
+    return _with_chat_summary(
+        Path(study_dir), kind, result,
+        {"status": "error", "generated_at": "", "checks": [
+            {"id": "delivery", "status": "fail", "detail": result["reason"]},
+        ]},
+    )
 
 
 def doctor() -> int:
@@ -5552,10 +5788,11 @@ def cli_deliver(args: Any) -> int:
     try:
         result = deliver(Path(args.study_dir), args.kind)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
-        print(str(exc), file=sys.stderr)
+        result = delivery_error(Path(args.study_dir), args.kind, exc)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
+    return 1 if result.get("status") == "blocked" else 0
 
 
 def cli_doctor(args: Any) -> int:
