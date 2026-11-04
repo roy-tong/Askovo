@@ -23,7 +23,7 @@ askovo 的主链是：
 
 每条 chain 关联一个明确的用户、场景、任务和需求判断。一个需求有多个候选特性、一个产品服务多个场景时，用多条 chain 表达和比较，不把相互矛盾的方案塞进同一个节点。
 
-主链文件是七段产品与商业语义的机器真值；Markdown、MRD、PRD、BRD 和用户运营视图都只是投影。
+主链文件是七段产品与商业语义的机器真值；Markdown、MRD、PRD、BRD、用户运营、岗位 role 和生命周期 lifecycle 视图都只是投影。岗位 workplan 只保存目录引用、链绑定和作业状态，角色模板不得另写七节点结论。
 
 ```text
 product-reasoning.json

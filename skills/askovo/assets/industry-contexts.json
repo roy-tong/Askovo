@@ -1,0 +1,962 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-11-04",
+  "description": "Industry context overlays for role orchestration. They do not replace the five SURE domain packs or the seven-node reasoning schema.",
+  "industries": [
+    {
+      "id": "consumer_software",
+      "label_zh": "消费级软件",
+      "label_en": "Consumer software",
+      "base_domain": "software",
+      "keywords": [
+        "C端",
+        "消费软件",
+        "移动应用",
+        "社交产品",
+        "内容产品",
+        "工具产品",
+        "游戏产品",
+        "consumer app"
+      ],
+      "default_lifecycle": "L02",
+      "decision_focus": [
+        "用户任务与使用场景",
+        "功能流程与体验",
+        "留存与付费转化"
+      ],
+      "stakeholders": [
+        "终端用户",
+        "非用户与流失用户",
+        "内容或服务供给方",
+        "平台与支付方"
+      ],
+      "research_practices": [
+        "情境访谈",
+        "产品行为分析",
+        "日志与工单研究",
+        "原型可用性测试",
+        "队列与受控实验"
+      ],
+      "design_inputs": [
+        "用户故事与任务流",
+        "信息架构",
+        "功能需求与验收标准",
+        "指标与埋点合同"
+      ],
+      "prototype_forms": [
+        "线框图",
+        "可点击交互原型",
+        "MVP",
+        "Beta 版本"
+      ],
+      "verification_layers": [
+        "价值验证",
+        "任务可用性",
+        "功能与兼容性",
+        "隐私与平台政策",
+        "灰度发布与回滚"
+      ],
+      "mandatory_gates": [
+        "核心任务可由目标用户完成",
+        "价值行为与活跃事件分开定义",
+        "发布质量、隐私与回滚独立复核"
+      ],
+      "human_accountabilities": [
+        "产品负责人作范围与优先级决定",
+        "研发与安全人员确认技术和数据风险",
+        "实验负责人确认因果设计"
+      ],
+      "claim_boundaries": [
+        "点击和报名不等于持续价值",
+        "留存相关不等于干预因果",
+        "可用性不等于需求或付费"
+      ],
+      "core_roles": [
+        "R26",
+        "R27",
+        "R09",
+        "R14",
+        "R44",
+        "R46",
+        "R73",
+        "R77"
+      ],
+      "compatible_base_domains": [
+        "software",
+        "mobile"
+      ],
+      "output_exemplars": [
+        "一页决策备忘或业务方案",
+        "体验/可用性评审报告",
+        "PRD与验收追踪",
+        "发布/回滚检查单"
+      ]
+    },
+    {
+      "id": "enterprise_software",
+      "label_zh": "企业软件 / SaaS",
+      "label_en": "Enterprise software / SaaS",
+      "base_domain": "software",
+      "keywords": [
+        "B2B",
+        "SaaS",
+        "企业软件",
+        "企业服务",
+        "行业软件",
+        "工作流",
+        "权限",
+        "采购",
+        "企业管理"
+      ],
+      "default_lifecycle": "L02",
+      "decision_focus": [
+        "组织流程与角色权限",
+        "业务规则和系统集成",
+        "采购决策与可证明 ROI"
+      ],
+      "stakeholders": [
+        "业务执行者",
+        "业务负责人",
+        "管理员",
+        "IT/安全",
+        "采购与财务",
+        "实施与运维"
+      ],
+      "research_practices": [
+        "业务流程调研",
+        "组织决策链访谈",
+        "现场情境研究",
+        "系统与数据流分析",
+        "试点与价值实现复盘"
+      ],
+      "design_inputs": [
+        "角色权限矩阵",
+        "业务规则目录",
+        "跨系统流程与接口需求",
+        "审计与验收口径",
+        "ROI 基线"
+      ],
+      "prototype_forms": [
+        "流程原型",
+        "角色化点击原型",
+        "集成沙盒",
+        "限定客户试点"
+      ],
+      "verification_layers": [
+        "业务价值",
+        "角色任务可用性",
+        "功能与集成",
+        "数据安全与合规",
+        "部署迁移与价值实现"
+      ],
+      "mandatory_gates": [
+        "执行者/管理员/采购者需求分开",
+        "组织流程和例外路径已覆盖",
+        "安全、集成、迁移与支持责任已签收"
+      ],
+      "human_accountabilities": [
+        "客户业务负责人确认流程和验收",
+        "IT/安全负责人确认生产接入",
+        "财务与采购确认 ROI 口径"
+      ],
+      "claim_boundaries": [
+        "管理者偏好不等于一线可用",
+        "试点上线不等于价值实现",
+        "声明节省不等于经财务确认的 ROI"
+      ],
+      "core_roles": [
+        "R19",
+        "R28",
+        "R35",
+        "R39",
+        "R45",
+        "R46",
+        "R76",
+        "R77"
+      ],
+      "compatible_base_domains": [
+        "software"
+      ],
+      "output_exemplars": [
+        "业务案例与ROI备忘",
+        "业务流程与需求规格",
+        "试点/迁移方案",
+        "安全与集成评审"
+      ]
+    },
+    {
+      "id": "ai_native",
+      "label_zh": "AI 原生产品",
+      "label_en": "AI-native product",
+      "base_domain": "software",
+      "capability_overlay_only": true,
+      "keywords": [
+        "AI",
+        "Agent",
+        "智能体",
+        "大模型",
+        "LLM",
+        "生成式",
+        "模型",
+        " Copilot",
+        "人工智能"
+      ],
+      "default_lifecycle": "L03",
+      "decision_focus": [
+        "任务可完成性与能力边界",
+        "工具权限与人机协同",
+        "评测、可靠性与推理成本"
+      ],
+      "stakeholders": [
+        "任务委托人",
+        "结果审核者",
+        "工具与数据所有者",
+        "风险与安全负责人",
+        "被 AI 行为影响的人"
+      ],
+      "research_practices": [
+        "真实任务研究",
+        "模型能力边界评测",
+        "对抗与失败模式测试",
+        "人机协同观察",
+        "线上质量与成本监测"
+      ],
+      "design_inputs": [
+        "任务边界与非目标",
+        "模型/数据/工具能力声明",
+        "权限与确认策略",
+        "黄金评测集与失败恢复要求",
+        "延迟和成本预算"
+      ],
+      "prototype_forms": [
+        " Wizard-of-Oz 原型",
+        "任务回放评测",
+        "受限工具沙盒",
+        "人工接管试点"
+      ],
+      "verification_layers": [
+        "任务价值",
+        "结果正确性与可用性",
+        "工具执行可靠性",
+        "安全隐私与滥用",
+        "人工接管和规模化成本"
+      ],
+      "mandatory_gates": [
+        "评测集代表声明的任务与反例",
+        "高风险工具有最小权限和确认/撤销机制",
+        "模型/提示/数据/工具版本绑定结果",
+        "失败恢复与人工接管已演练"
+      ],
+      "human_accountabilities": [
+        "领域专家判断输出语义与风险",
+        "安全负责人批准权限和对抗测试",
+        "业务负责人承担自动执行与残余风险决定"
+      ],
+      "claim_boundaries": [
+        "演示成功不等于任务可靠性",
+        "偏好评分不等于事实正确",
+        "离线评测不等于线上影响或因果",
+        "Agent 执行完成不等于业务结果正确"
+      ],
+      "core_roles": [
+        "R29",
+        "R33",
+        "R52",
+        "R55",
+        "R72",
+        "R73",
+        "R75",
+        "R76"
+      ],
+      "compatible_base_domains": [
+        "software",
+        "hardware",
+        "mobile",
+        "automotive"
+      ],
+      "output_exemplars": [
+        "任务边界与能力说明",
+        "版本化评测计划与结果",
+        "人机协同/权限确认规格",
+        "失败恢复与接管预案"
+      ]
+    },
+    {
+      "id": "smart_hardware",
+      "label_zh": "智能硬件 / IoT",
+      "label_en": "Smart hardware / IoT",
+      "base_domain": "hardware",
+      "keywords": [
+        "智能硬件",
+        "IoT",
+        "智能设备",
+        "智能家居",
+        "可穿戴",
+        "智能相机",
+        "联网设备",
+        "消费机器人"
+      ],
+      "default_lifecycle": "L06",
+      "decision_focus": [
+        "物理形态与软硬件交互",
+        "性能功耗和续航",
+        "BOM、可靠性与量产约束"
+      ],
+      "stakeholders": [
+        "购买者",
+        "使用者",
+        "安装者",
+        "维护者",
+        "旁观者",
+        "App/云服务管理员"
+      ],
+      "research_practices": [
+        "家庭或现场情境研究",
+        "人因与握持研究",
+        "样机试用",
+        "台架与环境测试",
+        "遥测/RMA 分析"
+      ],
+      "design_inputs": [
+        "整机规格与 ConOps",
+        "尺寸重量和续航",
+        "软硬件接口",
+        "BOM 与目标成本",
+        "配置基线与验证方法"
+      ],
+      "prototype_forms": [
+        "外观手板",
+        "工程样机",
+        "软硬件联调原型",
+        "EVT/DVT/PVT 批次"
+      ],
+      "verification_layers": [
+        "用户价值",
+        "实体与数字体验",
+        "性能可靠性",
+        "电气/无线/产品安全",
+        "制造过程与售后"
+      ],
+      "mandatory_gates": [
+        "需求绑定 HW/FW/BOM/工艺配置",
+        "实验室、现场与量产证据分开",
+        "供应链、认证、售后与变更责任明确"
+      ],
+      "human_accountabilities": [
+        "系统与专业工程师确认架构和性能",
+        "质量/认证人员确认合规与放行",
+        "NPI/制造负责人确认量产准备"
+      ],
+      "claim_boundaries": [
+        "喜欢外观不等于会用或会买",
+        "EVT/DVT/PVT 不替代用户价值",
+        "投诉量没有装机与使用分母就不是故障率"
+      ],
+      "core_roles": [
+        "R30",
+        "R22",
+        "R56",
+        "R60",
+        "R61",
+        "R62",
+        "R75",
+        "R77"
+      ],
+      "compatible_base_domains": [
+        "hardware",
+        "mobile"
+      ],
+      "output_exemplars": [
+        "整机产品规格书",
+        "体验与工程验证报告",
+        "配置/风险/BOM清单",
+        "试产与上市准备评审"
+      ]
+    },
+    {
+      "id": "traditional_hardware",
+      "label_zh": "传统消费硬件",
+      "label_en": "Traditional consumer hardware",
+      "base_domain": "hardware",
+      "keywords": [
+        "传统硬件",
+        "家电",
+        "消费电子",
+        "工具",
+        "厨具",
+        "家具硬件",
+        "耐用消费品",
+        "非智能设备"
+      ],
+      "default_lifecycle": "L06",
+      "decision_focus": [
+        "外观材质与人体工学",
+        "功能耐用性",
+        "制造成本与包装防护"
+      ],
+      "stakeholders": [
+        "购买者",
+        "使用者",
+        "家庭成员",
+        "安装维修者",
+        "零售与物流人员"
+      ],
+      "research_practices": [
+        "家庭访问",
+        "人体测量与任务观察",
+        "产品与包装试用",
+        "寿命和环境试验",
+        "退换维修研究"
+      ],
+      "design_inputs": [
+        "外观与 CMF 规格",
+        "结构和材料规格",
+        "人因尺寸与操作力",
+        "制造与包装要求",
+        "成本与可靠性目标"
+      ],
+      "prototype_forms": [
+        "外观模型",
+        "结构手板",
+        "功能样机",
+        "试产与包装运输样品"
+      ],
+      "verification_layers": [
+        "使用价值",
+        "人因与操作体验",
+        "功能与耐久",
+        "材料和产品安全",
+        "制造包装与运输"
+      ],
+      "mandatory_gates": [
+        "外观与结构/热/装配/成本联合评审",
+        "材料与寿命结果绑定批次",
+        "包装、运输和维修场景已验证"
+      ],
+      "human_accountabilities": [
+        "工业/结构/材料工程师确认物理方案",
+        "实验室与质量人员确认测试",
+        "制造与供应链确认成本及量产"
+      ],
+      "claim_boundaries": [
+        "静态诊所偏好不证明长期使用",
+        "单一样机通过不代表批次可靠",
+        "成本估算不等于供应商报价"
+      ],
+      "core_roles": [
+        "R30",
+        "R56",
+        "R57",
+        "R58",
+        "R62",
+        "R64",
+        "R65",
+        "R75"
+      ],
+      "compatible_base_domains": [
+        "hardware",
+        "mobile"
+      ],
+      "output_exemplars": [
+        "ID/CMF与结构规格",
+        "DVT/可靠性验证报告",
+        "材料/BOM/成本清单",
+        "包装运输验证"
+      ]
+    },
+    {
+      "id": "cpg",
+      "label_zh": "快消品 / CPG",
+      "label_en": "Consumer packaged goods",
+      "base_domain": "consumer",
+      "keywords": [
+        "快消",
+        "CPG",
+        "食品",
+        "饮料",
+        "美妆",
+        "个护",
+        "日化",
+        "洗衣液",
+        "配方",
+        "香氛",
+        "护肤品"
+      ],
+      "default_lifecycle": "L07",
+      "decision_focus": [
+        "消费偏好与使用场合",
+        "配方功效和感官体验",
+        "包装价格带保质期与复购"
+      ],
+      "stakeholders": [
+        "消费者",
+        "购物者",
+        "家庭共同使用者",
+        "渠道与零售人员",
+        "法规和质量人员"
+      ],
+      "research_practices": [
+        "消费者与购物者洞察",
+        "焦点小组",
+        "CLT 感官评价",
+        "HUT 家庭试用",
+        "稳定性与真实购买队列"
+      ],
+      "design_inputs": [
+        "配方与原料规格",
+        "功效和宣称边界",
+        "感官目标",
+        "容量包装与剂量",
+        "目标成本和质量标准"
+      ],
+      "prototype_forms": [
+        "配方样品",
+        "香型或风味样品",
+        "包装样品",
+        "CLT/HUT 测试品",
+        "工艺放大批次"
+      ],
+      "verification_layers": [
+        "概念与购买价值",
+        "感官和家庭使用",
+        "功效与物理性能",
+        "安全稳定与法规",
+        "工艺放大和商业复购"
+      ],
+      "mandatory_gates": [
+        "感官/功效/安全证据不可互替",
+        "配方、包材和工艺版本绑定测试",
+        "稳定性、保质期、标签与宣称由专业人员放行"
+      ],
+      "human_accountabilities": [
+        "配方/食品科学家负责实验与工艺",
+        "法规和质量人员负责安全与宣称",
+        "供应链确认放大和保质期",
+        "商业团队用真实购买验证复购"
+      ],
+      "claim_boundaries": [
+        "免费样品继续使用不是复购",
+        "感官喜好不是功效或安全",
+        "购买意愿不是实际购买",
+        "实验室稳定不等于全货架期"
+      ],
+      "core_roles": [
+        "R10",
+        "R20",
+        "R21",
+        "R23",
+        "R31",
+        "R66",
+        "R68",
+        "R71",
+        "R74",
+        "R76"
+      ],
+      "compatible_base_domains": [
+        "consumer"
+      ],
+      "output_exemplars": [
+        "配方与感官开发报告",
+        "概念/CLT/HUT验证报告",
+        "包装与宣称合规清单",
+        "首购复购商业复盘"
+      ]
+    },
+    {
+      "id": "apparel_home",
+      "label_zh": "服装 / 鞋履 / 家居",
+      "label_en": "Apparel / footwear / home",
+      "base_domain": "consumer",
+      "keywords": [
+        "服装",
+        "鞋履",
+        "鞋类",
+        "面料",
+        "版型",
+        "纺织品",
+        "家居",
+        "生活用品",
+        "时尚"
+      ],
+      "default_lifecycle": "L07",
+      "decision_focus": [
+        "风格趋势与材质",
+        "版型尺码和舒适性",
+        "SKU 组合与商品节奏"
+      ],
+      "stakeholders": [
+        "穿着或使用者",
+        "购买者",
+        "不同体型与尺码人群",
+        "商品企划与零售",
+        "供应商"
+      ],
+      "research_practices": [
+        "趋势与生活方式研究",
+        "衣橱/家居情境研究",
+        "试穿与尺码研究",
+        "材料和耐用测试",
+        "销售与退换原因分析"
+      ],
+      "design_inputs": [
+        "款式与系列架构",
+        "面料和辅料规格",
+        "版型尺码与工艺单",
+        "SKU/颜色/尺码组合",
+        "目标成本与质量要求"
+      ],
+      "prototype_forms": [
+        "面料样",
+        "白坯与样衣",
+        "试穿样品",
+        "家居功能样",
+        "产前样"
+      ],
+      "verification_layers": [
+        "风格与场合价值",
+        "试穿和舒适性",
+        "材料与工艺性能",
+        "安全标签与合规",
+        "产前一致性和商品经营"
+      ],
+      "mandatory_gates": [
+        "目标体型和尺码覆盖有依据",
+        "款式/面料/版型/工艺版本可追溯",
+        "产前样与大货偏差有处置",
+        "SKU 决策不以单一款销量替代组合分析"
+      ],
+      "human_accountabilities": [
+        "版型与工艺专业人员确认纸样和工艺",
+        "材料实验室确认性能",
+        "商品与供应链确认组合、成本和生产"
+      ],
+      "claim_boundaries": [
+        "时尚偏好不等于合身或耐穿",
+        "单尺码试穿不能外推全尺码",
+        "退货原因文本没有销售分母就不是退货率"
+      ],
+      "core_roles": [
+        "R05",
+        "R10",
+        "R23",
+        "R31",
+        "R70",
+        "R74",
+        "R76",
+        "R78"
+      ],
+      "compatible_base_domains": [
+        "consumer"
+      ],
+      "output_exemplars": [
+        "商品企划与SKU结构",
+        "面料/版型/工艺单",
+        "试穿与尺码验证",
+        "产前样与质量报告"
+      ]
+    },
+    {
+      "id": "industrial_robotics",
+      "label_zh": "工业设备 / 机器人",
+      "label_en": "Industrial equipment / robotics",
+      "base_domain": "hardware",
+      "keywords": [
+        "工业设备",
+        "工业机器人",
+        "仓储机器人",
+        "搬运机器人",
+        "自动化",
+        "产线",
+        "工序",
+        "装备",
+        "AMR",
+        "AGV"
+      ],
+      "default_lifecycle": "L03",
+      "decision_focus": [
+        "生产工序与任务能力",
+        "节拍安全和系统集成",
+        "稳定性运维与 TCO/ROI"
+      ],
+      "stakeholders": [
+        "企业采购者",
+        "现场负责人",
+        "操作员",
+        "工艺/自动化工程师",
+        "EHS",
+        "IT/OT",
+        "维护人员"
+      ],
+      "research_practices": [
+        "现场工序测量",
+        "利益相关者访谈",
+        "设备日志与故障分析",
+        "仿真与实验工位",
+        "现场试点与 TCO 分析"
+      ],
+      "design_inputs": [
+        "任务包线与 ODD/工况",
+        "吞吐量精度与节拍",
+        "安全与人工介入",
+        "IT/OT 接口",
+        "环境与可靠性规格",
+        "验收和 TCO 口径"
+      ],
+      "prototype_forms": [
+        "仿真模型",
+        "实验工位",
+        "功能原型",
+        "受限现场试点",
+        "生产验证单元"
+      ],
+      "verification_layers": [
+        "业务价值与 ROI",
+        "操作和维护体验",
+        "任务性能与可靠性",
+        "机器/功能/现场安全",
+        "系统集成与生产验收"
+      ],
+      "mandatory_gates": [
+        "操作/采购/EHS/IT-OT 分别验收",
+        "任务成功率与节拍有明确分母和工况",
+        "急停、异常恢复、人工接管由安全专业人员验证",
+        "停机与运维成本进入 TCO"
+      ],
+      "human_accountabilities": [
+        "系统与安全工程师确认设备能力和风险",
+        "客户现场/EHS 批准试验条件",
+        "财务和现场负责人确认 ROI",
+        "IT/OT 批准生产集成"
+      ],
+      "claim_boundaries": [
+        "实验工位成功不代表现场节拍",
+        "零事故试跑不证明安全",
+        "部署数量不等于稳定使用或投资回报"
+      ],
+      "core_roles": [
+        "R02",
+        "R08",
+        "R19",
+        "R30",
+        "R35",
+        "R61",
+        "R62",
+        "R75",
+        "R76",
+        "R77"
+      ],
+      "compatible_base_domains": [
+        "hardware"
+      ],
+      "output_exemplars": [
+        "工序与任务需求规格",
+        "FAT/SAT与现场验证报告",
+        "安全/接管/运维方案",
+        "TCO与ROI商业案例"
+      ]
+    },
+    {
+      "id": "automotive",
+      "label_zh": "汽车 / 交通工具",
+      "label_en": "Automotive / mobility",
+      "base_domain": "automotive",
+      "keywords": [
+        "汽车",
+        "整车",
+        "座舱",
+        "车载",
+        "ADAS",
+        "自动驾驶",
+        "驾驶",
+        "车辆",
+        "交通工具"
+      ],
+      "default_lifecycle": "L06",
+      "decision_focus": [
+        "驾驶乘坐体验与空间",
+        "整车集成和 HMI",
+        "功能安全、SOTIF、法规与 NVH"
+      ],
+      "stakeholders": [
+        "驾驶员",
+        "乘客",
+        "交通参与者",
+        "车主与车队",
+        "售后维修",
+        "法规与安全人员"
+      ],
+      "research_practices": [
+        "静态/动态诊所",
+        "模拟器研究",
+        "封闭场地试验",
+        "受控道路与自然使用研究",
+        "整车工程 V&V"
+      ],
+      "design_inputs": [
+        "车型与功能边界",
+        "ODD 与可预见误用",
+        "整车系统需求",
+        "HMI 与接管要求",
+        "配置接口与安全目标"
+      ],
+      "prototype_forms": [
+        "造型与座舱模型",
+        "模拟器",
+        "工程样车",
+        "封闭场地原型",
+        "生产验证车辆"
+      ],
+      "verification_layers": [
+        "用户与场景价值",
+        "HMI 和人因",
+        "整车性能与可靠性",
+        "功能安全/SOTIF/网络安全/法规",
+        "生产批准与在场监测"
+      ],
+      "mandatory_gates": [
+        "诊所/模拟器/场地/道路证据不可互替",
+        "功能绑定整车与软硬件配置",
+        "高风险道路研究独立人工批准",
+        "安全与生产放行不由产品选择替代"
+      ],
+      "human_accountabilities": [
+        "整车和专业工程师确认性能",
+        "安全/法规人员确认风险与批准",
+        "试验负责人确认场地道路条件",
+        "质量与制造确认 PPAP/SOP"
+      ],
+      "claim_boundaries": [
+        "静态偏好不证明动态安全",
+        "模拟器差异不证明事故率",
+        "封闭场地零事件不证明开放道路安全"
+      ],
+      "core_roles": [
+        "R25",
+        "R30",
+        "R56",
+        "R61",
+        "R62",
+        "R63",
+        "R75",
+        "R76",
+        "R77"
+      ],
+      "compatible_base_domains": [
+        "automotive"
+      ],
+      "output_exemplars": [
+        "整车/系统需求规格",
+        "HMI与人因研究报告",
+        "模拟器/场地/道路验证",
+        "安全/法规与生产准备"
+      ]
+    },
+    {
+      "id": "medical_health",
+      "label_zh": "医疗器械 / 健康产品",
+      "label_en": "Medical devices / health products",
+      "base_domain": "hardware",
+      "keywords": [
+        "医疗",
+        "医疗器械",
+        "临床",
+        "患者",
+        "诊断",
+        "治疗",
+        "健康设备",
+        "医护",
+        "医院",
+        "医学"
+      ],
+      "default_lifecycle": "L03",
+      "decision_focus": [
+        "临床价值与预期用途",
+        "患者安全和使用风险",
+        "临床证据、监管路径与质量体系"
+      ],
+      "stakeholders": [
+        "患者",
+        "临床使用者",
+        "护理与支持人员",
+        "医疗机构采购",
+        "临床/医学事务",
+        "质量法规人员"
+      ],
+      "research_practices": [
+        "临床流程与需求研究",
+        "形成性人因研究",
+        "使用相关风险分析",
+        "总结性人因验证",
+        "临床评价与质量体系审核"
+      ],
+      "design_inputs": [
+        "预期用途与适应范围",
+        "预期用户/使用/环境",
+        "用户需求和基本性能",
+        "使用相关风险与控制",
+        "临床和监管证据要求"
+      ],
+      "prototype_forms": [
+        "低风险形成性原型",
+        "可用性工程样机",
+        "受控临床评价配置",
+        "设计转移与生产验证批次"
+      ],
+      "verification_layers": [
+        "临床价值",
+        "使用安全与人因",
+        "技术性能与可靠性",
+        "生物/电气/软件/临床安全合规",
+        "质量体系与生产放行"
+      ],
+      "mandatory_gates": [
+        "预期用户/用途/环境与界面共同界定",
+        "使用错误与临床风险可追溯",
+        "临床、法规、质量与设计验证独立负责",
+        "任何真人研究先完成伦理和安全审批"
+      ],
+      "human_accountabilities": [
+        "临床与医学人员判断临床价值",
+        "人因和风险人员确认使用安全",
+        "法规质量人员决定证据与放行路径",
+        "伦理委员会/授权机构批准适用的真人研究"
+      ],
+      "claim_boundaries": [
+        "用户喜欢不等于临床有效",
+        "可用性通过不等于临床安全或有效",
+        "工程验证不等于监管批准",
+        "互联网快速试错不得替代临床和质量门"
+      ],
+      "core_roles": [
+        "R07",
+        "R19",
+        "R22",
+        "R30",
+        "R35",
+        "R61",
+        "R73",
+        "R75",
+        "R76",
+        "R77"
+      ],
+      "compatible_base_domains": [
+        "hardware",
+        "software",
+        "mobile"
+      ],
+      "output_exemplars": [
+        "预期用途与用户需求文件",
+        "形成性/总结性人因计划",
+        "风险与使用安全分析",
+        "临床/法规证据清单"
+      ]
+    }
+  ],
+  "defaults_by_base_domain": {
+    "software": "consumer_software",
+    "hardware": "smart_hardware",
+    "consumer": "cpg",
+    "automotive": "automotive",
+    "mobile": "smart_hardware"
+  }
+}

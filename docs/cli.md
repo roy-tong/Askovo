@@ -12,7 +12,8 @@ askovo --help
 | 命令 | 用途 | 退出码 |
 |---|---|---|
 | `do "<需求>"` | **单入口**：路由 + 创建主链画布、研究计划、证据计划与工具包 | 0/2/4 |
-| `route "<需求>"` | 只路由，不写文件 | 0/2 |
+| `route "<需求>"` | 只路由，不写文件；含行业与岗位编排建议 | 0/2 |
+| `roles list/show/recommend/scaffold/template` | 80 岗位族、10 生命周期、10 行业的职责/KPI/SOP/交接/模板与项目执行包 | 0/2 |
 | `platforms "<需求>"` | 平台雷达：数据在哪、能否合规拿到、能证明什么 | 0/2 |
 | `collect <study>` | 通过 design gate 后运行采集适配器/本地导出/CDP，写 raw、manifest 与 normalized | 0/1/2/3/4 |
 | `research plan/authorize/run/status` | 宿主给定动作清单的逐条授权与受控执行 | 0/1/2/3/4 |
@@ -25,7 +26,7 @@ askovo --help
 | `instruments <study>` | 生成访谈/观察/任务/感官/价格/Beta/安全工具包 | 0/2 |
 | `import <study> <file>` | 导入 JSONL/CSV/文本为证据 | 0/2 |
 | `codebook <study>` | 生成六类结论的编码本 | 0/2 |
-| `deliver <study>` | 业务方案 plan（业务用户默认）/ 决策包 decision / 主链 memo / 总 report / MRD / PRD / BRD / 运营 ops / tracker / 签收 signoff | 0/2 |
+| `deliver <study>` | 业务方案 plan / 决策包 / MRD / PRD / BRD / 运营 / 岗位 role / 生命周期 lifecycle 等同一主链投影 | 0/1/2 |
 | `report <study>` | 中文研究状态报告（UXR 视角）→ `06-report/research-status.md` | 0/2 |
 | `signals <study>` | 从 evidence.jsonl 计算确定性语料信号 | 0/2 |
 | `lexicon <study>` | 未命名体验模式：词表产出与充分性检查 | 0/1/2 |
@@ -75,7 +76,31 @@ askovo route "SaaS 订阅留存下降" --json
 askovo route "座舱语音接管" --domain automotive --stage validation
 ```
 
-输出：`product_reasoning`（七节点、当前阶段焦点、主链产物），以及 domain、stage、intent、risk_flags、safety_gate、recommended_methods、alternatives、decisions、deliverables、platform_preview、next_commands。主链先展示，方法与平台是支撑层。
+输出：`product_reasoning`（七节点、当前阶段焦点、主链产物），以及 domain、stage、intent、risk_flags、safety_gate、recommended_methods、alternatives、decisions、deliverables、platform_preview、next_commands；另含 `industry_context` 与 `role_recommendation`。行业识别受已路由基础域约束，冲突与候选会显式保留。主链先展示，岗位、方法与平台是支撑层。
+
+## roles
+
+```bash
+askovo roles list --lifecycle L02 --query "访谈" --json
+askovo roles show R52 --industry ai_native
+askovo roles recommend "AI 摄影应用概念与失败恢复" --stage concept --task design
+askovo roles recommend "仓储机器人现场工序与 ROI" --task decide --scale lean
+askovo roles scaffold ./study --task define --scale standard
+askovo roles scaffold ./study --role R29 --role R52 --role R72
+askovo roles scaffold ./study --chain PR02 --role R29 --role R52
+askovo roles template R52 --deliverable R52-D01 --output agent-interaction.md
+askovo deliver ./study --kind role --role R52 --chain PR02
+askovo deliver ./study --kind lifecycle
+```
+
+- `list/show` 查询 80 个岗位族的职责、KPI 公式与护栏、SOP 输入/动作/输出/质量门、交付模板、交接和专业边界；`--industry` 加载十类行业上下文。
+- `recommend` 先识别 `decide/discover/define/design/validate/launch/operate/review` 任务，再按“牵头 → 任务触发 → 能力覆盖 → 当前阶段行业角色”选最小充分团队；`--task`/`--scale` 可覆盖。输出选中岗位、暂缓岗位与原因、真实交接边、输出合同。`--base-domain` 防止行业关键词覆盖 SURE 产品域；AI 可作为硬件行业的能力覆盖层。
+- 输出合同确定主交付物、最多两个支撑产出、格式、篇幅、读者、语气、章节结构、证据呈现、图表、行业优先产出和表达禁忌。软件决策通常 1–3 岗，高风险硬件/医疗验证最多 6 岗。
+- `scaffold` 要求已有主链：空链拒绝、单链自动绑定、多链要求 `--chain`。原子写 `01-sources/role-workbench/`，保存任务/规模/输出合同、目录/行业哈希、角色/SOP/KPI/模板引用、真实 PRxx.node/edge 和项目状态；默认只生成本轮主交付+支撑模板，`--all-templates` 才扩展。不复制岗位定义，不修改主链/判断/证据。已有 workbench 不可用 `--force` 覆盖。KPI baseline/target 均为 null。
+- `template` 生成未填写、未复核的工作模板；七节点语义为 `editable=false`，不自动产生市场、需求、产品或商业结论。
+- `deliver --kind role` 从 workplan 绑定或显式链只读生成扁平 `06-report/role-Rxx-Dyy.md`；旧研究多链必须指定 `--chain`。
+- `deliver --kind lifecycle` 生成 `06-report/lifecycle-board.md`，展示十板块交接与实际工作状态。
+- 详细设计见[产品创新岗位操作系统](role-operating-system.md)。
 
 ## plan
 

@@ -33,12 +33,14 @@ SURE = **Structured User Research with Evidence**。它不是独立安装的产�
 - 主链工作区与五域路由；
 - CLI、Skill、MCP 三个入口共用同一套行为；
 - 平台雷达、采集、描述性分析、队列、CDP 和证据台账；
-- 面向产品经理、用户研究、用户运营、市场分析、需求分析和商业分析的投影与 MRD/PRD/BRD 交付。
+- 面向产品经理、用户研究、用户运营、市场分析、需求分析和商业分析的投影与 MRD/PRD/BRD 交付；
+- 80 岗位族 × 10 生命周期 × 10 行业的职责/KPI/SOP/交接/模板、原子 workplan 和 role/lifecycle 只读投影。岗位层组织工作，不改变 SURE 的证据语义。
 
 ## 代码位置
 
 ```text
 skills/askovo/scripts/sure_engine.py   # SURE 支撑引擎、主链脚手架与共享渲染
+skills/askovo/scripts/role_catalog.py  # 岗位/行业目录、组队、workplan 与岗位投影（支撑层）
 skills/askovo/scripts/askovo.py        # askovo CLI、统一结构/证据/推理门
 skills/askovo/scripts/askovo_mcp.py    # askovo MCP 外壳
 ```

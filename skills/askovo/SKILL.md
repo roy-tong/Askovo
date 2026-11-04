@@ -27,7 +27,11 @@ There is **one** entry point. Do not ask the user to install software/hardware/c
 askovo "<business research request>"           # bare shorthand = do
 askovo do "<business request>"                 # route + seven-node chain scaffold
 askovo chain <study>                           # render product + business reasoning
-askovo route "<request>" --json                # route only
+askovo route "<request>" --json                # route + industry/role recommendation
+askovo roles list --json                       # 80 role families / 10 lifecycles / 10 industries
+askovo roles show R52 --industry ai_native     # duties + KPI + SOP + outputs + boundaries
+askovo roles recommend "<goal>" --stage concept --task design  # task-sized team + output contract
+askovo roles scaffold <study> --task define    # only this task's roles, outputs and templates
 askovo platforms "<request>" --domain …        # where supporting data lives
 askovo collect <study> --platform …            # collect/import against a chain gap
 askovo analyze <study> --question …            # normalize/describe
@@ -38,12 +42,16 @@ askovo deliver <study> --kind mrd              # market research/analysis projec
 askovo deliver <study> --kind prd              # requirements research/analysis projection
 askovo deliver <study> --kind brd              # business analysis projection
 askovo deliver <study> --kind ops              # user-operations projection
+askovo deliver <study> --kind role --role R52  # bound, read-only role projection
+askovo deliver <study> --kind lifecycle        # 10-module role/workflow navigation board
 askovo boundary <study> --requirements <req.md> --output <ai-doc.md>  # F2: Added/Missing/Inflated lexical candidates
 askovo cost <study> log --task <t> --minutes <n> [--baseline-minutes <n>]  # F4: manual verification minutes
 askovo deliver <study> --kind signoff            # F3: stakeholder sign-off one-pager
 ```
 
 `askovo do` detects product domain, lifecycle stage, intent and risk, then selects the method pack. If the domain is ambiguous, ask once: software / hardware / consumer / automotive / mobile. If the request is high-risk (road test, ingestion, skin contact, minors, sensitive data, production logs, destructive test), stop at S0 and require an explicit human acknowledgement; never add `--ack-risk` on the user's behalf.
+
+**Role operating system**: use [references/role-operations.md](references/role-operations.md) when the task needs role responsibilities, KPIs, SOPs, deliverables, templates or cross-functional staffing. Askovo resolves 80 role families across 10 lifecycle areas and 10 industry overlays, but does not deploy all of them by default. Infer the task (decide/discover/define/design/validate/launch/operate/review), select a minimum sufficient team, list deferred roles and reasons, and determine an `output_plan` (primary deliverable, format, length, audience, structure, evidence display, expression limits and industry exemplars). `--task`/`--scale` override inference; high-risk physical/medical validation may expand to cross-functional review. After the canonical chain is confirmed, `roles scaffold` atomically writes `01-sources/role-workbench/` with the task/output contract, bound chain/node targets, role SOPs, null KPI targets, handoffs and only the primary/supporting templates (`--all-templates` expands); multi-chain studies require `--chain`. These artifacts orchestrate work only: they never create a second product/market/requirements/business truth, assign evidence levels, validate claims or approve engineering/clinical/safety/compliance/production release. PM, PO and BA may be combined by a team but are not synonyms; value, usability, engineering, safety/compliance/clinical and production validation stay separate.
 
 **Platform rule**: before promising data, run `askovo platforms`. Classify each source as `supported`, `limited` or `blocked`. Never scrape a blocked platform, never substitute a login session/merchant API/internal endpoint, and never treat platform volume as population representativeness. Prefer official APIs, authorized exports or compliant historical datasets.
 
@@ -125,6 +133,7 @@ The generated paths are the handoff contract:
 - `04-findings/product-reasoning.json` — canonical seven-node product/business semantics, rationales, prioritization, change log, and business gate;
 - `01-sources/source-plan.csv` — reasoning nodes, evidence role, route, target, cap, access, and bias;
 - `01-sources/feasibility.json` and `01-sources/tasks.md` — platform feasibility and collection tasks;
+- `01-sources/role-workbench/` — catalog-referenced role/SOP/KPI/template orchestration, never findings truth;
 - `02-data/evidence.jsonl` — canonical evidence index with stable source references;
 - `03-codebook/` — versioned definitions and human gold set;
 - `04-findings/demand-judgments.json` — demand and commercial evidence eligibility;
@@ -137,6 +146,8 @@ The generated paths are the handoff contract:
 - `06-report/mrd.md` — market research/analysis projection from `deliver --kind mrd`;
 - `06-report/prd.md` — requirements research/analysis projection from `deliver --kind prd`;
 - `06-report/brd.md` — business analysis projection from `deliver --kind brd`;
+- `06-report/role-Rxx-Dyy.md` — bound, read-only role deliverable projections from `deliver --kind role --role Rxx`;
+- `06-report/lifecycle-board.md` — 10-module role/workflow navigation from `deliver --kind lifecycle`;
 - `06-report/research-status.md` — research-status projection from `askovo.py report`;
 - `06-report/user-ops.md` — operations projection from `deliver --kind ops`.
 

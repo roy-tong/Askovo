@@ -50,6 +50,20 @@ except ModuleNotFoundError as exc:  # direct importlib loading used by embedders
     _projection_spec.loader.exec_module(delivery_projection)
 
 try:
+    import role_catalog
+except ModuleNotFoundError as exc:  # direct importlib loading used by embedders/tests
+    if exc.name != "role_catalog":
+        raise
+    _role_spec = importlib.util.spec_from_file_location(
+        "askovo_role_catalog", Path(__file__).with_name("role_catalog.py")
+    )
+    if _role_spec is None or _role_spec.loader is None:  # pragma: no cover
+        raise RuntimeError("cannot load role_catalog.py beside sure_engine.py")
+    role_catalog = importlib.util.module_from_spec(_role_spec)
+    sys.modules.setdefault("askovo_role_catalog", role_catalog)
+    _role_spec.loader.exec_module(role_catalog)
+
+try:
     import fcntl
 except ImportError:  # pragma: no cover - Windows fallback
     fcntl = None
@@ -540,6 +554,7 @@ def route_request(
                     "why_not": "当前阶段不是首选；当证据形式/约束不匹配时替代",
                 }
     requires_ack = bool(risks)
+    role_plan = role_catalog.recommend_roles(text, stage=stage_key, base_domain=str(domain_info["domain"]))
     next_commands = []
     slug = f"./askovo-{domain_info['domain']}-{stage_key}"
     intent_name = intent_info["intent"]
@@ -557,6 +572,11 @@ def route_request(
             "askovo", "do", text, "--domain", domain_info["domain"],
             "--stage", stage_key, "--study", slug,
         ]))
+    next_commands.append(shlex.join([
+        "askovo", "roles", "recommend", text,
+        "--industry", role_plan["industry"]["id"], "--stage", stage_key,
+        "--base-domain", str(domain_info["domain"]),
+    ]))
     if requires_ack:
         next_commands.append("若确需执行，请由负责人完成安全/伦理审查后追加 --ack-risk")
     return {
@@ -573,6 +593,8 @@ def route_request(
         "intent": intent_info["intent"],
         "intent_source": intent_info["source"],
         "product_reasoning": product_reasoning_contract(stage_key),
+        "industry_context": role_plan["industry"],
+        "role_recommendation": role_plan,
         "risk_flags": risks,
         "safety_gate": "review" if requires_ack else "clear",
         "risk_notes": pack.get("risk_notes", []),
@@ -610,6 +632,7 @@ def route_markdown(route: dict[str, Any]) -> str:
         "",
         f"- 原始需求：{route['query']}",
         f"- 产品类型：**{route['domain_label']}**（`{route['domain']}`，置信度 {route['confidence']}）",
+        f"- 行业上下文：**{route.get('industry_context', {}).get('label_zh', '待确认')}**（`{route.get('industry_context', {}).get('id', 'unknown')}`）",
         f"- 阶段：**{route['stage_label']}**（`{route['stage']}`）",
         f"- 意图：`{route['intent']}`",
         f"- 安全门：`{route['safety_gate']}`",
@@ -630,6 +653,11 @@ def route_markdown(route: dict[str, Any]) -> str:
             f"| {item['name']} | {'；'.join(item['answers'])} | "
             f"{', '.join(item['evidence_forms'])} | {', '.join(item['does_not_support'])} |"
         )
+    role_plan = route.get("role_recommendation", {})
+    if role_plan.get("assignments"):
+        lines.extend(["", "## 岗位编排（工作分工，不是结论）", ""])
+        for item in role_plan["assignments"]:
+            lines.append(f"- **{item['id']} {item['name_zh']}**：{item['reason']}；产出：{'、'.join(item['primary_deliverables'])}")
     lines.extend(["", "## 本阶段要回答", ""])
     lines.extend(f"- {item}" for item in route.get("decisions", []))
     lines.extend(["", "## 风险", "", _risk_markdown(route.get("risk_flags", []))])
@@ -987,7 +1015,9 @@ def create_study(
         "title": route["query"][:120],
         "method_version": VERSION,
         "product_domain": route["domain"],
+        "industry_context": route.get("industry_context", {}).get("id"),
         "lifecycle_stage": route["stage"],
+        "recommended_roles": [item["id"] for item in route.get("role_recommendation", {}).get("assignments", [])],
         "product_reasoning_version": "2.0",
         "product_reasoning": product_reasoning_contract(route["stage"]),
         "delivery": {"audiences": list(DELIVERY_AUDIENCES)},
@@ -1085,20 +1115,26 @@ def create_study(
         f"""# {study['title']}
 
 - 产品类型：{route['domain_label']} (`{route['domain']}`)
+- 行业上下文：{route.get('industry_context', {}).get('label_zh', '待确认')} (`{route.get('industry_context', {}).get('id', 'unknown')}`)
 - 阶段：{route['stage_label']} (`{route['stage']}`)
 - 方法：{', '.join(item['name'] for item in selected)}
 - 安全门：`{route['safety_gate']}`
 
 ## 产品推理主链
 
-场景 → 用户 → 痛点 → 需求 → 特性 → 产品
+场景 → 用户 → 痛点 → 需求 → 特性 → 产品 → 商业
 
 先填写 `04-findings/product-reasoning.json`：每个节点都要有判断、推导理由、状态和假设；再针对最薄弱的节点设计采集与分析。
+
+## 岗位执行包
+
+确认主链后运行 `askovo roles scaffold .` 原子生成 `01-sources/role-workbench/`：角色分工、KPI 定义（目标为 null）、SOP 质量门和交付模板；它们只组织工作，不替代主链与专业签收。多链时需加 `--chain PRxx`。
 
 ## 下一步
 
 ```bash
 askovo chain .
+askovo roles recommend "{route['query']}" --stage {route['stage']}
 # 填写 product-reasoning.json 与 study.json 后检查设计门
 askovo check . --stage design
 askovo instruments .
@@ -1110,11 +1146,14 @@ askovo deliver . --kind prd
 """,
         encoding="utf-8",
     )
+    role_workbench_command = shlex.join(["askovo", "roles", "scaffold", str(study_dir)])
     return {
         "status": "created",
         "study_dir": str(study_dir),
         "study_id": study_id,
         "domain": route["domain"],
+        "industry_context": study.get("industry_context"),
+        "role_workbench_command": role_workbench_command,
         "stage": route["stage"],
         "risk_flags": route.get("risk_flags", []),
         "safety_gate": route["safety_gate"],
@@ -3515,7 +3554,15 @@ def _report_decision_lines(reasoning: dict[str, Any] | None, by_id: dict[str, di
     return lines
 
 
-def _deliver_artifact(study_dir: Path, kind: str = "memo", audit: Any | None = None) -> dict[str, Any]:
+def _deliver_artifact(
+    study_dir: Path,
+    kind: str = "memo",
+    audit: Any | None = None,
+    role_id: str | None = None,
+    industry: str | None = None,
+    deliverable_id: str | None = None,
+    chain_id: str | None = None,
+) -> dict[str, Any]:
     study_dir = study_dir.resolve()
     study = load_json(study_dir / "study.json")
     route = study.get("route") or {}
@@ -3534,6 +3581,54 @@ def _deliver_artifact(study_dir: Path, kind: str = "memo", audit: Any | None = N
     audit_failed = audit_status != "pass"
     out_dir = study_dir / "06-report"
     out_dir.mkdir(parents=True, exist_ok=True)
+    if kind == "lifecycle":
+        workplan_path = study_dir / "01-sources" / "role-workbench" / "workplan.json"
+        workplan = load_json(workplan_path) if workplan_path.is_file() else None
+        projection = role_catalog.project_lifecycle(study, reasoning, workplan, audit_status)
+        path = out_dir / "lifecycle-board.md"
+        path.write_text(projection["markdown"], encoding="utf-8")
+        return {
+            "status": "written", "path": str(path), "kind": kind,
+            "audit_status": audit_status,
+            "audit_generated_at": audit_info.get("generated_at", ""),
+            "workplan_bound": projection["workplan_bound"],
+            "catalog_sha256": projection["catalog_sha256"],
+            "assignment_count": projection["assignment_count"],
+            "handoff_edge_count": projection["handoff_edge_count"],
+            "work_status_counts": projection["work_status_counts"],
+            "canonical_projection": True,
+        }
+    if kind == "role":
+        if not role_id:
+            return {"status": "blocked", "kind": kind, "audit_status": audit_status, "reason": "--role is required for a role projection"}
+        if reasoning is None:
+            return {"status": "blocked", "kind": kind, "audit_status": audit_status, "reason": "no canonical product-reasoning chain exists; role delivery cannot author one"}
+        workplan_path = study_dir / "01-sources" / "role-workbench" / "workplan.json"
+        workplan = load_json(workplan_path) if workplan_path.is_file() else None
+        projection = role_catalog.project_role_deliverable(
+            study, reasoning, evidence, role_id, industry, deliverable_id, audit_status,
+            workplan=workplan, chain_id=chain_id,
+        )
+        path = out_dir / f"role-{projection['deliverable_id']}.md"
+        path.write_text(projection["markdown"], encoding="utf-8")
+        return {
+            "status": "written",
+            "path": str(path),
+            "kind": kind,
+            "audit_status": audit_status,
+            "audit_generated_at": audit_info.get("generated_at", ""),
+            "evidence_count": evidence["count"],
+            "role_id": projection["role_id"],
+            "deliverable_id": projection["deliverable_id"],
+            "industry_id": projection["industry_id"],
+            "projected_chain_ids": projection["projected_chain_ids"],
+            "chain_id": chain_id or (projection["projected_chain_ids"][0] if len(projection["projected_chain_ids"]) == 1 else None),
+            "catalog_sha256": projection["catalog_sha256"],
+            "workplan_bound": projection["workplan_bound"],
+            "workplan": str(workplan_path) if workplan is not None else None,
+            "canonical_projection": True,
+            "work_notes_separate": True,
+        }
     if kind == "tracker":
         path = out_dir / "postlaunch-tracker.csv"
         with path.open("w", encoding="utf-8", newline="") as handle:
@@ -3816,8 +3911,18 @@ def _with_chat_summary(
     return result
 
 
-def deliver(study_dir: Path, kind: str = "memo", audit: Any | None = None) -> dict[str, Any]:
-    result = _deliver_artifact(study_dir, kind, audit=audit)
+def deliver(
+    study_dir: Path,
+    kind: str = "memo",
+    audit: Any | None = None,
+    role_id: str | None = None,
+    industry: str | None = None,
+    deliverable_id: str | None = None,
+    chain_id: str | None = None,
+) -> dict[str, Any]:
+    result = _deliver_artifact(
+        study_dir, kind, audit=audit, role_id=role_id, industry=industry, deliverable_id=deliverable_id, chain_id=chain_id,
+    )
     return _with_chat_summary(study_dir, kind, result, audit)
 
 
@@ -3850,6 +3955,12 @@ def doctor() -> int:
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         checks.append(("domain-packs", False, str(exc)))
         packs = {}
+    role_errors = role_catalog.validate_catalog()
+    checks.append((
+        "role-catalog",
+        not role_errors,
+        "80 roles; 10 lifecycles; 10 industries" if not role_errors else "; ".join(role_errors[:5]),
+    ))
     try:
         platform_data = platform_catalog()
         platform_ids = {str(item.get("id")) for item in platform_data.get("platforms", [])}

@@ -30,6 +30,7 @@ import sure_engine  # noqa: E402
 import research_run  # noqa: E402
 import research_loop  # noqa: E402
 import decision_review  # noqa: E402
+import role_catalog  # noqa: E402
 
 research_loop.bind_cli(sys.modules[__name__])
 
@@ -2450,6 +2451,23 @@ def _check_product_reasoning(
                 )
 
 
+def _check_role_workplan(audit: Audit, root: Path, stage: str) -> None:
+    path = root / "01-sources" / "role-workbench" / "workplan.json"
+    if not path.is_file():
+        return
+    try:
+        workplan = json.loads(path.read_text(encoding="utf-8"))
+        reasoning = json.loads((root / "04-findings" / "product-reasoning.json").read_text(encoding="utf-8"))
+        errors = role_catalog.validate_workplan(workplan, reasoning)
+    except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
+        errors = [f"{type(exc).__name__}: {exc}"]
+    if errors:
+        for error in errors[:10]:
+            audit.add("role_workplan", "fail", error, stage)
+    else:
+        audit.add("role_workplan", "pass", "role catalog hashes, references, chain targets and work status are valid", stage)
+
+
 def audit_study(root: Path, stage: str) -> Audit:
     root = root.resolve()
     audit = Audit(root, stage)
@@ -2463,6 +2481,7 @@ def audit_study(root: Path, stage: str) -> Audit:
         return audit
     judgments = _check_decisions(audit, paths, study, evidence_by_id)
     _check_product_reasoning(audit, paths, study, evidence_by_id, judgments)
+    _check_role_workplan(audit, root, stage)
     return audit
 
 
@@ -2686,7 +2705,15 @@ def command_deliver(args: argparse.Namespace) -> int:
     study_dir = Path(args.study_dir).resolve()
     try:
         audit = audit_study(study_dir, "full")
-        result = sure_engine.deliver(study_dir, args.kind, audit=audit)
+        result = sure_engine.deliver(
+            study_dir,
+            args.kind,
+            audit=audit,
+            role_id=getattr(args, "role", None),
+            industry=getattr(args, "industry", None),
+            deliverable_id=getattr(args, "deliverable", None),
+            chain_id=getattr(args, "chain", None),
+        )
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         result = sure_engine.delivery_error(study_dir, args.kind, exc)
         print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -4990,7 +5017,11 @@ def build_parser() -> argparse.ArgumentParser:
         "deliver", help="assemble the business plan, decision package, MRD, PRD, BRD, memo and tracker deliverables"
     )
     deliver_parser.add_argument("study_dir")
-    deliver_parser.add_argument("--kind", choices=("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis"), default="memo")
+    deliver_parser.add_argument("--kind", choices=("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis", "role", "lifecycle"), default="memo")
+    deliver_parser.add_argument("--role", help="kind=role: role id/name whose deliverable is projected from the canonical chain")
+    deliver_parser.add_argument("--deliverable", help="kind=role: deliverable id/name; defaults to the role's first")
+    deliver_parser.add_argument("--industry", help="kind=role: override the study industry context")
+    deliver_parser.add_argument("--chain", help="kind=role: canonical chain id when no bound workplan exists or to select its target")
     deliver_parser.set_defaults(func=command_deliver)
 
     boundary_parser = subparsers.add_parser(
@@ -5046,6 +5077,51 @@ def build_parser() -> argparse.ArgumentParser:
     queue_retry = queue_sub.add_parser("retry", help="move failed jobs back to pending")
     queue_retry.add_argument("study_dir")
     queue_retry.set_defaults(func=sure_engine.cli_queue_retry)
+
+    roles_parser = subparsers.add_parser(
+        "roles",
+        help="80 role families: responsibilities, KPI definitions, SOPs, handoffs, industry contexts and deliverable templates",
+    )
+    roles_sub = roles_parser.add_subparsers(dest="action", required=True)
+    roles_list = roles_sub.add_parser("list", help="list/search roles and show lifecycle/industry metadata")
+    roles_list.add_argument("--lifecycle", choices=[f"L{number:02d}" for number in range(1, 11)])
+    roles_list.add_argument("--industry")
+    roles_list.add_argument("--query", help="search role names, aliases, responsibilities and deliverables")
+    roles_list.add_argument("--json", action="store_true")
+    roles_list.set_defaults(func=role_catalog.command_roles)
+    roles_show = roles_sub.add_parser("show", help="show one role card with full SOP/KPI/deliverable definitions")
+    roles_show.add_argument("role", help="R09, 09, a role name or a common alias")
+    roles_show.add_argument("--industry", help="apply one of the 10 industry context overlays")
+    roles_show.add_argument("--json", action="store_true")
+    roles_show.set_defaults(func=role_catalog.command_roles)
+    roles_recommend = roles_sub.add_parser("recommend", help="assemble a role team from goal, industry and study stage")
+    roles_recommend.add_argument("goal", help="product/business goal or task")
+    roles_recommend.add_argument("--industry", help="10-industry context; inferred from the goal when omitted")
+    roles_recommend.add_argument("--stage", choices=sure_engine.STAGES)
+    roles_recommend.add_argument("--base-domain", choices=tuple(sure_engine.domain_packs().keys()), help="constrain industry inference to the routed SURE base domain")
+    roles_recommend.add_argument("--lifecycle", choices=[f"L{number:02d}" for number in range(1, 11)])
+    roles_recommend.add_argument("--task", choices=role_catalog.TASK_TYPES, help="task type; inferred from the goal/stage when omitted")
+    roles_recommend.add_argument("--scale", choices=tuple(role_catalog.SCALE_CAPS), help="team size mode: lean/standard/cross_functional")
+    roles_recommend.add_argument("--json", action="store_true")
+    roles_recommend.set_defaults(func=role_catalog.command_roles)
+    roles_scaffold = roles_sub.add_parser("scaffold", help="write a task-sized SOP/KPI/RACI/template workbench")
+    roles_scaffold.add_argument("study_dir")
+    roles_scaffold.add_argument("--role", action="append", default=[], help="role id/name; repeat to override automatic recommendation")
+    roles_scaffold.add_argument("--industry", help="override the study industry context")
+    roles_scaffold.add_argument("--chain", help="canonical chain id; required when the study has multiple chains")
+    roles_scaffold.add_argument("--task", choices=role_catalog.TASK_TYPES, help="task type; inferred from the decision question when omitted")
+    roles_scaffold.add_argument("--scale", choices=tuple(role_catalog.SCALE_CAPS), help="team size mode for automatic selection")
+    roles_scaffold.add_argument("--all-templates", action="store_true", help="generate every selected role's templates instead of only this task's outputs")
+    roles_scaffold.add_argument("--json", action="store_true")
+    roles_scaffold.set_defaults(func=role_catalog.command_roles)
+    roles_template = roles_sub.add_parser("template", help="render one role deliverable template without creating findings")
+    roles_template.add_argument("role")
+    roles_template.add_argument("--deliverable", help="deliverable id or name; defaults to the first")
+    roles_template.add_argument("--industry")
+    roles_template.add_argument("--output", help="write Markdown to this path instead of stdout")
+    roles_template.add_argument("--force", action="store_true")
+    roles_template.add_argument("--json", action="store_true")
+    roles_template.set_defaults(func=role_catalog.command_roles)
 
     doctor_parser = subparsers.add_parser("doctor", help="check catalog, packs, method refs and version")
     doctor_parser.set_defaults(func=sure_engine.cli_doctor)
@@ -5116,7 +5192,7 @@ def build_parser() -> argparse.ArgumentParser:
 CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "do", "domains",
     "methods", "catalog", "platforms", "collect", "research", "loop", "analyze", "instruments", "import", "queue",
-    "codebook", "chain", "economics", "psm", "decision", "deliver", "boundary", "cost", "doctor", "audit", "review", "check", "connectors",
+    "codebook", "chain", "economics", "psm", "decision", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }
 

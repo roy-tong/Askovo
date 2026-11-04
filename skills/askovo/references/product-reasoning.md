@@ -160,4 +160,6 @@ Business-node support commands: `askovo economics` renders a deterministic unit-
 - Requirements research/analysis: requirement origins, prioritization, acceptance, traceability, change impact, and PRD.
 - Business analysis: revenue model, pricing/cost inputs, unit economics, resource gate, risks, and BRD.
 
+The expanded 80-role system (`role-operations.md`) uses `01-sources/role-workbench/workplan.json` only for catalog references, bound chain targets, owners and work states. `deliver --kind role` and `--kind lifecycle` are read-only projections of this chain; blank role templates never become another market, requirement, product or business truth. SOP completion does not change the statuses defined here.
+
 For operations, define events, numerator, denominator, time zone, cohort rule/version, observation window, and data completeness. Feedback records are not audience size. Behavioral data shows what happened; interviews and observation help explain why; causal claims need an appropriate design.

@@ -187,7 +187,7 @@ Create or update `04-findings/product-reasoning.json` after the evidence ledger 
 
 Write a solution-neutral need, then explain why the candidate feature changes that outcome and why the selected capabilities form a bounded product. Add the business node: market boundary (geography/offer/time window/included/excluded), segments and payer, positioning and alternatives, revenue/pricing hypotheses, channels, costs, market-estimate method, unit-economics inputs, success metrics, business non-goals, and the G0–G2 gate. Include alternatives, acceptance conditions, assumptions, rival explanations, counter-evidence, human review, prioritization, and change log. `decided` records a product/business choice only; keep delivery, observed outcome, and causal states in `supporting_states` with their own references.
 
-Generate role documents from the same chain: `deliver --kind mrd`, `--kind prd`, and `--kind brd`. Market research/analysis feeds MRD; requirements research/analysis feeds PRD; business analysis feeds BRD. Unknown numbers stay null with gaps; never infer market size or unit economics from convenience-sample volume.
+Generate role documents from the same chain: `deliver --kind mrd`, `--kind prd`, and `--kind brd`. Market research/analysis feeds MRD; requirements research/analysis feeds PRD; business analysis feeds BRD. For cross-functional execution, read `role-operations.md`, bind roles with `roles scaffold` (explicit `--chain` for multiple chains), then use `deliver --kind role --role Rxx` or `--kind lifecycle`. These are read-only projections of canonical bindings, never template-authored findings. Unknown numbers stay null with gaps; never infer market size or unit economics from convenience-sample volume.
 
 Then run:
 

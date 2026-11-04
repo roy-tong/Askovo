@@ -33,6 +33,7 @@ one entry:
   do "<需求>"        route product domain/stage/method and scaffold a study
   route "<需求>"     route only, no writes
   chain <study>       render the scene-user-pain-need-feature-product-business chain
+  roles <action>      80 role families: list/show/recommend/scaffold/template
   platforms "<需求>" rank platforms by data availability and access
 
 research:
@@ -42,7 +43,7 @@ research:
   import <study> <file> import interviews/CSV/JSONL/text
   document <file>       convert a local PDF/Office/text source to Markdown (optional Docling)
   codebook <study>     scaffold claim-type codebook
-  deliver <study>      memo / report / MRD / PRD / BRD / user ops / tracker
+  deliver <study>      plan / MRD / PRD / BRD / ops / role / lifecycle / decision views
   report <study>       write the user-research status projection
   audit <study>        product/business chain gates + signals + per-claim verdicts
   review <study>       decision review: evidence, readiness, falsifiability, bias, deliverables
@@ -80,6 +81,9 @@ def _doctor() -> int:
         ("connector-registry", (SKILL / "assets" / "open-source-connectors.json").is_file(), ""),
         ("method-catalog", (SKILL / "assets" / "method-catalog.json").is_file(), ""),
         ("domain-packs", len(list((SKILL / "assets" / "domain-packs").glob("*.json"))) == 5, ""),
+        ("role-runtime", (SKILL / "scripts" / "role_catalog.py").is_file(), ""),
+        ("role-catalog", (SKILL / "assets" / "role-catalog.json").is_file(), ""),
+        ("industry-contexts", (SKILL / "assets" / "industry-contexts.json").is_file(), ""),
         ("platform-catalog", (SKILL / "assets" / "platform-catalog.json").is_file(), ""),
     ]
     for name, ok, detail in checks:

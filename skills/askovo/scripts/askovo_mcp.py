@@ -47,8 +47,9 @@ SERVER_INSTRUCTIONS = (
     "researchers, user operations, market analysis, requirements analysis and business analysis. "
     "Start with askovo_route or askovo_do across software / hardware / consumer / automotive / "
     "mobile. The primary spine is scene -> user -> pain -> need -> feature -> product -> business; "
-    "collection and analysis only support weak nodes and inferences. "
-    "(1) askovo_do scaffolds the study and product-reasoning.json; (2) askovo_chain renders the "
+    "collection and analysis only support weak nodes and inferences. askovo_roles provides 80 role "
+    "contracts, KPI/SOP/templates, 10 industry overlays and orchestration-only study workbenches. "
+    "(1) askovo_do scaffolds the study and product-reasoning.json; askovo_roles scaffold explicitly creates the bound role workbench; (2) askovo_chain renders the "
     "reasoning canvas; (3) askovo_platforms and askovo_collect gather permitted supporting "
     "material; (4) askovo_analyze describes it; (5) askovo_audit checks product/business "
     "rationales, evidence gates and per-claim verdicts; (6) askovo_deliver assembles the "
@@ -393,9 +394,17 @@ def _build_codebook(arguments: dict[str, Any]) -> argparse.Namespace:
 
 def _build_deliver(arguments: dict[str, Any]) -> argparse.Namespace:
     kind = arguments.get("kind", "memo")
-    if kind not in ("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis"):
-        raise ValueError("kind must be memo, report, mrd, prd, brd, ops, decision, tracker, signoff, plan or analysis")
-    return _namespace(study_dir=_string(arguments.get("study_dir"), "study_dir"), kind=kind)
+    if kind not in ("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis", "role", "lifecycle"):
+        raise ValueError("kind must be memo, report, mrd, prd, brd, ops, decision, tracker, signoff, plan, analysis, role or lifecycle")
+    role = _string(arguments.get("role"), "role") if kind == "role" else _optional_string(arguments, "role")
+    return _namespace(
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        kind=kind,
+        role=role,
+        deliverable=_optional_string(arguments, "deliverable"),
+        industry=_optional_string(arguments, "industry"),
+        chain=_optional_string(arguments, "chain"),
+    )
 
 
 def _build_boundary(arguments: dict[str, Any]) -> argparse.Namespace:
@@ -419,6 +428,50 @@ def _build_cost(arguments: dict[str, Any]) -> argparse.Namespace:
         minutes=int(arguments["minutes"]) if arguments.get("minutes") is not None else 0,
         baseline_minutes=int(arguments["baseline_minutes"]) if arguments.get("baseline_minutes") is not None else None,
         note=_optional_string(arguments, "note") or "",
+    )
+
+
+def _build_roles(arguments: dict[str, Any]) -> argparse.Namespace:
+    action = _string(arguments.get("action"), "action")
+    if action not in ("list", "show", "recommend", "scaffold", "template"):
+        raise ValueError("action must be list, show, recommend, scaffold or template")
+    role_value: Any = ""
+    study_dir = ""
+    goal = ""
+    if action in ("show", "template"):
+        role_value = _string(arguments.get("role"), "role")
+    elif action == "recommend":
+        goal = _string(arguments.get("goal"), "goal")
+    elif action == "scaffold":
+        study_dir = _string(arguments.get("study_dir"), "study_dir")
+        raw_roles = arguments.get("roles", [])
+        if not isinstance(raw_roles, list) or any(not isinstance(item, str) or not item.strip() for item in raw_roles):
+            raise ValueError("roles must be an array of non-empty role id strings")
+        role_value = raw_roles
+    task = _optional_string(arguments, "task")
+    if task is not None and task not in askovo_cli.role_catalog.TASK_TYPES:
+        raise ValueError("task must be one of: " + ", ".join(askovo_cli.role_catalog.TASK_TYPES))
+    scale = _optional_string(arguments, "scale")
+    if scale is not None and scale not in askovo_cli.role_catalog.SCALE_CAPS:
+        raise ValueError("scale must be lean, standard or cross_functional")
+    return _namespace(
+        action=action,
+        lifecycle=_optional_string(arguments, "lifecycle"),
+        industry=_optional_string(arguments, "industry"),
+        query=_optional_string(arguments, "query"),
+        role=role_value,
+        goal=goal,
+        stage=_optional_string(arguments, "stage"),
+        base_domain=_optional_string(arguments, "base_domain"),
+        task=task,
+        scale=scale,
+        all_templates=_boolean(arguments, "all_templates"),
+        study_dir=study_dir,
+        chain=_optional_string(arguments, "chain"),
+        deliverable=_optional_string(arguments, "deliverable"),
+        output=_optional_string(arguments, "output"),
+        force=False,
+        json=True,
     )
 
 
@@ -817,12 +870,16 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "askovo_deliver",
-        "description": "Assemble the business plan (business-language view with data basis and user voices), a chain-led decision memo, product report, MRD, PRD, BRD, user-operations projection or post-launch tracker.",
+        "description": "Assemble the business plan, decision package, MRD/PRD/BRD, operations/tracker, or a role deliverable projected read-only from the canonical chain. kind=role requires role and never authors findings from a blank template.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "study_dir": {"type": "string"},
-                "kind": {"enum": ["memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis"], "default": "memo"},
+                "kind": {"enum": ["memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis", "role", "lifecycle"], "default": "memo"},
+                "role": {"type": "string", "description": "kind=role: R52 or role alias"},
+                "deliverable": {"type": "string", "description": "kind=role: deliverable id or name"},
+                "industry": {"type": "string", "description": "kind=role: optional industry overlay"},
+                "chain": {"type": "string", "description": "kind=role: explicit PRxx chain target"},
             },
             "required": ["study_dir"],
         },
@@ -954,6 +1011,40 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "askovo_roles",
+        "description": (
+            "Use the 80-role product-innovation operating system. list/search role families; "
+            "show responsibilities, KPI formulas/guardrails, SOP quality gates and deliverable "
+            "templates; infer task and select a minimum sufficient team by goal/industry/stage; "
+            "return an adaptive output contract (primary/supporting deliverables, format, length, "
+            "audience, structure, evidence display); scaffold an orchestration-only study "
+            "workbench with only the task's templates by default. Role completion never validates "
+            "a claim or approves engineering, clinical, safety, compliance, production or commercial release."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"enum": ["list", "show", "recommend", "scaffold", "template"]},
+                "query": {"type": "string", "description": "list: role name/alias/work search"},
+                "role": {"type": "string", "description": "show/template: R09 or a role alias"},
+                "roles": {"type": "array", "items": {"type": "string"}, "description": "scaffold: optional role ids; first is accountable"},
+                "goal": {"type": "string", "description": "recommend: product/business goal"},
+                "industry": {"type": "string", "description": "one of the 10 industry context ids"},
+                "lifecycle": {"type": "string", "description": "L01-L10"},
+                "stage": {"enum": list(askovo_cli.sure_engine.STAGES)},
+                "task": {"enum": list(askovo_cli.role_catalog.TASK_TYPES), "description": "task type; inferred when omitted"},
+                "scale": {"enum": list(askovo_cli.role_catalog.SCALE_CAPS), "description": "lean/standard/cross_functional"},
+                "all_templates": {"type": "boolean", "default": False, "description": "scaffold: generate all selected-role templates instead of this task's outputs"},
+                "base_domain": {"enum": list(askovo_cli.sure_engine.domain_packs().keys())},
+                "study_dir": {"type": "string", "description": "scaffold: existing study workspace"},
+                "chain": {"type": "string", "description": "scaffold: canonical PRxx chain; required for multi-chain studies"},
+                "deliverable": {"type": "string", "description": "template: deliverable id or name"},
+                "output": {"type": "string", "description": "template: optional local Markdown output"},
+            },
+            "required": ["action"],
+        },
+    },
+    {
         "name": "askovo_platform_map",
         "description": (
             "Show how regions (cn/overseas/global) and platform types resolve to platforms and "
@@ -1014,6 +1105,7 @@ TOOL_BUILDERS = {
     "askovo_psm": (askovo_cli.sure_engine.cli_psm, _build_psm),
     "askovo_boundary": (askovo_cli.sure_engine.cli_boundary, _build_boundary),
     "askovo_cost": (askovo_cli.sure_engine.cli_cost, _build_cost),
+    "askovo_roles": (askovo_cli.role_catalog.command_roles, _build_roles),
 }
 
 
