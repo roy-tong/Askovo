@@ -293,6 +293,11 @@ def _deliverables(study_dir: Path) -> List[Dict[str, Any]]:
 
 DECISION_RECORD_KIND = "askovo.decision-record"
 DECISION_RECORD_SCHEMA = "1.0"
+SAFE_HOLD_DECISION = "hold"
+SAFE_HOLD_RECOMMENDATION = (
+    "Hold the prior product/business recommendation; do not proceed while trusted "
+    "contradictory evidence awaits human semantic and accountable product review"
+)
 
 
 def _fingerprint(value: Any) -> str:
@@ -384,9 +389,9 @@ def _candidate_actions(study: Dict[str, Any], reasoning: Dict[str, Any], chain: 
     return unique
 
 
-def _registered_evidence_ids(study_dir: Path) -> set:
+def _registered_evidence(study_dir: Path) -> Dict[str, Dict[str, Any]]:
     path = Path(study_dir).resolve() / "02-data" / "evidence.jsonl"
-    known: set = set()
+    known: Dict[str, Dict[str, Any]] = {}
     if not path.is_file():
         return known
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -397,8 +402,224 @@ def _registered_evidence_ids(study_dir: Path) -> set:
         except json.JSONDecodeError:
             continue
         if isinstance(item, dict) and item.get("record_id"):
-            known.add(str(item["record_id"]))
+            known[str(item["record_id"])] = item
     return known
+
+
+def _registered_evidence_ids(study_dir: Path) -> set:
+    return set(_registered_evidence(study_dir))
+
+
+def _recommendation_state(chain: Dict[str, Any]) -> Dict[str, Any]:
+    nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
+    product = nodes.get("product") if isinstance(nodes.get("product"), dict) else {}
+    business = nodes.get("business") if isinstance(nodes.get("business"), dict) else {}
+    gate = business.get("gate") if isinstance(business.get("gate"), dict) else {}
+    return {
+        "chain_status": chain.get("status"),
+        "confidence": chain.get("confidence"),
+        "product_recommendation": product.get("statement"),
+        "product_status": product.get("status"),
+        "business_recommendation": gate.get("decision") or business.get("statement"),
+        "business_statement": business.get("statement"),
+        "business_status": business.get("status"),
+        "next_action": chain.get("next_test"),
+        "evidence_ids": _chain_evidence_ids(chain),
+    }
+
+
+def _contradiction_sources(
+    study_dir: Path,
+    chain: Dict[str, Any],
+    evidence: Dict[str, Any],
+) -> List[str]:
+    """Recorded counter-evidence relations; an ID alone is not a contradiction."""
+    ref = str(evidence.get("record_id") or "")
+    sources: List[str] = []
+    if str(evidence.get("stance") or "").strip().casefold() in {"contradicts", "counter"}:
+        sources.append(f"02-data/evidence.jsonl[{ref}].stance")
+    if ref in {str(item) for item in chain.get("counter_evidence_ids") or []}:
+        sources.append(f"chains[id={chain.get('id')}].counter_evidence_ids")
+    judgments = _load(Path(study_dir).resolve() / "04-findings" / "demand-judgments.json")
+    if isinstance(judgments, list):
+        for index, judgment in enumerate(judgments):
+            if not isinstance(judgment, dict):
+                continue
+            if str(judgment.get("id") or "") != str(chain.get("demand_judgment_id") or ""):
+                continue
+            if ref in {str(item) for item in judgment.get("counter_evidence_ids") or []}:
+                sources.append(f"demand-judgments[{index}].counter_evidence_ids")
+    mappings = _load(Path(study_dir).resolve() / "04-findings" / "loop-mappings.json")
+    entries = mappings.get("mappings") if isinstance(mappings, dict) else []
+    for index, mapping in enumerate(entries or []):
+        if not isinstance(mapping, dict):
+            continue
+        if (str(mapping.get("record_id") or "") == ref
+                and str(mapping.get("stance") or "") == "contradicts"):
+            sources.append(f"loop-mappings[{index}]({mapping.get('id') or 'contradicts'})")
+    return list(dict.fromkeys(sources))
+
+
+def _apply_adversarial_revision(
+    study_dir: Path,
+    chain: Dict[str, Any],
+    *,
+    previous_records: List[Dict[str, Any]],
+    contradiction_ids: List[str],
+    recommendation: str,
+    registered: Dict[str, Dict[str, Any]],
+    operator: str,
+    revision: str,
+    next_action: str,
+    recorded_at: str,
+    version: int,
+) -> Dict[str, Any]:
+    """Apply a recorded contradiction to the live recommendation.
+
+    This is deliberately not semantic inference: an existing counter-evidence
+    relation supplies the contradictory stance. The CLI verifies registration,
+    context, provenance and that relation, then applies one fixed confidence
+    downgrade. Without an optional human replacement it chooses a safe hold,
+    never invents a new product, and never upgrades a candidate or causal state.
+    """
+    if not previous_records:
+        raise ValueError(
+            "an adversarial revision requires an initial DecisionRecord so the supporting "
+            "recommendation and basis remain replayable"
+        )
+    override = str(recommendation or "").strip()
+    replacement = override or SAFE_HOLD_RECOMMENDATION
+    if not contradiction_ids:
+        raise ValueError("adversarial revision requires at least one --contradiction evidence id")
+    before = _recommendation_state(chain)
+    if override and override.casefold() == str(before.get("business_recommendation") or "").strip().casefold():
+        raise ValueError("the replacement recommendation must differ from the current business recommendation")
+    context_key = str(chain.get("context_key") or "")
+    evidence_projections: List[Dict[str, Any]] = []
+    for ref in contradiction_ids:
+        evidence = registered.get(ref)
+        if evidence is None:
+            raise ValueError(f"contradictory evidence {ref!r} is not registered in 02-data/evidence.jsonl")
+        if context_key and str(evidence.get("context_key") or "") != context_key:
+            raise ValueError(f"contradictory evidence {ref!r} does not share chain context_key {context_key!r}")
+        missing = [name for name in ("evidence_level", "evidence_basis", "source_ref")
+                   if not str(evidence.get(name) or "").strip()]
+        if missing:
+            raise ValueError(
+                f"contradictory evidence {ref!r} lacks required trust/provenance fields: " + ", ".join(missing)
+            )
+        contradiction_sources = _contradiction_sources(study_dir, chain, evidence)
+        if not contradiction_sources:
+            raise ValueError(
+                f"evidence {ref!r} has no recorded contradicts stance/counter-evidence mapping; "
+                "an evidence id alone cannot trigger an adversarial revision"
+            )
+        projected = {name: evidence.get(name) for name in (
+            "record_id", "context_key", "evidence_level", "evidence_basis", "source_ref",
+            "normalized_text_hash",
+        )}
+        projected["contradiction_sources"] = contradiction_sources
+        evidence_projections.append(projected)
+
+    # One ordinal step, never an invented probability or causal effect size.
+    confidence_scale = ("very-low", "low", "medium", "high")
+    old_confidence = str(chain.get("confidence") or "low")
+    old_index = confidence_scale.index(old_confidence) if old_confidence in confidence_scale else 1
+    new_confidence = confidence_scale[max(0, old_index - 1)]
+    nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
+    product = nodes.get("product") if isinstance(nodes.get("product"), dict) else None
+    business = nodes.get("business") if isinstance(nodes.get("business"), dict) else None
+    if product is None or business is None:
+        raise ValueError("adversarial revision requires canonical product and business nodes")
+    gate = business.setdefault("gate", {})
+    if not isinstance(gate, dict):
+        raise ValueError("canonical business.gate must be an object")
+
+    chain["confidence"] = new_confidence
+    chain["status"] = "needs-validation"
+    product["statement"] = replacement
+    product["status"] = "needs-validation"
+    business["statement"] = replacement
+    business["status"] = "needs-validation"
+    gate["decision"] = replacement if override else SAFE_HOLD_DECISION
+    chain["next_test"] = str(next_action or "").strip() or (
+        "Human semantic review: reassess the replacement recommendation against contradictory "
+        "evidence " + ", ".join(contradiction_ids) + "; no causal effect is inferred"
+    )
+    gap_note = (
+        "Trusted contradiction declared in DecisionRecord v" + str(version)
+        + ": " + ", ".join(contradiction_ids) + "; causal impact remains unproven"
+    )
+    gaps = chain.setdefault("gaps", [])
+    if not isinstance(gaps, list):
+        raise ValueError("canonical chain gaps must be an array")
+    if gap_note not in gaps:
+        gaps.append(gap_note)
+
+    prioritization = chain.setdefault("prioritization", {})
+    if not isinstance(prioritization, dict):
+        raise ValueError("canonical chain prioritization must be an object")
+    prioritization["method"] = (
+        "Adversarial DecisionRecord revision: explicit contradiction plus one ordinal confidence downgrade"
+    )
+    prioritization["rationale"] = str(revision or "").strip() or (
+        "A recorded contradicts/counter-evidence relation triggered a safe hold and confidence "
+        "downgrade; the CLI does not infer contradiction semantics, a replacement product or causality"
+    )
+    prioritization["decided_at"] = recorded_at
+
+    changes = chain.setdefault("change_log", [])
+    if not isinstance(changes, list):
+        raise ValueError("canonical chain change_log must be an array")
+    used_ids = {str(item.get("id")) for item in changes if isinstance(item, dict)}
+    change_index = len(changes) + 1
+    while f"CHG{change_index:02d}" in used_ids:
+        change_index += 1
+    changes.append({
+        "id": f"CHG{change_index:02d}",
+        "base_version": f"decision-record-v{version - 1}",
+        "new_version": f"decision-record-v{version}",
+        # Do not promote newly mapped evidence into the linked demand judgment
+        # merely to make change_log pass. The DecisionRecord owns the full basis.
+        "reason_evidence_ids": [],
+        "reason_decision_record_id": f"DR-{chain.get('id')}-{version:03d}",
+        "affected_refs": [f"{chain.get('id')}.product", f"{chain.get('id')}.business"],
+        "impact": (
+            f"Recommendation revised; confidence {before.get('confidence')} -> {new_confidence}; "
+            "product/business reopened for validation"
+        ),
+        "decision": replacement if override else SAFE_HOLD_DECISION,
+        "owner": operator,
+        "decided_at": recorded_at,
+        "projection_sync": "stale",
+    })
+    after = _recommendation_state(chain)
+    return {
+        "trigger": "trusted_contradictory_evidence",
+        "rule": (
+            "Require an initial record, registered same-context graded evidence and a recorded "
+            "contradicts/counter-evidence relation; downgrade confidence one ordinal step and reopen "
+            "the chain/product/business. Default to safe hold; an optional human recommendation may "
+            "override it. Never infer semantics, a new product, causality or evidence upgrades."
+        ),
+        "trust_basis": (
+            f"{operator} selected registered evidence for a trusted adversarial revision; CLI verified "
+            "its context, provenance and pre-recorded contradiction relation, not its semantic truth"
+        ),
+        "recommendation_origin": "decision_maker_override" if override else "deterministic_safe_hold",
+        "recommendation_code": "revised" if override else SAFE_HOLD_DECISION,
+        "evidence": evidence_projections,
+        "before": before,
+        "after": after,
+        "candidate_evidence_promoted": False,
+        "demand_judgment_changed": False,
+        "causal_status_changed": False,
+        "boundary": (
+            "A deterministic recommendation revision is not automatic proof that the contradiction "
+            "caused an outcome, invalidated demand, or established a better product. Human semantic "
+            "and accountable product review remain required."
+        ),
+    }
 
 
 def record_decision(
@@ -412,12 +633,15 @@ def record_decision(
     evidence_ids: Any = (),
     revision: str = "",
     next_action: str = "",
+    contradiction_ids: Any = (),
+    recommendation: str = "",
 ) -> Dict[str, Any]:
-    """Append an immutable historical projection without changing chain status.
+    """Append an immutable record, optionally applying an adversarial revision.
 
     The current seven-node chain remains the only live product/business truth.
-    Snapshots exist solely to replay what the named decision-maker saw at each
-    version; observations never upgrade a node or a demand judgment.
+    Ordinary records never change it. An explicit trusted contradiction may revise
+    its current recommendation/confidence through deterministic rules; snapshots
+    preserve both sides and observations never upgrade a candidate or judgment.
     """
     operator = str(by or "").strip()
     if not operator:
@@ -434,14 +658,36 @@ def record_decision(
     current_hypotheses = _hypothesis_projection(study, hypothesis_id)
     original = copy.deepcopy(previous[0].get("original_hypothesis")) if previous else copy.deepcopy(current_hypotheses)
     refs = [str(item).strip() for item in (evidence_ids or []) if str(item).strip()]
-    unknown = sorted(set(refs) - _registered_evidence_ids(study_dir))
+    contradiction_refs = list(dict.fromkeys(
+        str(item).strip() for item in (contradiction_ids or []) if str(item).strip()
+    ))
+    if recommendation and not contradiction_refs:
+        raise ValueError("--recommendation requires at least one --contradiction evidence id")
+    registered = _registered_evidence(study_dir)
+    unknown = sorted((set(refs) | set(contradiction_refs)) - set(registered))
     if unknown:
-        raise ValueError("observation evidence is not registered in 02-data/evidence.jsonl: " + ", ".join(unknown))
+        raise ValueError("observation/contradiction evidence is not registered in 02-data/evidence.jsonl: " + ", ".join(unknown))
     observation_entries = [{
         "text": str(item).strip(),
         "evidence_ids": refs,
         "status": "recorded_observation_not_an_evidence_upgrade",
     } for item in (observations or []) if str(item).strip()]
+    recorded_at = datetime.now(timezone.utc).isoformat()
+    adversarial = None
+    if contradiction_refs:
+        adversarial = _apply_adversarial_revision(
+            study_dir,
+            chain,
+            previous_records=previous,
+            contradiction_ids=contradiction_refs,
+            recommendation=recommendation,
+            registered=registered,
+            operator=operator,
+            revision=revision,
+            next_action=next_action,
+            recorded_at=recorded_at,
+            version=version,
+        )
     nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
     business = nodes.get("business") if isinstance(nodes.get("business"), dict) else {}
     gate = business.get("gate") if isinstance(business.get("gate"), dict) else {}
@@ -455,12 +701,15 @@ def record_decision(
         "chain_id": str(chain_id),
         "version": version,
         "parent_version": version - 1 if version > 1 else None,
-        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "recorded_at": recorded_at,
         "decision_maker": operator,
         "accountable_owner": str(
             prioritization.get("owner") or gate.get("owner") or study_decision.get("owner") or ""
         ),
-        "decision": str(decision or gate.get("decision") or chain.get("status") or ""),
+        "decision": str(
+            (gate.get("decision") or chain.get("status") or "") if adversarial
+            else (decision or gate.get("decision") or chain.get("status") or "")
+        ),
         "original_hypothesis": original or [],
         "hypotheses_at_version": current_hypotheses,
         "candidate_actions": _candidate_actions(study, reasoning, chain),
@@ -474,10 +723,14 @@ def record_decision(
         },
         "observations": observation_entries,
         "observed_supporting_states": copy.deepcopy(chain.get("supporting_states") or {}),
+        "decision_state": _recommendation_state(chain),
+        "adversarial_revision": adversarial,
         "revision": {
             "note": str(revision or ""),
             "parent_record_id": previous[-1].get("record_id") if previous else None,
             "change_log": copy.deepcopy(chain.get("change_log") or []),
+            "before": copy.deepcopy((adversarial or {}).get("before")),
+            "after": copy.deepcopy((adversarial or {}).get("after")),
         },
         "next_action": str(next_action or chain.get("next_test") or ""),
         "chain_fingerprint": _fingerprint(chain),
@@ -489,13 +742,19 @@ def record_decision(
     }
     records.append(record)
     reasoning_path.write_text(json.dumps(reasoning, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return {
+    result = {
         "status": "recorded",
         "record": record,
         "canonical_artifact": str(reasoning_path),
-        "chain_status_unchanged": chain.get("status"),
+        "canonical_revision_applied": bool(adversarial),
         "replay_command": f"askovo decision replay {study_dir} --record-id {record_id} --json",
     }
+    if adversarial:
+        result["chain_status_before"] = adversarial["before"]["chain_status"]
+        result["chain_status_after"] = adversarial["after"]["chain_status"]
+    else:
+        result["chain_status_unchanged"] = chain.get("status")
+    return result
 
 
 def list_decision_records(study_dir: Path, *, chain_id: str = "") -> Dict[str, Any]:
@@ -536,10 +795,20 @@ def _record_changes(previous: Optional[Dict[str, Any]], current: Dict[str, Any])
         })
     old_evidence = set((previous.get("basis") or {}).get("evidence_ids") or [])
     new_evidence = set((current.get("basis") or {}).get("evidence_ids") or [])
+    before_state = _recommendation_state(before)
+    after_state = _recommendation_state(after)
     return {
         "type": "revision",
         "decision_before": previous.get("decision"),
         "decision_after": current.get("decision"),
+        "confidence_before": before_state.get("confidence"),
+        "confidence_after": after_state.get("confidence"),
+        "product_recommendation_before": before_state.get("product_recommendation"),
+        "product_recommendation_after": after_state.get("product_recommendation"),
+        "business_recommendation_before": before_state.get("business_recommendation"),
+        "business_recommendation_after": after_state.get("business_recommendation"),
+        "chain_status_before": before_state.get("chain_status"),
+        "chain_status_after": after_state.get("chain_status"),
         "next_action_before": previous.get("next_action"),
         "next_action_after": current.get("next_action"),
         "evidence_added": sorted(new_evidence - old_evidence),
@@ -623,6 +892,13 @@ def render_decision_replay(payload: Dict[str, Any]) -> str:
             f"- 下一动作：{item.get('next_action') or '未记录'}",
             "- 原假设：",
         ])
+        decision_state = item.get("decision_state") if isinstance(item.get("decision_state"), dict) else {}
+        if decision_state:
+            lines.extend([
+                f"- 置信度：{decision_state.get('confidence') or '未记录'}；主链状态：{decision_state.get('chain_status')}",
+                f"- 产品建议：{decision_state.get('product_recommendation') or '未记录'}",
+                f"- 商业建议：{decision_state.get('business_recommendation') or '未记录'}",
+            ])
         hypotheses = item.get("original_hypothesis") or []
         lines.extend(
             f"  - {entry.get('id')}：{entry.get('statement')}；证伪：{entry.get('falsified_if')}"
@@ -649,9 +925,20 @@ def render_decision_replay(payload: Dict[str, Any]) -> str:
             f"- 修订：{revision.get('note') or '无新增说明'}；"
             f"关联 change_log {len(revision.get('change_log') or [])} 条"
         )
+        adversarial = item.get("adversarial_revision") if isinstance(item.get("adversarial_revision"), dict) else None
+        if adversarial:
+            before = adversarial.get("before") if isinstance(adversarial.get("before"), dict) else {}
+            after = adversarial.get("after") if isinstance(adversarial.get("after"), dict) else {}
+            lines.extend([
+                f"- 对抗修订：{adversarial.get('recommendation_origin')} / {adversarial.get('recommendation_code')}",
+                f"  - 改前：置信度 {before.get('confidence')}；产品建议 {before.get('product_recommendation')}；商业建议 {before.get('business_recommendation')}",
+                f"  - 改后：置信度 {after.get('confidence')}；产品建议 {after.get('product_recommendation')}；商业建议 {after.get('business_recommendation')}",
+                "  - 矛盾关系与证据依据已保留；不自动证明因果。",
+            ])
         changes = item.get("changes_from_previous") if isinstance(item.get("changes_from_previous"), dict) else {}
         lines.append(
             f"- 与上一版：{changes.get('type')}；节点变化 {len(changes.get('node_changes') or [])}；"
+            f"置信度 {changes.get('confidence_before', '无')} → {changes.get('confidence_after', '无')}；"
             f"证据新增 {', '.join(changes.get('evidence_added') or []) or '无'}；"
             f"证据移除 {', '.join(changes.get('evidence_removed') or []) or '无'}"
         )

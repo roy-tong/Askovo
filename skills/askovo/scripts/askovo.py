@@ -2013,7 +2013,7 @@ def _check_product_reasoning(
 
     node_statuses = {"hypothesis", "needs-validation", "validated", "rejected", "deprioritized"}
     chain_statuses = {"draft", "hypothesis", "needs-validation", "decided", "rejected", "deprioritized"}
-    allowed_confidence = {"low", "medium", "high"}
+    allowed_confidence = {"very-low", "low", "medium", "high"}
     judgment_by_id = {
         str(item.get("id")): item for item in judgments if isinstance(item, dict) and item.get("id")
     }
@@ -2655,6 +2655,8 @@ def command_decision(args: argparse.Namespace) -> int:
                 evidence_ids=args.evidence or [],
                 revision=args.revision or "",
                 next_action=args.next_action or "",
+                contradiction_ids=args.contradiction or [],
+                recommendation=args.recommendation or "",
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
@@ -4969,6 +4971,16 @@ def build_parser() -> argparse.ArgumentParser:
                                  help="record: observed note; repeatable, never an automatic evidence upgrade")
     decision_parser.add_argument("--evidence", action="append", default=[],
                                  help="record: registered evidence id supporting the observation; repeatable")
+    decision_parser.add_argument(
+        "--contradiction", "--contradictory-evidence", dest="contradiction",
+        action="append", default=[],
+        help=("record: registered evidence id with an existing contradicts/counter mapping; repeatable. "
+              "Triggers safe hold + confidence downgrade after an initial record"),
+    )
+    decision_parser.add_argument(
+        "--recommendation", default="",
+        help="record: optional replacement recommendation; without it contradiction uses deterministic safe hold",
+    )
     decision_parser.add_argument("--revision", default="", help="record: what changed since the parent version")
     decision_parser.add_argument("--next-action", default="", help="record: defaults to chain.next_test")
     decision_parser.add_argument("--json", action="store_true", help="replay JSON instead of readable Markdown")

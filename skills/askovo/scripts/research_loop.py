@@ -27,6 +27,7 @@ import re
 import sys
 import tempfile
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -62,8 +63,10 @@ FATAL_RESULTS = {"review_expired", "lease_lost"}
 GAP_STATES = ("open", "collected", "analyzed", "resolved", "unresolvable")
 ASSESS_VERDICTS = ("resolved", "unresolvable")
 ANALYSIS_RELATIVE = Path("04-findings/loop-analysis")
+EXECUTIONS_RELATIVE = Path("04-findings/loop-executions.json")
 EVALUATIONS_RELATIVE = Path("04-findings/loop-evaluations.json")
 MAPPINGS_RELATIVE = Path("04-findings/loop-mappings.json")
+LOCAL_ANALYSIS_GAP_KINDS = {"unwritten_node", "claim_needs_decision"}
 MAPPING_STANCES = ("supports", "contradicts", "contextual")
 ANALYSIS_VERSION = "1"
 PLACEHOLDERS = {"", "tbd", "todo", "待填写", "待确认", "待补充", "n/a", "na", "none", "null"}
@@ -160,6 +163,10 @@ def evaluations_path(study_dir: Path) -> Path:
 
 def mappings_path(study_dir: Path) -> Path:
     return Path(study_dir).resolve() / MAPPINGS_RELATIVE
+
+
+def executions_path(study_dir: Path) -> Path:
+    return Path(study_dir).resolve() / EXECUTIONS_RELATIVE
 
 
 def gap_state(state: Dict[str, Any], key: str) -> str:
@@ -544,6 +551,34 @@ def _coverage_gaps(study: Dict[str, Any], payload: Dict[str, Any]) -> List[Dict[
     return gaps
 
 
+def _local_analysis_inputs(study_dir: Path) -> List[str]:
+    """Existing local inputs for the established descriptive analysis function.
+
+    No network or collector is consulted. A file qualifies only when it contains
+    at least one JSON object; invalid rows remain visible to ``analyze_study``.
+    """
+    root = Path(study_dir).resolve()
+    refs: List[str] = []
+    for relative in ("02-data/normalized.jsonl", "02-data/evidence.jsonl"):
+        path = root / relative
+        if not path.is_file():
+            continue
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(item, dict):
+                    refs.append(relative)
+                    break
+        except OSError:
+            continue
+    return refs
+
+
 def detect_gaps(study_dir: Path) -> List[Dict[str, Any]]:
     """Return every open gap, deterministically ordered and explained."""
     study_dir = Path(study_dir).resolve()
@@ -589,8 +624,15 @@ def detect_gaps(study_dir: Path) -> List[Dict[str, Any]]:
         str(item.get("kind")),
         str(item.get("key")),
     ))
+    local_inputs = _local_analysis_inputs(study_dir)
     for index, gap in enumerate(unique, start=1):
         gap["id"] = f"G{index:02d}"
+        # These gaps call for structuring what is already present, not more
+        # collection. The same CLI/MCP loop can execute this local analysis.
+        gap["analysis_actionable"] = bool(
+            local_inputs and str(gap.get("kind")) in LOCAL_ANALYSIS_GAP_KINDS
+        )
+        gap["analysis_input_refs"] = local_inputs if gap["analysis_actionable"] else []
         candidates = research_action_candidates(gap, study, sources)
         gap["research_action_candidates"] = candidates
         gap["next_best_action"] = candidates[0]
@@ -599,6 +641,132 @@ def detect_gaps(study_dir: Path) -> List[Dict[str, Any]]:
 
 RESEARCH_ACTION_KINDS = ("collect", "analyze", "experiment", "request_external_evidence", "stop")
 _ACTION_ORDER = {name: index for index, name in enumerate(RESEARCH_ACTION_KINDS)}
+STOP_DECISION_KIND = "askovo.stop-decision"
+STOP_DECISION_SCHEMA = "1.0"
+
+
+@dataclass(frozen=True)
+class StopDecision:
+    """Independent, declaration-based stop gate; never a positive utility score.
+
+    All three criteria must be explicit. Unknown or missing criteria mean keep
+    researching (or choose another candidate), never "stop for stop's sake".
+    The declarations and their basis come from the study/gap contract; this
+    class does not invent measured uncertainty, money, probability or risk.
+    """
+
+    evidence_sufficient_for_decision: Optional[bool]
+    remaining_unknowns_can_change_decision: Optional[bool]
+    continued_research_marginal_value_not_worth_cost_or_risk: Optional[bool]
+    basis: Dict[str, Dict[str, str]]
+    source_ref: str
+
+    @property
+    def should_stop(self) -> bool:
+        return (
+            self.evidence_sufficient_for_decision is True
+            and self.remaining_unknowns_can_change_decision is False
+            and self.continued_research_marginal_value_not_worth_cost_or_risk is True
+        )
+
+    def as_dict(self) -> Dict[str, Any]:
+        criteria = {
+            "evidence_sufficient_for_decision": self.evidence_sufficient_for_decision,
+            "remaining_unknowns_can_change_decision": self.remaining_unknowns_can_change_decision,
+            "continued_research_marginal_value_not_worth_cost_or_risk": (
+                self.continued_research_marginal_value_not_worth_cost_or_risk
+            ),
+        }
+        expected = {
+            "evidence_sufficient_for_decision": True,
+            "remaining_unknowns_can_change_decision": False,
+            "continued_research_marginal_value_not_worth_cost_or_risk": True,
+        }
+        blocking = [
+            f"{name} must be {str(value).lower()} (recorded: {criteria[name]})"
+            for name, value in expected.items() if criteria[name] is not value
+        ]
+        return {
+            "kind": STOP_DECISION_KIND,
+            "schema_version": STOP_DECISION_SCHEMA,
+            "should_stop": self.should_stop,
+            "status": "stop" if self.should_stop else "not_eligible",
+            "priority": "highest" if self.should_stop else "not_eligible",
+            "selection_rule": (
+                "Stop wins only when evidence is sufficient, remaining unknowns cannot change "
+                "the decision, and continued research value is declared below its cost/risk."
+            ),
+            "scoring": "independent_gate_not_a_positive_utility_score",
+            "source_ref": self.source_ref,
+            "criteria": {
+                name: {
+                    "value": value,
+                    "required": expected[name],
+                    "met": value is expected[name],
+                    **self.basis.get(name, {}),
+                }
+                for name, value in criteria.items()
+            },
+            "blocking_reasons": blocking,
+            "boundary": (
+                "Declarations are transparent decision inputs, not measured value, causal proof "
+                "or automatic evidence validation. Record restart conditions with the stop decision."
+            ),
+        }
+
+
+def _stop_decision(gap: Dict[str, Any], study: Dict[str, Any]) -> StopDecision:
+    decision = study.get("decision") if isinstance(study.get("decision"), dict) else {}
+    raw: Any = None
+    source_ref = "study.decision.stop_decision"
+    if isinstance(decision.get("stop_decision"), dict):
+        raw = decision.get("stop_decision")
+    if isinstance(study.get("stop_decision"), dict):
+        raw = study.get("stop_decision")
+        source_ref = "study.stop_decision"
+    if isinstance(gap.get("stop_decision"), dict):
+        raw = gap.get("stop_decision")
+        source_ref = f"gaps[key={gap.get('key')}].stop_decision"
+    raw = raw if isinstance(raw, dict) else {}
+    nested = raw.get("criteria") if isinstance(raw.get("criteria"), dict) else {}
+    basis_raw = raw.get("basis") if isinstance(raw.get("basis"), dict) else {}
+
+    def declared(name: str) -> Optional[bool]:
+        value = nested.get(name, raw.get(name))
+        return value if isinstance(value, bool) else None
+
+    evidence = declared("evidence_sufficient_for_decision")
+    unknowns = declared("remaining_unknowns_can_change_decision")
+    if unknowns is None:
+        # Readable alias for contracts that phrase the negative criterion directly.
+        alias = nested.get("remaining_unknowns_would_not_change_decision",
+                           raw.get("remaining_unknowns_would_not_change_decision"))
+        if isinstance(alias, bool):
+            unknowns = not alias
+    marginal = declared("continued_research_marginal_value_not_worth_cost_or_risk")
+    if marginal is None:
+        alias = nested.get("continued_research_marginal_value", raw.get("continued_research_marginal_value"))
+        if isinstance(alias, str) and alias.strip().casefold() in {
+            "below_cost_or_risk", "below_cost/risk", "not_worth_cost_or_risk",
+        }:
+            marginal = True
+
+    names = (
+        "evidence_sufficient_for_decision",
+        "remaining_unknowns_can_change_decision",
+        "continued_research_marginal_value_not_worth_cost_or_risk",
+    )
+    basis: Dict[str, Dict[str, str]] = {}
+    for name in names:
+        entry = basis_raw.get(name) if isinstance(basis_raw.get(name), dict) else {}
+        rationale = entry.get("rationale") or raw.get(name + "_basis") or "not_declared"
+        restart = entry.get("restart_condition") or raw.get("restart_condition") or ""
+        basis[name] = {
+            "rationale": str(rationale),
+            "basis_ref": str(entry.get("basis_ref") or source_ref),
+            "restart_condition": str(restart),
+        }
+    return StopDecision(evidence, unknowns, marginal, basis, source_ref)
 
 
 def _cost_level(cost: float) -> str:
@@ -637,7 +805,7 @@ def _action_profile(
         if intent == "commercial":
             return 0.75, 0.45, 0.75, "请求授权的一方报价、订单、支付、续费或交付记录，不用公开评论替代"
         return 0.80, 0.35, 0.80, "当前来源不可用或样本形成机制不适配时，请求有权使用的外部材料"
-    return 0.0, 0.05, 0.0, "当剩余不确定性的预期决策价值低于成本时停止，并保留 unknowns 与重启条件"
+    raise ValueError("stop is selected by StopDecision, not by the positive action heuristic")
 
 
 def research_action_candidates(
@@ -645,12 +813,13 @@ def research_action_candidates(
     study: Dict[str, Any],
     sources: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Compare five next-action candidates for every gap, including blocked gaps.
+    """Compare next-action candidates without collapsing stop into their score.
 
-    The scores are transparent relative heuristics for ordering tasks, not measured
-    uncertainty, money, probability or business value. Only an already actionable
-    collect candidate may enter the existing authorized loop; all other outputs
-    remain tasks for a human or host agent and never change evidence status.
+    Non-stop scores are transparent relative planning heuristics, never measured
+    uncertainty, money, probability or business value. Collect keeps its existing
+    authorization route. Analyze may run only when the gap exposes an existing
+    local/candidate input; experiment and external evidence remain authorization
+    candidates. Stop is selected by an independent :class:`StopDecision` gate.
     """
     decision = study.get("decision") if isinstance(study.get("decision"), dict) else {}
     decision_question = str(decision.get("question") or study.get("title") or "当前产品/商业决定")
@@ -668,6 +837,8 @@ def research_action_candidates(
             selected.append(sure_engine._method_view(method))
     candidates: List[Dict[str, Any]] = []
     for action in RESEARCH_ACTION_KINDS:
+        if action == "stop":
+            continue
         reduction, cost, decision_change, rationale = _action_profile(action, gap, public_collection=public_collection)
         # Without a collection route, external evidence is more useful than a
         # nominal collect task; commercial experiments still outrank public text.
@@ -683,7 +854,11 @@ def research_action_candidates(
             intent=intent,
             sources=sources if action in {"collect", "analyze"} else [],
         )
-        executable = action == "collect" and bool(gap.get("actionable") and gap.get("query_seed"))
+        executable = (
+            action == "collect" and bool(gap.get("actionable") and gap.get("query_seed"))
+        ) or (
+            action == "analyze" and bool(gap.get("analysis_actionable"))
+        )
         candidates.append({
             "action": action,
             "task": f"{action}：{question}",
@@ -698,14 +873,46 @@ def research_action_candidates(
             "rationale": rationale,
             "candidate_only": True,
             "executable_by_existing_loop": executable,
+            "execution_constraints": {
+                "network": "authorized_collect_only" if action == "collect" else "none" if action == "analyze" else "requires_separate_authorization",
+                "automatic_execution": executable,
+                "candidate_material_remains_unvalidated": True,
+            },
             "method_selection": method_selection,
             "validated_status_changed": False,
         })
-    candidates.sort(key=lambda item: (
-        -float(item["priority_score"]),
-        float(item["cost"]),
-        _ACTION_ORDER[str(item["action"])],
-    ))
+    stop = _stop_decision(gap, study).as_dict()
+    candidates.append({
+        "action": "stop",
+        "task": f"stop：{decision_question}",
+        "gap_key": str(gap.get("key") or ""),
+        "expected_uncertainty_reduction": None,
+        "cost": None,
+        "cost_level": "not_scored",
+        "decision_change_potential": None,
+        "decision_it_can_change": decision_question,
+        "priority_score": None,
+        "scoring_rule": "independent StopDecision; no positive utility score",
+        "rationale": (
+            "三项停止条件均有明确声明且同时满足，stop 可优先于其他动作"
+            if stop["should_stop"] else
+            "停止条件未同时满足；不能为了停止而停止，保留其他动作候选"
+        ),
+        "candidate_only": True,
+        "executable_by_existing_loop": False,
+        "stop_decision": stop,
+        "method_selection": sure_engine.research_method_selection(
+            question, selected, action="stop", intent=intent, sources=[],
+        ),
+        "validated_status_changed": False,
+    })
+
+    def candidate_order(item: Dict[str, Any]) -> tuple:
+        if item["action"] == "stop":
+            return (0 if item["stop_decision"]["should_stop"] else 2, 0.0, 0.0, _ACTION_ORDER["stop"])
+        return (1, -float(item["priority_score"]), float(item["cost"]), _ACTION_ORDER[item["action"]])
+
+    candidates.sort(key=candidate_order)
     return candidates
 
 
@@ -722,6 +929,7 @@ def next_best_actions(gaps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "gap_kind": gap.get("kind"),
             "node": gap.get("node"),
             "actionable_for_collection": bool(gap.get("actionable")),
+            "actionable_for_local_analysis": bool(gap.get("analysis_actionable")),
             "candidate": best,
             "compared_actions": [item.get("action") for item in gap.get("research_action_candidates") or []],
         })
@@ -741,17 +949,47 @@ def build_actions(
     remaining_records: int,
     gap_states: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, Any]]:
-    """Plan typed actions: deterministic analysis first, then collection.
+    """Plan typed actions: offline analysis first, then authorized collection.
 
-    Analysis never consumes the record budget and never closes a gap on its own;
-    it only turns ``collected`` material into a reviewable ``analyzed`` record.
-    Collection only runs for gaps whose state is still ``open``.
+    Analysis never consumes the record budget and never closes a gap on its own.
+    It describes either existing local study data or ``collected`` loop material
+    and records a follow-up human revision/assessment requirement. Collection
+    only runs for gaps whose state is still ``open`` inside the same envelope.
     """
     states = gap_states or {}
     actions: List[Dict[str, Any]] = []
     seen_queries: set[str] = set()
 
-    # 1. deterministic analysis for gaps that already have candidates
+    # 1. analyze existing local study data for writing/decision gaps. This is a
+    # controlled, offline action and does not require a collection route.
+    for gap in gaps:
+        if len(actions) >= limit_actions:
+            break
+        if not gap.get("analysis_actionable"):
+            continue
+        if states.get(str(gap["key"]), "open") != "open":
+            continue
+        attempt_key = f"existing-analysis|{gap['key']}"
+        if attempt_key in attempted:
+            continue
+        actions.append({
+            "id": "",
+            "kind": "analyze",
+            "gap_key": gap["key"],
+            "gap_kind": gap["kind"],
+            "node": gap.get("node"),
+            "judgment_id": gap.get("judgment_id"),
+            "intent": gap.get("intent"),
+            "question": str(gap.get("query_seed") or gap.get("detail") or ""),
+            "analysis_input_refs": list(gap.get("analysis_input_refs") or []),
+            "analysis_mode": "deterministic",
+            "analysis_scope": "existing_study_data",
+            "attempt_key": attempt_key,
+            "state": "planned",
+            "result": None,
+        })
+
+    # 2. deterministic analysis for gaps that already have loop candidates
     for gap in gaps:
         if len(actions) >= limit_actions:
             break
@@ -771,12 +1009,13 @@ def build_actions(
             "judgment_id": gap.get("judgment_id"),
             "intent": gap.get("intent"),
             "analysis_mode": "deterministic",
+            "analysis_scope": "loop_candidates",
             "attempt_key": attempt_key,
             "state": "planned",
             "result": None,
         })
 
-    # 2. collection for gaps that are still open
+    # 3. collection for gaps that are still open, under the original envelope
     for gap in gaps:
         if len(actions) >= limit_actions or remaining_records <= 0:
             break
@@ -886,6 +1125,7 @@ def plan(
             "gap_states": {},
             "rounds": [],
             "candidates": [],
+            "execution_records": [],
             "evaluations": [],
             "mappings": [],
             "attempted": {},
@@ -952,6 +1192,15 @@ def _validate_action(study_dir: Path, state: Dict[str, Any], action: Dict[str, A
     if kind == "analyze":
         if action.get("analysis_mode") != "deterministic":
             raise LoopError("only deterministic analysis is authorized inside the envelope")
+        scope = str(action.get("analysis_scope") or "loop_candidates")
+        if scope not in {"existing_study_data", "loop_candidates"}:
+            raise LoopError(f"unknown analysis scope {scope!r}")
+        if scope == "existing_study_data":
+            refs = action.get("analysis_input_refs")
+            if not isinstance(refs, list) or not refs or any(
+                ref not in {"02-data/normalized.jsonl", "02-data/evidence.jsonl"} for ref in refs
+            ):
+                raise LoopError("existing study analysis requires declared local JSONL inputs")
         return
     if kind != "collect":
         raise LoopError(f"unknown action kind {kind!r}")
@@ -1060,12 +1309,8 @@ def _run(study_dir: Path) -> Dict[str, Any]:
             "the loop stopped mid-action and still needs review; inspect "
             "04-findings/research-loop.json and the collected files, then run "
             "`askovo loop plan --reset`")
-    gate = cli_module().audit_study(study_dir, "design")
-    if gate.status != "pass":
-        raise DesignGateError(
-            "Design gate does not pass; fix the study contract before any collection: "
-            + "; ".join(f"{item.check_id}: {item.detail}" for item in gate.findings
-                         if item.status == "fail")[:600])
+    # Offline analysis is useful precisely while a chain still needs writing.
+    # The Design gate is enforced immediately before each collection action below.
     state["status"] = "running"
     state["updated_at"] = _now()
     _save(state_path(study_dir), state)
@@ -1080,8 +1325,151 @@ def _run(study_dir: Path) -> Dict[str, Any]:
             _save(state_path(study_dir), state)
 
 
+def _executions_document(state: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "kind": KIND + ".executions",
+        "study_id": state.get("study_id"),
+        "loop_id": state.get("loop_id"),
+        "boundary": (
+            "Deterministic execution journal only. Analyze uses existing local data, performs no "
+            "network access, and never promotes a candidate, edits a judgment or proves causality."
+        ),
+        "executions": state.get("execution_records") or [],
+    }
+
+
+def _analysis_input_fingerprint(study_dir: Path, refs: List[str], question: str) -> str:
+    files: Dict[str, str] = {}
+    root = Path(study_dir).resolve()
+    for relative in refs:
+        path = root / relative
+        files[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return _sha({"files": files, "question": question, "analysis_version": ANALYSIS_VERSION})
+
+
+def _analyze_existing_study_data(
+    study_dir: Path,
+    state: Dict[str, Any],
+    action: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Execute the established local analysis and journal a human follow-up revision."""
+    key = str(action["gap_key"])
+    refs = [str(item) for item in action.get("analysis_input_refs") or []]
+    question = str(action.get("question") or "")
+    fingerprint = _analysis_input_fingerprint(study_dir, refs, question)
+    target = Path(study_dir).resolve() / ANALYSIS_RELATIVE / (_slug(key) + ".json")
+    relative = str(target.relative_to(Path(study_dir).resolve()))
+    if target.is_file():
+        try:
+            previous = _load_json(target)
+        except (OSError, json.JSONDecodeError):
+            previous = None
+        if isinstance(previous, dict) and previous.get("input_fingerprint") == fingerprint:
+            _set_gap_state(state, key, "analyzed", analysis_ref=relative,
+                           records=int(previous.get("records") or 0), analysis_scope="existing_study_data")
+            return {
+                "status": "analyzed",
+                "reused": True,
+                "records": int(previous.get("records") or 0),
+                "verdict": previous.get("verdict"),
+                "path": str(target),
+                "analysis_path": (previous.get("result") or {}).get("analysis_ref"),
+                "execution_id": (previous.get("execution_record") or {}).get("execution_id"),
+                "follow_up_revision": previous.get("follow_up_revision"),
+                "network_access": "none",
+            }
+
+    # Reuse the same function as `askovo analyze`; no collector, experiment or
+    # external request is invoked on this path.
+    analysis_result = sure_engine.analyze_study(Path(study_dir).resolve(), question or None)
+    analysis_document = _load_json(Path(analysis_result["analysis"]))
+    root = Path(study_dir).resolve()
+    analysis_ref = str(Path(analysis_result["analysis"]).resolve().relative_to(root))
+    markdown_ref = str(Path(analysis_result["markdown"]).resolve().relative_to(root))
+    records = int(analysis_result.get("records") or 0)
+    execution_id = f"EX{len(state.get('execution_records') or []) + 1:04d}"
+    follow_up = {
+        "revision_type": "loop_gap_state",
+        "before": "open",
+        "after": "analyzed",
+        "next": "human_semantic_revision_and_assessment_required",
+        "canonical_product_reasoning_changed": False,
+        "demand_judgment_changed": False,
+        "candidate_validated": False,
+        "gap_resolved": False,
+    }
+    result_summary = {
+        "status": "analyzed",
+        "records": records,
+        "analysis_ref": analysis_ref,
+        "markdown_ref": markdown_ref,
+        "by_platform": analysis_document.get("by_platform") or {},
+        "by_evidence_level": analysis_document.get("by_evidence_level") or {},
+        "question_matches": len(analysis_document.get("question_matches") or []),
+    }
+    execution = {
+        "execution_id": execution_id,
+        "action_id": action.get("id"),
+        "kind": "analyze",
+        "analysis_scope": "existing_study_data",
+        "gap_key": key,
+        "recorded_at": _now(),
+        "input": {"local_refs": refs, "fingerprint": fingerprint, "question": question or None},
+        "network_access": "none",
+        "result": result_summary,
+        "follow_up_revision": follow_up,
+        "validated_status_changed": False,
+    }
+    analysis = {
+        "analysis_version": ANALYSIS_VERSION,
+        "kind": "askovo.research-loop-analysis-execution",
+        "gap_key": key,
+        "gap_kind": action.get("gap_kind"),
+        "intent": action.get("intent"),
+        "node": action.get("node"),
+        "judgment_id": action.get("judgment_id"),
+        "analysis_scope": "existing_study_data",
+        "candidate_groups": 0,
+        "records": records,
+        "record_ids": [],
+        "platforms": sorted((analysis_document.get("by_platform") or {}).keys()),
+        "duplicate_record_ids": None,
+        "input_fingerprint": fingerprint,
+        "verdict": "review_ready" if records else "insufficient_material",
+        "execution_record": execution,
+        "result": result_summary,
+        "follow_up_revision": follow_up,
+        "boundary": (
+            "Existing local data described by askovo analyze. No network access, evidence-level "
+            "assignment, candidate promotion, canonical chain edit, gap closure or causal claim."
+        ),
+    }
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _save(target, analysis)
+    _set_gap_state(state, key, "analyzed", analysis_ref=relative, records=records,
+                   analysis_scope="existing_study_data")
+    state.setdefault("totals", {})
+    state["totals"]["analyses"] = int(state["totals"].get("analyses") or 0) + 1
+    state.setdefault("execution_records", []).append(execution)
+    _save(executions_path(study_dir), _executions_document(state))
+    return {
+        "status": "analyzed",
+        "reused": False,
+        "records": records,
+        "verdict": analysis["verdict"],
+        "path": str(target),
+        "analysis_path": analysis_ref,
+        "execution_id": execution_id,
+        "follow_up_revision": follow_up,
+        "network_access": "none",
+    }
+
+
 def _analyze_gap(study_dir: Path, state: Dict[str, Any], action: Dict[str, Any]) -> Dict[str, Any]:
-    """Describe collected candidates deterministically; never grade or close the gap."""
+    """Describe existing local data or collected candidates; never grade or close."""
+    if str(action.get("analysis_scope") or "loop_candidates") == "existing_study_data":
+        return _analyze_existing_study_data(study_dir, state, action)
     key = str(action["gap_key"])
     entries = _candidate_entries(state, key)
     record_ids: List[str] = []
@@ -1163,12 +1551,21 @@ def _execute_rounds(study_dir: Path, state: Dict[str, Any]) -> Dict[str, Any]:
         state["gaps"] = gaps
         state["next_best_actions"] = next_best_actions(gaps)
         actionable = [gap for gap in gaps if gap.get("actionable")]
-        states = {str(gap["key"]): gap_state(state, str(gap["key"])) for gap in actionable}
+        analysis_only = [gap for gap in gaps if gap.get("analysis_actionable") and not gap.get("actionable")]
+        plannable = actionable + analysis_only
+        states = {str(gap["key"]): gap_state(state, str(gap["key"])) for gap in plannable}
         pending_collect = [gap for gap in actionable if states[str(gap["key"])] == "open"]
-        pending_analyze = [gap for gap in actionable if states[str(gap["key"])] == "collected"]
+        pending_analyze = [
+            gap for gap in plannable
+            if states[str(gap["key"])] == "collected"
+            or (
+                gap in analysis_only and states[str(gap["key"])] == "open"
+                and f"existing-analysis|{gap['key']}" not in (state.get("attempted") or {})
+            )
+        ]
         remaining = int(envelope["max_records_total"]) - int(state["totals"]["records"])
         if not pending_collect and not pending_analyze:
-            analyzed = [gap for gap in actionable if states[str(gap["key"])] == "analyzed"]
+            analyzed = [gap for gap in plannable if states[str(gap["key"])] == "analyzed"]
             if analyzed:
                 state["status"] = "completed"
                 state["stop_reason"] = "awaiting_semantic_review"
@@ -1192,7 +1589,7 @@ def _execute_rounds(study_dir: Path, state: Dict[str, Any]) -> Dict[str, Any]:
             "continue_collecting" if remaining > 0 else "stop_with_reason")
         state["last_decision"] = decision
         actions = build_actions(
-            actionable, sources,
+            plannable, sources,
             attempted=state.get("attempted") or {},
             limit_actions=int(envelope["max_actions_per_round"]),
             remaining_records=max(0, remaining),
@@ -1247,6 +1644,16 @@ def _execute_rounds(study_dir: Path, state: Dict[str, Any]) -> Dict[str, Any]:
                 state["updated_at"] = _now()
                 _save(state_path(study_dir), state)
                 continue
+            gate = cli_module().audit_study(study_dir, "design")
+            if gate.status != "pass":
+                action["state"] = "blocked"
+                action["result"] = {"status": "design_gate_failed"}
+                state["attempted"][action["attempt_key"]]["state"] = "design_gate_failed"
+                _save(state_path(study_dir), state)
+                raise DesignGateError(
+                    "Design gate does not pass; fix the study contract before any collection: "
+                    + "; ".join(f"{item.check_id}: {item.detail}" for item in gate.findings
+                                 if item.status == "fail")[:600])
             try:
                 kwargs: Dict[str, Any] = {
                     "study_dir": study_dir,
@@ -1607,7 +2014,8 @@ def status(study_dir: Path) -> Dict[str, Any]:
     gaps = state.get("gaps") or []
     resolved = _resolved_keys(state)
     actionable = [gap for gap in gaps if gap.get("actionable")]
-    states = _gap_state_counts(state, actionable)
+    analysis_only = [gap for gap in gaps if gap.get("analysis_actionable") and not gap.get("actionable")]
+    states = _gap_state_counts(state, actionable + analysis_only)
     return {
         "loop_id": state.get("loop_id"),
         "study_id": state.get("study_id"),
@@ -1621,6 +2029,7 @@ def status(study_dir: Path) -> Dict[str, Any]:
         "gaps": {
             "total": len(gaps),
             "actionable": len(actionable),
+            "analysis_only": len(analysis_only),
             "resolved": len(resolved),
             "covered": len(resolved),
             "open": states["open"],
@@ -1642,10 +2051,12 @@ def status(study_dir: Path) -> Dict[str, Any]:
         ],
         "totals": state.get("totals"),
         "candidates": len(state.get("candidates") or []),
+        "executions": len(state.get("execution_records") or []),
         "evaluations": len(state.get("evaluations") or []),
         "mappings": len(state.get("mappings") or []),
         "state_path": str(state_path(study_dir)),
         "candidates_path": str(candidates_path(study_dir)),
+        "executions_path": str(executions_path(study_dir)),
         "evaluations_path": str(evaluations_path(study_dir)),
         "mappings_path": str(mappings_path(study_dir)),
         "summary_path": str(summary_path(study_dir)) if summary_path(study_dir).is_file() else None,
@@ -1690,12 +2101,24 @@ def report(study_dir: Path) -> Dict[str, Any]:
                 if isinstance(claim, dict) and claim.get("verdict") == "supported"]
     unverified = [claim for claim in payload.get("claims") or []
                   if isinstance(claim, dict) and claim.get("verdict") in ("open", "exceeds_evidence")]
-    blocked = [gap for gap in gaps if not gap.get("actionable")]
-    pending = [gap for gap in gaps if gap.get("actionable") and gap.get("key") not in resolved]
-    needs_collection = [gap for gap in pending if gap_state(state, str(gap["key"])) == "open"]
-    needs_analysis = [gap for gap in pending if gap_state(state, str(gap["key"])) == "collected"]
+    blocked = [gap for gap in gaps if not gap.get("actionable") and not gap.get("analysis_actionable")]
+    pending = [
+        gap for gap in gaps
+        if (gap.get("actionable") or gap.get("analysis_actionable")) and gap.get("key") not in resolved
+    ]
+    needs_collection = [
+        gap for gap in pending
+        if gap.get("actionable") and gap_state(state, str(gap["key"])) == "open"
+    ]
+    needs_analysis = [
+        gap for gap in pending
+        if gap_state(state, str(gap["key"])) == "collected"
+        or (gap.get("analysis_actionable") and gap_state(state, str(gap["key"])) == "open")
+    ]
     needs_assessment = [gap for gap in pending if gap_state(state, str(gap["key"])) == "analyzed"]
-    state_counts = _gap_state_counts(state, [gap for gap in gaps if gap.get("actionable")])
+    state_counts = _gap_state_counts(
+        state, [gap for gap in gaps if gap.get("actionable") or gap.get("analysis_actionable")]
+    )
 
     lines: List[str] = [
         f"# 研究闭环报告：{payload.get('study_title') or state.get('study_id')}",
@@ -1730,7 +2153,10 @@ def report(study_dir: Path) -> Dict[str, Any]:
     open_gaps = needs_collection + needs_analysis
     if open_gaps:
         for gap in open_gaps:
-            stage = "待采集" if gap_state(state, str(gap["key"])) == "open" else "待分析"
+            stage = (
+                "待分析" if gap.get("analysis_actionable")
+                or gap_state(state, str(gap["key"])) == "collected" else "待采集"
+            )
             lines.append(f"- [{gap.get('id')} {gap.get('kind')} / {stage}] {gap.get('detail')}"
                          + (f"；建议查询：`{gap.get('query_seed')}`" if gap.get("query_seed") else ""))
     else:
@@ -1768,11 +2194,23 @@ def report(study_dir: Path) -> Dict[str, Any]:
         if not best:
             continue
         compared = ", ".join(str(item.get("action")) for item in gap.get("research_action_candidates") or [])
-        lines.append(
-            f"- [{gap.get('id')} {gap.get('key')}] **{best.get('action')}**：{best.get('rationale')}；"
-            f"不确定性下降 {best.get('expected_uncertainty_reduction')}，相对成本 {best.get('cost')}，"
-            f"决策改变潜力 {best.get('decision_change_potential')}，评分 {best.get('priority_score')}。"
-        )
+        if best.get("action") == "stop":
+            stop = best.get("stop_decision") if isinstance(best.get("stop_decision"), dict) else {}
+            lines.append(
+                f"- [{gap.get('id')} {gap.get('key')}] **stop**：{best.get('rationale')}；"
+                f"StopDecision={stop.get('status')}（独立门控，不参与正收益评分）。"
+            )
+            for name, criterion in (stop.get("criteria") or {}).items():
+                lines.append(
+                    f"  - {name}: {criterion.get('value')}（要求 {criterion.get('required')}）；"
+                    f"依据：{criterion.get('rationale')}；来源：{criterion.get('basis_ref')}"
+                )
+        else:
+            lines.append(
+                f"- [{gap.get('id')} {gap.get('key')}] **{best.get('action')}**：{best.get('rationale')}；"
+                f"不确定性下降 {best.get('expected_uncertainty_reduction')}，相对成本 {best.get('cost')}，"
+                f"决策改变潜力 {best.get('decision_change_potential')}，评分 {best.get('priority_score')}。"
+            )
         lines.append(f"  - 可改变的决定：{best.get('decision_it_can_change')}；已比较：{compared}。")
         if not gap.get("actionable"):
             lines.append("  - 原缺口不可自动采集；这里仅新增任务候选，不改变 actionable 或 validated。")
@@ -1781,7 +2219,10 @@ def report(study_dir: Path) -> Dict[str, Any]:
     lines.extend(["", "## 下一步", ""])
     next_actions = list(payload.get("next_actions") or [])
     for gap in open_gaps[:5]:
-        action = "补采" if gap_state(state, str(gap["key"])) == "open" else "分析"
+        action = (
+            "分析" if gap.get("analysis_actionable")
+            or gap_state(state, str(gap["key"])) == "collected" else "补采"
+        )
         next_actions.append(f"{action} {gap.get('key')}：" + (gap.get("query_seed") or gap.get("detail") or ""))
     for gap in needs_assessment[:3]:
         next_actions.append(

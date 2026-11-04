@@ -29,15 +29,16 @@ Quality is enforced under the hood: every conclusion carries an internal evidenc
 ## Proof it works in 30 seconds
 
 ```bash
-pipx install git+https://github.com/roy-tong/askovo.git
+pipx install askovo
 askovo do "home security camera false alerts at night, want to validate the prototype" --domain hardware --dry-run
 askovo demo
+askovo decision --help   # versioned decisions, safe-hold adversarial revisions and replay
 ```
 
-No `pipx`? Use a virtualenv instead (verified from a clean venv on 2026-11-02, ~85s including download):
+No `pipx`? Use a virtualenv and the same published PyPI package:
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install "git+https://github.com/roy-tong/askovo.git"
+python3 -m venv .venv && .venv/bin/pip install askovo
 .venv/bin/askovo demo
 ```
 
@@ -49,7 +50,7 @@ python3 -m venv .venv && .venv/bin/pip install "git+https://github.com/roy-tong/
 
 You can also route directly: `askovo "SaaS subscription churn is dropping, want to know why users don't renew" --dry-run`. `--dry-run` only routes and writes nothing; `demo` runs the built-in synthetic sample. Router keyword tables are Chinese-first — English queries work, and `--domain` pins the product type whenever English keywords don't match.
 
-**Language note (2026-11-02):** CLI *output* is Chinese today; `docs/` are Chinese too. The command surface, JSON output and audit exit codes are language-independent, so it is usable from an English workflow, but the rendered text will not be English. English localisation is not scheduled yet. Verified from a clean `venv` install on 2026-11-02: install ~85s, `askovo demo` exits 0.
+**Language note:** CLI *output* is Chinese today; `docs/` are Chinese too. The command surface, JSON output and audit exit codes are language-independent, so it is usable from an English workflow, but the rendered text will not be English. English localisation is not scheduled yet.
 
 Expected key results: `status: pass`, `supported: 1`, `overclaims: 0`. This only proves that the synthetic sample is self-consistent in structure, chain, and evidence references. It proves **nothing about real demand, product quality, market size, or release readiness**.
 
@@ -89,6 +90,21 @@ Sample decision memo (excerpt, from the synthetic sample): prioritization method
 The Business Plan, MRD/PRD/BRD, and the Decision Package are not separate sets of conclusions — they are business-user, market/requirements/business, and decision-side projections of the same chain.
 
 The three recurring tasks all run the same chain and differ only in what they deliver: **discover** (product question → Business Plan, with the Decision Package as the decision-side deep-dive), **validate** (review a hypothesis → Validation Backlog), **decide** (compare candidates → Decision Memo).
+
+### Versioned and adversarial DecisionRecords
+
+`askovo decision` records and replays decisions inside the canonical `04-findings/product-reasoning.json` — not a second decision-truth file:
+
+```bash
+askovo decision record ./study --chain PR01 --by "product-owner" \
+  --decision "Support the current bounded opportunity"
+# Prerequisite: R08 is registered, same-context, has provenance, and already has
+# a contradicts/counter-evidence mapping. No replacement recommendation is required.
+askovo decision record ./study --chain PR01 --by "product-owner" --contradiction R08
+askovo decision replay ./study --chain PR01
+```
+
+The second record deterministically applies `hold`, reopens the chain/product/business for validation, lowers confidence one ordinal step, and preserves before/after recommendations, evidence relations and snapshots. `--recommendation "..."` is an optional human override; the system does not invent a replacement product. An ID without a recorded contradiction relation is rejected. Newly mapped evidence is not promoted into a validated judgment or causal proof.
 
 ## One chain, many roles, five domains
 
@@ -167,6 +183,8 @@ askovo loop authorize ./study --by "researcher"
 askovo loop run ./study
 askovo loop report ./study
 ```
+
+For writing/decision gaps with existing local JSONL, `analyze` is an executable offline candidate: it reuses the descriptive analyzer and writes an execution record and follow-up review state without promoting candidates. Collection retains its authorization and Design gate; experiments and external-evidence requests are not auto-run. `stop` is separate from positive action scoring: an explicit three-condition `StopDecision` can rank it first only when more research cannot change the decision and is not worth its cost/risk; otherwise stopping for its own sake is not allowed.
 
 ### 3. Audit both "is the evidence enough" and "is the reasoning broken"
 
@@ -273,11 +291,12 @@ E0–E5 grade demand and commercial evidence strength only — they are not a pr
 
 ## Installation
 
-Not on PyPI yet (checked 2026-10-31); install from source:
+Askovo is published on PyPI. Install the released package with `pipx`:
 
 ```bash
-pipx install --editable .
+pipx install askovo
 askovo --version
+askovo decision --help
 ```
 
 Or with venv:
@@ -285,9 +304,11 @@ Or with venv:
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -U pip
-.venv/bin/pip install -e .
+.venv/bin/pip install askovo
 .venv/bin/askovo demo
 ```
+
+For source development inside a checkout, use `pip install -e .` instead.
 
 The core CLI, Skill, and MCP use only the Python standard library and support Python 3.9–3.12. The optional Workbook XLSX and Amazon HF tools declare openpyxl/datasets separately.
 
@@ -311,7 +332,7 @@ bash scripts/install-skill.sh ~/.codex/skills
 }
 ```
 
-MCP exposes `askovo_route`, `askovo_do`, `askovo_chain`, `askovo_platforms`, `askovo_collect`, `askovo_analyze`, `askovo_audit`, `askovo_deliver`, and more, sharing behavior with the CLI; `collect` defaults to dry-run.
+MCP exposes `askovo_route`, `askovo_do`, `askovo_chain`, `askovo_platforms`, `askovo_collect`, `askovo_analyze`, `askovo_audit`, `askovo_decision`, `askovo_deliver`, and more, sharing behavior with the CLI; `collect` defaults to dry-run.
 
 ## Services & support
 

@@ -29,9 +29,10 @@ Askovo 面向产品经理、用户研究和业务分析人员。默认跑法五�
 ## 30 秒证明它能工作
 
 ```bash
-pipx install git+https://github.com/roy-tong/askovo.git
+pipx install askovo
 askovo do "家用摄像头夜间告警误报，想验证样机" --dry-run
 askovo demo
+askovo decision --help   # 版本化决策、反证触发的安全暂停与回放
 ```
 
 <!-- 首屏 demo GIF：用 marketing/demo/askovo-demo.tape 录制（vhs），产物拷到 assets/demo/askovo-demo.gif 后取消注释。
@@ -80,6 +81,21 @@ askovo deliver examples/sample-study --kind decision   # → 06-report/decision-
 业务方案、MRD/PRD/BRD 与决策包不是几套结论——它们是同一条主链的业务视图、市场/需求/商业投影与决策侧汇总视图。
 
 三个高频任务都走同一条链，只是收口交付不同：**发现**（产品问题 → 业务方案，决策包作决策侧深读）、**验证**（审查设想 → 验证清单）、**决策**（候选比较 → 决策备忘）。
+
+### 版本化与对抗性 DecisionRecord
+
+`askovo decision` 把决策及回放写入唯一的 canonical `04-findings/product-reasoning.json`，不另建决策真相文件：
+
+```bash
+askovo decision record ./study --chain PR01 --by "产品负责人" \
+  --decision "支持当前小范围产品机会"
+# 前提：R08 已登记、context 相同、有 provenance，且已有 contradicts/反证映射。
+# 不提供替代产品建议也能改判。
+askovo decision record ./study --chain PR01 --by "产品负责人" --contradiction R08
+askovo decision replay ./study --chain PR01
+```
+
+第二条记录按确定性规则改为 `hold`，把主链/产品/商业重开为待验证，置信度降一级，并保留改前/改后建议、证据关系与快照。`--recommendation "..."` 只是可选人工覆盖，系统不会编一个新产品。只有 ID、没有已记录矛盾关系会被拒绝。新映射证据不会因此被提升为 validated 判断或因果证明。
 
 ## 一条主链，多类职责，五个领域
 
@@ -158,6 +174,8 @@ askovo loop authorize ./study --by "researcher"
 askovo loop run ./study
 askovo loop report ./study
 ```
+
+对已有本地 JSONL 的写作/决策缺口，`analyze` 是可执行的离线候选：复用描述性分析器，写入执行记录和后续复核状态，不提升 candidate。采集仍守原授权与 Design gate；实验和外部证据请求不会自动执行。`stop` 与其他动作的正收益评分分离：只有显式 `StopDecision` 同时确认证据足够、剩余未知不改变决定、继续研究不抵成本/风险时才可排第一，否则不能为了停止而停止。
 
 ### 3. 同时审计“证据是否够”和“推理是否断”
 
@@ -264,11 +282,12 @@ E0–E5 只描述需求与商业证据强度，不是产品/商业推理得分�
 
 ## 安装
 
-PyPI 包尚未发布（2026-10-31 核实），当前从源码安装：
+Askovo 已发布到 PyPI。用 `pipx` 安装已发布包：
 
 ```bash
-pipx install --editable .
+pipx install askovo
 askovo --version
+askovo decision --help
 ```
 
 或使用 venv：
@@ -276,9 +295,11 @@ askovo --version
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -U pip
-.venv/bin/pip install -e .
+.venv/bin/pip install askovo
 .venv/bin/askovo demo
 ```
+
+在源码仓库内开发时，改用 `pip install -e .`。
 
 核心 CLI、Skill、MCP 只使用 Python 标准库，兼容 Python 3.9–3.12。可选 Workbook XLSX 和 Amazon HF 工具分别声明 openpyxl/datasets 依赖。
 
@@ -302,7 +323,7 @@ bash scripts/install-skill.sh ~/.codex/skills
 }
 ```
 
-MCP 暴露 `askovo_route`、`askovo_do`、`askovo_chain`、`askovo_platforms`、`askovo_collect`、`askovo_analyze`、`askovo_audit`、`askovo_deliver` 等工具，与 CLI 共用行为；`collect` 默认 dry-run。
+MCP 暴露 `askovo_route`、`askovo_do`、`askovo_chain`、`askovo_platforms`、`askovo_collect`、`askovo_analyze`、`askovo_audit`、`askovo_decision`、`askovo_deliver` 等工具，与 CLI 共用行为；`collect` 默认 dry-run。
 
 ## 服务与支持
 

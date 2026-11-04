@@ -46,6 +46,7 @@ research:
   report <study>       write the user-research status projection
   audit <study>        product/business chain gates + signals + per-claim verdicts
   review <study>       decision review: evidence, readiness, falsifiability, bias, deliverables
+  decision <action> <study> record/list/replay versioned decisions and current drift
   loop <action> <study>  gap-driven research rounds: plan/authorize/run/status/report
   plan <study>         supporting platform/feasibility plan
   demo                 run the bundled offline sample

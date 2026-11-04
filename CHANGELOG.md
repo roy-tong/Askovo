@@ -1,5 +1,48 @@
 # Changelog
 
+## 2.10.0 - 2026-11-04
+
+Depth release: research actions now have an independent stop gate, executable
+offline analysis, and a DecisionRecord that can make a substantive revision on
+trusted contradictory evidence.
+
+### Added
+
+- **Independent StopDecision** (`research_loop.py`): `stop` no longer participates
+  in the positive action-utility score. It ranks first only when all three
+  explicit declarations hold: evidence is sufficient for the decision, remaining
+  unknowns cannot change it, and continued research value is below its cost/risk.
+  The criteria, basis refs, rationale and restart condition remain visible; a
+  missing or contrary declaration makes stop ineligible.
+- **Executable offline analysis**: for `unwritten_node` / `claim_needs_decision`
+  gaps with existing local normalized/evidence JSONL, the analyze candidate is
+  preferred and executable through the same CLI/MCP loop. It reuses
+  `analyze_study`, writes an input-fingerprinted result and
+  `04-findings/loop-executions.json`, and records `open → analyzed` with human
+  semantic revision still required. No network, experiment or external send;
+  canonical chain and judgments are not rewritten.
+- **Adversarial DecisionRecord revision** (`decision_review.py`): registered,
+  same-context evidence with provenance and a pre-recorded `contradicts` or
+  counter-evidence mapping can create a new decision version. Without a human
+  replacement it deterministically applies a safe `hold`, reopens
+  chain/product/business for validation, lowers confidence one ordinal step
+  (including `very-low`) and replaces the current recommendation with an explicit
+  safe fallback. `--recommendation` is only an optional human override. Evidence
+  IDs without a contradiction mapping are rejected.
+- **Replayable revision history**: before/after recommendations, confidence,
+  evidence relations, snapshots and change-log refs are retained; new evidence
+  is not promoted into a demand judgment, validated node or causal state.
+- **Release hardening**: release tags must descend from `main` and match
+  `VERSION`; full tests run inside the release job; CODEOWNERS added.
+
+### Verification
+
+- `python3 -m unittest discover -s tests`: **238 tests pass** on Python 3.9 and
+  3.11 (3.11 skips 2 optional-dependency tests).
+- A1/A2/A3 focused regressions, replay and MCP paths pass.
+- `py_compile` and `git diff --check` pass.
+- No real online collection, experiment or external send was performed.
+
 ## 2.9.0 - 2026-11-04
 
 Research action selection, explicit method boundaries, versioned decisions and a

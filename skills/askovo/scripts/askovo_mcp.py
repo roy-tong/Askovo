@@ -368,6 +368,8 @@ def _build_decision(arguments: dict[str, Any]) -> argparse.Namespace:
         hypothesis=_optional_string(arguments, "hypothesis") or "",
         observation=_string_list(arguments, "observation") or [],
         evidence=_string_list(arguments, "evidence") or [],
+        contradiction=_string_list(arguments, "contradiction") or [],
+        recommendation=_optional_string(arguments, "recommendation") or "",
         revision=_optional_string(arguments, "revision") or "",
         next_action=_optional_string(arguments, "next_action") or "",
         json=_boolean(arguments, "json", True),
@@ -781,7 +783,9 @@ TOOLS: list[dict[str, Any]] = [
         "description": (
             "Record, list and replay versioned DecisionRecords inside the canonical seven-node "
             "product-reasoning.json. Captures original hypotheses, candidate actions, basis, "
-            "observations, revisions, next action and decision-maker without auto-validating text."
+            "observations and revisions. Registered, same-context evidence with a recorded "
+            "contradicts mapping can trigger safe hold plus one confidence downgrade; an optional "
+            "replacement recommendation is accepted, but candidates and causality are never auto-validated."
         ),
         "inputSchema": {
             "type": "object",
@@ -796,6 +800,14 @@ TOOLS: list[dict[str, Any]] = [
                 "hypothesis": {"type": "string", "description": "declared study hypothesis id"},
                 "observation": {"type": "array", "items": {"type": "string"}},
                 "evidence": {"type": "array", "items": {"type": "string"}, "description": "registered evidence ids"},
+                "contradiction": {
+                    "type": "array", "items": {"type": "string"},
+                    "description": "registered evidence ids with an existing contradicts/counter mapping",
+                },
+                "recommendation": {
+                    "type": "string",
+                    "description": "optional replacement; omitted means deterministic safe hold",
+                },
                 "revision": {"type": "string"},
                 "next_action": {"type": "string"},
                 "json": {"type": "boolean", "default": True},
