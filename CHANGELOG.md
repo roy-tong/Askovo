@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.12.0 - 2026-11-04
+
+### Added
+
+- **Research modes**: `askovo mode` and `route --json`'s `research_mode` now derive Discover/Validate/Optimize entry contracts with a rotated seven-node order and explicit upstream hypotheses, without waiving any node's evidence requirement.
+- **Study persistence**: `askovo do` writes the `research_mode` contract into `study.json`, the study README and the research plan, so the entry node and upstream hypotheses stay visible after scaffolding.
+- **Priority order**: explicit mode > explicit stage > text signals > keyword-inferred stage > default Discover; verbatim "值不值得" no longer forces Discover when the task is a validation request.
+
 ## 2.11.0 - 2026-11-04
 
 ### Added

@@ -116,6 +116,94 @@ REASONING_STAGE_FOCUS = {
     "postlaunch": REASONING_NODES,
     "audit": REASONING_NODES,
 }
+RESEARCH_MODES = ("discover", "validate", "optimize")
+RESEARCH_MODE_LABELS = {
+    "discover": "机会发现",
+    "validate": "假设验证",
+    "optimize": "产品迭代",
+}
+RESEARCH_MODE_BY_STAGE = {
+    "discovery": "discover",
+    "concept": "discover",
+    "validation": "validate",
+    "pricing": "validate",
+    "prelaunch": "validate",
+    "postlaunch": "optimize",
+    "audit": "optimize",
+    "operate": "optimize",
+}
+RESEARCH_MODE_KEYWORDS = {
+    "discover": (
+        "机会",
+        "发现",
+        "创业",
+        "新想法",
+        "新点子",
+        "新业务",
+        "新品类",
+        "从0到1",
+        "从零到一",
+        "市场空白",
+        "空白市场",
+        "未满足",
+        "切入",
+        "idea",
+        "opportunity",
+        "discover",
+        "startup",
+        "new product",
+        "from scratch",
+    ),
+    "validate": (
+        "验证",
+        "假设",
+        "待验证",
+        "证伪",
+        "是否成立",
+        "能不能成立",
+        "支持证据",
+        "反证",
+        "反例",
+        "试点",
+        "beta",
+        "pilot",
+        "hypothesis",
+        "validate",
+        "validation",
+        "falsif",
+    ),
+    "optimize": (
+        "优化",
+        "迭代",
+        "诊断",
+        "改进",
+        "下降",
+        "下滑",
+        "转化",
+        "留存",
+        "流失",
+        "续费",
+        "复购",
+        "漏斗",
+        "现有产品",
+        "已有产品",
+        "现有功能",
+        "下一轮",
+        "产品迭代",
+        "上线后",
+        "churn",
+        "retention",
+        "conversion",
+        "funnel",
+        "optimize",
+        "improve",
+        "iteration",
+        "decline",
+    ),
+}
+RESEARCH_MODE_BOUNDARY = (
+    "入口只决定先回答什么，不豁免七节点的证据要求；上游未验证前只能作为假设，不能当作事实。"
+)
 HIGH_RISK_FLAGS = {
     "road_test",
     "food_ingest",
@@ -503,6 +591,312 @@ def product_reasoning_contract(stage: str) -> dict[str, Any]:
     }
 
 
+def _research_mode_hits(text: str) -> dict[str, list[str]]:
+    low = text.casefold()
+    return {
+        mode: [keyword for keyword in keywords if keyword.casefold() in low]
+        for mode, keywords in RESEARCH_MODE_KEYWORDS.items()
+    }
+
+
+def _research_mode_alternatives(scores: dict[str, int], chosen: str) -> list[dict[str, Any]]:
+    ranked = sorted(
+        (name for name in RESEARCH_MODES if name != chosen and scores[name] > 0),
+        key=lambda name: (-scores[name], RESEARCH_MODES.index(name)),
+    )
+    return [
+        {"mode": name, "label": RESEARCH_MODE_LABELS[name], "score": scores[name]}
+        for name in ranked
+    ]
+
+
+def detect_research_mode(
+    text: str,
+    stage: str | None = None,
+    mode: str | None = None,
+    stage_source: str | None = None,
+) -> dict[str, Any]:
+    """Detect discover/validate/optimize.
+
+    Priority: explicit mode, explicit stage, text signals, keyword-inferred
+    stage, then the discover default. A stage inferred from keywords must not
+    override stronger text signals.
+    """
+    hits_by_mode = _research_mode_hits(text)
+    scores = {name: len(hits) for name, hits in hits_by_mode.items()}
+    if mode:
+        if mode not in RESEARCH_MODES:
+            raise ValueError(
+                f"unknown research mode {mode!r}; choose from: {', '.join(RESEARCH_MODES)}"
+            )
+        return {
+            "mode": mode,
+            "label": RESEARCH_MODE_LABELS[mode],
+            "confidence": 1.0,
+            "source": "explicit",
+            "signals": hits_by_mode[mode],
+            "alternatives": _research_mode_alternatives(scores, mode),
+        }
+    effective_stage_source = stage_source or ("explicit" if stage else None)
+    if effective_stage_source == "explicit" and stage in RESEARCH_MODE_BY_STAGE:
+        chosen = RESEARCH_MODE_BY_STAGE[stage]
+        return {
+            "mode": chosen,
+            "label": RESEARCH_MODE_LABELS[chosen],
+            "confidence": 0.85,
+            "source": "stage",
+            "signals": hits_by_mode[chosen],
+            "alternatives": _research_mode_alternatives(scores, chosen),
+        }
+    ranked = sorted(
+        RESEARCH_MODES, key=lambda name: (-scores[name], RESEARCH_MODES.index(name))
+    )
+    chosen = ranked[0]
+    if scores[chosen] > 0:
+        return {
+            "mode": chosen,
+            "label": RESEARCH_MODE_LABELS[chosen],
+            "confidence": round(min(0.95, 0.55 + 0.1 * scores[chosen]), 2),
+            "source": "text",
+            "signals": hits_by_mode[chosen],
+            "alternatives": _research_mode_alternatives(scores, chosen),
+        }
+    if effective_stage_source == "keywords" and stage in RESEARCH_MODE_BY_STAGE:
+        chosen = RESEARCH_MODE_BY_STAGE[stage]
+        return {
+            "mode": chosen,
+            "label": RESEARCH_MODE_LABELS[chosen],
+            "confidence": 0.6,
+            "source": "stage",
+            "signals": hits_by_mode[chosen],
+            "alternatives": _research_mode_alternatives(scores, chosen),
+        }
+    return {
+        "mode": "discover",
+        "label": RESEARCH_MODE_LABELS["discover"],
+        "confidence": 0.3,
+        "source": "default",
+        "signals": [],
+        "alternatives": [],
+    }
+
+
+def _research_entry_node(text: str, mode: str) -> str:
+    low = text.casefold()
+    if mode == "discover":
+        return "scene"
+    if mode == "validate":
+        if any(token in low for token in ("付费", "价格", "定价", "商业", "收入")):
+            return "business"
+        if any(token in low for token in ("功能", "特性", "方案", "形态")):
+            return "feature"
+        return "need"
+    if any(token in low for token in ("付费", "价格", "收入", "续费", "商业")):
+        return "business"
+    return "product"
+
+
+def _research_why_entry(mode: str, entry_node: str) -> str:
+    if mode == "discover":
+        return (
+            "Discover 从场景进入：先找到真实发生、可观察的任务与触发条件，"
+            "再判断是否值得进入用户、痛点和需求。"
+        )
+    if mode == "validate":
+        reasons = {
+            "need": "Validate 从待验证的 need 节点进入：先检验谁在什么场景下有什么未满足结果，再讨论方案。",
+            "feature": "Validate 从 feature 节点进入：把功能/形态当假设，检验它是否真的改变用户任务结果。",
+            "business": "Validate 从 business 节点进入：先检验付费、价格或收入假设；商业证据不能替代需求与产品证据。",
+        }
+        return reasons[entry_node]
+    reasons = {
+        "product": "Optimize 从 product 节点进入：先诊断现有产品在真实使用中的断点，再回到上游修正假设。",
+        "business": "Optimize 从 business 节点进入：先诊断商业化断点；商业指标下降不等于需求不存在。",
+    }
+    return reasons[entry_node]
+
+
+def _research_questions(mode: str, entry_node: str) -> list[str]:
+    if mode == "discover":
+        return [
+            "哪些真实场景中，用户已经在用替代方案或笨办法完成同一任务？",
+            "这个场景的触发条件、频率和失败后果是什么，谁在承担成本？",
+            "哪类用户或环境下的场景最值得优先研究，现有替代为什么不够？",
+            "这个场景是否稳定、可观察，足以支撑进入用户与痛点研究？",
+        ]
+    if mode == "validate":
+        questions = {
+            "need": [
+                "待验证的 need 命题具体是什么？支持、反证和未知各有哪些？",
+                "哪类用户在哪个场景、完成什么任务时出现了什么未满足结果？",
+                "现有替代方案（人工、竞品、不行动）为什么不够，用户付出了什么代价？",
+                "哪些新证据会推翻“这是真需求”的判断？",
+            ],
+            "feature": [
+                "这个功能/形态对应哪个尚未验证的 need？",
+                "目标用户能否在真实任务中完成任务，完成率、失败点和代价是什么？",
+                "与现有替代方案相比，增量价值是什么，在什么条件下不成立？",
+                "哪些结果会证明“功能有价值”是错的？",
+            ],
+            "business": [
+                "谁付费、为哪个结果付费、在什么场景下付费？",
+                "价格、计费方式或收入假设有哪些可拒绝的真实证据？",
+                "即使有人愿意付费，需求与产品证据是否足以支撑商业假设？",
+                "哪些反证（不续费、压价、采购周期、替代品）会推翻当前判断？",
+            ],
+        }
+        return questions[entry_node]
+    if entry_node == "business":
+        return [
+            "商业化指标的口径、分母和时间窗是什么，是否存在埋点或归因缺口？",
+            "变化集中在哪些客群、套餐/价格、渠道或销售阶段？",
+            "断点来自需求、产品体验还是定价/销售机制，哪些替代解释未排除？",
+            "上游哪个节点假设需要重新验证？",
+            "哪些商业反证会推翻当前判断？",
+        ]
+    return [
+        "指标变差的口径、分母、时间窗和数据完整性是否可信？",
+        "变化集中在哪些用户分层、场景、版本或渠道？",
+        "真实任务中的断点在哪里，机制假设和替代解释各是什么？",
+        "需要回到七节点中的哪个上游假设修正？",
+        "改进的预期结果、反例与停止条件是什么？",
+    ]
+
+
+def _research_first_actions(mode: str, entry_node: str) -> list[str]:
+    if mode == "discover":
+        return [
+            "选 3–5 个典型场景做情境访查，记录触发、步骤、替代方案和结果。",
+            "用工单、社区讨论、搜索或售后记录三角验证场景线索，只作发现，不作总体推断。",
+            "为每个候选场景写清可证伪假设：哪个条件不成立，场景就不成立。",
+            "按频率 × 后果 × 替代成本排出候选机会，并标注证据缺口。",
+        ]
+    if mode == "validate":
+        actions = {
+            "need": [
+                "把待验证命题写成一句可证伪的判断，并预登记支持、反证与未知。",
+                "对目标用户做情境访谈，追问最近一次真实发生及替代方案，而非泛问需求。",
+                "收集行为或交付证据（使用记录、工单、真实承诺），与访谈分开登记。",
+                "做一次最小可拒绝验证（试用、预约、可退押金），记录拒绝与流失。",
+            ],
+            "feature": [
+                "用可点击原型或 concierge 跑真实任务测试，记录完成率、失败点和代价。",
+                "设置替代方案对照，判断增量来自功能本身还是场景/人群差异。",
+                "预登记证伪条件：出现哪些失败任务或替代更优，就判定功能假设不成立。",
+                "把支持、反证、未知写入证据台账，禁止用满意度替代任务结果。",
+            ],
+            "business": [
+                "访谈付费决策人与使用者，分开记录“愿意付”和“实际付”。",
+                "设计可拒绝的报价、付费试点或退款承诺，保留邀请、接受、支付、交付分母。",
+                "核对价格、成本和收入假设的来源与时间窗，缺数就保留 null。",
+                "收集不续费、压价、采购周期和替代品等反证，并预登记推翻条件。",
+            ],
+        }
+        return actions[entry_node]
+    if entry_node == "business":
+        return [
+            "固化转化、续费、收入等指标的口径、分母与时间窗。",
+            "按客群、套餐/价格、渠道和销售阶段分层，定位商业断点。",
+            "与财务/销售复核价格、成本和收入假设，缺数保留 null。",
+            "访谈成交、流失和拒绝客户，区分需求不足、体验断点与定价问题。",
+            "设计可拒绝的定价或续费实验，预登记反证与停止条件。",
+        ]
+    return [
+        "先固化指标口径、分母、时间窗和数据完整性，再做比较。",
+        "按用户分层、场景、版本、渠道拆解变化，找出最大断点。",
+        "走查漏斗、日志与工单，列出机制假设和至少两个替代解释。",
+        "访谈流失、未转化和高频用户，验证断点是否发生在真实任务中。",
+        "选定最小改进实验，预登记成功指标、反例和回滚条件。",
+    ]
+
+
+def _research_stop_conditions(mode: str) -> list[str]:
+    if mode == "discover":
+        return [
+            "场景只能由二手评论推断，找不到可访谈或可观察的当事人。",
+            "场景无法落到具体触发、任务和后果，只剩人群标签或抽象趋势。",
+            "继续研究需要不可接受的安全、合规或数据授权风险。",
+        ]
+    if mode == "validate":
+        return [
+            "关键命题无法写成可证伪条件，支持与反证无法区分。",
+            "现有证据只有态度或意向，缺少行为、交付或真实承诺。",
+            "补证成本超过该决策的价值，或所需授权不可获得。",
+            "出现清晰的反证而当前假设无法解释或修正。",
+        ]
+    return [
+        "指标口径、分母或埋点不可信，无法做时间窗与分层比较。",
+        "分层样本不足，或只能得到相关性而无法识别机制。",
+        "改进涉及安全、合规、财务或发布审查，尚未获得责任人批准。",
+        "上游假设需要重新验证，当前迭代范围无法覆盖。",
+    ]
+
+
+def research_entry_contract(
+    text: str,
+    mode: str | None = None,
+    stage: str | None = None,
+    stage_source: str | None = None,
+) -> dict[str, Any]:
+    """Return the mode entry contract without waiving any node's evidence requirement."""
+    mode_info = detect_research_mode(
+        text, stage=stage, mode=mode, stage_source=stage_source
+    )
+    entry_node = _research_entry_node(text, mode_info["mode"])
+    entry_index = REASONING_NODES.index(entry_node)
+    node_order = list(REASONING_NODES[entry_index:]) + list(REASONING_NODES[:entry_index])
+    return {
+        "mode": mode_info["mode"],
+        "mode_label": RESEARCH_MODE_LABELS[mode_info["mode"]],
+        "mode_source": mode_info["source"],
+        "entry_node": entry_node,
+        "entry_label": REASONING_NODE_LABELS[entry_node],
+        "node_order": node_order,
+        "upstream_nodes": list(REASONING_NODES[:entry_index]),
+        "why_entry": _research_why_entry(mode_info["mode"], entry_node),
+        "questions": _research_questions(mode_info["mode"], entry_node),
+        "first_actions": _research_first_actions(mode_info["mode"], entry_node),
+        "stop_conditions": _research_stop_conditions(mode_info["mode"]),
+        "boundary": RESEARCH_MODE_BOUNDARY,
+    }
+
+
+def research_mode_markdown(contract: dict[str, Any]) -> str:
+    upstream = contract["upstream_nodes"]
+    upstream_text = (
+        " → ".join(REASONING_NODE_LABELS[node] for node in upstream)
+        if upstream
+        else "无（从主链起点进入）"
+    )
+    lines = [
+        "# Askovo 研究模式",
+        "",
+        "## 模式与入口",
+        "",
+        f"- 模式：**{contract['mode_label']}**（`{contract['mode']}`，来源 `{contract['mode_source']}`）",
+        f"- 入口节点：**{contract['entry_label']}**（`{contract['entry_node']}`）",
+        f"- 上游节点（未验证前只能是假设）：{upstream_text}",
+        "",
+        "## 为什么从这里进",
+        "",
+        contract["why_entry"],
+        "",
+        "## 节点顺序（从入口开始）",
+        "",
+        " → ".join(REASONING_NODE_LABELS[node] for node in contract["node_order"]),
+        "",
+        "## 要回答的问题",
+        "",
+    ]
+    lines.extend(f"{index}. {question}" for index, question in enumerate(contract["questions"], start=1))
+    lines.extend(["", "## 先做的动作", ""])
+    lines.extend(f"{index}. {action}" for index, action in enumerate(contract["first_actions"], start=1))
+    lines.extend(["", "## 停止条件", ""])
+    lines.extend(f"- {condition}" for condition in contract["stop_conditions"])
+    lines.extend(["", "## 边界", "", contract["boundary"]])
+    return "\n".join(lines) + "\n"
+
+
 def route_request(
     text: str,
     domain: str | None = None,
@@ -513,6 +907,9 @@ def route_request(
     stage_info = detect_stage(text, stage)
     intent_info = detect_intent(text, intent)
     risks = detect_risks(text)
+    research_mode = research_entry_contract(
+        text, stage=stage_info["stage"], stage_source=stage_info.get("source")
+    )
     if domain_info["needs_domain"]:
         return {
             "query": text,
@@ -527,6 +924,7 @@ def route_request(
             "risk_flags": risks,
             "safety_gate": "review" if risks else "clear",
             "product_reasoning": product_reasoning_contract(stage_info["stage"]),
+            "research_mode": research_mode,
             "method_selection": research_method_selection(text, [], intent=intent_info["intent"]),
             "questions": ["你要研究的是软件、硬件、消费品、汽车还是手机/可穿戴产品？"],
             "next_commands": ['askovo route "<需求>" --domain software'],
@@ -593,6 +991,7 @@ def route_request(
         "intent": intent_info["intent"],
         "intent_source": intent_info["source"],
         "product_reasoning": product_reasoning_contract(stage_key),
+        "research_mode": research_mode,
         "industry_context": role_plan["industry"],
         "role_recommendation": role_plan,
         "risk_flags": risks,
@@ -1017,6 +1416,7 @@ def create_study(
         "product_domain": route["domain"],
         "industry_context": route.get("industry_context", {}).get("id"),
         "lifecycle_stage": route["stage"],
+        "research_mode": route.get("research_mode", {}),
         "recommended_roles": [item["id"] for item in route.get("role_recommendation", {}).get("assignments", [])],
         "product_reasoning_version": "2.0",
         "product_reasoning": product_reasoning_contract(route["stage"]),
@@ -1117,6 +1517,7 @@ def create_study(
 - 产品类型：{route['domain_label']} (`{route['domain']}`)
 - 行业上下文：{route.get('industry_context', {}).get('label_zh', '待确认')} (`{route.get('industry_context', {}).get('id', 'unknown')}`)
 - 阶段：{route['stage_label']} (`{route['stage']}`)
+- 研究模式：{(route.get('research_mode') or {}).get('mode_label', '待确认')}（入口：{(route.get('research_mode') or {}).get('entry_label', '待确认')}）
 - 方法：{', '.join(item['name'] for item in selected)}
 - 安全门：`{route['safety_gate']}`
 
@@ -1194,6 +1595,7 @@ def research_plan_markdown(study: dict[str, Any], route: dict[str, Any]) -> str:
         "",
         f"- 产品类型：{route['domain_label']} (`{route['domain']}`)",
         f"- 阶段：{route['stage_label']} (`{route['stage']}`)",
+        f"- 研究模式：{(route.get('research_mode') or {}).get('mode_label', '待确认')}（入口：{(route.get('research_mode') or {}).get('entry_label', '待确认')}）",
         f"- 支撑方法：{', '.join(item['name'] for item in route['recommended_methods'])}",
         "",
         "## 4. 推理假设与证伪",
@@ -5650,6 +6052,24 @@ def cli_route(args: Any) -> int:
     return 2 if route.get("status") == "needs_domain" else 0
 
 
+def cli_mode(args: Any) -> int:
+    try:
+        contract = research_entry_contract(
+            args.need,
+            mode=args.mode,
+            stage=args.stage,
+            stage_source="explicit" if args.stage else None,
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if getattr(args, "json", False):
+        print(json.dumps(contract, ensure_ascii=False, indent=2))
+    else:
+        print(research_mode_markdown(contract))
+    return 0
+
+
 def cli_do(args: Any) -> int:
     try:
         route = route_request(args.need, args.domain, args.stage, args.intent)
@@ -5697,6 +6117,9 @@ def cli_do(args: Any) -> int:
     else:
         print(f"已创建研究：{result['study_dir']}")
         print(f"- 产品：{route['domain_label']} / {route['stage_label']}")
+        mode = route.get("research_mode") or {}
+        if mode:
+            print(f"- 研究模式：{mode.get('mode_label', '')}（从{mode.get('entry_label', '')}进入）")
         print(f"- 方法：{', '.join(item['name'] for item in route['recommended_methods'])}")
         if result["instruments"]:
             print(f"- 工具包：{', '.join(result['instruments'])}")

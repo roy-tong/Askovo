@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Initialize and audit an askovo research study.
 
+Usage:
+  askovo mode "<需求>" [--mode discover|validate|optimize] [--stage <stage>] [--json]
+
 This CLI intentionally uses only the Python standard library. It validates
 research structure and claim eligibility; it does not collect data, call a
 model, or prove population-level demand.
@@ -4817,6 +4820,16 @@ def build_parser() -> argparse.ArgumentParser:
     route_parser.add_argument("--json", action="store_true")
     route_parser.set_defaults(func=sure_engine.cli_route)
 
+    mode_parser = subparsers.add_parser(
+        "mode",
+        help="detect discover/validate/optimize and show the research entry contract",
+    )
+    mode_parser.add_argument("need", help="natural-language research request")
+    mode_parser.add_argument("--mode", choices=sure_engine.RESEARCH_MODES)
+    mode_parser.add_argument("--stage", choices=sure_engine.STAGES)
+    mode_parser.add_argument("--json", action="store_true")
+    mode_parser.set_defaults(func=sure_engine.cli_mode)
+
     do_parser = subparsers.add_parser(
         "do", help="route and scaffold a study in one step (the single entry point)"
     )
@@ -5190,7 +5203,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 CLI_COMMANDS = {
-    "init", "plan", "signals", "lexicon", "report", "demo", "route", "do", "domains",
+    "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "do", "domains",
     "methods", "catalog", "platforms", "collect", "research", "loop", "analyze", "instruments", "import", "queue",
     "codebook", "chain", "economics", "psm", "decision", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",

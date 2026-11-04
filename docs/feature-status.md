@@ -1,6 +1,6 @@
 # Askovo: implementation status
 
-Reviewed 2026-11-04 against the **v2.11.0 release**. Available means local implementation, not production validation on every platform.
+Reviewed 2026-11-04 against the **v2.12.0 release**. Available means local implementation, not production validation on every platform.
 
 | Feature | Scope | Status |
 |---|---|---|
@@ -12,6 +12,10 @@ Reviewed 2026-11-04 against the **v2.11.0 release**. Available means local imple
 | A12 | Reports, MRD/PRD/BRD and decision package | Available; refreshed audit guards delivery |
 | A13–A15 | Continuous validation, evaluation and industry packs | `askovo review` turns audit, evidence, decision readiness, falsifiability, bias and deliverable freshness into machine-readable items; this is a per-study quality review, not a benchmark of general research agents. Scheduled continuous research is not shipped |
 | A16 | 80 role families, 10 lifecycle modules, 10 industry overlays | Available: role duties, KPI formulas/guardrails, SOPs, handoffs, 257 deliverable templates, task-sized team recommendation, adaptive output/expression contracts, atomic bound workplans, role/lifecycle projections, freshness and full-audit validation. Professional engineering/clinical/safety/compliance/production approval remains human and external |
+
+## Research modes
+
+`askovo mode` and the `research_mode` field in `askovo route --json` return a deterministic Discover/Validate/Optimize entry contract: mode, mode source, entry node, rotated seven-node order, upstream hypotheses, questions, first actions, stop conditions and boundary. The entry changes what to answer first; it never waives the evidence requirement for any node.
 
 ## Role operating system depth
 

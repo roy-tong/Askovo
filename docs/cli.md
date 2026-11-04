@@ -12,7 +12,8 @@ askovo --help
 | 命令 | 用途 | 退出码 |
 |---|---|---|
 | `do "<需求>"` | **单入口**：路由 + 创建主链画布、研究计划、证据计划与工具包 | 0/2/4 |
-| `route "<需求>"` | 只路由，不写文件；含行业与岗位编排建议 | 0/2 |
+| `route "<需求>"` | 只路由，不写文件；含行业、岗位编排与研究模式 | 0/2 |
+| `mode "<需求>"` | 只判断 Discover / Validate / Optimize 与入口节点、上游假设、问题与停止条件，不写文件 | 0/2 |
 | `roles list/show/recommend/scaffold/template` | 80 岗位族、10 生命周期、10 行业的职责/KPI/SOP/交接/模板与项目执行包 | 0/2 |
 | `platforms "<需求>"` | 平台雷达：数据在哪、能否合规拿到、能证明什么 | 0/2 |
 | `collect <study>` | 通过 design gate 后运行采集适配器/本地导出/CDP，写 raw、manifest 与 normalized | 0/1/2/3/4 |
@@ -77,6 +78,18 @@ askovo route "座舱语音接管" --domain automotive --stage validation
 ```
 
 输出：`product_reasoning`（七节点、当前阶段焦点、主链产物），以及 domain、stage、intent、risk_flags、safety_gate、recommended_methods、alternatives、decisions、deliverables、platform_preview、next_commands；另含 `industry_context` 与 `role_recommendation`。行业识别受已路由基础域约束，冲突与候选会显式保留。主链先展示，岗位、方法与平台是支撑层。
+
+## mode
+
+```bash
+askovo mode "端侧 AI 摄影创业机会"
+askovo mode "验证端侧摄影 App 是否值得做，用户是否愿意付费" --json
+askovo mode "为什么我们的注册转化下降" --mode optimize
+```
+
+输出：`mode`、`mode_label`、`mode_source`、`entry_node`、`entry_label`、`node_order`、`upstream_nodes`、`why_entry`、`questions`、`first_actions`、`stop_conditions`、`boundary`。默认 Markdown，`--json` 输出契约。
+
+优先级：显式 `--mode` > 显式 `--stage` > 文本信号 > 关键词推断阶段 > 默认 Discover。入口只决定先回答什么，不豁免任何节点的证据要求；上游未验证前只能作为假设。`route --json` 也带同一个 `research_mode` 对象。
 
 ## roles
 

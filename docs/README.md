@@ -10,18 +10,20 @@ askovo 用同一主链服务五域产品经理、用户研究、用户运营及�
 4. [岗位方法论](product-methodology.md) —— 五域 PM、资深 UXR、用户运营与分析职责的方法来源。
 5. [产品创新岗位操作系统](role-operating-system.md) —— 80 岗位族 × 10 生命周期 × 10 行业的职责、KPI、SOP、交接与模板。
 6. [五类产品](modes.md) —— 同一主链下的配置、验证和专业门差异。
-7. [核心概念](concepts.md) —— 六类结论、证据形式、E0–E5 的适用范围。
-8. [数据契约](data-contract.md) —— product-reasoning、study、evidence、judgments、商业节点与报告写入权。
-9. [CLI 参考](cli.md) —— 命令、参数、产物和退出码。
-10. [平台与连接器](connectors.md) —— 数据在哪、如何合规补证、哪些路线被阻断。
-11. [研究闭环](research-loop.md) —— 缺口检测、信封授权、多轮复审与候选证据。
-12. [决策复盘](cli.md#review决策复盘) —— 审计门、决策就绪、可证伪、偏差与交付物核验。
-13. [SURE 引擎](sure-engine.md) —— 产品主链与研究支撑引擎的关系。
-14. [故障排查](troubleshooting.md) —— 安装、断链、门禁、采集与 MCP。
-15. [开源集成清单](open-source-integrations.md) —— 三个产品对 Docling/Playwright/Stagehand 等组件的实际接入状态与取舍。
+7. [研究模式](research-modes.md) —— Discover / Validate / Optimize 的入口节点、上游假设与研究契约。
+8. [核心概念](concepts.md) —— 六类结论、证据形式、E0–E5 的适用范围。
+9. [数据契约](data-contract.md) —— product-reasoning、study、evidence、judgments、商业节点与报告写入权。
+10. [CLI 参考](cli.md) —— 命令、参数、产物和退出码。
+11. [平台与连接器](connectors.md) —— 数据在哪、如何合规补证、哪些路线被阻断。
+12. [研究闭环](research-loop.md) —— 缺口检测、信封授权、多轮复审与候选证据。
+13. [决策复盘](cli.md#review决策复盘) —— 审计门、决策就绪、可证伪、偏差与交付物核验。
+14. [SURE 引擎](sure-engine.md) —— 产品主链与研究支撑引擎的关系。
+15. [故障排查](troubleshooting.md) —— 安装、断链、门禁、采集与 MCP。
+16. [开源集成清单](open-source-integrations.md) —— 三个产品对 Docling/Playwright/Stagehand 等组件的实际接入状态与取舍。
 
 | 你想做什么 | 去哪 |
 | --- | --- |
+| 判断该用 Discover / Validate / Optimize 哪种研究模式 | `askovo mode "<需求>"`（见 [研究模式](research-modes.md)） |
 | 出一份业务方案（给产品/市场问题） | `askovo deliver <study> --kind plan`（见 [CLI 参考](cli.md)） |
 | 看语料分布与判断覆盖 | `askovo deliver <study> --kind analysis` |
 | 查 80 岗位职责/KPI/SOP、组队与交付模板 | [岗位操作系统](role-operating-system.md) 与 `askovo roles ...` |

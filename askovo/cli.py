@@ -32,6 +32,7 @@ one entry:
   "<需求>"           shorthand for `do`: route + scaffold in one line
   do "<需求>"        route product domain/stage/method and scaffold a study
   route "<需求>"     route only, no writes
+  mode "<需求>"      detect discover/validate/optimize and show the entry contract
   chain <study>       render the scene-user-pain-need-feature-product-business chain
   roles <action>      80 role families: list/show/recommend/scaffold/template
   platforms "<需求>" rank platforms by data availability and access
