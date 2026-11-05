@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.16.0 - 2026-11-05
+
+### Changed
+
+- **Discover studies scaffold the opportunity map automatically**: `askovo do`
+  now writes `04-findings/opportunity-map.json` and `.md` when the routed mode is
+  Discover, so the five-layer structure is part of the study rather than an
+  optional afterthought. `askovo explore --force` remains available to rebuild
+  it.
+
+### Tests
+
+- 279 tests pass.
+
 ## 2.15.0 - 2026-11-05
 
 ### Added

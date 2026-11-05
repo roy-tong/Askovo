@@ -292,17 +292,16 @@ class ResearchModeTests(unittest.TestCase):
                 "--study", str(study_dir), "--json",
             )
             self.assertEqual(0, completed.returncode, completed.stderr + completed.stdout)
-            completed = run_cli("explore", str(study_dir), "--json")
-            self.assertEqual(0, completed.returncode, completed.stderr + completed.stdout)
-            contract = json.loads(completed.stdout)
+            self.assertTrue((study_dir / "04-findings" / "opportunity-map.json").is_file(),
+                            "discover studies should scaffold the opportunity map")
+            again = run_cli("explore", str(study_dir))
+            self.assertEqual(2, again.returncode)
+            forced = run_cli("explore", str(study_dir), "--force", "--json")
+            self.assertEqual(0, forced.returncode, forced.stderr)
+            contract = json.loads(forced.stdout)
             self.assertEqual("askovo.opportunity-map/1", contract["schema"])
             self.assertEqual("discover", contract["mode"])
             self.assertEqual(5, len(contract["layers"]))
-            self.assertTrue((study_dir / "04-findings" / "opportunity-map.md").is_file())
-            again = run_cli("explore", str(study_dir))
-            self.assertEqual(2, again.returncode)
-            forced = run_cli("explore", str(study_dir), "--force")
-            self.assertEqual(0, forced.returncode, forced.stderr)
 
     def test_external_research_stores_candidates_only(self) -> None:
         import sys as _sys

@@ -100,7 +100,7 @@ askovo explore ./askovo-mobile-discovery
 askovo explore ./askovo-mobile-discovery --force
 ```
 
-生成 `04-findings/opportunity-map.json` 与 `.md`：市场与替代、用户与任务、机会假设、方案空间、验证路径五层，每层带问题与条目 schema。条目初始为空；没有来源、状态和反证记录的条目不能进入产品方案。
+Discover 模式的 `askovo do` 会自动生成该地图；`explore` 用于补建或重建。生成 `04-findings/opportunity-map.json` 与 `.md`：市场与替代、用户与任务、机会假设、方案空间、验证路径五层，每层带问题与条目 schema。条目初始为空；没有来源、状态和反证记录的条目不能进入产品方案。
 
 ## external-research
 
