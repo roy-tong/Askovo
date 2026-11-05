@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.16.1 - 2026-11-05
+
+### Fixed
+
+- **Opportunity map Markdown now renders items**: previously it always printed
+  "current items: none" even when the JSON contained sourced entries. Items now
+  show id, statement, status, evidence ids, counter-evidence and next test.
+
 ## 2.16.0 - 2026-11-05
 
 ### Changed

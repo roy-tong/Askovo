@@ -943,7 +943,18 @@ def opportunity_map_markdown(contract: dict[str, Any]) -> str:
         lines.append("要回答：")
         lines.extend(f"- {question}" for question in layer["questions"])
         lines.append("")
-        lines.append("当前条目：无（待补来源与状态）")
+        items = layer.get("items") or []
+        if items:
+            for item in items:
+                lines.append(
+                    f"- **{item.get('id', '')}** {item.get('statement', '')}  "
+                    f"（{item.get('status', 'unknown')}；证据 {', '.join(item.get('evidence_ids') or []) or '无'}）")
+                if item.get("counter_evidence_ids"):
+                    lines.append(f"  - 反证：{', '.join(item['counter_evidence_ids'])}")
+                if item.get("next_test"):
+                    lines.append(f"  - 下一步：{item['next_test']}")
+        else:
+            lines.append("当前条目：无（待补来源与状态）")
         lines.append("")
     lines.append("## 条目写法")
     lines.append("")
