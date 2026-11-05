@@ -1,6 +1,6 @@
 # Askovo: implementation status
 
-Reviewed 2026-11-04 against the **v2.12.0 release**. Available means local implementation, not production validation on every platform.
+Reviewed 2026-11-04 against the **v2.13.0 release**. Available means local implementation, not production validation on every platform.
 
 | Feature | Scope | Status |
 |---|---|---|

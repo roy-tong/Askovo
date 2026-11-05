@@ -616,69 +616,48 @@ def detect_research_mode(
     mode: str | None = None,
     stage_source: str | None = None,
 ) -> dict[str, Any]:
-    """Detect discover/validate/optimize.
+    """Detect discover/validate/optimize for the current task.
 
-    Priority: explicit mode, explicit stage, text signals, keyword-inferred
-    stage, then the discover default. A stage inferred from keywords must not
-    override stronger text signals.
+    Priority: explicit mode > task text > explicit stage > keyword-inferred
+    stage > default. Stage is a background condition (where the product is),
+    not the task type; it only decides when the task itself has no signal.
+    ``confidence`` is a keyword heuristic score, not a calibrated probability.
     """
     hits_by_mode = _research_mode_hits(text)
     scores = {name: len(hits) for name, hits in hits_by_mode.items()}
+
+    def result(chosen: str, confidence: float, source: str) -> dict[str, Any]:
+        return {
+            "mode": chosen,
+            "label": RESEARCH_MODE_LABELS[chosen],
+            "confidence": confidence,
+            "score_basis": "keyword_hits" if source in {"text", "stage"} else "rule",
+            "calibrated": False,
+            "source": source,
+            "signals": hits_by_mode[chosen],
+            "alternatives": _research_mode_alternatives(scores, chosen),
+        }
+
     if mode:
         if mode not in RESEARCH_MODES:
             raise ValueError(
                 f"unknown research mode {mode!r}; choose from: {', '.join(RESEARCH_MODES)}"
             )
-        return {
-            "mode": mode,
-            "label": RESEARCH_MODE_LABELS[mode],
-            "confidence": 1.0,
-            "source": "explicit",
-            "signals": hits_by_mode[mode],
-            "alternatives": _research_mode_alternatives(scores, mode),
-        }
-    effective_stage_source = stage_source or ("explicit" if stage else None)
-    if effective_stage_source == "explicit" and stage in RESEARCH_MODE_BY_STAGE:
-        chosen = RESEARCH_MODE_BY_STAGE[stage]
-        return {
-            "mode": chosen,
-            "label": RESEARCH_MODE_LABELS[chosen],
-            "confidence": 0.85,
-            "source": "stage",
-            "signals": hits_by_mode[chosen],
-            "alternatives": _research_mode_alternatives(scores, chosen),
-        }
+        return result(mode, 1.0, "explicit")
+
     ranked = sorted(
         RESEARCH_MODES, key=lambda name: (-scores[name], RESEARCH_MODES.index(name))
     )
     chosen = ranked[0]
     if scores[chosen] > 0:
-        return {
-            "mode": chosen,
-            "label": RESEARCH_MODE_LABELS[chosen],
-            "confidence": round(min(0.95, 0.55 + 0.1 * scores[chosen]), 2),
-            "source": "text",
-            "signals": hits_by_mode[chosen],
-            "alternatives": _research_mode_alternatives(scores, chosen),
-        }
-    if effective_stage_source == "keywords" and stage in RESEARCH_MODE_BY_STAGE:
-        chosen = RESEARCH_MODE_BY_STAGE[stage]
-        return {
-            "mode": chosen,
-            "label": RESEARCH_MODE_LABELS[chosen],
-            "confidence": 0.6,
-            "source": "stage",
-            "signals": hits_by_mode[chosen],
-            "alternatives": _research_mode_alternatives(scores, chosen),
-        }
-    return {
-        "mode": "discover",
-        "label": RESEARCH_MODE_LABELS["discover"],
-        "confidence": 0.3,
-        "source": "default",
-        "signals": [],
-        "alternatives": [],
-    }
+        return result(chosen, round(min(0.95, 0.55 + 0.1 * scores[chosen]), 2), "text")
+
+    effective_stage_source = stage_source or ("explicit" if stage else None)
+    if stage in RESEARCH_MODE_BY_STAGE and effective_stage_source == "explicit":
+        return result(RESEARCH_MODE_BY_STAGE[stage], 0.7, "stage")
+    if stage in RESEARCH_MODE_BY_STAGE and effective_stage_source == "keywords":
+        return result(RESEARCH_MODE_BY_STAGE[stage], 0.55, "stage")
+    return result("discover", 0.3, "default")
 
 
 def _research_entry_node(text: str, mode: str) -> str:
@@ -849,6 +828,9 @@ def research_entry_contract(
         "mode": mode_info["mode"],
         "mode_label": RESEARCH_MODE_LABELS[mode_info["mode"]],
         "mode_source": mode_info["source"],
+        "mode_score": mode_info["confidence"],
+        "score_basis": mode_info.get("score_basis", "rule"),
+        "calibrated": bool(mode_info.get("calibrated", False)),
         "entry_node": entry_node,
         "entry_label": REASONING_NODE_LABELS[entry_node],
         "node_order": node_order,
@@ -874,6 +856,7 @@ def research_mode_markdown(contract: dict[str, Any]) -> str:
         "## 模式与入口",
         "",
         f"- 模式：**{contract['mode_label']}**（`{contract['mode']}`，来源 `{contract['mode_source']}`）",
+        f"- 判定分数：{contract.get('mode_score')}（{contract.get('score_basis', 'rule')}，未校准，不等于概率）",
         f"- 入口节点：**{contract['entry_label']}**（`{contract['entry_node']}`）",
         f"- 上游节点（未验证前只能是假设）：{upstream_text}",
         "",

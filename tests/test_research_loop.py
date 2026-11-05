@@ -106,6 +106,34 @@ class LoopHelpers:
 
 class ResearchLoopTests(LoopHelpers, unittest.TestCase):
 
+    def test_plan_uses_research_mode_weights(self) -> None:
+        self.write_study()
+        weights = {}
+        for mode in ("discover", "optimize"):
+            target = self.dir / f"study-{mode}"
+            shutil.copytree(self.study, target)
+            study_json = target / "study.json"
+            data = json.loads(study_json.read_text(encoding="utf-8"))
+            data["research_mode"] = {"mode": mode, "entry_node": "scene"}
+            study_json.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            completed = run_cli("loop", "plan", str(target))
+            self.assertEqual(0, completed.returncode, completed.stderr + completed.stdout)
+            payload = json.loads(completed.stdout)
+            self.assertEqual(mode, payload["research_mode"]["mode"])
+            state = json.loads(Path(payload["state_path"]).read_text(encoding="utf-8"))
+            found = None
+            for gap in state.get("gaps") or []:
+                for candidate in gap.get("research_action_candidates") or []:
+                    if candidate.get("action") == "collect":
+                        found = candidate
+                        break
+                if found:
+                    break
+            self.assertIsNotNone(found, state.get("gaps"))
+            self.assertEqual(mode, found["research_mode"])
+            weights[mode] = found["mode_weight"]
+        self.assertGreater(weights["discover"], weights["optimize"])
+
     def test_plan_reports_gaps_sources_and_envelope(self) -> None:
         self.write_study(gap="two")
         completed, payload = self.plan()
