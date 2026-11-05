@@ -14,6 +14,8 @@ askovo --help
 | `do "<需求>"` | **单入口**：路由 + 创建主链画布、研究计划、证据计划与工具包 | 0/2/4 |
 | `route "<需求>"` | 只路由，不写文件；含行业、岗位编排与研究模式 | 0/2 |
 | `mode "<需求>"` | 只判断 Discover / Validate / Optimize 与入口节点、上游假设、问题与停止条件，不写文件 | 0/2 |
+| `explore <study>` | 为 0→1 研究生成五层机会空间脚手架（JSON + Markdown），不产生结论 | 0/2 |
+| `external-research <study> --command … --authorize` | 运行宿主提供的研究命令，把输出保存为候选来源（不定级、不升级为证据） | 0/2 |
 | `roles list/show/recommend/scaffold/template` | 80 岗位族、10 生命周期、10 行业的职责/KPI/SOP/交接/模板与项目执行包 | 0/2 |
 | `platforms "<需求>"` | 平台雷达：数据在哪、能否合规拿到、能证明什么 | 0/2 |
 | `collect <study>` | 通过 design gate 后运行采集适配器/本地导出/CDP，写 raw、manifest 与 normalized | 0/1/2/3/4 |
@@ -90,6 +92,25 @@ askovo mode "为什么我们的注册转化下降" --mode optimize
 输出：`mode`、`mode_label`、`mode_source`、`entry_node`、`entry_label`、`node_order`、`upstream_nodes`、`why_entry`、`questions`、`first_actions`、`stop_conditions`、`boundary`。默认 Markdown，`--json` 输出契约。
 
 优先级：显式 `--mode` > 任务文本信号 > 显式 `--stage` > 关键词推断阶段 > 默认 Discover。`mode_score` 是关键词启发式分数（`calibrated=false`），不是概率。入口只决定先回答什么，不豁免任何节点的证据要求；上游未验证前只能作为假设。`route --json` 也带同一个 `research_mode` 对象。
+
+## explore
+
+```bash
+askovo explore ./askovo-mobile-discovery
+askovo explore ./askovo-mobile-discovery --force
+```
+
+生成 `04-findings/opportunity-map.json` 与 `.md`：市场与替代、用户与任务、机会假设、方案空间、验证路径五层，每层带问题与条目 schema。条目初始为空；没有来源、状态和反证记录的条目不能进入产品方案。
+
+## external-research
+
+```bash
+askovo external-research ./study \
+  --command "python /path/to/gpt_researcher_adapter.py" \
+  --question "端侧 AI 摄影的替代方案" --authorize
+```
+
+命令通过 `ASKOVO_QUESTION` / `ASKOVO_STUDY` / `ASKOVO_MODE` 接收上下文，stdout 必须输出一个 JSON 对象，至少含 `sources: [{url, title, excerpt, claim}]`。输出保存到 `04-findings/external-research/`，记录为 `candidate`、`evidence_level: null`、`review_required: true`。`--authorize` 是必需的，因为命令以当前用户权限运行。
 
 ## roles
 

@@ -33,6 +33,8 @@ one entry:
   do "<需求>"        route product domain/stage/method and scaffold a study
   route "<需求>"     route only, no writes
   mode "<需求>"      detect discover/validate/optimize and show the entry contract
+  explore <study>    scaffold the five-layer opportunity space for a 0->1 study
+  external-research <study> --command "<cmd>" --authorize   run a host research command
   chain <study>       render the scene-user-pain-need-feature-product-business chain
   roles <action>      80 role families: list/show/recommend/scaffold/template
   platforms "<需求>" rank platforms by data availability and access

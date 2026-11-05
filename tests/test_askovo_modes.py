@@ -282,6 +282,51 @@ class ResearchModeTests(unittest.TestCase):
             self.assertEqual(["scene", "user", "pain", "need", "feature", "product"],
                              contract["upstream_nodes"])
 
+    def test_explore_scaffolds_five_layer_opportunity_space(self) -> None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            study_dir = Path(tmp) / "study"
+            completed = run_cli(
+                "do", "手机端侧 AI 摄影的创业机会",
+                "--domain", "mobile", "--stage", "discovery",
+                "--study", str(study_dir), "--json",
+            )
+            self.assertEqual(0, completed.returncode, completed.stderr + completed.stdout)
+            completed = run_cli("explore", str(study_dir), "--json")
+            self.assertEqual(0, completed.returncode, completed.stderr + completed.stdout)
+            contract = json.loads(completed.stdout)
+            self.assertEqual("askovo.opportunity-map/1", contract["schema"])
+            self.assertEqual("discover", contract["mode"])
+            self.assertEqual(5, len(contract["layers"]))
+            self.assertTrue((study_dir / "04-findings" / "opportunity-map.md").is_file())
+            again = run_cli("explore", str(study_dir))
+            self.assertEqual(2, again.returncode)
+            forced = run_cli("explore", str(study_dir), "--force")
+            self.assertEqual(0, forced.returncode, forced.stderr)
+
+    def test_external_research_stores_candidates_only(self) -> None:
+        import sys as _sys
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            study_dir = Path(tmp) / "study"
+            completed = run_cli("do", "手机端侧 AI 摄影的创业机会",
+                                "--domain", "mobile", "--stage", "discovery",
+                                "--study", str(study_dir), "--json")
+            self.assertEqual(0, completed.returncode, completed.stderr + completed.stdout)
+            script = ("import json;print(json.dumps({'sources':[{'url':'https://example.com/a',"
+                      "'title':'T','excerpt':'E','claim':'C'}],'notes':['n']}))")
+            command = f"{_sys.executable} -c \"{script}\""
+            denied = run_cli("external-research", str(study_dir), "--command", command)
+            self.assertEqual(2, denied.returncode)
+            completed = run_cli("external-research", str(study_dir), "--command", command,
+                                "--authorize", "--question", "端侧摄影替代方案", "--json")
+            self.assertEqual(0, completed.returncode, completed.stderr + completed.stdout)
+            record = json.loads(completed.stdout)
+            self.assertEqual("askovo.external-research/1", record["schema"])
+            self.assertEqual("candidate", record["sources"][0]["status"])
+            self.assertIsNone(record["sources"][0]["evidence_level"])
+            self.assertTrue(record["review_required"])
+
     def test_default_markdown_sections(self) -> None:
         completed = run_cli("mode", "为什么我们的注册转化下降")
         self.assertEqual(0, completed.returncode, completed.stderr)

@@ -1,6 +1,6 @@
 # Askovo: implementation status
 
-Reviewed 2026-11-04 against the **v2.14.0 release**. Available means local implementation, not production validation on every platform.
+Reviewed 2026-11-04 against the **v2.15.0 release**. Available means local implementation, not production validation on every platform.
 
 | Feature | Scope | Status |
 |---|---|---|
@@ -12,6 +12,10 @@ Reviewed 2026-11-04 against the **v2.14.0 release**. Available means local imple
 | A12 | Reports, MRD/PRD/BRD and decision package | Available; refreshed audit guards delivery |
 | A13–A15 | Continuous validation, evaluation and industry packs | `askovo review` turns audit, evidence, decision readiness, falsifiability, bias and deliverable freshness into machine-readable items; this is a per-study quality review, not a benchmark of general research agents. Scheduled continuous research is not shipped |
 | A16 | 80 role families, 10 lifecycle modules, 10 industry overlays | Available: role duties, KPI formulas/guardrails, SOPs, handoffs, 257 deliverable templates, task-sized team recommendation, adaptive output/expression contracts, atomic bound workplans, role/lifecycle projections, freshness and full-audit validation. Professional engineering/clinical/safety/compliance/production approval remains human and external |
+
+## Opportunity map and external research
+
+`askovo explore <study>` writes a five-layer opportunity map scaffold for 0→1 studies; the layers are empty structures with questions and an item schema, not findings. `askovo external-research <study> --command … --authorize` runs a host-supplied research command and stores its JSON output as candidate sources (`evidence_level: null`, `review_required: true`); authorization is mandatory because the command runs with the operator's privileges. Neither feature promotes anything into evidence.
 
 ## Research modes
 

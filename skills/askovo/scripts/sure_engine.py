@@ -21,6 +21,7 @@ import json
 import math
 import re
 import shlex
+import subprocess
 import shutil
 import sqlite3
 import sys
@@ -841,6 +842,116 @@ def research_entry_contract(
         "stop_conditions": _research_stop_conditions(mode_info["mode"]),
         "boundary": RESEARCH_MODE_BOUNDARY,
     }
+
+
+def opportunity_map_contract(study: dict[str, Any]) -> dict[str, Any]:
+    """Scaffold the five-layer opportunity space for a 0→1 study.
+
+    This is a structure, not a finding: every layer starts empty and requires
+    source-linked items before it can influence the reasoning chain.
+    """
+    mode = str((study.get("research_mode") or {}).get("mode") or "discover")
+    entry = str((study.get("research_mode") or {}).get("entry_node") or "scene")
+    layers = {
+        "market_and_alternatives": {
+            "label": "市场与替代",
+            "questions": [
+                "谁已经在用相关方案完成任务？通过什么产品、服务或人工方式？",
+                "现有供给最近发生了什么变化（价格、形态、渠道、能力）？",
+                "哪些替代方案的成本、失败与退出条件是可观察的？",
+                "这个市场里哪些说法只有厂商宣称、没有独立证据？",
+            ],
+            "items": [],
+        },
+        "users_and_tasks": {
+            "label": "用户与任务",
+            "questions": [
+                "哪几类人分别为什么任务、在什么触发条件下使用替代方案？",
+                "任务的频率、失败后果与约束条件是什么？",
+                "哪些人群只是相邻用户，不能被当成目标用户？",
+                "现有证据覆盖了哪些人群，缺了哪些人群？",
+            ],
+            "items": [],
+        },
+        "opportunity_hypotheses": {
+            "label": "机会假设",
+            "questions": [
+                "哪些需求尚未被充分满足，为什么现有替代难以解决？",
+                "这个判断依赖哪条关键假设？它被证伪的条件是什么？",
+                "机会来自人群变化、技术变化、渠道变化还是成本结构变化？",
+                "如果只能验证一个假设，哪个最能改变是否继续的判断？",
+            ],
+            "items": [],
+        },
+        "solution_space": {
+            "label": "方案空间",
+            "questions": [
+                "可能的产品形态、能力边界与交付方式有哪些？",
+                "每个方案依赖哪些关键技术、供应、渠道或合规条件？",
+                "哪些方案只是功能堆叠，没有对应真实任务？",
+                "最小可验证形态是什么，什么可以先不做？",
+            ],
+            "items": [],
+        },
+        "validation_paths": {
+            "label": "验证路径",
+            "questions": [
+                "哪些机会可以继续用外部数据验证，哪些必须访谈或观察？",
+                "哪些假设需要原型、真实报价、可拒绝的试点或交易测试？",
+                "每个验证动作的成功、反证与停止条件是什么？",
+                "验证成本与所需授权是否值得，谁来做决定？",
+            ],
+            "items": [],
+        },
+    }
+    return {
+        "schema": "askovo.opportunity-map/1",
+        "study_id": study.get("study_id"),
+        "domain": study.get("product_domain"),
+        "mode": mode,
+        "entry_node": entry,
+        "fit_for_mode": mode == "discover",
+        "layers": layers,
+        "item_schema": {
+            "id": "O1 / U1 / H1 / S1 / V1",
+            "statement": "一句话判断",
+            "status": "hypothesis | supported | contradicted | unknown",
+            "evidence_ids": ["R01"],
+            "counter_evidence_ids": [],
+            "source_refs": ["https://…"],
+            "assumptions": [],
+            "next_test": "",
+        },
+        "evidence_boundary": (
+            "公开讨论只能发现机会与替代，不能证明目标用户愿意购买；"
+            "没有真实用户证据时，市场规模与付费意愿保持 unknown。"),
+        "boundary": (
+            "这是机会空间脚手架，不是研究结论；每个条目必须有来源、状态与反证记录，"
+            "未经验证的条目不得进入产品方案或商业判断。"),
+    }
+
+
+def opportunity_map_markdown(contract: dict[str, Any]) -> str:
+    lines = ["# 机会空间地图", ""]
+    lines.append(f"- 研究模式：`{contract['mode']}`；入口节点：`{contract['entry_node']}`")
+    if not contract.get("fit_for_mode"):
+        lines.append("- 注意：当前不是 Discover 模式；该地图仍可用，但不应替代迭代诊断。")
+    lines.append("")
+    for key, layer in contract["layers"].items():
+        lines.append(f"## {layer['label']}（`{key}`）")
+        lines.append("")
+        lines.append("要回答：")
+        lines.extend(f"- {question}" for question in layer["questions"])
+        lines.append("")
+        lines.append("当前条目：无（待补来源与状态）")
+        lines.append("")
+    lines.append("## 条目写法")
+    lines.append("")
+    lines.append("每个条目至少包含：判断、状态（hypothesis/supported/contradicted/unknown）、"
+                 "支持证据 ID、反证 ID、来源链接、关键假设与下一步验证。")
+    lines.append("")
+    lines.append(f"> {contract['evidence_boundary']}")
+    return "\n".join(lines) + "\n"
 
 
 def research_mode_markdown(contract: dict[str, Any]) -> str:
@@ -6148,6 +6259,121 @@ def cli_catalog(args: Any) -> int:
     else:
         for item in rows:
             print(f"- {item['id']}: {item['name']}")
+    return 0
+
+
+def cli_explore(args: Any) -> int:
+    study_dir = Path(args.study_dir).resolve()
+    study_file = study_dir / "study.json"
+    if not study_file.is_file():
+        print(f"找不到 study.json: {study_file}", file=sys.stderr)
+        return 2
+    study = load_json(study_file)
+    contract = opportunity_map_contract(study)
+    target = study_dir / "04-findings" / "opportunity-map.json"
+    markdown = study_dir / "04-findings" / "opportunity-map.md"
+    if target.exists() and not getattr(args, "force", False):
+        print(f"机会空间地图已存在：{target}；如需覆盖请加 --force", file=sys.stderr)
+        return 2
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(contract, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    markdown.write_text(opportunity_map_markdown(contract), encoding="utf-8")
+    if getattr(args, "json", False):
+        print(json.dumps(contract, ensure_ascii=False, indent=2))
+    else:
+        print(f"已生成机会空间地图：{target}")
+        print(f"- 模式：{contract['mode']}；入口：{contract['entry_node']}")
+        print(f"- 五层：{', '.join(layer['label'] for layer in contract['layers'].values())}")
+        print(f"- 阅读版：{markdown}")
+    return 0
+
+
+def cli_external_research(args: Any) -> int:
+    """Run a host-provided research command and store its output as candidates.
+
+    Askovo does not import the external framework.  The command receives the
+    question/study through environment variables and must print one JSON object
+    on stdout.  Its output is a candidate list, never evidence or a validated
+    claim.
+    """
+    if not getattr(args, "authorize", False):
+        print("外部研究命令会以当前用户权限运行；确认来源与命令后加 --authorize", file=sys.stderr)
+        return 2
+    study_dir = Path(args.study_dir).resolve()
+    study_file = study_dir / "study.json"
+    if not study_file.is_file():
+        print(f"找不到 study.json: {study_file}", file=sys.stderr)
+        return 2
+    study = load_json(study_file)
+    command = shlex.split(str(args.command or ""))
+    if not command:
+        print("--command 不能为空", file=sys.stderr)
+        return 2
+    env = dict(os.environ)
+    env.update({
+        "ASKOVO_QUESTION": str(args.question or study.get("title") or ""),
+        "ASKOVO_STUDY": str(study_dir),
+        "ASKOVO_MODE": str((study.get("research_mode") or {}).get("mode") or ""),
+    })
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=args.timeout,
+                                   env=env, cwd=str(study_dir))
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"外部研究命令失败：{exc}", file=sys.stderr)
+        return 2
+    if completed.returncode != 0:
+        print(f"外部研究命令退出码 {completed.returncode}：{completed.stderr[:500]}", file=sys.stderr)
+        return 2
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        print(f"外部研究输出不是 JSON：{exc}", file=sys.stderr)
+        return 2
+    sources = payload.get("sources") if isinstance(payload, dict) else None
+    if not isinstance(sources, list) or not sources:
+        print("外部研究输出必须包含非空 sources 列表", file=sys.stderr)
+        return 2
+    cleaned = []
+    for index, item in enumerate(sources, start=1):
+        if not isinstance(item, dict):
+            print(f"sources[{index}] 必须是对象", file=sys.stderr)
+            return 2
+        url = str(item.get("url") or "").strip()
+        if not url.startswith(("http://", "https://")):
+            print(f"sources[{index}].url 必须是 http(s) 链接", file=sys.stderr)
+            return 2
+        cleaned.append({
+            "id": f"X{index:02d}",
+            "url": url,
+            "title": str(item.get("title") or "").strip(),
+            "excerpt": str(item.get("excerpt") or "").strip(),
+            "claim": str(item.get("claim") or "").strip(),
+            "retrieved_at": str(item.get("retrieved_at") or datetime.now(timezone.utc).isoformat()),
+            "evidence_level": None,
+            "status": "candidate",
+        })
+    record = {
+        "schema": "askovo.external-research/1",
+        "study_id": study.get("study_id"),
+        "question": env["ASKOVO_QUESTION"],
+        "mode": env["ASKOVO_MODE"],
+        "command": command,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "sources": cleaned,
+        "notes": [str(item) for item in payload.get("notes") or []],
+        "review_required": True,
+        "boundary": ("外部框架返回的是候选材料：未定级、未与需求判断相连；"
+                     "只有人工把来源与记录映射到研究问题后才可能成为证据。"),
+    }
+    target_dir = study_dir / "04-findings" / "external-research"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / (datetime.now().strftime("external-%Y%m%dT%H%M%S") + ".json")
+    target.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if getattr(args, "json", False):
+        print(json.dumps(record, ensure_ascii=False, indent=2))
+    else:
+        print(f"已保存外部研究候选：{target}")
+        print(f"- 来源：{len(cleaned)} 条；状态：candidate；需要人工定级与映射")
     return 0
 
 
