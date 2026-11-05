@@ -326,6 +326,19 @@ class ResearchModeTests(unittest.TestCase):
             self.assertIsNone(record["sources"][0]["evidence_level"])
             self.assertTrue(record["review_required"])
 
+    def test_opportunity_markdown_renders_items(self) -> None:
+        contract = ENGINE.opportunity_map_contract({"study_id": "s", "research_mode": {"mode": "discover", "entry_node": "scene"}})
+        contract["layers"]["market_and_alternatives"]["items"] = [{
+            "id": "O1", "statement": "通用编辑器已商品化", "status": "hypothesis",
+            "evidence_ids": ["X06"], "counter_evidence_ids": ["X04"],
+            "next_test": "对比垂直场景付费意愿",
+        }]
+        text = ENGINE.opportunity_map_markdown(contract)
+        self.assertIn("**O1**", text)
+        self.assertIn("hypothesis", text)
+        self.assertIn("X06", text)
+        self.assertIn("反证：X04", text)
+
     def test_default_markdown_sections(self) -> None:
         completed = run_cli("mode", "为什么我们的注册转化下降")
         self.assertEqual(0, completed.returncode, completed.stderr)
