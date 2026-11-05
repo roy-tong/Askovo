@@ -4832,6 +4832,28 @@ def build_parser() -> argparse.ArgumentParser:
     mode_parser.add_argument("--json", action="store_true")
     mode_parser.set_defaults(func=sure_engine.cli_mode)
 
+    explore_parser = subparsers.add_parser(
+        "explore",
+        help="scaffold the five-layer opportunity space for a 0->1 study",
+    )
+    explore_parser.add_argument("study_dir")
+    explore_parser.add_argument("--force", action="store_true")
+    explore_parser.add_argument("--json", action="store_true")
+    explore_parser.set_defaults(func=sure_engine.cli_explore)
+
+    external_parser = subparsers.add_parser(
+        "external-research",
+        help="run a host-provided research command and store candidate sources",
+    )
+    external_parser.add_argument("study_dir")
+    external_parser.add_argument("--command", required=True,
+                                 help="外部研究命令；输出一个 JSON 对象到 stdout")
+    external_parser.add_argument("--question", default="")
+    external_parser.add_argument("--timeout", type=int, default=900)
+    external_parser.add_argument("--authorize", action="store_true")
+    external_parser.add_argument("--json", action="store_true")
+    external_parser.set_defaults(func=sure_engine.cli_external_research)
+
     do_parser = subparsers.add_parser(
         "do", help="route and scaffold a study in one step (the single entry point)"
     )
@@ -5205,7 +5227,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 CLI_COMMANDS = {
-    "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "do", "domains",
+    "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "explore",
+    "external-research", "do", "domains",
     "methods", "catalog", "platforms", "collect", "research", "loop", "analyze", "instruments", "import", "queue",
     "codebook", "chain", "economics", "psm", "decision", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",

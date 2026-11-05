@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.15.0 - 2026-11-05
+
+### Added
+
+- **Opportunity space scaffold** (`askovo explore <study>`): writes
+  `04-findings/opportunity-map.json` plus a readable Markdown version with five
+  layers (market/alternatives, users/tasks, opportunity hypotheses, solution
+  space, validation paths), an item schema and an explicit evidence boundary.
+  It is a structure, not a finding; items start empty.
+- **External research bridge** (`askovo external-research <study> --command …
+  --authorize`): runs a host-provided research command (e.g. an isolated GPT
+  Researcher adapter) and stores its output as candidate sources. Output must be
+  a JSON object with http(s) source URLs; records stay `candidate`, with
+  `evidence_level: null` and `review_required: true`. Askovo does not import the
+  external framework or call its APIs.
+
+### Tests
+
+- 279 tests pass, including opportunity-map scaffolding and the external bridge
+  (authorization required, candidates never auto-promoted).
+
 ## 2.14.0 - 2026-11-05
 
 ### Changed
