@@ -89,7 +89,7 @@ askovo mode "为什么我们的注册转化下降" --mode optimize
 
 输出：`mode`、`mode_label`、`mode_source`、`entry_node`、`entry_label`、`node_order`、`upstream_nodes`、`why_entry`、`questions`、`first_actions`、`stop_conditions`、`boundary`。默认 Markdown，`--json` 输出契约。
 
-优先级：显式 `--mode` > 显式 `--stage` > 文本信号 > 关键词推断阶段 > 默认 Discover。入口只决定先回答什么，不豁免任何节点的证据要求；上游未验证前只能作为假设。`route --json` 也带同一个 `research_mode` 对象。
+优先级：显式 `--mode` > 任务文本信号 > 显式 `--stage` > 关键词推断阶段 > 默认 Discover。`mode_score` 是关键词启发式分数（`calibrated=false`），不是概率。入口只决定先回答什么，不豁免任何节点的证据要求；上游未验证前只能作为假设。`route --json` 也带同一个 `research_mode` 对象。
 
 ## roles
 

@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.13.0 - 2026-11-05
+
+### Changed
+
+- **Research mode now drives the Research Loop**: `loop plan` reads `research_mode`
+  and reweights collect/analyze/experiment/external-evidence candidates
+  (Discover expands opportunity and substitute evidence; Validate prefers
+  falsifying behaviour and external evidence; Optimize prefers local diagnosis).
+  Mode weights only reorder candidates; authorization, evidence levels and
+  semantic review are unchanged.
+- **Task type beats product stage**: mode priority is now explicit mode > task
+  text > explicit stage > keyword-inferred stage > default. An already-launched
+  product researching a new market can stay in Discover even with
+  `--stage postlaunch`.
+- **Mode score is labelled as a heuristic**: the contract exposes `mode_score`,
+  `score_basis` and `calibrated=false`; CLI output says it is not a probability.
+
+### Tests
+
+- 276 tests pass, including mode-weighted loop planning and updated priority
+  cases.
+
 ## 2.12.0 - 2026-11-04
 
 ### Added

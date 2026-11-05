@@ -640,6 +640,23 @@ def detect_gaps(study_dir: Path) -> List[Dict[str, Any]]:
 
 
 RESEARCH_ACTION_KINDS = ("collect", "analyze", "experiment", "request_external_evidence", "stop")
+
+# Research modes change which action is usually most decisive. They never turn
+# an authorization candidate into an automatically executable action; they only
+# reweight the transparent planning heuristic.
+MODE_ACTION_WEIGHTS = {
+    "discover": {"collect": 1.15, "analyze": 0.90, "experiment": 1.05,
+                 "request_external_evidence": 1.00},
+    "validate": {"collect": 0.90, "analyze": 0.95, "experiment": 1.20,
+                 "request_external_evidence": 1.15},
+    "optimize": {"collect": 0.85, "analyze": 1.25, "experiment": 0.95,
+                 "request_external_evidence": 1.00},
+}
+MODE_RATIONALE = {
+    "discover": "Discover：先扩大机会空间、替代方案与目标人群样本",
+    "validate": "Validate：优先能推翻当前假设的行为、实验或外部证据",
+    "optimize": "Optimize：先诊断已有数据断点、替代解释与上游假设",
+}
 _ACTION_ORDER = {name: index for index, name in enumerate(RESEARCH_ACTION_KINDS)}
 STOP_DECISION_KIND = "askovo.stop-decision"
 STOP_DECISION_SCHEMA = "1.0"
@@ -835,6 +852,8 @@ def research_action_candidates(
         method = catalog.get(str(method_id))
         if method:
             selected.append(sure_engine._method_view(method))
+    mode = str((study.get("research_mode") or {}).get("mode") or "")
+    mode_weight = MODE_ACTION_WEIGHTS.get(mode, {})
     candidates: List[Dict[str, Any]] = []
     for action in RESEARCH_ACTION_KINDS:
         if action == "stop":
@@ -846,7 +865,10 @@ def research_action_candidates(
             reduction = min(reduction, 0.10)
             decision_change = min(decision_change, 0.20)
             rationale = "当前缺口没有可自动执行的合规采集路线；保留为候选，不进入既有 loop run"
-        score = round((reduction * decision_change) / (cost + 0.10), 4)
+        weight = float(mode_weight.get(action, 1.0))
+        score = round(((reduction * decision_change) / (cost + 0.10)) * weight, 4)
+        if mode and weight != 1.0:
+            rationale = f"{MODE_RATIONALE.get(mode, mode)}；{rationale}"
         method_selection = sure_engine.research_method_selection(
             question,
             selected,
@@ -869,7 +891,9 @@ def research_action_candidates(
             "decision_change_potential": decision_change,
             "decision_it_can_change": decision_question,
             "priority_score": score,
-            "scoring_rule": "(expected_uncertainty_reduction × decision_change_potential) / (cost + 0.10); relative heuristic only",
+            "scoring_rule": "(expected_uncertainty_reduction × decision_change_potential) / (cost + 0.10) × mode_weight; relative heuristic only",
+            "research_mode": mode or None,
+            "mode_weight": weight,
             "rationale": rationale,
             "candidate_only": True,
             "executable_by_existing_loop": executable,
@@ -1120,6 +1144,7 @@ def plan(
             "authorization": None,
             "envelope": envelope,
             "sources": sources,
+            "research_mode": study.get("research_mode") or {},
             "gaps": gaps,
             "next_best_actions": next_best_actions(gaps),
             "gap_states": {},

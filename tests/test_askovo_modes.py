@@ -118,11 +118,11 @@ class ResearchModeTests(unittest.TestCase):
         self.assertEqual("explicit", data["mode_source"])
         self.assertEqual("need", data["entry_node"])
 
-    def test_explicit_stage_overrides_text(self) -> None:
+    def test_task_text_beats_explicit_stage(self) -> None:
         data = mode_contract("验证端侧摄影 App 是否值得做", "--stage", "postlaunch")
-        self.assertEqual("optimize", data["mode"])
-        self.assertEqual("stage", data["mode_source"])
-        self.assertEqual("product", data["entry_node"])
+        self.assertEqual("validate", data["mode"])
+        self.assertEqual("text", data["mode_source"])
+        self.assertEqual("need", data["entry_node"])
 
     def test_explicit_stage_without_text_signal_uses_stage(self) -> None:
         data = mode_contract("看看这个产品", "--stage", "postlaunch")
@@ -136,10 +136,11 @@ class ResearchModeTests(unittest.TestCase):
         )
         self.assertEqual("explicit", explicit["source"])
         self.assertEqual(1.0, explicit["confidence"])
-        staged = ENGINE.detect_research_mode("端侧摄影 App 的假设是否成立", stage="pricing")
+        staged = ENGINE.detect_research_mode("看看这个产品", stage="pricing")
         self.assertEqual("validate", staged["mode"])
         self.assertEqual("stage", staged["source"])
-        self.assertEqual(0.85, staged["confidence"])
+        self.assertEqual(0.7, staged["confidence"])
+        self.assertFalse(staged["calibrated"])
         text = ENGINE.detect_research_mode("端侧 AI 摄影创业机会")
         self.assertEqual("discover", text["mode"])
         self.assertEqual("text", text["source"])
@@ -162,17 +163,17 @@ class ResearchModeTests(unittest.TestCase):
         )
         self.assertEqual("optimize", keyword_stage["mode"])
         self.assertEqual("stage", keyword_stage["source"])
-        self.assertEqual(0.6, keyword_stage["confidence"])
+        self.assertEqual(0.55, keyword_stage["confidence"])
         default_stage = ENGINE.detect_research_mode(
             "看看这个产品", stage="postlaunch", stage_source="default"
         )
         self.assertEqual("default", default_stage["source"])
         self.assertEqual(0.3, default_stage["confidence"])
 
-    def test_stage_mapping_sets_mode(self) -> None:
-        pricing = mode_contract("端侧摄影 App 的假设是否成立", "--stage", "pricing")
+    def test_stage_mapping_sets_mode_without_task_signal(self) -> None:
+        pricing = mode_contract("看看这个产品", "--stage", "pricing")
         self.assertEqual("validate", pricing["mode"])
-        postlaunch = mode_contract("端侧摄影 App 的假设是否成立", "--stage", "postlaunch")
+        postlaunch = mode_contract("看看这个产品", "--stage", "postlaunch")
         self.assertEqual("optimize", postlaunch["mode"])
 
     def test_route_needs_domain_still_exposes_research_mode(self) -> None:

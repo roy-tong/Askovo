@@ -47,6 +47,18 @@ Askovo 在「五域 × 生命周期阶段」之外增加一层**研究模式**�
 
 关键词推断的阶段不能压过文本信号。例如“验证端侧摄影 App 是否值得做”同时命中 discovery 阶段的“值不值得”和 Validate 的“验证”，结果是 Validate，而不是 Discover。`askovo mode --json` 的 `mode_source` 字段显示本次判断来自哪一级。
 
+## 进入 Research Loop 之后
+
+`askovo loop plan` 读取 study 中的 `research_mode`，在同一套缺口语义上调整动作权重：
+
+| 模式 | 提高权重 | 降低权重 | 原因 |
+|---|---|---|---|
+| Discover | collect、experiment | analyze | 先扩大机会空间、替代方案与人群样本 |
+| Validate | experiment、request_external_evidence | collect | 优先能推翻假设的行为与外部证据 |
+| Optimize | analyze | collect | 先诊断已有数据断点与替代解释 |
+
+权重只影响候选动作的相对排序，不把任何动作变成自动执行，也不改变授权、证据等级与语义复核边界。`loop plan --json` 会返回 `research_mode`，每个动作候选带 `mode_weight` 与调整理由。
+
 ## 与 `askovo route` 的关系
 
 `askovo route` 继续负责五域、阶段、意图、风险和岗位编排，并新增 `research_mode` 字段；原有字段语义不变。无论是否检测出领域（`needs_domain` 或 `routed`），都会带上该对象。
@@ -64,4 +76,6 @@ askovo route "手机端侧 AI 摄影的创业机会" --json
 
 `askovo mode` 输出的是研究设计契约：入口、问题、先做动作、停止条件和边界。它不收集数据、不判定需求成立、不证明市场规模或付费意愿，也不替代 E0–E5 证据评审和人工语义复核。真正结论仍要看证据是否与当前节点、上下文和判断相连，以及反证是否被处理。
 
-模式判断是确定性的关键词与阶段规则，可能误判；优先级为显式模式 > 显式阶段 > 文本信号 > 关键词推断阶段 > 默认 Discover。
+模式判断是确定性的关键词与阶段规则，可能误判。优先级为：显式 `--mode` > 任务文本信号 > 显式 `--stage` > 关键词推断阶段 > 默认 Discover。**阶段是背景条件（产品处在哪），模式是本次任务类型**；已上线产品研究新市场时，文本仍可判为 Discover，`--stage postlaunch` 不会把它压成 Optimize。
+
+`mode_score` 是关键词命中的启发式分数（`score_basis=keyword_hits`，`calibrated=false`），只用于排序与提示，不是“判断正确的概率”。

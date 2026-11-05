@@ -2570,6 +2570,7 @@ def command_loop(args: argparse.Namespace) -> int:
                 "loop_id": state["loop_id"],
                 "envelope": state["envelope"],
                 "sources": state["sources"],
+                "research_mode": state.get("research_mode") or {},
                 "gaps": research_loop.gap_counts(state["gaps"]),
                 "next_best_actions": research_loop.next_best_actions(state["gaps"]),
                 "state_path": str(research_loop.state_path(study_dir)),
