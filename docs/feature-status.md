@@ -1,6 +1,6 @@
 # Askovo: implementation status
 
-Reviewed 2026-11-04 against the **v2.15.0 release**. Available means local implementation, not production validation on every platform.
+Reviewed 2026-11-04 against the **v2.16.0 release**. Available means local implementation, not production validation on every platform.
 
 | Feature | Scope | Status |
 |---|---|---|
@@ -15,7 +15,7 @@ Reviewed 2026-11-04 against the **v2.15.0 release**. Available means local imple
 
 ## Opportunity map and external research
 
-`askovo explore <study>` writes a five-layer opportunity map scaffold for 0→1 studies; the layers are empty structures with questions and an item schema, not findings. `askovo external-research <study> --command … --authorize` runs a host-supplied research command and stores its JSON output as candidate sources (`evidence_level: null`, `review_required: true`); authorization is mandatory because the command runs with the operator's privileges. Neither feature promotes anything into evidence.
+`askovo do` scaffolds the five-layer opportunity map automatically when the routed mode is Discover; `askovo explore <study>` remains available to rebuild it; the layers are empty structures with questions and an item schema, not findings. `askovo external-research <study> --command … --authorize` runs a host-supplied research command and stores its JSON output as candidate sources (`evidence_level: null`, `review_required: true`); authorization is mandatory because the command runs with the operator's privileges. Neither feature promotes anything into evidence.
 
 ## Research modes
 

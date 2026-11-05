@@ -1564,6 +1564,12 @@ def create_study(
     for sub in ("01-sources/instruments", "01-sources/manifests", "02-data/raw", "03-codebook", "04-findings", "05-audit", "06-report"):
         (study_dir / sub).mkdir(parents=True, exist_ok=True)
     reasoning_scaffold = scaffold_product_reasoning(study_dir)
+    if (study.get("research_mode") or {}).get("mode") == "discover":
+        opportunity = opportunity_map_contract(study)
+        (study_dir / "04-findings" / "opportunity-map.json").write_text(
+            json.dumps(opportunity, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        (study_dir / "04-findings" / "opportunity-map.md").write_text(
+            opportunity_map_markdown(opportunity), encoding="utf-8")
     _write_if_missing(study_dir / "04-findings" / "demand-judgments.json", "[]\n")
 
     rows = [
