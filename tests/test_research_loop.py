@@ -134,6 +134,22 @@ class ResearchLoopTests(LoopHelpers, unittest.TestCase):
             weights[mode] = found["mode_weight"]
         self.assertGreater(weights["discover"], weights["optimize"])
 
+    def test_validate_mode_hands_off_to_external_validation(self) -> None:
+        self.write_study()
+        study_json = self.study / "study.json"
+        data = json.loads(study_json.read_text(encoding="utf-8"))
+        data["research_mode"] = {"mode": "validate", "entry_node": "need"}
+        study_json.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        completed = run_cli("loop", "plan", str(self.study))
+        self.assertEqual(0, completed.returncode, completed.stderr + completed.stdout)
+        payload = json.loads(completed.stdout)
+        tasks = payload["external_validation_tasks"]
+        self.assertTrue(tasks, payload.get("next_best_actions"))
+        self.assertIn(tasks[0]["recommended_action"],
+                      {"experiment", "request_external_evidence"})
+        best = payload["next_best_actions"][0]["candidate"]
+        self.assertIn(best["action"], {"experiment", "request_external_evidence"})
+
     def test_plan_reports_gaps_sources_and_envelope(self) -> None:
         self.write_study(gap="two")
         completed, payload = self.plan()

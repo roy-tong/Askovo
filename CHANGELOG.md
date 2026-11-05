@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.14.0 - 2026-11-05
+
+### Changed
+
+- **Validate mode can hand off instead of scraping more**: when Validate ranks an
+  experiment or external-evidence action first, `loop plan` records an
+  `external_validation_task` (recommended action, reason, required
+  authorization/participants) and excludes that gap from collection. `loop run`
+  stops with `awaiting_external_validation` rather than substituting more public
+  comments for a paid pilot or real delivery test.
+- **Mode-specific planning**: Discover still favours collection, Optimize still
+  favours local analysis; the new handoff only applies to Validate.
+
+### Tests
+
+- 277 tests pass, including the external-validation handoff case.
+
 ## 2.13.0 - 2026-11-05
 
 ### Changed

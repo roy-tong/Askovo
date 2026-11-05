@@ -59,6 +59,16 @@ Askovo 在「五域 × 生命周期阶段」之外增加一层**研究模式**�
 
 权重只影响候选动作的相对排序，不把任何动作变成自动执行，也不改变授权、证据等级与语义复核边界。`loop plan --json` 会返回 `research_mode`，每个动作候选带 `mode_weight` 与调整理由。
 
+### Validate 的外部验证交接
+
+当 Validate 的最优动作是 `experiment` 或 `request_external_evidence` 时，系统不会退而继续采集公开评论，而是：
+
+1. 在 gap 上记录 `validation_handoff`（推荐动作、理由、所需授权/参与者）；
+2. `loop plan` 输出 `external_validation_tasks`；
+3. 该 gap 不再生成采集动作，`loop run` 以 `awaiting_external_validation` 停止，等待真实试点、报价实验或有权使用的外部记录。
+
+这正是「研究判断 → 可执行动作或明确的人工验证交接」的最小闭环；它不会伪造实验结果。
+
 ## 与 `askovo route` 的关系
 
 `askovo route` 继续负责五域、阶段、意图、风险和岗位编排，并新增 `research_mode` 字段；原有字段语义不变。无论是否检测出领域（`needs_domain` 或 `routed`），都会带上该对象。

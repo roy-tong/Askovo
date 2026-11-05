@@ -636,6 +636,17 @@ def detect_gaps(study_dir: Path) -> List[Dict[str, Any]]:
         candidates = research_action_candidates(gap, study, sources)
         gap["research_action_candidates"] = candidates
         gap["next_best_action"] = candidates[0]
+        mode = str((study.get("research_mode") or {}).get("mode") or "")
+        best = candidates[0] if candidates else {}
+        if mode == "validate" and best.get("action") in {
+            "experiment", "request_external_evidence"
+        }:
+            gap["validation_handoff"] = {
+                "recommended_action": best.get("action"),
+                "why": best.get("rationale"),
+                "requires": "明确授权、真实参与者/实验设计或有权使用的外部记录；loop 不自动执行",
+                "candidate": best,
+            }
     return unique
 
 
@@ -1043,6 +1054,8 @@ def build_actions(
     for gap in gaps:
         if len(actions) >= limit_actions or remaining_records <= 0:
             break
+        if gap.get("validation_handoff"):
+            continue
         if not gap.get("actionable") or not gap.get("query_seed"):
             continue
         if states.get(str(gap["key"]), "open") != "open":
@@ -1147,6 +1160,10 @@ def plan(
             "research_mode": study.get("research_mode") or {},
             "gaps": gaps,
             "next_best_actions": next_best_actions(gaps),
+            "external_validation_tasks": [
+                {"gap_key": gap.get("key"), **gap["validation_handoff"]}
+                for gap in gaps if gap.get("validation_handoff")
+            ],
             "gap_states": {},
             "rounds": [],
             "candidates": [],
@@ -1621,6 +1638,12 @@ def _execute_rounds(study_dir: Path, state: Dict[str, Any]) -> Dict[str, Any]:
             gap_states=states,
         )
         if not actions:
+            handoffs = [gap for gap in plannable if gap.get("validation_handoff")]
+            if handoffs:
+                state["status"] = "blocked"
+                state["stop_reason"] = "awaiting_external_validation"
+                state["last_decision"] = "request_external_validation"
+                break
             if pending_analyze:
                 state["status"] = "completed"
                 state["stop_reason"] = "awaiting_analysis"
