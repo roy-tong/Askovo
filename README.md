@@ -10,6 +10,16 @@
 
 **Bring a product or market question, get back a business plan — built on collected data, not invented judgments.**
 
+**Start here.** You already have a product question and a draft answer. Askovo makes you show the evidence behind each claim, and tells you plainly which claims the evidence cannot support.
+
+```bash
+pipx install askovo
+askovo demo                                     # built-in sample, no network, no accounts
+askovo do "your question" --domain software --dry-run   # routes it, writes nothing
+```
+
+**Language, stated up front:** CLI output and everything under `docs/` are Chinese today. Commands, JSON fields and audit exit codes are language-independent, so it works inside an English workflow, but the rendered text will not be English. English localisation is not scheduled. If that is a blocker, this tool is not the right fit yet — better to know now than after installing.
+
 Askovo is built for product managers, user researchers, and business analysts. The default run: ① frame the question as a seven-node hypothesis canvas, ② design the data-collection plan (platforms, queries, quotas), ③ collect a large corpus through permitted routes, ④ turn the data into scene/user/pain/need/feature/product/GTM judgments, ⑤ render the **Business Plan** (`askovo deliver --kind plan`) — every judgment showing its data basis (sources, corpus size, time window) and user voices from the corpus, in business language. MRD/PRD/BRD and the Decision Package remain projections of the same chain for analyst and decision-side readers.
 
 CLI, Skill, and MCP surfaces are live today. The host agent can author the action list, or `askovo loop` derives rounds from audit gaps inside an authorized envelope; the executor runs only what was authorized. Source gaps and human semantic review are kept explicit, never hidden. See [capability status and trade-offs](docs/feature-status.md) (Chinese).
@@ -49,8 +59,6 @@ python3 -m venv .venv && .venv/bin/pip install askovo
 -->
 
 You can also route directly: `askovo "SaaS subscription churn is dropping, want to know why users don't renew" --dry-run`. `--dry-run` only routes and writes nothing; `demo` runs the built-in synthetic sample. Router keyword tables are Chinese-first — English queries work, and `--domain` pins the product type whenever English keywords don't match.
-
-**Language note:** CLI *output* is Chinese today; `docs/` are Chinese too. The command surface, JSON output and audit exit codes are language-independent, so it is usable from an English workflow, but the rendered text will not be English. English localisation is not scheduled yet.
 
 Expected key results: `status: pass`, `supported: 1`, `overclaims: 0`. This only proves that the synthetic sample is self-consistent in structure, chain, and evidence references. It proves **nothing about real demand, product quality, market size, or release readiness**.
 
