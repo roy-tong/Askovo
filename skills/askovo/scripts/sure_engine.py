@@ -4155,11 +4155,12 @@ def _deliver_artifact(
     industry: str | None = None,
     deliverable_id: str | None = None,
     chain_id: str | None = None,
+    evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     study_dir = study_dir.resolve()
     study = load_json(study_dir / "study.json")
     route = study.get("route") or {}
-    evidence = _evidence_summary(study_dir)
+    evidence = evidence if evidence is not None else _evidence_summary(study_dir)
     by_id = {str(record.get("record_id")): record for record in evidence.get("records", [])}
     reasoning = load_product_reasoning(study_dir)
     if audit is not None and hasattr(audit, "as_dict"):
@@ -4483,6 +4484,7 @@ def _with_chat_summary(
     kind: str,
     result: dict[str, Any],
     audit: Any | None,
+    evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Attach one canonical, structured and readable projection to every result."""
     study_dir = Path(study_dir).resolve()
@@ -4496,10 +4498,11 @@ def _with_chat_summary(
         reasoning = load_product_reasoning(study_dir)
     except (OSError, json.JSONDecodeError, ValueError):
         reasoning = None
-    try:
-        evidence = _evidence_summary(study_dir)
-    except (OSError, ValueError):
-        evidence = {"count": 0, "records": [], "collected_count": 0, "collected_records": [], "by_form": {}, "by_claim": {}}
+    if evidence is None:
+        try:
+            evidence = _evidence_summary(study_dir)
+        except (OSError, ValueError):
+            evidence = {"count": 0, "records": [], "collected_count": 0, "collected_records": [], "by_form": {}, "by_claim": {}}
     result["chat_summary"] = delivery_projection.build_chat_summary(
         study_dir,
         kind,
@@ -4521,10 +4524,14 @@ def deliver(
     deliverable_id: str | None = None,
     chain_id: str | None = None,
 ) -> dict[str, Any]:
+    # One delivery run, one evidence-store read: the artifact and its chat
+    # summary must see the same snapshot even if files change mid-run.
+    evidence = _evidence_summary(Path(study_dir).resolve())
     result = _deliver_artifact(
         study_dir, kind, audit=audit, role_id=role_id, industry=industry, deliverable_id=deliverable_id, chain_id=chain_id,
+        evidence=evidence,
     )
-    return _with_chat_summary(study_dir, kind, result, audit)
+    return _with_chat_summary(study_dir, kind, result, audit, evidence=evidence)
 
 
 def delivery_error(study_dir: Path, kind: str, error: Exception) -> dict[str, Any]:
