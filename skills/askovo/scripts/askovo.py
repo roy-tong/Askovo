@@ -55,7 +55,7 @@ def _read_version() -> str:
 
 ASKOVO_VERSION = _read_version()
 
-LEVELS = {"E0", "E1", "E2", "E3", "E4+", "E4-", "E5"}
+LEVELS = set(sure_engine.EVIDENCE_LEVELS)
 CORPUS_ROLES = {
     "direct_solution",
     "open_scene",
@@ -2876,9 +2876,10 @@ def _load_evidence_by_id(path: Path) -> dict[str, dict[str, Any]]:
         return {}
     evidence_by_id: dict[str, dict[str, Any]] = {}
     for record in records:
-        record_id = str(record.get("record_id", ""))
-        if record_id and str(record.get("evidence_level", "")) in LEVELS:
-            evidence_by_id[record_id] = record
+        # One validity rule with delivery (A-1): audit and deliver must not
+        # disagree on whether a record counts as decision evidence.
+        if sure_engine.is_qualified_evidence(record):
+            evidence_by_id[str(record.get("record_id"))] = record
     return evidence_by_id
 
 

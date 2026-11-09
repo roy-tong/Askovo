@@ -291,7 +291,10 @@ class CollectionAndAnalysisTests(unittest.TestCase):
         delivered = run_cli("deliver", str(self.target), "--kind", "memo")
         self.assertEqual(0, delivered.returncode, delivered.stderr)
         memo = (self.target / "06-report/memo.md").read_text(encoding="utf-8")
-        self.assertIn("r1", memo)
+        # A-1 收敛后：采集库记录（未评级）不得渲染为支撑证据，只作采集概况披露
+        support = memo.split("## 支撑证据", 1)[1].split("## 反证", 1)[0]
+        self.assertNotIn("reddit:r1", support)
+        self.assertIn("采集未评级记录数：3（采集 ≠ 证据，不计入依据）", memo)
         self.assertIn("草稿", memo)
 
     def test_same_fixture_id_on_two_platforms_does_not_collide(self) -> None:

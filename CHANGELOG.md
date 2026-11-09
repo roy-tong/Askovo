@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.17.0 - 2026-11-09
+
+A-1 evidence-store convergence: audit (`check`) and delivery (`deliver`) now
+share one definition of what counts as decision evidence, so the two commands
+can no longer disagree on evidence validity.
+
+### Fixed
+
+- **One validity rule for audit and delivery (A-1)**: a loop-collected record
+  that lives only in `02-data/normalized.jsonl` used to get two opposite
+  answers — `check --stage decision` failed with "references unknown evidence"
+  while `deliver --kind report` rendered the same record as decision basis.
+  Both commands now use `sure_engine.is_qualified_evidence` /
+  `load_evidence_store`: only records registered in `evidence.jsonl` with a
+  valid `evidence_level` are decision evidence; collecting is not having
+  evidence.
+- **Delivery no longer overstates its basis**: chain-cited ids that resolve to
+  no qualified record are excluded from the basis line and surfaced as
+  explicit `未评级引用 …（不计入依据，审计判 unknown evidence）`; the report's
+  evidence appendix adds a separate collected-not-yet-qualified count.
+- The frozen A-1 tripwire (`test/a1-freeze-audit-deliver-contradiction`,
+  2026-11-04) is rewritten as consistency assertions: audit strictness is
+  unchanged, delivery basis ids are a subset of (and actually equal to) the
+  audit-accepted qualified set, and qualified evidence still renders.
+
+### Verification
+
+- Full suite: 283 tests pass, including the rewritten A-1 consistency tests
+  and the updated collect→analyze→deliver flow test (memo discloses 3
+  collected records as unqualified inventory instead of rendering them as
+  supporting evidence).
 ## 2.16.1 - 2026-11-05
 
 ### Fixed
