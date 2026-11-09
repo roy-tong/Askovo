@@ -522,9 +522,31 @@ def _load_platform_map() -> dict[str, Any]:
     return value
 
 
+_JSONL_PARSE_CACHE: dict[str, list[dict[str, Any]]] = {}
+
+
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
+    """读 JSONL（A-3，review 2026-11-09）：内容摘要为键的进程内解析缓存。
+
+    此前一次 audit_payload 会把 evidence.jsonl 全量解析 3 遍
+    （_check_evidence / _compute_signals / _load_evidence_by_id 各自走本函数），
+    一次 loop run 最多 18 遍。键=文件字节摘要：同尺寸改写也会正确失效
+    （mtime/size 键挡不住的边界）；文件读取本身仍然每次发生（便宜），
+    贵的是逐行 json.loads。返回行是缓存的浅拷贝——调用方的行内注解
+    （如 _line_number）不污染缓存。
+    """
+    payload = path.read_bytes()
+    digest = hashlib.blake2b(payload, digest_size=16).hexdigest()
+    cached = _JSONL_PARSE_CACHE.get(digest)
+    if cached is None:
+        cached = _parse_jsonl_bytes(payload)
+        _JSONL_PARSE_CACHE[digest] = cached
+    return [dict(record) for record in cached]
+
+
+def _parse_jsonl_bytes(payload: bytes) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for line_number, raw_line in enumerate(payload.decode("utf-8").splitlines(), start=1):
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
