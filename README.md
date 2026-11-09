@@ -98,9 +98,10 @@ The three recurring tasks all run the same chain and differ only in what they de
 ```bash
 askovo decision record ./study --chain PR01 --by "product-owner" \
   --decision "Support the current bounded opportunity"
-# Prerequisite: R08 is registered, same-context, has provenance, and already has
-# a contradicts/counter-evidence mapping. No replacement recommendation is required.
-askovo decision record ./study --chain PR01 --by "product-owner" --contradiction R08
+# Prerequisite: the id is registered, same-context, has provenance, and already has
+# a contradicts/counter-evidence mapping. R05 ships with the sample; a newly
+# collected counter record must be graded and registered the same way first.
+askovo decision record ./study --chain PR01 --by "product-owner" --contradiction R05
 askovo decision replay ./study --chain PR01
 ```
 

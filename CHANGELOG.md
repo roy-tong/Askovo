@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased
+
+### Fixed (end-to-end UX pass, 2026-11-09)
+
+- **Chinese descriptive analysis is word-based now**: `askovo analyze` segments
+  Chinese with a bundled lexicon (`assets/chinese-lexicon.txt`, greedy longest
+  match), so 高频词 are real words instead of character fragments; multi-word
+  questions ("续费决策 使用证据") match records (previously silently zero) with a
+  2-char bigram fallback for out-of-lexicon query runs; `collected_at` dates on
+  imported records now count toward month coverage.
+- **Join errors name the misplaced evidence class**: a node citing evidence
+  registered under a different class now reads "R03 (registered in
+  solution_evidence_ids); move the ids to the matching evidence class" instead
+  of the misleading "not registered".
+- **README adversarial-revision example runs out of the box**: the contradiction
+  example uses R05 (shipped with the sample) instead of R08 (never present);
+  both READMEs updated.
+- **Adversarial revisions list full-gate follow-ups**: `decision record
+  --contradiction` output includes `full_gate_follow_ups` when the recorded
+  contradiction still needs judgment counter-list registration, normalized
+  fields, or source-plan coverage to keep `check --stage full` green.
+- **Design-contract errors show expected types** and list the full checklist in
+  one pass when a section is absent (no more field discovery in waves).
+- **A wrong study path is a path error**: `check`/`audit` on a nonexistent
+  directory report "study directory not found" instead of "missing study.json".
+- **Business plan polish**: the 推理主线 narrative drops 待填写 placeholders
+  (no more "待填写现在靠待填写"); user voices deduplicate across sections.
+- **Import honors per-record provenance**: `source` is accepted as a
+  source_family alias and `collected_at` is preserved on imported records.
+- **MCP accepts `query` as an alias of `need`** on `askovo_route`, `askovo_do`
+  and `askovo_platforms`, aligning the MCP vocabulary with the CLI.
+- **English queries route without `--domain`**: the five domain packs carry an
+  English keyword layer (camera/security camera → hardware, SaaS/churn →
+  software, cockpit/driving → automotive, wearable/earbuds → mobile,
+  packaging/skincare → consumer).
+
+### Tests
+
+- 300 tests pass on this branch (20 new regression tests in `tests/test_ux_fixes.py`; 302 with the parallel A2-1 branch merged).
+
 ## 2.16.1 - 2026-11-05
 
 ### Fixed

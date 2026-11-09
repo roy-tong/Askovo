@@ -19,7 +19,18 @@
     "固件",
     "试产",
     "amazon",
-    "家电"
+    "家电",
+    "hardware",
+    "camera",
+    "security camera",
+    "device",
+    "sensor",
+    "drone",
+    "robot",
+    "firmware",
+    "battery",
+    "smart home",
+    "prototype"
   ],
   "roles": [
     "使用者",

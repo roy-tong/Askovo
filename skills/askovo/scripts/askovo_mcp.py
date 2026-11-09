@@ -74,6 +74,14 @@ def _string(value: Any, field: str) -> str:
     return value
 
 
+def _need_string(arguments: dict[str, Any]) -> str:
+    """The request text: `query` (CLI vocabulary) is accepted as an alias of `need`."""
+    value = arguments.get("need")
+    if value is None:
+        value = arguments.get("query")
+    return _string(value, "need")
+
+
 def _optional_string(arguments: dict[str, Any], field: str) -> str | None:
     value = arguments.get(field)
     if value is None:
@@ -208,7 +216,7 @@ def _string_list(arguments: dict[str, Any], key: str) -> list[str] | None:
 
 def _build_route(arguments: dict[str, Any]) -> argparse.Namespace:
     return _namespace(
-        need=_string(arguments.get("need"), "need"),
+        need=_need_string(arguments),
         domain=_optional_string(arguments, "domain"),
         stage=_optional_string(arguments, "stage"),
         intent=_optional_string(arguments, "intent"),
@@ -218,7 +226,7 @@ def _build_route(arguments: dict[str, Any]) -> argparse.Namespace:
 
 def _build_do(arguments: dict[str, Any]) -> argparse.Namespace:
     return _namespace(
-        need=_string(arguments.get("need"), "need"),
+        need=_need_string(arguments),
         study=_optional_string(arguments, "study"),
         domain=_optional_string(arguments, "domain"),
         stage=_optional_string(arguments, "stage"),
@@ -232,7 +240,7 @@ def _build_do(arguments: dict[str, Any]) -> argparse.Namespace:
 
 def _build_platforms(arguments: dict[str, Any]) -> argparse.Namespace:
     return _namespace(
-        need=_string(arguments.get("need"), "need"),
+        need=_need_string(arguments),
         domain=_optional_string(arguments, "domain"),
         claim_type=_string_list(arguments, "claim_type"),
         bulk=_boolean(arguments, "bulk"),
@@ -678,7 +686,8 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "need": {"type": "string"},
+                "need": {"type": "string", "description": "the request/question text"},
+                "query": {"type": "string", "description": "alias of need (CLI vocabulary)"},
                 "domain": {"enum": ["software", "hardware", "consumer", "automotive", "mobile"]},
                 "stage": {"enum": ["discovery", "concept", "prototype", "validation", "pricing", "prelaunch", "postlaunch", "audit"]},
                 "intent": {"enum": ["route", "plan", "instruments", "import", "sources", "collect", "analyze", "audit", "deliver"]},
@@ -696,7 +705,8 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "need": {"type": "string"},
+                "need": {"type": "string", "description": "the request/question text"},
+                "query": {"type": "string", "description": "alias of need (CLI vocabulary)"},
                 "study": {"type": "string", "description": "workspace path; omit for a default path"},
                 "domain": {"enum": ["software", "hardware", "consumer", "automotive", "mobile"]},
                 "stage": {"enum": ["discovery", "concept", "prototype", "validation", "pricing", "prelaunch", "postlaunch", "audit"]},
@@ -717,7 +727,8 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "need": {"type": "string"},
+                "need": {"type": "string", "description": "the request/question text"},
+                "query": {"type": "string", "description": "alias of need (CLI vocabulary)"},
                 "domain": {"enum": ["software", "hardware", "consumer", "automotive", "mobile"]},
                 "claim_type": {"type": "array", "items": {"enum": ["need", "acceptance", "usability", "performance", "commercial", "safety"]}},
                 "bulk": {"type": "boolean", "default": False},

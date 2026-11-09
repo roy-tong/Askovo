@@ -17,7 +17,16 @@
     "车机",
     "OTA",
     "道路",
-    "模拟器"
+    "模拟器",
+    "car",
+    "vehicle",
+    "cockpit",
+    "driving",
+    "infotainment",
+    "cockpit hmi",
+    "automotive",
+    "ev",
+    "in-car"
   ],
   "roles": [
     "驾驶员",

@@ -471,6 +471,40 @@ def _missing_fields(value: Any, required: Iterable[str]) -> list[str]:
     return sorted(field for field in required if field not in value or _is_missing(value[field]))
 
 
+# Expected shapes shown alongside missing nested fields so a user filling the
+# design contract from the error message alone knows the required JSON type.
+NESTED_FIELD_SHAPES: dict[str, dict[str, str]] = {
+    "decision": {
+        "question": "string",
+        "owner": "string",
+        "deadline": "string YYYY-MM-DD",
+        "options": "array with at least 2 choices",
+        "minimum_evidence": "array of strings",
+    },
+    "scope": {
+        "target_users": "array of strings",
+        "markets": "array of strings",
+        "languages": "array of strings",
+        "source_time_window": "object with start/end as YYYY-MM-DD",
+        "unit_of_observation": "string",
+        "allowed_sources": "array of strings",
+        "prohibited_inferences": "array of strings",
+    },
+    "quality_gates": {
+        "min_evidence_records": "integer >= 1",
+        "required_corpus_roles": "array of corpus roles",
+        "max_source_family_share": "number in (0, 1]",
+        "max_normalized_duplicate_rate": "number in [0, 1]",
+        "require_counter_evidence_for_validated": "boolean",
+    },
+}
+
+
+def _annotated_missing(section: str, fields: list[str]) -> str:
+    shapes = NESTED_FIELD_SHAPES.get(section, {})
+    return ", ".join(f"{field} ({shapes[field]})" if field in shapes else field for field in fields)
+
+
 def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -953,9 +987,15 @@ def _check_design(audit: Audit, paths: dict[str, Path]) -> dict[str, Any] | None
             ("scope", SCOPE_REQUIRED),
             ("quality_gates", GATE_REQUIRED),
         ):
-            nested_missing = _missing_fields(study.get(key), required)
+            section = study.get(key)
+            if isinstance(section, dict):
+                nested_missing = _missing_fields(section, required)
+            else:
+                # Section absent: list the whole checklist once, with shapes,
+                # instead of sending the user through discovery rounds.
+                nested_missing = sorted(required)
             if nested_missing:
-                errors.append(f"{key} missing: " + ", ".join(nested_missing))
+                errors.append(f"{key} missing: " + _annotated_missing(key, nested_missing))
         hypotheses = study.get("hypotheses", [])
         if isinstance(hypotheses, list):
             for index, hypothesis in enumerate(hypotheses, start=1):
@@ -2339,13 +2379,42 @@ def _check_product_reasoning(
                     "business": set(judgment.get("commercial_evidence_ids", []))
                     | set(judgment.get("counter_evidence_ids", [])),
                 }
+                registered_classes: dict[str, set[str]] = {}
+                for class_name in (
+                    "problem_evidence_ids",
+                    "solution_evidence_ids",
+                    "commercial_evidence_ids",
+                    "counter_evidence_ids",
+                ):
+                    for value in judgment.get(class_name, []):
+                        registered_classes.setdefault(str(value), set()).add(class_name)
+                accepted_classes = {
+                    "scene": ("problem_evidence_ids", "counter_evidence_ids"),
+                    "user": ("problem_evidence_ids", "counter_evidence_ids"),
+                    "pain": ("problem_evidence_ids", "counter_evidence_ids"),
+                    "need": ("problem_evidence_ids", "counter_evidence_ids"),
+                    "feature": ("solution_evidence_ids", "counter_evidence_ids"),
+                    "product": ("solution_evidence_ids", "commercial_evidence_ids", "counter_evidence_ids"),
+                    "business": ("commercial_evidence_ids", "counter_evidence_ids"),
+                }
                 for node_name, references in node_references.items():
                     escaped = sorted(references - {str(value) for value in allowed_by_node[node_name]})
                     if escaped:
-                        errors.append(
-                            f"{chain_id}.{node_name} evidence is not registered in the linked demand judgment: "
-                            + ", ".join(escaped)
-                        )
+                        misplaced = []
+                        unknown = []
+                        for ref in escaped:
+                            classes = sorted(registered_classes.get(ref, ()))
+                            if classes:
+                                misplaced.append(f"{ref} (registered in {', '.join(classes)})")
+                            else:
+                                unknown.append(ref)
+                        detail = f"{chain_id}.{node_name} evidence is not registered in the classes this node accepts ({', '.join(accepted_classes[node_name])}): "
+                        detail += ", ".join(misplaced + unknown)
+                        if misplaced:
+                            detail += "; move the ids to the matching evidence class in demand-judgments.json"
+                        else:
+                            detail += "; register them in the linked demand judgment first"
+                        errors.append(detail)
                 segment_allowed = (
                     {str(value) for value in allowed_by_node["scene"]}
                     | {str(value) for value in allowed_by_node["business"]}
@@ -2474,6 +2543,17 @@ def _check_role_workplan(audit: Audit, root: Path, stage: str) -> None:
 def audit_study(root: Path, stage: str) -> Audit:
     root = root.resolve()
     audit = Audit(root, stage)
+    if not root.is_dir():
+        # A missing directory is a path error, not a study finding: say so
+        # instead of reporting "missing study.json" for a study that cannot
+        # exist at that path.
+        audit.add(
+            "study_contract",
+            "fail",
+            f"study directory not found: {root}; pass the study workspace path created by `askovo do`",
+            "design",
+        )
+        return audit
     paths = _study_paths(root)
     study = _check_design(audit, paths)
     if stage == "design":

@@ -11,6 +11,7 @@ substitute for semantic review or stakeholder sign-off.
 from __future__ import annotations
 
 import copy
+import csv
 import hashlib
 import json
 from datetime import datetime, timezone
@@ -637,6 +638,78 @@ def _apply_adversarial_revision(
     }
 
 
+def _contradiction_follow_ups(
+    study_dir: Path,
+    chain: Dict[str, Any],
+    contradiction_refs: List[str],
+    registered: Dict[str, Dict[str, Any]],
+) -> List[str]:
+    """Gate-consistency hints after an adversarial revision.
+
+    The revision itself is valid, but `askovo check --stage full` additionally
+    requires the contradiction evidence to sit inside the linked judgment's
+    counter list, carry the normalized evidence fields, and come from a family
+    the source plan covers. Surface those as follow-ups instead of leaving the
+    user to discover them one audit round later.
+    """
+    follow_ups: List[str] = []
+    judgments = _load(Path(study_dir) / "04-findings" / "demand-judgments.json")
+    judgment = None
+    if isinstance(judgments, list):
+        judgment = next(
+            (
+                item for item in judgments
+                if isinstance(item, dict)
+                and str(item.get("id") or "") == str(chain.get("demand_judgment_id") or "")
+            ),
+            None,
+        )
+    if judgment is not None:
+        counter_ids = {str(value) for value in judgment.get("counter_evidence_ids") or []}
+        not_listed = [ref for ref in contradiction_refs if ref not in counter_ids]
+        if not_listed:
+            follow_ups.append(
+                "register " + ", ".join(not_listed)
+                + " in the linked demand judgment's counter_evidence_ids; chain-level"
+                + " registration alone leaves `askovo check --stage full` failing"
+            )
+    for ref in contradiction_refs:
+        record = registered.get(ref) or {}
+        missing = [
+            name for name in (
+                "normalized_text_hash", "consequence", "current_substitute",
+                "friction_cost", "scene_trigger", "task_outcome",
+            )
+            if not str(record.get(name) or "").strip()
+        ]
+        if missing:
+            follow_ups.append(
+                f"evidence {ref} lacks normalized fields: " + ", ".join(missing)
+                + "; normalize it like other evidence records before the next audit"
+            )
+    planned: set = set()
+    plan_path = Path(study_dir) / "01-sources" / "source-plan.csv"
+    if plan_path.is_file():
+        try:
+            with plan_path.open(encoding="utf-8-sig", newline="") as handle:
+                planned = {
+                    str(row.get("source_family", "")).strip()
+                    for row in csv.DictReader(handle)
+                    if str(row.get("source_family", "")).strip()
+                }
+        except OSError:
+            pass
+    unplanned = sorted({
+        str((registered.get(ref) or {}).get("source_family") or "")
+        for ref in contradiction_refs
+    } - planned - {""})
+    if unplanned:
+        follow_ups.append(
+            "add source families to 01-sources/source-plan.csv: " + ", ".join(unplanned)
+        )
+    return follow_ups
+
+
 def record_decision(
     study_dir: Path,
     *,
@@ -767,6 +840,9 @@ def record_decision(
     if adversarial:
         result["chain_status_before"] = adversarial["before"]["chain_status"]
         result["chain_status_after"] = adversarial["after"]["chain_status"]
+        result["full_gate_follow_ups"] = _contradiction_follow_ups(
+            study_dir, chain, contradiction_refs, registered
+        )
     else:
         result["chain_status_unchanged"] = chain.get("status")
     return result

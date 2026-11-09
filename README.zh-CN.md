@@ -89,9 +89,10 @@ askovo deliver examples/sample-study --kind decision   # → 06-report/decision-
 ```bash
 askovo decision record ./study --chain PR01 --by "产品负责人" \
   --decision "支持当前小范围产品机会"
-# 前提：R08 已登记、context 相同、有 provenance，且已有 contradicts/反证映射。
+# 前提：该证据 ID 已登记、context 相同、有 provenance，且已有 contradicts/反证映射。
+# R05 随样例自带；新采集的反证记录需先按同样方式定级并登记。
 # 不提供替代产品建议也能改判。
-askovo decision record ./study --chain PR01 --by "产品负责人" --contradiction R08
+askovo decision record ./study --chain PR01 --by "产品负责人" --contradiction R05
 askovo decision replay ./study --chain PR01
 ```
 

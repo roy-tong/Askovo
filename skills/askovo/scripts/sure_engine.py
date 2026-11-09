@@ -74,6 +74,7 @@ SKILL_ROOT = HERE.parent
 ASSETS = SKILL_ROOT / "assets"
 CATALOG_PATH = ASSETS / "method-catalog.json"
 PACKS_DIR = ASSETS / "domain-packs"
+CHINESE_LEXICON_PATH = ASSETS / "chinese-lexicon.txt"
 
 STAGES = (
     "discovery",
@@ -1973,8 +1974,9 @@ def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str])
         "evidence_level": str(raw.get("evidence_level") or "unclassified"),
         "evidence_basis": str(raw.get("evidence_basis") or "imported; grade before use"),
         "corpus_role": str(raw.get("corpus_role") or "open_scene"),
-        "source_family": str(raw.get("source_family") or defaults["source_family"]),
+        "source_family": str(raw.get("source_family") or raw.get("source") or defaults["source_family"]),
         "source_ref": str(raw.get("source_ref") or defaults["source_ref"]),
+        "collected_at": str(raw.get("collected_at") or raw.get("created_at") or raw.get("date") or ""),
         "normalized_text_hash": str(raw.get("normalized_text_hash") or ""),
         "text": text,
         "claim_type": str(raw.get("claim_type") or defaults["claim_type"]),
@@ -3022,11 +3024,17 @@ def _plan_basis(records: list[dict[str, Any]]) -> str:
     return basis
 
 
-def _plan_quotes(records: list[dict[str, Any]], limit: int = 2) -> list[str]:
+def _plan_quotes(
+    records: list[dict[str, Any]],
+    limit: int = 2,
+    used: set[str] | None = None,
+) -> list[str]:
     """Voices from the corpus in business-report style.
 
     Prefers verbatim excerpts (原话); falls back to the coded situation fields
     (典型情况) so the section stays concrete without faking a verbatim quote.
+    ``used`` carries quote markers already rendered in earlier sections so the
+    same voice is not repeated section after section.
     """
     quotes: list[str] = []
     seen: set[str] = set()
@@ -3044,7 +3052,11 @@ def _plan_quotes(records: list[dict[str, Any]], limit: int = 2) -> list[str]:
         marker = text[:40]
         if marker in seen:
             continue
+        if used is not None and marker in used:
+            continue
         seen.add(marker)
+        if used is not None:
+            used.add(marker)
         when = str(record.get("source_time") or record.get("collected_at") or "").strip()
         suffix = f"，{when}" if when else ""
         if kind == "原话":
@@ -3072,6 +3084,7 @@ def _plan_section(
     field_rows: list[tuple[str, Any]],
     quote_limit: int = 2,
     extra_lines: list[str] | None = None,
+    used_quotes: set[str] | None = None,
 ) -> list[str]:
     lines: list[str] = [f"## {title}", ""]
     if not isinstance(node, dict) or not node:
@@ -3107,7 +3120,7 @@ def _plan_section(
     if metrics:
         lines.append(metrics)
     lines.append(f"依据强度：{marker} {strength_label} —— {strength_detail}")
-    quotes = _plan_quotes(records, limit=quote_limit)
+    quotes = _plan_quotes(records, limit=quote_limit, used=used_quotes)
     if quotes:
         lines.append("来自语料的声音：")
         lines.extend(quotes)
@@ -3196,6 +3209,9 @@ def _plan_narrative(chain: dict[str, Any]) -> list[str]:
 
     def text(value: Any, limit: int = 80) -> str:
         cleaned = re.sub(r"\s+", " ", str(value or "")).strip().rstrip("。；，")
+        # Scaffold placeholders are not facts; drop them instead of narrating them.
+        if cleaned in {"待填写", "待确认", "tbd", "todo"} or cleaned.startswith(("待填写", "待确认", "tbd:", "todo:")):
+            return ""
         return cleaned[:limit]
 
     scene = node("scene")
@@ -3220,18 +3236,17 @@ def _plan_narrative(chain: dict[str, Any]) -> list[str]:
     revenue = text(business.get("revenue_model"), 60)
     payer = text(business.get("payer"), 40)
 
-    if not (trigger or role or want):
+    if not any((trigger, role, substitute, friction, want, name, form, revenue)):
         return []
-    sentence = ""
-    if trigger:
-        sentence += f"在{trigger}，"
-    if role:
-        sentence += f"{role}"
+    middle = ""
     if substitute:
-        sentence += f"现在靠{substitute}"
-    if friction:
-        sentence += f"，代价是{friction}"
-    sentence += "。"
+        middle = f"现在靠{substitute}"
+        if friction:
+            middle += f"，代价是{friction}"
+    elif friction:
+        middle = f"眼下{friction}"
+    opening = "，".join(part for part in (f"在{trigger}" if trigger else "", role, middle) if part)
+    sentence = f"{opening}。" if opening else ""
     if want:
         sentence += f"他们要的是{want}。"
     if name:
@@ -3422,7 +3437,7 @@ def _plan_corpus_profile(records: list[dict[str, Any]]) -> list[str]:
         family = str(record.get("source_family") or "").strip() or "未记录"
         family = PLAN_SOURCE_LABELS.get(family, family)
         families[family] = families.get(family, 0) + 1
-        year = str(record.get("created_at") or record.get("source_time") or "")[:4]
+        year = _record_time(record)[:4]
         if year.isdigit():
             years[year] = years.get(year, 0) + 1
         role = str(record.get("corpus_role") or "").strip()
@@ -3570,6 +3585,9 @@ def _plan_lines(
         nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
         chain_records: list[dict[str, Any]] = []
         chain_seen: set[str] = set()
+        # One voice per document: quotes already shown in an earlier section
+        # are not repeated by a later section citing the same records.
+        used_quotes: set[str] = set()
         for node_name in REASONING_NODES:
             candidate = nodes.get(node_name, {})
             if not isinstance(candidate, dict):
@@ -3586,7 +3604,7 @@ def _plan_lines(
             ("什么时候发生（触发）", scene.get("trigger")),
             ("在什么环境下", scene.get("environment")),
             ("用户当时在做什么（任务背景）", scene.get("task_context")),
-        ]))
+        ], used_quotes=used_quotes))
         user = nodes.get("user", {}) if isinstance(nodes.get("user"), dict) else {}
         segments = []
         business_node = nodes.get("business", {}) if isinstance(nodes.get("business"), dict) else {}
@@ -3598,25 +3616,25 @@ def _plan_lines(
             ("现状", user.get("state")),
             ("在决策中的角色", user.get("decision_role")),
             ("用户分层", segments or None),
-        ]))
+        ], used_quotes=used_quotes))
         pain = nodes.get("pain", {}) if isinstance(nodes.get("pain"), dict) else {}
         lines.extend(_plan_section("4. 痛点：现在怎么办、痛在哪", pain, by_id, [
             ("现在的替代做法", pain.get("current_substitute")),
             ("代价", pain.get("friction_cost")),
             ("不解决的后果", pain.get("consequence")),
-        ]))
+        ], used_quotes=used_quotes))
         need = nodes.get("need", {}) if isinstance(nodes.get("need"), dict) else {}
         lines.extend(_plan_section("5. 需求：他们要的到底是什么", need, by_id, [
             ("期望的结果", need.get("desired_outcome")),
             ("约束", need.get("constraints")),
             ("怎么衡量做好了", need.get("measure")),
-        ]))
+        ], used_quotes=used_quotes))
         feature = nodes.get("feature", {}) if isinstance(nodes.get("feature"), dict) else {}
         lines.extend(_plan_section("6. 产品特性：哪些特性能满足", feature, by_id, [
             ("特性", feature.get("capability")),
             ("生效条件与验收", feature.get("acceptance_conditions")),
             ("考虑过的替代做法", feature.get("alternatives_considered")),
-        ], quote_limit=1, extra_lines=_plan_capability_lines(feature)))
+        ], quote_limit=1, used_quotes=used_quotes, extra_lines=_plan_capability_lines(feature)))
         product = nodes.get("product", {}) if isinstance(nodes.get("product"), dict) else {}
         lines.extend(_plan_section("7. 产品形态：推演出的产品", product, by_id, [
             ("形态", product.get("form")),
@@ -3839,7 +3857,7 @@ def _analysis_lines(study: dict[str, Any], reasoning: dict[str, Any] | None, evi
     for record in records:
         family = str(record.get("source_family") or "未记录").strip() or "未记录"
         families[family] = families.get(family, 0) + 1
-        year = str(record.get("created_at") or record.get("source_time") or "")[:4]
+        year = _record_time(record)[:4]
         if year.isdigit():
             years[year] = years.get(year, 0) + 1
         channel = str(record.get("source_channel") or "").strip()
@@ -5525,9 +5543,9 @@ def _analysis_segments(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _analysis_time_coverage(records: list[dict[str, Any]], study: dict[str, Any]) -> dict[str, Any]:
     months = sorted({
-        str(record.get("created_at") or record.get("source_time") or "")[:7]
+        _record_time(record)[:7]
         for record in records
-        if len(str(record.get("created_at") or record.get("source_time") or "")) >= 7
+        if len(_record_time(record)) >= 7
     })
     scope = study.get("scope") if isinstance(study.get("scope"), dict) else {}
     window = scope.get("source_time_window") if isinstance(scope.get("source_time_window"), dict) else {}
@@ -5543,7 +5561,7 @@ def _analysis_time_coverage(records: list[dict[str, Any]], study: dict[str, Any]
         start_day = end_day = None
     if valid and start_day and end_day:
         for record in records:
-            day = str(record.get("created_at") or record.get("source_time") or "")[:10]
+            day = _record_time(record)[:10]
             try:
                 parsed = datetime.strptime(day, "%Y-%m-%d").date()
             except (TypeError, ValueError):
@@ -5557,6 +5575,87 @@ def _analysis_time_coverage(records: list[dict[str, Any]], study: dict[str, Any]
         "outside_window": outside,
         "boundary": "时间覆盖只说明记录分布；不在窗口内的记录需要单独解释，不能当作总体趋势。",
     }
+
+
+def _record_time(record: dict[str, Any]) -> str:
+    """First known timestamp on a record; collected_at is what imports carry."""
+    return str(record.get("created_at") or record.get("source_time") or record.get("collected_at") or "")
+
+
+_CHINESE_LEXICON: tuple[set[str], int] | None = None
+
+
+def _chinese_lexicon() -> tuple[set[str], int]:
+    """Load the bundled Chinese lexicon once: (terms, max term length)."""
+    global _CHINESE_LEXICON
+    if _CHINESE_LEXICON is None:
+        terms: set[str] = set()
+        try:
+            for line in CHINESE_LEXICON_PATH.read_text(encoding="utf-8").splitlines():
+                word = line.strip()
+                if word and not word.startswith("#"):
+                    terms.add(word)
+        except OSError:
+            terms = set()
+        longest = max((len(term) for term in terms), default=0)
+        _CHINESE_LEXICON = (terms, longest)
+    return _CHINESE_LEXICON
+
+
+def _cjk_lexicon_terms(run: str) -> list[str]:
+    """Greedy longest-match segmentation of one CJK run against the lexicon.
+
+    Unmatched characters are skipped, so the caller never receives character
+    fragments: a term appears only when the lexicon knows the word.
+    """
+    terms, longest = _chinese_lexicon()
+    if not terms:
+        return []
+    found: list[str] = []
+    index = 0
+    while index < len(run):
+        matched = ""
+        for size in range(min(longest, len(run) - index), 1, -1):
+            candidate = run[index:index + size]
+            if candidate in terms:
+                matched = candidate
+                break
+        if matched:
+            found.append(matched)
+            index += len(matched)
+        else:
+            index += 1
+    return found
+
+
+def _analysis_terms(text: str, stop: set[str]) -> list[str]:
+    """Descriptive terms: Latin words (3+) plus lexicon-matched Chinese words."""
+    terms: list[str] = []
+    for token in re.findall(r"[A-Za-z]{3,}|[\u4e00-\u9fff]+", text.casefold()):
+        if token[0].isascii():
+            if token not in stop:
+                terms.append(token)
+        else:
+            terms.extend(_cjk_lexicon_terms(token))
+    return terms
+
+
+def _query_terms(question: str, stop: set[str]) -> list[str]:
+    """Match terms for a question; CJK runs with no lexicon hit fall back to
+    2-char bigrams so an unseen word still matches records instead of
+    silently returning zero hits."""
+    terms: list[str] = []
+    for token in re.findall(r"[A-Za-z]{3,}|[\u4e00-\u9fff]+", question.casefold()):
+        if token[0].isascii():
+            if token not in stop:
+                terms.append(token)
+            continue
+        run_terms = _cjk_lexicon_terms(token)
+        if run_terms:
+            terms.extend(run_terms)
+        elif len(token) >= 2:
+            terms.extend(token[i:i + 2] for i in range(len(token) - 1))
+    return terms
 
 
 def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any]:
@@ -5608,7 +5707,7 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
         by_platform[platform] = by_platform.get(platform, 0) + 1
         by_claim[claim] = by_claim.get(claim, 0) + 1
         by_form[form] = by_form.get(form, 0) + 1
-        created = str(record.get("created_at") or record.get("source_time") or "")
+        created = _record_time(record)
         if len(created) >= 7:
             month = created[:7]
             by_month[month] = by_month.get(month, 0) + 1
@@ -5618,14 +5717,12 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
     stop = set("the and for with that this from are was were you your our not but have has had will can could should about into over under more most some such than then them they their there here what when where which who whom why how all any both each few other own same so too very just also".split())
     tokens: dict[str, int] = {}
     for text in text_blob:
-        for token in re.findall(r"[A-Za-z]{3,}|[\u4e00-\u9fff]{2,4}", text.lower()):
-            if token in stop:
-                continue
+        for token in _analysis_terms(text, stop):
             tokens[token] = tokens.get(token, 0) + 1
     top_terms = sorted(tokens.items(), key=lambda item: (-item[1], item[0]))[:30]
     matches = []
     if question:
-        q_terms = [t for t in re.findall(r"[A-Za-z]{3,}|[\u4e00-\u9fff]{2,4}", question.lower()) if t not in stop]
+        q_terms = _query_terms(question, stop)
         for record in unique:
             text = _evidence_text(record).lower()
             hit = [term for term in q_terms if term in text]
