@@ -1948,6 +1948,36 @@ def map_candidates(study_dir: Path, *, mappings: Any, by: str) -> Dict[str, Any]
                 continue
             for record_id in candidate.get("record_ids") or []:
                 record_gap[str(record_id)] = str(candidate.get("gap_key"))
+        # Provenance check base: the verbatim quote must exist in the collected
+        # record body (title + text as written by the collection run). Candidates
+        # carry raw ids, so the raw envelopes are the authoritative text source.
+        record_bodies: Dict[str, str] = {}
+        for candidate in state.get("candidates") or []:
+            if not isinstance(candidate, dict):
+                continue
+            platform = str(candidate.get("platform") or "")
+            run_id = str(candidate.get("run_id") or "")
+            if not platform or not run_id:
+                continue
+            raw_path = study_dir / "02-data" / "raw" / platform / f"{run_id}.jsonl"
+            if not raw_path.is_file():
+                continue
+            for line in raw_path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    envelope = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(envelope, dict):
+                    continue
+                record_id = str(envelope.get("source_record_id") or "")
+                if not record_id:
+                    continue
+                source_fields = envelope.get("source_fields")
+                title = str(source_fields.get("title") or "") if isinstance(source_fields, dict) else ""
+                body = "\n\n".join(part for part in (title, str(envelope.get("text") or "")) if part)
+                record_bodies.setdefault(record_id, body)
         prepared: List[Dict[str, Any]] = []
         existing = len(state.get("mappings") or [])
         for index, raw in enumerate(mappings, start=1):
@@ -1966,6 +1996,16 @@ def map_candidates(study_dir: Path, *, mappings: Any, by: str) -> Dict[str, Any]
             quote = str(raw.get("quote") or "").strip()
             if len(quote) < 5:
                 raise LoopError(f"mapping {index}: quote must be at least 5 characters")
+            body = record_bodies.get(record_id)
+            if body is None:
+                raise LoopError(
+                    f"mapping {index}: record {record_id!r} has no collected text to verify the quote against"
+                )
+            if quote.casefold() not in body.casefold():
+                raise LoopError(
+                    f"mapping {index}: quote not found in record {record_id!r}; "
+                    "quotes must be verbatim passages of the collected record"
+                )
             stance = str(raw.get("stance") or "").strip()
             if stance not in MAPPING_STANCES:
                 raise LoopError(

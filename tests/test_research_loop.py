@@ -450,7 +450,7 @@ class GapLifecycleTests(LoopHelpers, unittest.TestCase):
             "record_id": record_id,
             "hypothesis_id": "H1",
             "stance": "supports",
-            "quote": "privacy matters more than a camera roaming the house",
+            "quote": "privacy matters more",
             "locator": "https://github.com/o/r/issues/10",
         }]}), encoding="utf-8")
         completed = run_cli("loop", "map", str(self.study),
@@ -486,7 +486,7 @@ class GapLifecycleTests(LoopHelpers, unittest.TestCase):
                 "record_id": record_id,
                 "hypothesis_id": "H1",
                 "stance": stance,
-                "quote": "privacy matters more than a camera roaming the house",
+                "quote": "privacy matters more",
             }]}), encoding="utf-8")
             mapped = run_cli("loop", "map", str(self.study),
                              "--file", str(mapping_file), "--by", "researcher")
@@ -522,6 +522,54 @@ class GapLifecycleTests(LoopHelpers, unittest.TestCase):
                             "--file", str(short), "--by", "researcher")
         self.assertEqual(2, completed.returncode, completed.stdout)
         self.assertIn("quote", json.loads(completed.stdout)["reason"])
+
+    def test_map_rejects_quote_not_in_record(self) -> None:
+        """A2-1 冻结样例（已修复）：改写/编造的引文不得通过出处核验。
+
+        map_candidates 的文档一直声称 "checks that the quote exists in a
+        collected record"，但实现只查长度；改写过的 quote（非记录原文的
+        逐字片段）曾照样入库。出处核验必须逐字。
+        """
+        self._run_and_status()
+        candidates = json.loads((self.study / "04-findings" / "loop-candidates.json")
+                                .read_text(encoding="utf-8"))["candidates"]
+        record_id = candidates[0]["record_ids"][0]
+        fabricated = self.dir / "fabricated-map.json"
+        fabricated.write_text(json.dumps({"mappings": [{
+            "record_id": record_id, "hypothesis_id": "H1",
+            "stance": "supports",
+            "quote": "privacy matters more than a camera roaming the house",
+        }]}), encoding="utf-8")
+        completed = run_cli("loop", "map", str(self.study),
+                            "--file", str(fabricated), "--by", "researcher")
+        self.assertEqual(2, completed.returncode, completed.stdout)
+        self.assertIn("quote not found in record", json.loads(completed.stdout)["reason"])
+        # 全部映射原子提交：失败的批次不落盘（文件缺失同样算零映射）
+        mappings_path = self.study / "04-findings" / "loop-mappings.json"
+        if mappings_path.is_file():
+            document = json.loads(mappings_path.read_text(encoding="utf-8"))
+            self.assertEqual(0, len(document["mappings"]))
+
+    def test_loop_proposes_no_mappings_autonomously(self) -> None:
+        """A2-2 冻结失败样例（工作包②，自主证据智能）：绊线而非认可。
+
+        采集记录里已有与 H1 直接矛盾的逐字原文（"I would not let a camera
+        roam my home"），但闭环当前只能等宿主/评审提供映射：run 之后映射库
+        为空、advise 全部 insufficient。自动候选映射（loop 自行提出带逐字
+        出处、标注 auto_proposed 的候选映射，且能改变下一轮研究动作）合入
+        后，本测试必然失败，届时改写为"闭环能自主提出候选映射且出处逐字
+        可核"的断言并删除此说明。
+        """
+        self._run_and_status()
+        mappings_path = self.study / "04-findings" / "loop-mappings.json"
+        if mappings_path.is_file():
+            mappings = json.loads(mappings_path.read_text(encoding="utf-8"))
+            self.assertEqual(0, len(mappings["mappings"]))
+        completed = run_cli("loop", "advise", str(self.study))
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        advice = json.loads(completed.stdout)["advice"]
+        self.assertTrue(advice)
+        self.assertTrue(all(item["recommendation"] == "insufficient" for item in advice))
 
 
 if __name__ == "__main__":
