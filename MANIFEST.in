@@ -11,6 +11,7 @@ include RELEASING.md
 recursive-include .github *.yml *.md
 recursive-include skills/askovo *
 recursive-include examples/sample-study *
+recursive-include examples/sample-study-fullstack *
 recursive-include docs *
 recursive-include assets *
 recursive-include tests *
