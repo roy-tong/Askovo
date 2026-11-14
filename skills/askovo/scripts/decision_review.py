@@ -67,6 +67,33 @@ def _item(dimension: str, item_id: str, status: str, detail: str, next_action: s
     }
 
 
+def _qualification_items(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """A-01 正交资格核对：跨维度冲突只标记待重审，不改写证据原值。"""
+    qualification = payload.get("evidence_qualification")
+    if not isinstance(qualification, dict):
+        return []
+    items: List[Dict[str, Any]] = []
+    per_record = qualification.get("records") if isinstance(qualification.get("records"), dict) else {}
+    for record_id in qualification.get("needs_requalification") or []:
+        info = per_record.get(str(record_id)) or {}
+        reasons = "；".join(str(value) for value in info.get("reasons") or []) or "跨维度冲突"
+        items.append(_item(
+            "evidence", f"qualification:{record_id}", "warn",
+            f"{record_id} 证据资格待重审：{reasons}",
+            "人工重审证据等级；注意力指标/未验证来源不得作为商业 E5",
+        ))
+    for record_id in qualification.get("review_required") or []:
+        if str(record_id) in {str(item_id.split(":", 1)[-1]) for item_id in
+                              [item["id"] for item in items]}:
+            continue
+        items.append(_item(
+            "evidence", f"qualification:{record_id}", "warn",
+            f"{record_id} 商业行为 × 来源不可核实：未授予商业资格，需人工审核",
+            "补来源核验（收据/订单/平台记录）后再谈商业结论",
+        ))
+    return items
+
+
 def _claim_items(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     mapping = {"supported": "pass", "open": "warn", "exceeds_evidence": "fail",
@@ -989,6 +1016,7 @@ def review(study_dir: Path) -> Dict[str, Any]:
     else:
         items.append(_item("audit", "audit_gate", "pass", "审计门通过"))
     items.extend(_claim_items(payload))
+    items.extend(_qualification_items(payload))
     items.extend(_decision_items(study, reasoning))
     items.extend(_falsifiability_items(study, reasoning))
     items.extend(_bias_items(payload, analysis))

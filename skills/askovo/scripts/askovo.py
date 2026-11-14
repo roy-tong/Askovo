@@ -3066,6 +3066,28 @@ def _render_audit_md(payload: dict[str, Any]) -> str:
         lines.append("尚无 demand judgment。")
     lines.append("")
 
+    qualification = payload.get("evidence_qualification") or {}
+    flagged = qualification.get("needs_requalification") or []
+    review_pending = qualification.get("review_required") or []
+    if flagged or review_pending:
+        lines.extend(["## 证据资格（A-01 正交维度）", ""])
+        eligibility_counts = (qualification.get("counts") or {}).get("claim_eligibility") or {}
+        lines.append(
+            "- 结论资格分布：" + json.dumps(eligibility_counts, ensure_ascii=False)
+            + f"；独立来源 {qualification.get('independent_sources', 0)} 个"
+            + f"（共 {qualification.get('records_total', 0)} 条记录；复制不提升独立性）"
+        )
+        per_record = qualification.get("records") or {}
+        for record_id in flagged:
+            info = per_record.get(record_id) or {}
+            reasons = "；".join(info.get("reasons") or []) or "跨维度冲突"
+            lines.append(f"- 待重审 `{record_id}`：{reasons}")
+        for record_id in review_pending:
+            if record_id in flagged:
+                continue
+            lines.append(f"- 待人工审核 `{record_id}`：商业行为 × 来源不可核实，未授予商业资格")
+        lines.append("")
+
     lines.extend(["## 缺口与下一步", ""])
     actions = payload.get("next_actions") or []
     if actions:
@@ -3151,6 +3173,8 @@ def audit_payload(root: Path, *, claim: str = "") -> dict[str, Any]:
 
     overclaims = [claim for claim in claims if claim["verdict"] == "exceeds_evidence"]
     status = "pass" if audit.status == "pass" and not overclaims else "fail"
+    # A-01 正交资格投影：不改写 evidence_level，只派生三属性并标记跨维度冲突
+    evidence_qualification = sure_engine.evidence_qualification(list(evidence_by_id.values()))
     reasoning_summary = audit.metrics.get("product_reasoning", {})
     summary = {
         "records": int(signals.get("record_count", 0) or 0),
@@ -3183,6 +3207,7 @@ def audit_payload(root: Path, *, claim: str = "") -> dict[str, Any]:
         "signals": signals,
         "claims": claims,
         "product_reasoning": reasoning_summary,
+        "evidence_qualification": evidence_qualification,
         "summary": summary,
         "meaning": AUDIT_BOUNDARY,
     }

@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **A-01: attention metrics no longer pass as commercial E5 evidence**
+  (orthogonal evidence qualification). `docs/plan-evidence-check.md` graded the
+  GitHub star baseline, the follower count and an internal precedent as E5,
+  conflating "the number is real" with "it supports a
+  paid/retention/repurchase conclusion". The E0–E5 contract is unchanged;
+  `sure_engine` now derives three orthogonal display attributes per evidence
+  record — `measurement_integrity`
+  (confirmed_source|self_reported|unverified|conflicted), `behavior_kind`
+  (statement|problem_behavior|solution_acceptance|commercial_intent|
+  commercial_transaction|attention_metric) and the rule-derived
+  `claim_eligibility` (problem|solution|commercial|descriptive_only|none).
+  An API-verified star count qualifies as confirmed_source / attention_metric /
+  descriptive_only and can never yield commercial E5 eligibility; an unverified
+  or self-reported "already paid" statement gets no commercial eligibility and
+  is marked for human review. Cross-dimension conflicts (e.g. an attention
+  metric coded E5) surface as a `needs_requalification` flag in `askovo audit`
+  output, decision review items and the delivery chat summary — original
+  levels are never rewritten and legacy studies stay read-compatible. Copying
+  one source into three records no longer raises the independent-source count
+  (`independent_source_count`). The three misgraded rows in
+  `docs/plan-evidence-check.md` are corrected to descriptive observations with
+  a revision note; no historical study data is migrated.
+
+### Tests
+
+- 13 new regression tests (`tests/test_evidence_qualification.py`) freeze the
+  counterexamples first (A1 verified star stays descriptive_only; A2
+  unverified payment gets no commercial eligibility; A3 copied source does not
+  raise independence; A4 legacy data stays read-only without silent promotion;
+  A5 doc, auditor and delivery projection agree on the same record). Full
+  suite: 300 passed.
+
 ## 2.17.1 - 2026-11-14
 
 ### Fixed
