@@ -24,6 +24,19 @@
   developer entry phrase ("给自己的 CLI 工具找值得做的方向") routes without `--domain`,
   and a router test now locks that routed `route`/`do` payloads expose the
   industry context and role team.
+- **Fullstack demo story**: a second synthetic sample
+  (`examples/sample-study-fullstack`, a local-first CLI log-triage study with
+  the same 7-record evidence contract) ships beside the mobile sample;
+  `askovo demo --story fullstack` runs it through the full audit. Both samples
+  are bundled into the wheel, and both `delivery.audiences` lists now include
+  `fullstack_developer`.
+- **Persona-smooth routing**: when the domain gate blocks a persona query
+  ("研发转全栈要自己挖需求"), the questions add a targeted hint (describe your
+  product — CLI tool, open-source repo, SaaS, App — to auto-route); and when
+  discovery and decision keywords tie, discovery leads, so "开源项目 issue
+  很多，哪些值得做成功能" now gets an R09-led discovery team instead of a
+  decision-only one (`discover` hints gain `issue`/`issues`; other ties keep
+  declaration order).
 - **PRD dev-view acceptance checklist**: `deliver --kind prd` now renders
   "PRD 需求与验收（开发视图）" — the feature node's `acceptance_conditions` and the
   product node's `acceptance_criteria` projected read-only as a copy-pasteable

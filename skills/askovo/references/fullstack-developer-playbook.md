@@ -35,6 +35,10 @@ its data (`askovo audit`, exit code 1).
 
 ## Your first run
 
+Zero-setup proof first: `askovo demo --story fullstack` runs a synthetic
+developer-tooling study (CLI log triage) through the full audit — same engine,
+software story instead of the default mobile sample.
+
 Start from what you have: a product idea, a side project, an internal tool, or
 an open-source repo whose next step you must choose.
 

@@ -1,0 +1,102 @@
+{
+  "study_id": "synthetic-software-logline",
+  "title": "Synthetic fullstack developer CLI log-triage study",
+  "method_version": "2.17.0",
+  "product_reasoning_version": "2.0",
+  "product_reasoning": {
+    "flow": [
+      "scene",
+      "user",
+      "pain",
+      "need",
+      "feature",
+      "product",
+      "business"
+    ],
+    "flow_label": "场景 → 用户 → 痛点 → 需求 → 特性 → 产品 → 商业",
+    "primary_artifact": "04-findings/product-reasoning.json",
+    "principle": "Evidence supports each product inference; it does not replace the inference."
+  },
+  "delivery": {
+    "audiences": [
+      "product_manager",
+      "user_researcher",
+      "user_operations",
+      "market_researcher",
+      "market_analyst",
+      "requirements_analyst",
+      "business_analyst",
+      "fullstack_developer"
+    ]
+  },
+  "decision": {
+    "question": "Whether to run a two-week team pilot for a local-first CLI log-triage tool",
+    "owner": "Illustrative fullstack developer",
+    "deadline": "Synthetic fixture; no real deadline",
+    "options": [
+      "Run a bounded team pilot",
+      "Keep the grep-plus-dashboard workflow",
+      "Stop the concept"
+    ],
+    "minimum_evidence": [
+      "Problem and substitute evidence",
+      "Prototype acceptance",
+      "Paid or retained behavior",
+      "Redaction and privacy counter-evidence"
+    ]
+  },
+  "scope": {
+    "target_users": [
+      "On-call backend developers triaging incidents across multi-service logs"
+    ],
+    "markets": [
+      "Illustrative developer-tooling sample"
+    ],
+    "languages": [
+      "English synthetic records"
+    ],
+    "source_time_window": {
+      "start": "2026-01-01",
+      "end": "2026-12-31"
+    },
+    "unit_of_observation": "synthetic_evidence_record",
+    "allowed_sources": [
+      "Synthetic interviews",
+      "Synthetic prototype tests",
+      "Synthetic behavior records"
+    ],
+    "prohibited_inferences": [
+      "Market size",
+      "Population prevalence",
+      "Price elasticity",
+      "Truth of the synthetic demand"
+    ]
+  },
+  "hypotheses": [
+    {
+      "id": "H1",
+      "statement": "On-call developers drowning in multi-service logs will adopt a local redaction-first triage CLI",
+      "falsified_if": "Redaction or local-only rejection persists after the no-network guarantee and default redaction are shown"
+    }
+  ],
+  "quality_gates": {
+    "min_evidence_records": 7,
+    "required_corpus_roles": [
+      "direct_solution",
+      "open_scene",
+      "substitute_rejector",
+      "post_purchase_support",
+      "control"
+    ],
+    "max_source_family_share": 0.5,
+    "max_normalized_duplicate_rate": 0.0,
+    "require_counter_evidence_for_validated": true
+  },
+  "stopping_rules": [
+    "Stop after one full synthetic audit",
+    "Stop if the redaction falsifier is met"
+  ],
+  "restart_rules": [
+    "Restart only to test a changed redaction design"
+  ]
+}

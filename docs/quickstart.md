@@ -208,7 +208,7 @@ askovo deliver ./cam-study --kind tracker  # 行为、验收与商业指标跟�
 
 ## 研发转全栈：先证据后编码
 
-如果你是研发、正在转型全栈，要自己挖需求、定产品：你所在的开发者社区（GitHub issues、Hacker News、Reddit）就是入门证据库，`do/route` 会识别这类目标，在精简组队里带上你新扛的产品职责（R26）。完整入门路径见[全栈研发入门手册](../skills/askovo/references/fullstack-developer-playbook.md)（英文）——概念翻译（bug 报告→痛点证据、测试→验证门、日志→语料）、社区语料首跑、第一次用户访谈和工程师反模式清单：
+如果你是研发、正在转型全栈，要自己挖需求、定产品：你所在的开发者社区（GitHub issues、Hacker News、Reddit）就是入门证据库，`do/route` 会识别这类目标，在精简组队里带上你新扛的产品职责（R26）。先跑 `askovo demo --story fullstack` 看 30 秒证明（软件味合成样例：CLI 日志排查工具，过全审计）。完整入门路径见[全栈研发入门手册](../skills/askovo/references/fullstack-developer-playbook.md)（英文）——概念翻译（bug 报告→痛点证据、测试→验证门、日志→语料）、社区语料首跑、第一次用户访谈和工程师反模式清单：
 
 ```bash
 askovo do "给自己的 CLI 工具找值得做的方向" --domain software --dry-run

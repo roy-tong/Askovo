@@ -1017,6 +1017,10 @@ def route_request(
         text, stage=stage_info["stage"], stage_source=stage_info.get("source")
     )
     if domain_info["needs_domain"]:
+        questions = ["你要研究的是软件、硬件、消费品、汽车还是手机/可穿戴产品？"]
+        lowered_text = str(text or "").casefold()
+        if any(word in lowered_text for word in ("全栈", "研发转型", "独立开发", "自己扛产品", "full-stack", "indie dev", "solo builder")):
+            questions.append("研发转全栈：描述你的产品（如 CLI 工具、开源项目、SaaS、App）即可自动路由。")
         return {
             "query": text,
             "status": "needs_domain",
@@ -1032,7 +1036,7 @@ def route_request(
             "product_reasoning": product_reasoning_contract(stage_info["stage"]),
             "research_mode": research_mode,
             "method_selection": research_method_selection(text, [], intent=intent_info["intent"]),
-            "questions": ["你要研究的是软件、硬件、消费品、汽车还是手机/可穿戴产品？"],
+            "questions": questions,
             "next_commands": ['askovo route "<需求>" --domain software'],
         }
 

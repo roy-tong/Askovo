@@ -826,6 +826,13 @@ class AuditTests(unittest.TestCase):
         self.assertIn("pass", completed.stdout)
         self.assertFalse((ROOT / "examples/sample-study/05-audit/audit.json").exists())
 
+    def test_demo_fullstack_story_runs_software_sample(self) -> None:
+        completed = run_cli("demo", "--story", "fullstack")
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        self.assertIn("Askovo 审计", completed.stdout)
+        self.assertIn("pass", completed.stdout)
+        self.assertFalse((ROOT / "examples/sample-study-fullstack/05-audit/audit.json").exists())
+
     def test_audit_passes_sample_and_writes_artifacts(self) -> None:
         completed = run_cli("audit", str(self.target))
         self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)

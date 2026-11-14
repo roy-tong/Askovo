@@ -428,6 +428,14 @@ class RoleCatalogTests(unittest.TestCase):
         reasons = {item["id"]: item["reason"] for item in payload["assignments"]}
         self.assertIn("任务触发：转型全栈研发的产品职责", reasons.get("R26", ""))
 
+    def test_issue_mining_with_priority_words_leads_with_discovery(self) -> None:
+        plan = roles.recommend_roles(
+            "我做的开源项目 issue 很多，想知道哪些值得做成功能", "consumer_software", "discovery",
+        )
+        self.assertEqual("discover", plan["task"]["id"])
+        self.assertEqual("discover_before_decide", plan["task"]["source"])
+        self.assertEqual("R09", plan["lead_role_id"])
+
 
 if __name__ == "__main__":
     unittest.main()
