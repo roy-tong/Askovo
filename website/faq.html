@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>常见问题：AI 调研可信吗、怎么装、交付什么 | Askovo</title>
+  <meta name="description" content="Askovo 常见问题：和让 AI 直接写调研报告的区别、E0–E5 证据分级是什么、数据从哪来会不会违规、免费边界、30 秒本地验证、交付物、与 Growovo/Verovo 的关系。答案全部来自仓库可核实的事实。">
+  <link rel="canonical" href="https://roy-tong.github.io/Askovo/faq.html">
+  <meta name="theme-color" content="#090C10">
+  <!-- GSC/Bing 验证码插在这行下面 -->
+  <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      { "@type": "Question", "name": "Askovo 和直接让 AI 写一份调研报告有什么区别？", "acceptedAnswer": { "@type": "Answer", "text": "通用 AI 报告每句话同样自信，分不清哪句有证据、哪句是推测。Askovo 把判断拆成七节点推理链，每条结论标 E0–E5 证据等级；结论超出证据时 askovo audit 直接点名并给退出码 1，可以进 CI。它交付的是可检查的推理过程，不是一份语气笃定的文档。" } },
+      { "@type": "Question", "name": "E0–E5 证据分级是什么？", "acceptedAnswer": { "@type": "Answer", "text": "引擎内部的证据分级：E0 场景背景、E1 问题被表达、E2 观察到替代/绕行/失败行为、E3 方案被接受、E4+ 购买或付费表达、E5 已付费/持续使用的行为证据。它只描述需求与商业证据强度，不是产品好坏的评分。详见术语表。" } },
+      { "@type": "Question", "name": "数据从哪里来？会违规抓取吗？", "acceptedAnswer": { "@type": "Answer", "text": "采集走授权路由：GitHub、Reddit 官方 API 等；被平台阻塞的渠道不绕过，保持缺口记录；CDP 浏览器采集仅限明确授权的可见页面，且采集前须过设计门。不做未授权抓取，不绕过登录墙或平台挑战。" } },
+      { "@type": "Question", "name": "收费吗？免费版有功能阉割吗？", "acceptedAnswer": { "@type": "Answer", "text": "引擎、CLI、Agent Skill、MCP 与五个领域的基础领域包都是 MIT 开源，无功能阉割版。付费的只可能是深度领域资产与人工交付（需求验证 study、团队工作坊），范围与费用按任务商定。" } },
+      { "@type": "Question", "name": "怎么在 30 秒内验证它是不是真的？", "acceptedAnswer": { "@type": "Answer", "text": "pipx install askovo，然后跑 askovo demo：离线合成样例，本地运行、不上传数据，验证推理链与审计逻辑自洽（预期 status: pass、supported: 1、overclaims: 0）。注意：合成样例只证明结构自洽，不证明真实需求或市场。" } },
+      { "@type": "Question", "name": "最终交付什么？能出 MRD/PRD/BRD 吗？", "acceptedAnswer": { "@type": "Answer", "text": "主交付物是业务方案（Business Plan）：每个判断带数据基础（来源、语料量、时间窗）与来自语料的用户原声。MRD、PRD、BRD 与决策包是同一份机器真值（product-reasoning.json）的投影，不是四套平行事实源。" } },
+      { "@type": "Question", "name": "能保证结论是正确的吗？", "acceptedAnswer": { "@type": "Answer", "text": "不能。Askovo 自动校验的是结构与证据引用、以及结论有没有超出证据；语义复核仍由人负责。它的价值在于让每一步推理可检查，而不是替人判断对错。" } },
+      { "@type": "Question", "name": "和 Growovo、Verovo 是什么关系？", "acceptedAnswer": { "@type": "Answer", "text": "ovo 家族三层：Askovo 是研究层（从用户推理到产品与商业）；Growovo 是执行层，消费 Askovo 的研究判断做定位与增长，一手增长反馈以同一套 E0–E5 分级回流；Verovo 是核验层，核验 AI 服务的费用与交付。三者可独立使用。" } }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="./">Askovo<span class="cursor">_</span></a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="./#chain">推理链</a>
+        <a href="./first-look.html">提交任务</a>
+        <a href="./glossary.html">术语表</a>
+        <a href="https://github.com/roy-tong/askovo">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="hero" id="top">
+      <p class="kicker">FAQ</p>
+      <h1>常见问题</h1>
+      <p class="lead">答案全部来自仓库与站点可核实的事实，包括能做什么与不能做什么。<a href="./glossary.html">术语表</a>单独一页；这页回答使用层面的真问题。</p>
+    </div>
+
+    <section>
+      <h2>Askovo 和直接让 AI 写一份调研报告有什么区别？</h2>
+      <p>通用 AI 报告每句话同样自信，分不清哪句有证据、哪句是推测。Askovo 把判断拆成<strong>七节点推理链</strong>（场景→用户→痛点→需求→特性→产品→商业），每条结论标 <a href="./glossary.html">E0–E5 证据等级</a>；结论超出证据时 <code>askovo audit</code> 直接点名，退出码 1 可以进 CI。交付的是可检查的推理过程，不是一份语气笃定的文档。</p>
+    </section>
+
+    <section>
+      <h2>E0–E5 证据分级是什么？</h2>
+      <p>引擎内部的证据分级，用于门禁与审计：E0 场景背景、E1 问题被表达、E2 观察到替代/绕行/失败行为、E3 方案被接受、E4+ 购买或付费表达、E5 已付费/持续使用的行为证据。它<strong>只描述需求与商业证据强度</strong>，不是产品好坏的评分——可用性、工程性能、安全各有各的验证要求。逐级定义见<a href="./glossary.html">术语表</a>。</p>
+    </section>
+
+    <section>
+      <h2>数据从哪里来？会违规抓取吗？</h2>
+      <p>采集走<strong>授权路由</strong>：GitHub、Reddit 官方 API 等。被平台阻塞的渠道不绕过、保持缺口记录；CDP 浏览器采集仅限明确授权的可见页面，且采集前须过设计门（Design gate）。不做未授权抓取，不绕过登录墙或平台挑战。</p>
+    </section>
+
+    <section>
+      <h2>收费吗？免费版有功能阉割吗？</h2>
+      <p>引擎、CLI、Agent Skill、MCP 与五个领域的基础领域包都是 <strong>MIT 开源，无功能阉割版</strong>。付费的只可能是深度领域资产与人工交付（需求验证 study、团队工作坊），范围与费用按任务商定，不公布标准价目。</p>
+    </section>
+
+    <section>
+      <h2>怎么在 30 秒内验证它是不是真的？</h2>
+      <pre><code>pipx install askovo
+askovo demo</code></pre>
+      <p>离线合成样例，本地运行、不上传数据，验证推理链与审计逻辑自洽（预期 <span class="tag-ok">status: pass</span> · <span class="tag-ok">supported: 1</span> · <span class="tag-ok">overclaims: 0</span>）。注意边界：合成样例只证明结构自洽，不证明真实需求或市场。</p>
+    </section>
+
+    <section>
+      <h2>最终交付什么？能出 MRD/PRD/BRD 吗？</h2>
+      <p>主交付物是<strong>业务方案（Business Plan）</strong>：每个判断带数据基础（来源、语料量、时间窗）与来自语料的用户原声。MRD、PRD、BRD 与决策包是同一份机器真值（<code>product-reasoning.json</code>）的投影——不是四套平行事实源。</p>
+    </section>
+
+    <section>
+      <h2>能保证结论是正确的吗？</h2>
+      <p>不能。Askovo 自动校验的是结构与证据引用、以及结论有没有超出证据；<strong>语义复核仍由人负责</strong>。它的价值在于让每一步推理可检查，而不是替人判断对错。我们在 <a href="./claims.html">claims 页</a>用同一条纪律约束自己的主张。</p>
+    </section>
+
+    <section>
+      <h2>和 Growovo、Verovo 是什么关系？</h2>
+      <p>ovo 家族三层：<strong>Askovo 研究层</strong>（从用户推理到产品与商业）→ <a href="https://roy-tong.github.io/Growovo/">Growovo 执行层</a>（消费研究判断做定位与增长，一手增长反馈以同一套 E0–E5 分级回流）→ <a href="https://roy-tong.github.io/Verovo/">Verovo 核验层</a>（核验 AI 服务的费用与交付）。三者可独立使用。</p>
+    </section>
+  </main>
+
+  <footer class="footer wrap">
+    <p>开源引擎永久免费（MIT）。</p>
+    <p class="row"><span>© 2026 Askovo</span><span>·</span><a href="./">首页</a><span>·</span><a href="./glossary.html">术语表</a><span>·</span><a href="./claims.html">Claims</a><span>·</span><span>复核日期 2026-11-14</span></p>
+    <p class="row"><span>ovo 家族：研究 <strong>Askovo</strong> → 执行 <a href="https://roy-tong.github.io/Growovo/">Growovo</a> → 核验 <a href="https://roy-tong.github.io/Verovo/">Verovo</a></span></p>
+  </footer>
+</body>
+</html>
