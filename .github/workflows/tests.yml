@@ -65,6 +65,7 @@ jobs:
           /tmp/askovo-wheel-venv/bin/askovo --version
           /tmp/askovo-wheel-venv/bin/askovo doctor
           /tmp/askovo-wheel-venv/bin/askovo demo
+          /tmp/askovo-wheel-venv/bin/askovo demo --story fullstack
           /tmp/askovo-wheel-venv/bin/askovo --help > /tmp/askovo-help.txt
           grep -q 'queue' /tmp/askovo-help.txt
           /tmp/askovo-wheel-venv/bin/askovo-mcp --tools > /tmp/askovo-tools.json

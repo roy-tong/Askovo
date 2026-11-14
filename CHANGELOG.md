@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.17.1 - 2026-11-14
+
+### Fixed
+
+- **PyPI wheel/sdist carried the fullstack sample**: `MANIFEST.in` did not list
+  `examples/sample-study-fullstack`, so the sdist (and the wheel `python -m
+  build` derives from it) shipped without it and `askovo demo --story
+  fullstack` failed with exit 2 on installed packages. The directory is now
+  declared in `MANIFEST.in`, and the CI packaging job runs
+  `askovo demo --story fullstack` from the installed wheel as a regression
+  gate. Local wheel-only builds had masked the sdist path.
+- **Release workflow on Python-3.9-capable runners**: the `release` and
+  `pypi-publish` jobs ran on `ubuntu-latest`, which since migrated to Ubuntu
+  26.04 where EOL Python 3.9 cannot be provisioned ("version '3.9' was not
+  found"); v2.17.0 was published via a `release/v2.17.0` backfill branch. Both
+  jobs are now pinned to `ubuntu-22.04` on main (the validate matrix got the
+  same pin in v2.17.0).
+
+### Tests
+
+- 287 tests pass locally; packaging CI additionally exercises the fullstack
+  demo story from the installed wheel.
+
 ## 2.17.0 - 2026-11-14
 
 ### Added
