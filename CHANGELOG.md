@@ -20,6 +20,13 @@
   (product management) to the lean team with the labeled reason
   `任务触发：转型全栈研发的产品职责`; need discovery still leads with R09 and no
   new role family is introduced (the persona composes existing roles).
+- **PRD dev-view acceptance checklist**: `deliver --kind prd` now renders
+  "PRD 需求与验收（开发视图）" — the feature node's `acceptance_conditions` and the
+  product node's `acceptance_criteria` projected read-only as a copy-pasteable
+  checkbox checklist with chain-node sources, plus scope/non-goals and
+  per-capability lines. Explicit boundary: checked boxes never mean validated,
+  engineering-approved or release-ready; acceptance changes go through the
+  canonical chain first.
 - `delivery.audiences` gains `fullstack_developer`; the engine contract and the
   study template stay in sync and the sync is now test-enforced.
 

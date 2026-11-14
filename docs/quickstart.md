@@ -219,7 +219,7 @@ askovo deliver ./study --kind plan    # 先决定什么值得做
 askovo deliver ./study --kind prd     # 再拿 PRD 当实现依据
 ```
 
-一人多岗：`roles scaffold` 后把自己设为所有岗位的 owner，按 KPI/SOP 合同区分此刻戴的是哪顶帽子。三条红线：功能请求是方案不是需求；star/赞不是付费行为；发布不等于验证。
+一人多岗：`roles scaffold` 后把自己设为所有岗位的 owner，按 KPI/SOP 合同区分此刻戴的是哪顶帽子。三条红线：功能请求是方案不是需求；star/赞不是付费行为；发布不等于验证。`--kind prd` 附带「需求与验收（开发视图）」：主链验收参数只读投影成可勾选清单，可直接粘进 issue；改验收先改主链，勾选完成不等于工程放行。
 
 ## 可选：CDP 与队列
 
