@@ -20,7 +20,7 @@ Stable raw base: https://raw.githubusercontent.com/roy-tong/askovo/main/
 
 ## Interfaces
 
-- Install from the source checkout: `pipx install --editable .` (CLI) or `bash scripts/install-skill.sh` (Skill). The PyPI package is not published yet. Version lives in `VERSION`.
+- Install from PyPI: `pipx install askovo` (published; current release v2.17.0), or from the source checkout: `pipx install --editable .` (CLI) or `bash scripts/install-skill.sh` (Skill). The checkout may be ahead of the published wheel; version lives in `VERSION`.
 - [CLI askovo.py](skills/askovo/scripts/askovo.py): `do` (single entry), `chain` (scene→user→pain→need→feature→product→business reasoning), `roles` (80-role catalog/team/workplan), `economics`, `psm`, `route`, `platforms`, `collect`, `analyze`, `instruments`, `import`, `codebook`, `deliver` (business plan/decision/memo/report/mrd/prd/brd/ops/tracker/signoff/role/lifecycle), `audit`, `check`, `signals`, `lexicon`, `report`, `connectors`, plus supporting `plan` and dataset stages. Standard library only; Python 3.9+.
 - [Method catalog](skills/askovo/assets/method-catalog.json) and [domain packs](skills/askovo/assets/domain-packs/): 32 methods across five base product types.
 - [Role catalog](skills/askovo/assets/role-catalog.json) and [industry overlays](skills/askovo/assets/industry-contexts.json): 80 exact role families, 340 KPI definitions, 517 SOP steps, 257 deliverable templates, 10 lifecycle modules and 10 industry contexts; role orchestration never becomes product/market/requirements/business truth.
