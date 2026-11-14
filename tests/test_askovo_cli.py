@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import shutil
 import subprocess
@@ -284,7 +285,7 @@ class AskvoCliTests(unittest.TestCase):
             initialized_study = json.loads((target / "study.json").read_text(encoding="utf-8"))
             self.assertEqual("2.0", initialized_study["product_reasoning_version"])
             self.assertEqual(
-                ["product_manager", "user_researcher", "user_operations", "market_researcher", "market_analyst", "requirements_analyst", "business_analyst"],
+                ["product_manager", "user_researcher", "user_operations", "market_researcher", "market_analyst", "requirements_analyst", "business_analyst", "fullstack_developer"],
                 initialized_study["delivery"]["audiences"],
             )
             self.assertTrue(initialized_study["source_adapters"]["reddit"]["enabled"])
@@ -825,6 +826,13 @@ class AuditTests(unittest.TestCase):
         self.assertIn("pass", completed.stdout)
         self.assertFalse((ROOT / "examples/sample-study/05-audit/audit.json").exists())
 
+    def test_demo_fullstack_story_runs_software_sample(self) -> None:
+        completed = run_cli("demo", "--story", "fullstack")
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        self.assertIn("Askovo 审计", completed.stdout)
+        self.assertIn("pass", completed.stdout)
+        self.assertFalse((ROOT / "examples/sample-study-fullstack/05-audit/audit.json").exists())
+
     def test_audit_passes_sample_and_writes_artifacts(self) -> None:
         completed = run_cli("audit", str(self.target))
         self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
@@ -872,6 +880,23 @@ class AuditTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn('"{{method_version}}"', template)
         self.assertNotIn("askovo 1.6", template)
+
+    def test_study_template_audiences_match_engine_contract(self) -> None:
+        template = json.loads(
+            (ROOT / "skills/askovo/assets/study-template/study.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        spec = importlib.util.spec_from_file_location(
+            "sure_engine_audience_contract",
+            ROOT / "skills/askovo/scripts/sure_engine.py",
+        )
+        engine = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(engine)
+        self.assertEqual(
+            list(engine.DELIVERY_AUDIENCES), template["delivery"]["audiences"]
+        )
+        self.assertIn("fullstack_developer", engine.DELIVERY_AUDIENCES)
 
 
 class StageProjectCommandsTests(unittest.TestCase):

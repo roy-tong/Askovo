@@ -95,6 +95,7 @@ DELIVERY_AUDIENCES = (
     "market_analyst",
     "requirements_analyst",
     "business_analyst",
+    "fullstack_developer",
 )
 LEGACY_REASONING_NODES = ("scene", "user", "pain", "need", "feature", "product")
 REASONING_NODES = (*LEGACY_REASONING_NODES, "business")
@@ -1016,6 +1017,10 @@ def route_request(
         text, stage=stage_info["stage"], stage_source=stage_info.get("source")
     )
     if domain_info["needs_domain"]:
+        questions = ["你要研究的是软件、硬件、消费品、汽车还是手机/可穿戴产品？"]
+        lowered_text = str(text or "").casefold()
+        if any(word in lowered_text for word in ("全栈", "研发转型", "独立开发", "自己扛产品", "full-stack", "indie dev", "solo builder")):
+            questions.append("研发转全栈：描述你的产品（如 CLI 工具、开源项目、SaaS、App）即可自动路由。")
         return {
             "query": text,
             "status": "needs_domain",
@@ -1031,7 +1036,7 @@ def route_request(
             "product_reasoning": product_reasoning_contract(stage_info["stage"]),
             "research_mode": research_mode,
             "method_selection": research_method_selection(text, [], intent=intent_info["intent"]),
-            "questions": ["你要研究的是软件、硬件、消费品、汽车还是手机/可穿戴产品？"],
+            "questions": questions,
             "next_commands": ['askovo route "<需求>" --domain software'],
         }
 
@@ -2216,6 +2221,89 @@ def _mrd_lines(data: dict[str, Any]) -> list[str]:
         [
             "MRD 是商业节点中市场部分的候选基线与选择视图；它不证明用户需求、产品成功或精确市场规模。",
             "所有数字必须带总体、抽样框、时间窗、单位、公式、来源和推断范围；未知保留为未知，不用 0 或假精确值补齐。",
+            "",
+        ]
+    )
+    return lines
+
+
+def _prd_lines(data: dict[str, Any]) -> list[str]:
+    """Project need→feature→product nodes as a requirements view with a
+    copy-paste acceptance checklist; a read-only projection of the chain,
+    never test-case or release authorship."""
+    lines = ["## 2. PRD 需求与验收（开发视图）", ""]
+    chains = data.get("chains", [])
+    rendered = False
+    for chain in chains if isinstance(chains, list) else []:
+        if not isinstance(chain, dict):
+            continue
+        nodes = chain.get("nodes", {})
+        nodes = nodes if isinstance(nodes, dict) else {}
+        feature = nodes.get("feature") if isinstance(nodes.get("feature"), dict) else {}
+        product = nodes.get("product") if isinstance(nodes.get("product"), dict) else {}
+        if not feature and not product:
+            continue
+        rendered = True
+        chain_id = chain.get("id", "PR?")
+        lines.extend([f"### {chain_id} 需求基线", ""])
+        if feature:
+            lines.extend(
+                [
+                    f"- 特性主张：{feature.get('statement') or '待填写'}",
+                    f"- 能力承诺：{feature.get('capability') or '待填写'}",
+                    f"- 状态：`{feature.get('status', 'unknown')}`",
+                ]
+            )
+            capabilities = feature.get("capabilities")
+            for cap in capabilities if isinstance(capabilities, list) else []:
+                if not isinstance(cap, dict):
+                    continue
+                entry = f"- 逐条能力 {cap.get('name') or '未命名'}：{cap.get('what') or '待填写'}"
+                if cap.get("solves"):
+                    entry += f"（对应：{cap.get('solves')}）"
+                lines.append(entry)
+            lines.append("")
+        if product:
+            non_goals = product.get("non_goals", [])
+            lines.extend(
+                [
+                    f"- 产品形态：{product.get('form') or '待填写'}",
+                    f"- 范围：{product.get('scope') or '待填写'}",
+                    f"- 非目标（不做什么）：{'；'.join(str(item) for item in non_goals) if non_goals else '未记录'}",
+                    f"- 状态：`{product.get('status', 'unknown')}`",
+                    "",
+                ]
+            )
+        lines.extend(
+            [
+                f"**{chain_id} 验收清单（可直接粘贴到 issue / 任务列表）**",
+                "",
+                f"来源：`product-reasoning.json#chains/{chain_id}/nodes`（只读投影，改验收先改主链）",
+                "",
+            ]
+        )
+        items: list[tuple[str, str]] = []
+        feature_conditions = feature.get("acceptance_conditions")
+        if isinstance(feature_conditions, list):
+            items.extend((str(item), "特性接受条件") for item in feature_conditions)
+        product_criteria = product.get("acceptance_criteria")
+        if isinstance(product_criteria, list):
+            items.extend((str(item), "产品验收标准") for item in product_criteria)
+        if items:
+            for item, source in items:
+                lines.append(f"- [ ] {item}（{source}）")
+        else:
+            lines.append(
+                "- 验收清单为空：主链尚未写 acceptance_conditions / acceptance_criteria；"
+                "这是尚未定义，不是没有验收。"
+            )
+        lines.append("")
+    if not rendered:
+        lines.append("特性/产品节点尚未建立；先完成需求到特性、特性到产品的推导，再生成 PRD。")
+    lines.extend(
+        [
+            "验收清单是研究侧验收参数的只读投影：勾选完成不等于需求已验证、工程放行或发布就绪。",
+            "工程实现标准、测试用例与放行决定由研发与负责人另行制定；每条特性的证据强度与推导理由以主链为准。",
             "",
         ]
     )
@@ -4305,6 +4393,8 @@ def _deliver_artifact(
         lines.extend(_brd_decision_lines(reasoning))
     elif kind == "mrd" and reasoning is not None:
         lines.extend(_mrd_lines(reasoning))
+    elif kind == "prd" and reasoning is not None:
+        lines.extend(_prd_lines(reasoning))
     elif kind == "ops" and reasoning is not None:
         lines.extend(_user_ops_lines(reasoning))
     elif kind == "report" and reasoning is not None:
