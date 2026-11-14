@@ -450,6 +450,25 @@ class ProductReasoningTests(unittest.TestCase):
         prd_positions = [prd.index(marker) for marker in markers]
         self.assertEqual(sorted(prd_positions), prd_positions)
 
+    def test_prd_projects_dev_view_acceptance_checklist_read_only(self) -> None:
+        self.write_reasoning()
+        reasoning_path = self.target / "04-findings/product-reasoning.json"
+        before = reasoning_path.read_bytes()
+        delivered = run_cli("deliver", str(self.target), "--kind", "prd")
+        self.assertEqual(0, delivered.returncode, delivered.stdout + delivered.stderr)
+        prd = (self.target / "06-report/prd.md").read_text(encoding="utf-8")
+        self.assertIn("## 2. PRD 需求与验收（开发视图）", prd)
+        self.assertIn("### PR01 需求基线", prd)
+        self.assertIn("- [ ] Physical shutter（特性接受条件）", prd)
+        self.assertIn("- [ ] Predeclared privacy rejection threshold（产品验收标准）", prd)
+        self.assertIn(
+            "来源：`product-reasoning.json#chains/PR01/nodes`（只读投影，改验收先改主链）",
+            prd,
+        )
+        self.assertIn("勾选完成不等于需求已验证、工程放行或发布就绪", prd)
+        self.assertIn("非目标（不做什么）", prd)
+        self.assertEqual(before, reasoning_path.read_bytes())
+
     def test_mcp_chain_uses_the_same_renderer_contract(self) -> None:
         self.write_reasoning()
         responses = run_mcp(

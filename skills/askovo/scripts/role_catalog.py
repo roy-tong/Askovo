@@ -65,6 +65,7 @@ QUERY_ROLE_HINTS = (
     (("结构设计", "机械结构"), ("R58", "机械与结构设计")),
     (("系统架构", "系统设计", "系统需求"), ("R61", "系统架构与系统工程")),
     (("临床", "患者", "医疗流程"), ("R19", "医疗与临床需求研究")),
+    (("全栈", "研发转型", "独立开发", "自己扛产品", "full-stack", "indie dev", "solo builder"), ("R26", "转型全栈研发的产品职责")),
 )
 TASK_TYPES = ("decide", "discover", "define", "design", "validate", "launch", "operate", "review")
 TASK_LABELS = {
@@ -89,7 +90,7 @@ STAGE_TASK = {
 }
 TASK_HINTS = (
     ("decide", ("是否", "要不要", "值不值得", "值得做", "优先级", "取舍", "比较", "选择", "go/no-go", "决策", "商业可行性", "机会评估", "ROI", "投资回报", "回报")),
-    ("discover", ("市场", "行业", "品类", "竞品", "趋势", "用户", "消费者", "访谈", "观察", "需求发现", "痛点", "机会发现", "人群", "画像", "VOC", "抱怨", "不满", "替代")),
+    ("discover", ("市场", "行业", "品类", "竞品", "趋势", "用户", "消费者", "访谈", "观察", "需求发现", "痛点", "机会发现", "人群", "画像", "VOC", "抱怨", "不满", "替代", "issue", "issues")),
     ("define", ("产品定义", "需求定义", "需求规格", "PRD", "范围", "验收", "backlog", "路线图", "需求分析", "功能定义")),
     ("design", ("概念", "设计", "原型", "交互", "界面", "体验", "结构", "外观", "CMF", "配方", "包装", "服务蓝图", "架构", "系统定义")),
     ("validate", ("验证", "测试", "可用性", "试点", "Beta", "HUT", "DVT", "EVT", "PVT", "可靠性", "安全", "合规", "概念测试", "价格测试", "评估")),
@@ -443,11 +444,18 @@ def infer_task(goal: str, stage: str | None = None, task: str | None = None) -> 
     ranked = sorted(scores.items(), key=lambda item: (-item[1], TASK_TYPES.index(item[0])))
     top_task, top_score = ranked[0] if ranked else ("decide", 0)
     if top_score > 0:
+        source, confidence = "keyword", min(0.9, 0.5 + 0.1 * top_score)
+        if top_task == "decide" and scores.get("discover") == top_score:
+            # Mixed discovery + prioritization phrasing (e.g. issue mining plus
+            # "值得做"): discovery must come first; the decision hat stays on the
+            # team via R26. Other ties keep declaration order.
+            top_task = "discover"
+            source, confidence = "discover_before_decide", 0.45
         return {
             "id": top_task,
             "label": TASK_LABELS[top_task],
-            "source": "keyword",
-            "confidence": min(0.9, 0.5 + 0.1 * top_score),
+            "source": source,
+            "confidence": confidence,
             "scores": {key: value for key, value in scores.items() if value},
             "keyword_hits": hits_by_task[top_task],
         }

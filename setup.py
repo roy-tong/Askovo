@@ -23,6 +23,14 @@ class BuildPy(build_py):
         sample_src = root / "examples" / "sample-study"
         sample_dst = runtime / "examples" / "sample-study"
         shutil.copytree(sample_src, sample_dst, dirs_exist_ok=True, ignore=ignore)
+        fullstack_src = root / "examples" / "sample-study-fullstack"
+        if fullstack_src.is_dir():
+            shutil.copytree(
+                fullstack_src,
+                runtime / "examples" / "sample-study-fullstack",
+                dirs_exist_ok=True,
+                ignore=ignore,
+            )
         for name in ("CHANGELOG.md", "llms.txt", "README.md"):
             source = root / name
             if source.is_file():

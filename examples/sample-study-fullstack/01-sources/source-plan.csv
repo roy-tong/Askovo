@@ -1,0 +1,6 @@
+corpus_role,source_family,route_or_query,target_records,cap_share,access_status,known_bias
+direct_solution,prototype_test,synthetic concept test,2,0.40,available,artificial exposure to concept
+open_scene,interview,synthetic incident interview,2,0.40,available,self-reported behavior
+substitute_rejector,interview,synthetic redaction rejection interview,1,0.40,available,privacy-sensitive selection
+post_purchase_support,behavior_log,synthetic retained-use log,1,0.40,available,short observation window
+control,control_survey,synthetic satisfied-alternative survey,1,0.40,available,small control stratum

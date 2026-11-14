@@ -1,0 +1,23 @@
+[
+  {
+    "id": "D01",
+    "context_key": "synthetic-cli-logline",
+    "title": "Local-first key-line triage for multi-service incidents",
+    "user_role": "On-call backend developers whose multi-service logs drown the decisive line",
+    "scene": "A paging alert or user-reported error during an on-call shift creates a need to triage",
+    "task": "Locate the decisive log line before deciding whether to escalate or roll back",
+    "current_substitute": "Grep chains, dashboards per service, or hosted APM ingest",
+    "friction": "Noise lines outnumber decisive events, context switching between services, or shipping raw logs off-site",
+    "consequence": "Slow escalation decisions and long time-to-restore",
+    "solution": "A local-first CLI triage tool",
+    "acceptance_conditions": "Local-only processing, redaction on by default, explicit triage command, and no network calls",
+    "problem_evidence_ids": ["R01", "R02"],
+    "solution_evidence_ids": ["R03"],
+    "commercial_evidence_ids": ["R04", "R06"],
+    "counter_evidence_ids": ["R05", "R07"],
+    "status": "validated",
+    "confidence": "low",
+    "gaps": ["Synthetic fixture only", "Very short retained-use window", "Redaction guarantees are not tested in real teams"],
+    "next_test": "Run a real two-week team pilot with predeclared redaction-rejection and retained-use thresholds"
+  }
+]

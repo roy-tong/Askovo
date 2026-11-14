@@ -1,0 +1,331 @@
+{
+  "schema_version": "2.0",
+  "flow": [
+    "scene",
+    "user",
+    "pain",
+    "need",
+    "feature",
+    "product",
+    "business"
+  ],
+  "chains": [
+    {
+      "id": "PR01",
+      "title": "Local-first key-line triage for multi-service incidents",
+      "context_key": "synthetic-cli-logline",
+      "demand_judgment_id": "D01",
+      "status": "decided",
+      "confidence": "low",
+      "supporting_states": {
+        "delivery": {
+          "status": "unplanned",
+          "release_plan_ref": ""
+        },
+        "outcome": {
+          "status": "observing",
+          "metric_refs": [
+            "synthetic-retention-01"
+          ]
+        },
+        "causal": {
+          "status": "not-claimed",
+          "experiment_refs": []
+        }
+      },
+      "nodes": {
+        "scene": {
+          "statement": "A production alert during an on-call shift creates a need to find the decisive log line across services",
+          "rationale": "The decision is triggered by an observable triage gap, not by a general interest in developer tooling",
+          "status": "validated",
+          "evidence_ids": [
+            "R01",
+            "R02"
+          ],
+          "assumptions": [
+            "The synthetic alert and handover scenes represent the pilot's intended use boundary"
+          ],
+          "trigger": "A paging alert or a user-reported error while the developer is on call",
+          "environment": "A terminal with access to multi-service logs",
+          "task_context": "Locate the decisive log line before deciding whether to escalate or roll back"
+        },
+        "user": {
+          "statement": "On-call backend developers whose multi-service logs drown the decisive line",
+          "rationale": "Only developers with an unresolved triage scene have the observed problem; satisfied structured-logging teams are a control",
+          "status": "validated",
+          "evidence_ids": [
+            "R01",
+            "R02"
+          ],
+          "assumptions": [
+            "The developer is also the pilot adoption and escalation decision-maker"
+          ],
+          "role": "On-call backend developer",
+          "state": "Debugging an incident across several services' logs",
+          "decision_role": "Developer deciding whether to escalate and whether to adopt the tool"
+        },
+        "pain": {
+          "statement": "Manual grep chains and per-service dashboards cannot isolate the decisive line quickly enough",
+          "rationale": "The selected users' current substitutes fail in the identified scene and produce a slow or wrong escalation decision",
+          "status": "validated",
+          "evidence_ids": [
+            "R01",
+            "R02"
+          ],
+          "assumptions": [
+            "The observed triage delay matters enough to justify a bounded pilot"
+          ],
+          "current_substitute": "Grep chains, per-service dashboards, or hosted APM ingest",
+          "friction_cost": "Noise lines outnumber decisive events, context switching between services, or shipping raw logs off-site",
+          "consequence": "Slow escalation decisions and long time-to-restore"
+        },
+        "need": {
+          "statement": "Isolate the decisive events promptly without shipping raw logs to a third party",
+          "rationale": "The pain implies a solution-neutral triage outcome; it does not by itself prove that a CLI tool is the right answer",
+          "status": "validated",
+          "evidence_ids": [
+            "R01",
+            "R02"
+          ],
+          "assumptions": [
+            "Prompt local triage is valuable even when no escalation follows"
+          ],
+          "desired_outcome": "Decide escalate-or-roll-back without reading the full log stream",
+          "constraints": [
+            "No raw log upload to third-party services",
+            "No per-service manual greps during an incident"
+          ],
+          "measure": "Time to a triage decision and unnecessary escalations avoided in a bounded team pilot"
+        },
+        "feature": {
+          "statement": "A local-first key-line extraction CLI with an explicit redaction switch",
+          "rationale": "On-demand extraction addresses the triage need while local-only processing and default redaction answer the observed privacy rejection",
+          "status": "validated",
+          "evidence_ids": [
+            "R03"
+          ],
+          "assumptions": [
+            "Redaction guarantees remain understandable and effective outside the prototype setting"
+          ],
+          "capability": "Extract and rank decisive lines from local logs only during an explicit triage command, with redaction on by default and no network calls",
+          "acceptance_conditions": [
+            "Local-only processing",
+            "Redaction on by default",
+            "Explicit triage command",
+            "No network calls"
+          ],
+          "alternatives_considered": [
+            "Write more grep aliases",
+            "Ship logs to a hosted APM",
+            "Keep the current dashboard setup"
+          ]
+        },
+        "product": {
+          "statement": "A local-first CLI triage tool",
+          "rationale": "The triage command and its redaction guarantees form the smallest coherent pilot that can test the need, solution acceptance and retained behavior together",
+          "status": "validated",
+          "evidence_ids": [
+            "R03",
+            "R04",
+            "R06"
+          ],
+          "assumptions": [
+            "A two-week pilot is sufficient to reject an unusable or unwanted concept, but not to estimate market demand"
+          ],
+          "form": "A CLI tool with a rules file, run inside the developer's terminal",
+          "scope": "Two-week pilot for key-line triage on one team's services",
+          "non_goals": [
+            "Always-on log collection agent",
+            "Replacement for a full APM stack",
+            "Market-size validation"
+          ],
+          "acceptance_criteria": [
+            "Pilot developers complete the triage task",
+            "Redaction is used without unresolved objections",
+            "Predeclared retained-use threshold is met during the pilot"
+          ]
+        },
+        "business": {
+          "statement": "Run a bounded paid team pilot before making any subscription, launch, or market-expansion decision",
+          "rationale": "The tool creates a testable value loop, while a bounded paid pilot is the smallest business experiment that can test payment and retained behavior without pretending to prove a sustainable company",
+          "status": "validated",
+          "evidence_ids": [
+            "R04",
+            "R06"
+          ],
+          "assumptions": [
+            "A real pilot can recruit eligible teams without changing their redaction or usage behavior",
+            "Pilot support and delivery costs can be measured before any scale decision"
+          ],
+          "market_definition": "On-call backend developers in multi-service teams within an illustrative developer-tooling sample",
+          "geographies": [
+            "Illustrative developer-tooling sample only"
+          ],
+          "time_window": "Synthetic 2026 research and pilot cycle",
+          "included_markets": [
+            "Incident log triage through a local-first CLI"
+          ],
+          "excluded_markets": [
+            "Hosted log platforms",
+            "Full APM suites",
+            "Managed observability services"
+          ],
+          "target_segment": "Developers who cannot isolate decisive lines with their current setup and are eligible for a supervised two-week pilot",
+          "segments": [
+            {
+              "id": "SEG01",
+              "criteria": "On-call developers with multi-service log noise and no satisfactory triage alternative",
+              "user_refs": [
+                "PR01.user"
+              ],
+              "payer": "The team lead who reserves the pilot seat",
+              "evidence_ids": [
+                "R01",
+                "R02"
+              ],
+              "status": "hypothesis_outside_synthetic_sample"
+            }
+          ],
+          "payer": "The team lead who reserves and pays a refundable pilot seat deposit",
+          "positioning": "A local-first alternative to adding grep aliases or shipping logs to a hosted APM; not an observability-suite replacement",
+          "revenue_model": "Refundable pilot seat deposit only; no subscription or long-term revenue is assumed",
+          "pricing_hypothesis": "Payment behavior is observed only for the synthetic pilot deposit; final pricing and elasticity remain unknown",
+          "pricing": [
+            {
+              "model": "refundable_pilot_seat_deposit",
+              "amount": null,
+              "currency": "not_asserted",
+              "unit": "pilot seat",
+              "term": "two weeks",
+              "evidence_type": "paid",
+              "evidence_ids": [
+                "R04"
+              ]
+            }
+          ],
+          "channels": [
+            "Synthetic direct pilot recruitment in developer communities"
+          ],
+          "competitive_alternatives": [
+            "More grep aliases",
+            "Hosted APM ingest",
+            "No change to the current setup"
+          ],
+          "cost_drivers": [
+            "Rules file maintenance",
+            "Pilot support",
+            "Redaction onboarding and reviews"
+          ],
+          "market_estimates": [
+            {
+              "metric": "TAM/SAM/SOM",
+              "population_definition": "Not estimated from the synthetic convenience sample",
+              "time_window": "Synthetic 2026 only",
+              "unit": "not_estimated",
+              "method": "Requires an external sampling frame and paid-demand evidence before estimation",
+              "formula": "",
+              "assumptions": [
+                "No market-size claim is made"
+              ],
+              "value": null,
+              "source_ref": "",
+              "status": "unknown"
+            }
+          ],
+          "unit_economics_inputs": [
+            {
+              "metric": "Refundable pilot seat deposit",
+              "value": "Synthetic behavior only",
+              "unit": "not_a_price",
+              "source_ref": "R04",
+              "status": "observed_behavior_not_price"
+            },
+            {
+              "metric": "Rules maintenance and pilot support cost",
+              "value": null,
+              "unit": "unknown",
+              "source_ref": "",
+              "status": "missing_before_scale_decision"
+            }
+          ],
+          "success_metrics": [
+            {
+              "metric_id": "pilot_retained_use",
+              "definition": "Developers still actively using the triage command at the end of the pilot",
+              "numerator": "Active eligible pilot developers",
+              "denominator": "All enrolled eligible pilot developers",
+              "baseline": "Not estimated from synthetic data",
+              "target": "Predeclared before the real pilot",
+              "window": "Two weeks",
+              "guardrail": "Redaction rejection, unresolved support burden, or drop-off crosses the predeclared threshold"
+            }
+          ],
+          "non_goals": [
+            "Subscription launch",
+            "Market-share expansion",
+            "Unit-economics approval",
+            "Market-size estimation"
+          ],
+          "gate": {
+            "stage": "G0",
+            "decision": "Run a bounded team pilot",
+            "owner": "Illustrative fullstack developer",
+            "resource_commitment": "Synthetic fixture only; no real budget or launch resource is committed",
+            "revisit_trigger": "Redaction rejection, task failure, retained-use, or cost threshold fails"
+          }
+        }
+      },
+      "alternative_explanations": [
+        "Structured logging with alert routing may already surface decisive events for teams without noise problems",
+        "Redaction and local-only concerns may outweigh the value of faster triage even with the proposed guarantees"
+      ],
+      "counter_evidence_ids": [
+        "R05",
+        "R07"
+      ],
+      "human_review": {
+        "status": "synthetic_fixture_not_real_review",
+        "reviewer": "Synthetic example only",
+        "notes": "Illustrates the review contract; no real semantic approval occurred",
+        "risk_acceptance": "No real product or launch approval is implied"
+      },
+      "prioritization": {
+        "method": "Synthetic gate choice: test redaction, acceptance and retained use before any scale decision",
+        "factors": {
+          "consequence": "redaction rejection would invalidate the pilot",
+          "evidence_strength": "synthetic only",
+          "strategic_fit": "illustrative"
+        },
+        "owner": "Illustrative fullstack developer",
+        "decided_at": "Synthetic fixture; no real decision date",
+        "rationale": "The pilot is prioritized as the smallest test that can reverse the concept; no market-size ranking is claimed"
+      },
+      "change_log": [
+        {
+          "id": "CHG01",
+          "base_version": "synthetic-v0",
+          "new_version": "synthetic-v1",
+          "reason_evidence_ids": [
+            "R05"
+          ],
+          "affected_refs": [
+            "PR01.feature",
+            "PR01.product"
+          ],
+          "impact": "Added redaction guarantees and bounded product scope",
+          "decision": "Keep redaction and retention as predeclared pilot gates",
+          "owner": "Illustrative fullstack developer",
+          "decided_at": "Synthetic fixture; no real decision date",
+          "projection_sync": "synthetic_only"
+        }
+      ],
+      "gaps": [
+        "Synthetic fixture only",
+        "Very short retained-use window",
+        "Redaction guarantees are not tested in real teams",
+        "The feature-to-product rationale still requires a real bounded pilot; evidence completeness does not prove product success"
+      ],
+      "next_test": "Run a real two-week team pilot with predeclared redaction-rejection, task-success and retained-use thresholds"
+    }
+  ]
+}

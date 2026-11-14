@@ -1,0 +1,8 @@
+field,value,definition,include,exclude,version
+evidence_level,E0,Activity or scene context only,,,1.0
+evidence_level,E1,Explicit unmet task desired outcome or pain,,,1.0
+evidence_level,E2,Substitute workaround failure or switching cost,,,1.0
+evidence_level,E3,Explicit acceptance of the studied solution,,,1.0
+evidence_level,E4+,Price anchor purchase intent or willingness to pay,,,1.0
+evidence_level,E4-,Rejection cancellation return or abandonment,,,1.0
+evidence_level,E5,Paid ownership deployment retained use repeat behavior or expansion,,,1.0

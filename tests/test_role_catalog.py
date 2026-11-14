@@ -398,6 +398,44 @@ class RoleCatalogTests(unittest.TestCase):
         self.assertTrue(lean["output_plan"]["expression"]["industry_output_exemplars"])
         self.assertTrue(lean["output_plan"]["expression"]["avoid"])
 
+    def test_fullstack_persona_brings_product_accountability_into_lean_team(self) -> None:
+        plan = roles.recommend_roles(
+            "我是后端研发，转型全栈要自己挖掘用户需求和设计产品", "consumer_software",
+        )
+        self.assertEqual("discover", plan["task"]["id"])
+        self.assertEqual("lean", plan["scope"]["mode"])
+        self.assertLessEqual(len(plan["assignments"]), 3)
+        self.assertEqual("R09", plan["lead_role_id"])
+        by_id = {item["id"]: item for item in plan["assignments"]}
+        self.assertIn("R26", by_id)
+        self.assertIn("任务触发：转型全栈研发的产品职责", by_id["R26"]["reason"])
+        self.assertTrue(plan["orchestration_only"])
+
+        baseline = roles.recommend_roles(
+            "用户对现有工具的不满与替代方案研究", "consumer_software",
+        )
+        self.assertNotIn(
+            "任务触发：转型全栈研发的产品职责",
+            [item.get("reason", "") for item in baseline["assignments"]],
+        )
+
+        recommended = run_cli(
+            "roles", "recommend",
+            "我是后端研发，转型全栈要自己挖掘用户需求和设计产品", "--json",
+        )
+        self.assertEqual(0, recommended.returncode, recommended.stderr)
+        payload = json.loads(recommended.stdout)
+        reasons = {item["id"]: item["reason"] for item in payload["assignments"]}
+        self.assertIn("任务触发：转型全栈研发的产品职责", reasons.get("R26", ""))
+
+    def test_issue_mining_with_priority_words_leads_with_discovery(self) -> None:
+        plan = roles.recommend_roles(
+            "我做的开源项目 issue 很多，想知道哪些值得做成功能", "consumer_software", "discovery",
+        )
+        self.assertEqual("discover", plan["task"]["id"])
+        self.assertEqual("discover_before_decide", plan["task"]["source"])
+        self.assertEqual("R09", plan["lead_role_id"])
+
 
 if __name__ == "__main__":
     unittest.main()

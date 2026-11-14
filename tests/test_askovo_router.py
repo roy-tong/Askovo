@@ -89,10 +89,20 @@ class RouterTests(unittest.TestCase):
             "新口味饮料的包装和复购": "consumer",
             "座舱语音和 ADAS 接管体验": "automotive",
             "手机相机夜景和续航": "mobile",
+            "给自己的 CLI 工具找值得做的方向": "software",
         }
         for need, expected in cases.items():
             with self.subTest(need=need):
                 self.assertEqual(expected, route(need)["domain"])
+
+    def test_fullstack_entry_route_exposes_industry_and_role_team(self) -> None:
+        data = route("给自己的 CLI 工具找值得做的方向")
+        self.assertEqual("routed", data["status"])
+        self.assertEqual("software", data["domain"])
+        self.assertTrue(data.get("industry_context", {}).get("id"))
+        recommendation = data.get("role_recommendation") or {}
+        self.assertTrue(recommendation.get("assignments"))
+        self.assertTrue(recommendation.get("orchestration_only"))
 
     def test_detects_stage_and_intent(self) -> None:
         data = route("苹果手机新品的哪些平台有用户抱怨数据")
@@ -107,6 +117,15 @@ class RouterTests(unittest.TestCase):
         data = json.loads(completed.stdout)
         self.assertEqual("needs_domain", data["status"])
         self.assertEqual(5, len(data["domain_options"]))
+        self.assertEqual(1, len(data["questions"]))
+
+    def test_needs_domain_adds_fullstack_persona_hint(self) -> None:
+        completed = run_cli("route", "我是研发转型全栈要自己挖掘用户需求", "--json")
+        self.assertEqual(2, completed.returncode)
+        data = json.loads(completed.stdout)
+        self.assertEqual("needs_domain", data["status"])
+        self.assertEqual(2, len(data["questions"]))
+        self.assertIn("描述你的产品", data["questions"][1])
 
     def test_road_test_is_safety_gated(self) -> None:
         data = route("汽车开放道路接管测试")
@@ -143,7 +162,7 @@ class RouterTests(unittest.TestCase):
             created_study = json.loads((target / "study.json").read_text(encoding="utf-8"))
             self.assertEqual("2.0", created_study["product_reasoning_version"])
             self.assertEqual(
-                ["product_manager", "user_researcher", "user_operations", "market_researcher", "market_analyst", "requirements_analyst", "business_analyst"],
+                ["product_manager", "user_researcher", "user_operations", "market_researcher", "market_analyst", "requirements_analyst", "business_analyst", "fullstack_developer"],
                 created_study["delivery"]["audiences"],
             )
             self.assertTrue((target / "01-sources/research-plan.md").is_file())

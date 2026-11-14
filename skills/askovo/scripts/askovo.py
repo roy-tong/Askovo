@@ -3078,11 +3078,12 @@ def _render_audit_md(payload: dict[str, Any]) -> str:
 
 def command_demo(args: argparse.Namespace) -> int:
     """Run the bundled synthetic sample in a temporary directory."""
+    sample_dir = "sample-study-fullstack" if getattr(args, "story", "") == "fullstack" else "sample-study"
     source = next(
         (
             candidate for candidate in (
-                Path(__file__).resolve().parents[3] / "examples" / "sample-study",
-                Path(__file__).resolve().parents[1] / "examples" / "sample-study",
+                Path(__file__).resolve().parents[3] / "examples" / sample_dir,
+                Path(__file__).resolve().parents[1] / "examples" / sample_dir,
             )
             if candidate.is_dir()
         ),
@@ -3092,7 +3093,7 @@ def command_demo(args: argparse.Namespace) -> int:
         print("bundled sample not found in this installation", file=sys.stderr)
         return 2
     with tempfile.TemporaryDirectory() as tmp:
-        target = Path(tmp) / "sample-study"
+        target = Path(tmp) / sample_dir
         shutil.copytree(source, target)
         return command_audit(
             argparse.Namespace(study_dir=str(target), claim=None, json=False)
@@ -4809,6 +4810,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     demo_parser = subparsers.add_parser(
         "demo", help="run the bundled synthetic sample in a temporary directory"
+    )
+    demo_parser.add_argument(
+        "--story",
+        choices=("default", "fullstack"),
+        default="default",
+        help="default = mobile pet-check sample; fullstack = developer CLI log-triage sample",
     )
     demo_parser.set_defaults(func=command_demo)
 

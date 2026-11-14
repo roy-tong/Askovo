@@ -10,7 +10,7 @@
     "principle": "先显式写出每个节点及推导理由，再针对薄弱节点收集和分析证据。"
   },
   "delivery": {
-    "audiences": ["product_manager", "user_researcher", "user_operations", "market_researcher", "market_analyst", "requirements_analyst", "business_analyst"]
+    "audiences": ["product_manager", "user_researcher", "user_operations", "market_researcher", "market_analyst", "requirements_analyst", "business_analyst", "fullstack_developer"]
   },
   "decision": {
     "question": "待填写",

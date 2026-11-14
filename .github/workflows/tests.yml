@@ -9,7 +9,9 @@ permissions:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    # ubuntu-latest (24.04) no longer provisions EOL Python 3.9; the tool cache
+    # for the 3.9 floor still exists on ubuntu-22.04.
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
