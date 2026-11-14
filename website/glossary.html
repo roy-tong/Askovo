@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>术语表：E0–E5 证据分级、七节点推理链、SURE | Askovo</title>
+  <meta name="description" content="Askovo 术语表：E0–E5 证据分级逐级定义（E0 场景背景到 E5 已付费行为证据）、七节点推理链 scene→user→pain→need→feature→product→business、SURE 证据引擎边界、●◐○ 依据强度标记、六类结论。">
+  <link rel="canonical" href="https://roy-tong.github.io/Askovo/glossary.html">
+  <meta name="theme-color" content="#090C10">
+  <!-- GSC/Bing 验证码插在这行下面 -->
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Askovo">
+  <meta property="og:title" content="Askovo 术语表：E0–E5 证据分级与七节点推理链">
+  <meta property="og:description" content="E0–E5 逐级定义、七节点链、SURE 引擎、●◐○ 标记——Askovo 的核心概念一页说清。">
+  <meta property="og:url" content="https://roy-tong.github.io/Askovo/glossary.html">
+  <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "DefinedTermSet",
+    "name": "Askovo 术语表",
+    "description": "Askovo 证据分级研究方法的核心术语定义",
+    "url": "https://roy-tong.github.io/Askovo/glossary.html",
+    "hasDefinedTerm": [
+      { "@type": "DefinedTerm", "name": "E0–E5 证据分级", "description": "引擎内部的证据分级，只描述需求与商业证据强度：E0 场景背景、E1 问题被表达、E2 观察到替代/绕行/失败行为、E3 方案被接受、E4+ 购买或付费表达、E5 已付费/持续使用的行为证据。" },
+      { "@type": "DefinedTerm", "name": "七节点推理链", "description": "scene → user → pain → need → feature → product → business：从场景一路推理到商业的主链，每个节点必须写清当前判断、推导理由、成立假设与支撑证据。" },
+      { "@type": "DefinedTerm", "name": "SURE 引擎", "description": "Structured User Research with Evidence：Askovo 之下的研究与证据引擎，负责方法选择、证据形式与分级、主张边界、反幸存者偏差、安全门与判断约束。Askovo 是产品，SURE 是引擎。" }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="./">Askovo<span class="cursor">_</span></a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="./#chain">推理链</a>
+        <a href="./first-look.html">提交任务</a>
+        <a href="./faq.html">常见问题</a>
+        <a href="https://github.com/roy-tong/askovo">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="hero" id="top">
+      <p class="kicker">GLOSSARY</p>
+      <h1>术语表</h1>
+      <p class="lead">Askovo 的核心概念一页说清。定义与仓库文档一致，逐条可溯源；这一页本身就是按「可被引用」的标准写的——谁需要讲清证据分级，直接引用这里。</p>
+    </div>
+
+    <section>
+      <h2>七节点推理链<span class="en">THE SEVEN-NODE CHAIN</span></h2>
+      <p class="sub">从用户推理到产品与商业的主链，也是全部交付物的骨架：</p>
+      <div class="chain" aria-label="七节点推理链">
+        <span class="node">场景</span><span class="arrow">→</span>
+        <span class="node">用户</span><span class="arrow">→</span>
+        <span class="node">痛点</span><span class="arrow">→</span>
+        <span class="node">需求</span><span class="arrow">→</span>
+        <span class="node">特性</span><span class="arrow">→</span>
+        <span class="node">产品</span><span class="arrow">→</span>
+        <span class="node">商业</span>
+      </div>
+      <p>scene → user → pain → need → feature → product → business。每个节点必须填写：当前判断（statement）、推导理由（rationale）、成立假设（assumptions）、支撑证据（evidence_ids）与状态。MRD、PRD、BRD 与决策包都是这条链的投影。</p>
+    </section>
+
+    <section>
+      <h2>E0–E5 证据分级<span class="en">EVIDENCE LEVELS</span></h2>
+      <p class="sub">引擎内部的证据分级，用于门禁与审计，不上业务交付物正文（正文用业务语言，分级只在文末方法档案）。逐级定义：</p>
+      <table>
+        <thead><tr><th>级</th><th>证据形态</th><th>回答的问题</th></tr></thead>
+        <tbody>
+          <tr><td>E0</td><td>活动、角色或场景背景</td><td>场景出现</td></tr>
+          <tr><td>E1</td><td>未满足任务、目标或困难</td><td>问题被表达</td></tr>
+          <tr><td>E2</td><td>当前做法、绕行、失败或切换成本</td><td>替代方案及摩擦</td></tr>
+          <tr><td>E3</td><td>对研究方案的明确接受/偏好</td><td>方案在给定条件下被接受</td></tr>
+          <tr><td>E4+</td><td>价格锚点、购买/付费表达</td><td>直接商业意图</td></tr>
+          <tr><td>E4−</td><td>拒绝、取消、退货、放弃</td><td>直接负面商业行为</td></tr>
+          <tr><td>E5</td><td>付费持有、部署、持续使用、复购</td><td>已实现的行为证据</td></tr>
+        </tbody>
+      </table>
+      <p>两条硬规则：需求节点升到 validated 至少要一条 <strong>E2</strong>（观察到的行为）——仅有 E1 口头陈述只能停在 needs-validation，说了不算，做了才算；<strong>商业节点只认 E4+/E5</strong>，反证与替代行为不会把它抬成「已观察到」。</p>
+      <p>E0–E5 <strong>只描述需求与商业证据强度</strong>，不是产品/商业推理得分；可用性、工程性能、安全、可行性各有自己的验证要求。</p>
+    </section>
+
+    <section>
+      <h2>●◐○ 依据强度标记<span class="en">READING AIDS</span></h2>
+      <p>业务方案正文里的阅读辅助，按节点取级：<span class="tag-ok">● 已观察到</span> · <span class="tag-warn">◐ 有线索</span> · ○ 假设。场景/用户/痛点/需求接受 E2 及以上的行为记录；特性/产品只认 E3（方案接受）及以上；商业节点只认 E4+/E5。</p>
+    </section>
+
+    <section>
+      <h2>SURE 证据引擎<span class="en">SURE ENGINE</span></h2>
+      <p><strong>SURE = Structured User Research with Evidence</strong>。Askovo 是产品（CLI / Agent Skill / MCP / 包），SURE 是其下的研究与证据引擎：管方法选择、证据形式与分级、主张边界、反幸存者偏差、安全门与判断约束。一句话：Askovo 负责「从用户推理到产品与商业」，SURE 保证「每一步都知道证据实际够到哪」。</p>
+    </section>
+
+    <section>
+      <h2>六类结论<span class="en">SIX CONCLUSION TYPES</span></h2>
+      <p>need / acceptance / usability / performance / commercial / safety 六类结论不混：need 不冒充 acceptance，口头意愿（E1）永远不是付费行为（E4+/E5）。逐类边界见 <a href="./claims.html">claims 页</a>。</p>
+    </section>
+
+    <section>
+      <h2>超证<span class="en">OVERCLAIM</span></h2>
+      <p>结论超出了证据能支持的范围——比如把 E1 口头意愿写成「用户愿意付费」。<code>askovo audit</code> 逐条检查超证并点名，发现时退出码 1，可以进 CI 当门禁。</p>
+    </section>
+
+    <section>
+      <h2>主链真值<span class="en">MACHINE TRUTH</span></h2>
+      <p><code>product-reasoning.json</code> 是七节点链的唯一语义正本；MRD、PRD、BRD、决策包都是从它投影出来的读者视图，不是平行事实源。改判断只改真值，投影随之更新。</p>
+    </section>
+  </main>
+
+  <footer class="footer wrap">
+    <p>开源引擎永久免费（MIT）。</p>
+    <p class="row"><span>© 2026 Askovo</span><span>·</span><a href="./">首页</a><span>·</span><a href="./faq.html">常见问题</a><span>·</span><a href="./claims.html">Claims</a><span>·</span><span>复核日期 2026-11-14</span></p>
+    <p class="row"><span>ovo 家族：研究 <strong>Askovo</strong> → 执行 <a href="https://roy-tong.github.io/Growovo/">Growovo</a> → 核验 <a href="https://roy-tong.github.io/Verovo/">Verovo</a></span></p>
+  </footer>
+</body>
+</html>

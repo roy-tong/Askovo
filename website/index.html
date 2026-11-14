@@ -7,12 +7,20 @@
   <meta name="description" content="面向产品经理、研究与业务分析人员的研究执行工具：授权采集、描述分析、证据审计与报告交付。场景→用户→痛点→需求→特性→产品→商业七节点推理链，每条结论标 E0–E5 证据等级，超证结论直接点名。">
   <link rel="canonical" href="https://roy-tong.github.io/Askovo/">
   <meta name="theme-color" content="#090C10">
+  <!-- GSC/Bing 验证码插在这行下面：Search Console 与 Bing WMT 给的 <meta name=...> 标签原样粘贴即可 -->
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Askovo">
   <meta property="og:title" content="Askovo | 采集数据、验证判断、交付业务研究">
   <meta property="og:description" content="AI 调研报告每句话同样自信——Askovo 给每条结论标证据等级，超证的直接说超证。开源 CLI / Agent Skill / MCP。">
   <meta property="og:url" content="https://roy-tong.github.io/Askovo/">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:image" content="https://roy-tong.github.io/Askovo/assets/social-preview.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Askovo：每条结论标 E0–E5 证据等级的研究交付（开源 MIT）">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Askovo | 采集数据、验证判断、交付业务研究">
+  <meta name="twitter:description" content="AI 调研报告每句话同样自信——Askovo 给每条结论标证据等级，超证的直接说超证。开源 CLI / Agent Skill / MCP。">
+  <meta name="twitter:image" content="https://roy-tong.github.io/Askovo/assets/social-preview.png">
   <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
   <link rel="stylesheet" href="./styles.css">
   <script type="application/ld+json">
@@ -40,6 +48,7 @@
         <a href="#today">今天可用什么</a>
         <a href="#try">本地验证</a>
         <a href="./first-look.html">提交任务</a>
+        <a href="./faq.html">常见问题</a>
         <a href="https://github.com/roy-tong/askovo">GitHub</a>
       </nav>
     </div>
@@ -89,8 +98,8 @@
 
     <section id="try">
       <h2>30 秒本地验证<span class="en">NO SIGNUP, NO UPLOAD</span></h2>
-      <p class="sub">离线合成样例，验证结构与推理链自洽——不证明真实需求或市场。Python 3.9+，标准库实现；PyPI 包发布前从源码安装（2026-10-31 核实）。</p>
-      <pre><code>pipx install git+https://github.com/roy-tong/askovo.git
+      <p class="sub">离线合成样例，验证结构与推理链自洽——不证明真实需求或市场。Python 3.9+，标准库实现；PyPI 已发布，版本以 <a href="https://pypi.org/project/askovo/">PyPI 页</a>为准（2026-11-14 核实）。</p>
+      <pre><code>pipx install askovo
 askovo do "家用摄像头夜间告警误报，想验证样机" --dry-run
 askovo demo</code></pre>
       <p>预期关键结果：<span class="tag-ok">status: pass</span> · <span class="tag-ok">supported: 1</span> · <span class="tag-ok">overclaims: 0</span>。所有命令本地运行，不上传数据。也可以作为 Agent Skill 或 MCP server 接入你的 agent 工作流。</p>
@@ -106,7 +115,8 @@ askovo demo</code></pre>
 
   <footer class="footer wrap">
     <p>开源引擎永久免费（MIT）。人工交付范围与费用按任务商定。</p>
-    <p class="row"><span>© 2026 Askovo</span><span>·</span><a href="https://github.com/roy-tong/askovo">GitHub</a><span>·</span><a href="./first-look.html">提交任务</a><span>·</span><a href="./claims.html">Claims</a><span>·</span><span>复核日期 2026-10-31</span></p>
+    <p class="row"><span>© 2026 Askovo</span><span>·</span><a href="https://github.com/roy-tong/askovo">GitHub</a><span>·</span><a href="./first-look.html">提交任务</a><span>·</span><a href="./claims.html">Claims</a><span>·</span><a href="./faq.html">常见问题</a><span>·</span><a href="./glossary.html">术语表</a><span>·</span><span>复核日期 2026-11-14</span></p>
+    <p class="row"><span>ovo 家族：研究 <strong>Askovo</strong> → 执行 <a href="https://roy-tong.github.io/Growovo/">Growovo</a> → 核验 <a href="https://roy-tong.github.io/Verovo/">Verovo</a></span></p>
   </footer>
 </body>
 </html>
