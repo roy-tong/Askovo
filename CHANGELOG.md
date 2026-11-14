@@ -19,7 +19,11 @@
   recognize 全栈/研发转型/独立开发/自己扛产品/full-stack/indie queries and add R26
   (product management) to the lean team with the labeled reason
   `任务触发：转型全栈研发的产品职责`; need discovery still leads with R09 and no
-  new role family is introduced (the persona composes existing roles).
+  new role family is introduced (the persona composes existing roles). The
+  software domain pack gains `CLI`/`命令行`/`SDK` routing keywords so the canonical
+  developer entry phrase ("给自己的 CLI 工具找值得做的方向") routes without `--domain`,
+  and a router test now locks that routed `route`/`do` payloads expose the
+  industry context and role team.
 - **PRD dev-view acceptance checklist**: `deliver --kind prd` now renders
   "PRD 需求与验收（开发视图）" — the feature node's `acceptance_conditions` and the
   product node's `acceptance_criteria` projected read-only as a copy-pasteable

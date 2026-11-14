@@ -89,10 +89,20 @@ class RouterTests(unittest.TestCase):
             "新口味饮料的包装和复购": "consumer",
             "座舱语音和 ADAS 接管体验": "automotive",
             "手机相机夜景和续航": "mobile",
+            "给自己的 CLI 工具找值得做的方向": "software",
         }
         for need, expected in cases.items():
             with self.subTest(need=need):
                 self.assertEqual(expected, route(need)["domain"])
+
+    def test_fullstack_entry_route_exposes_industry_and_role_team(self) -> None:
+        data = route("给自己的 CLI 工具找值得做的方向")
+        self.assertEqual("routed", data["status"])
+        self.assertEqual("software", data["domain"])
+        self.assertTrue(data.get("industry_context", {}).get("id"))
+        recommendation = data.get("role_recommendation") or {}
+        self.assertTrue(recommendation.get("assignments"))
+        self.assertTrue(recommendation.get("orchestration_only"))
 
     def test_detects_stage_and_intent(self) -> None:
         data = route("苹果手机新品的哪些平台有用户抱怨数据")

@@ -48,10 +48,15 @@ askovo analyze ./study --question "what pains do users report"
 askovo chain ./study                              # author the seven nodes from the data
 askovo deliver ./study --kind plan                # business plan: scenes, users, pains, needs, features, GTM
 askovo deliver ./study --kind prd                 # requirements projection you can implement against
+askovo economics ./study                          # unit-economics arithmetic for pricing your tool
 ```
 
 `--dry-run` routes only and writes nothing. Collection runs only after the
 Design gate; the queue (`askovo queue`) handles retries and rate limits.
+For pricing, `askovo economics` keeps unit-economics arithmetic honest
+(unknown inputs stay unknown, never zero) and `askovo psm <study> --input
+prices.csv` scores a van Westendorp survey — stated price intent is still
+not paid behavior.
 
 ## Where your evidence lives
 
