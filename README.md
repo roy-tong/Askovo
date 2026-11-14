@@ -10,7 +10,7 @@
 
 **Bring a product or market question, get back a business plan — built on collected data, not invented judgments.**
 
-Askovo is built for product managers, user researchers, and business analysts. The default run: ① frame the question as a seven-node hypothesis canvas, ② design the data-collection plan (platforms, queries, quotas), ③ collect a large corpus through permitted routes, ④ turn the data into scene/user/pain/need/feature/product/GTM judgments, ⑤ render the **Business Plan** (`askovo deliver --kind plan`) — every judgment showing its data basis (sources, corpus size, time window) and user voices from the corpus, in business language. MRD/PRD/BRD and the Decision Package remain projections of the same chain for analyst and decision-side readers.
+Askovo is built for product managers, user researchers, business analysts, and developers stepping into full-stack roles who now own **what to build**, not just how to build it. The default run: ① frame the question as a seven-node hypothesis canvas, ② design the data-collection plan (platforms, queries, quotas), ③ collect a large corpus through permitted routes, ④ turn the data into scene/user/pain/need/feature/product/GTM judgments, ⑤ render the **Business Plan** (`askovo deliver --kind plan`) — every judgment showing its data basis (sources, corpus size, time window) and user voices from the corpus, in business language. MRD/PRD/BRD and the Decision Package remain projections of the same chain for analyst and decision-side readers.
 
 CLI, Skill, and MCP surfaces are live today. The host agent can author the action list, or `askovo loop` derives rounds from audit gaps inside an authorized envelope; the executor runs only what was authorized. Source gaps and human semantic review are kept explicit, never hidden. See [capability status and trade-offs](docs/feature-status.md) (Chinese).
 
@@ -133,6 +133,9 @@ The five SURE base-domain packs still own method routing. The ten industry overl
 | Market research / analysis | Market boundaries, segments, competitor substitution, channels, pricing, sizing conventions, entry assumptions | MRD |
 | Requirements research / analysis | Turning user, market, business, and technical needs into features, product requirements, priorities, acceptance, and traceability | PRD |
 | Business analysis | Revenue model, pricing, cost, unit economics, resource gates, and risk acceptance | BRD |
+| Full-stack developer | Product discovery and design they now own: scene→need evidence from their own communities, feature trade-offs, scope and non-goals | Business plan, PRD |
+
+Full-stack developers entering product work start from the [full-stack developer playbook](skills/askovo/references/fullstack-developer-playbook.md): developer-community corpora (GitHub issues, Hacker News, Reddit) as the entry evidence base, the business plan to decide what is worth building, and the PRD as the build-facing spec — all projections of the same chain.
 
 A small team can wear several hats, but the workflows and outputs must not be conflated:
 

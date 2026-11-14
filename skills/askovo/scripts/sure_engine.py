@@ -95,6 +95,7 @@ DELIVERY_AUDIENCES = (
     "market_analyst",
     "requirements_analyst",
     "business_analyst",
+    "fullstack_developer",
 )
 LEGACY_REASONING_NODES = ("scene", "user", "pain", "need", "feature", "product")
 REASONING_NODES = (*LEGACY_REASONING_NODES, "business")

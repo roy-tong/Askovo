@@ -1,13 +1,13 @@
 ---
 name: askovo
-description: Build and audit product and business reasoning with Askovo and its SURE evidence engine for product managers, user researchers, user operations, market research/analysis, requirements analysis, and business analysis. Use for 软件/硬件/消费品/汽车/手机五域的场景→用户→痛点→需求→特性→产品→商业推理、给一个产品出业务方案/business plan（目标场景/画像/痛点/需求/特性/产品形态/GTM）、数据爬取方案与大规模采集、产品发现、市场研究/MRD、需求研究/PRD、商业分析/BRD、需求验证、可用性、价格、Beta、留存运营、JTBD、研究计划、调研报告，以及 Reddit/X/YouTube/Instagram/Amazon/GitHub/评论/论坛/工单/访谈数据的补证分析。Every feature must link to a solution-neutral need, every product to scope/non-goals, and every business case to market/price/cost/resource evidence; collection and analysis only support the chain. Do not use for generic market sizing, invented personas, automatic text-to-PRD generation, or treating feature mentions and frequency as demand.
+description: Build and audit product and business reasoning with Askovo and its SURE evidence engine for product managers, user researchers, user operations, market research/analysis, requirements analysis, business analysis, and full-stack developers stepping into product discovery and design. Use for 软件/硬件/消费品/汽车/手机五域的场景→用户→痛点→需求→特性→产品→商业推理、研发转型全栈后自己挖需求/定产品、给一个产品出业务方案/business plan（目标场景/画像/痛点/需求/特性/产品形态/GTM）、数据爬取方案与大规模采集、产品发现、市场研究/MRD、需求研究/PRD、商业分析/BRD、需求验证、可用性、价格、Beta、留存运营、JTBD、研究计划、调研报告，以及 Reddit/X/YouTube/Instagram/Amazon/GitHub/评论/论坛/工单/访谈数据的补证分析。Every feature must link to a solution-neutral need, every product to scope/non-goals, and every business case to market/price/cost/resource evidence; collection and analysis only support the chain. Do not use for generic market sizing, invented personas, automatic text-to-PRD generation, or treating feature mentions and frequency as demand.
 metadata:
   short-description: Reason from scenes to products with auditable evidence
 ---
 
 # Askovo
 
-askovo serves product managers, user researchers, user operations, and market/requirements/business analysis work with one spine: **scene → user → pain → need → feature → product → business**. The promise to business users: **bring a product or market question, get back a business plan** — target scenes, personas, pains, demands, a feature map, a product form, and a GTM path, with every judgment showing its data basis (sources, corpus size, time window) and user voices from the corpus.
+askovo serves product managers, user researchers, user operations, market/requirements/business analysis work, and full-stack developers who now own product discovery and design alongside engineering, with one spine: **scene → user → pain → need → feature → product → business**. The promise to business users: **bring a product or market question, get back a business plan** — target scenes, personas, pains, demands, a feature map, a product form, and a GTM path, with every judgment showing its data basis (sources, corpus size, time window) and user voices from the corpus. Developers stepping into full-stack roles start from [references/fullstack-developer-playbook.md](references/fullstack-developer-playbook.md).
 
 **Data-first sequence**: judgments are built on collected data, not invented. ① `askovo do` frames the question and a seven-node hypothesis canvas (hypotheses, not conclusions); ② `askovo platforms` + `askovo plan` design the data-collection plan (platforms, queries, quotas, feasibility) — collection runs only after the Design gate; ③ `askovo collect`/`queue`/`loop` gather a large corpus through permitted routes (owned material imports are a supplementary source); ④ `askovo analyze`/`signals` describe the corpus and the Skill codes it back into the seven nodes; ⑤ `askovo deliver --kind plan` renders the business plan. SURE — Structured User Research with Evidence — is the quality engine under this sequence: evidence grading and gates stay in the engine and the method archive, not in the business narrative. Collection volume is an input, never proof of demand, product validity, or commercial viability.
 
@@ -76,7 +76,7 @@ Infer the mode when the artifacts make it clear. For end-to-end or file-producin
 
 ### Task entries (one skill, one entry — never separate installs)
 
-Users arrive with three recurring task shapes. They map onto the modes above and always end in the same chain; only the deliverable differs:
+Users arrive with three recurring task shapes. They map onto the modes above and always end in the same chain; only the deliverable differs. Full-stack developers who now own discovery and design usually enter through `askovo-discover` with developer-community corpora (GitHub issues, Hacker News, Reddit) already at hand; [references/fullstack-developer-playbook.md](references/fullstack-developer-playbook.md) is their entry guide.
 
 | Task entry | User asks | Loop | Deliverable |
 | --- | --- | --- | --- |

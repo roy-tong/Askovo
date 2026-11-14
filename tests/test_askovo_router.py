@@ -143,7 +143,7 @@ class RouterTests(unittest.TestCase):
             created_study = json.loads((target / "study.json").read_text(encoding="utf-8"))
             self.assertEqual("2.0", created_study["product_reasoning_version"])
             self.assertEqual(
-                ["product_manager", "user_researcher", "user_operations", "market_researcher", "market_analyst", "requirements_analyst", "business_analyst"],
+                ["product_manager", "user_researcher", "user_operations", "market_researcher", "market_analyst", "requirements_analyst", "business_analyst", "fullstack_developer"],
                 created_study["delivery"]["audiences"],
             )
             self.assertTrue((target / "01-sources/research-plan.md").is_file())

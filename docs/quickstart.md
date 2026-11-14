@@ -206,6 +206,21 @@ askovo deliver ./cam-study --kind tracker  # 行为、验收与商业指标跟�
 
 业务方案是业务用户的默认视图（业务语言，判断挂数据基础与用户之声）；MRD/PRD/BRD 模板和访谈包见 [SKILL](../skills/askovo/SKILL.md) 的模板入口。它们是同一七节点主链的投影，详见[市场、需求与商业分析](business-analysis.md)。所有交付默认草稿，必须能回链主链和证据。
 
+## 研发转全栈：先证据后编码
+
+如果你是研发、正在转型全栈，要自己挖需求、定产品：你所在的开发者社区（GitHub issues、Hacker News、Reddit）就是入门证据库，`do/route` 会识别这类目标，在精简组队里带上你新扛的产品职责（R26）。完整入门路径见[全栈研发入门手册](../skills/askovo/references/fullstack-developer-playbook.md)（英文）——概念翻译（bug 报告→痛点证据、测试→验证门、日志→语料）、社区语料首跑、第一次用户访谈和工程师反模式清单：
+
+```bash
+askovo do "给自己的 CLI 工具找值得做的方向" --domain software --dry-run
+askovo do "给自己的 CLI 工具找值得做的方向" --study ./study
+askovo platforms "开发者的抱怨与替代方案" --domain software
+# … plan → Design gate → collect（GitHub/Reddit）→ analyze → chain，同上文第三到六步
+askovo deliver ./study --kind plan    # 先决定什么值得做
+askovo deliver ./study --kind prd     # 再拿 PRD 当实现依据
+```
+
+一人多岗：`roles scaffold` 后把自己设为所有岗位的 owner，按 KPI/SOP 合同区分此刻戴的是哪顶帽子。三条红线：功能请求是方案不是需求；star/赞不是付费行为；发布不等于验证。
+
 ## 可选：CDP 与队列
 
 **CDP，仅授权可见页面**

@@ -1,5 +1,42 @@
 # Changelog
 
+## 2.17.0 - 2026-11-14
+
+### Added
+
+- **Full-stack developer persona**: developers stepping into full-stack roles who
+  now own product discovery and design are a first-class audience. The new
+  `skills/askovo/references/fullstack-developer-playbook.md` translates research
+  practice into engineering terms (bug report → pain evidence, failing test →
+  `falsified_if`, logs → corpus, reproducible build → `context_key`), gives a
+  community-corpus first run (GitHub issues / Hacker News / Reddit), points to
+  the interview kit for a first user interview, covers working as a team of one,
+  and lists engineer-specific anti-patterns ("I am the user", feature request ≠
+  need, stars ≠ demand, shipping ≠ validating). SKILL.md, README (en/zh),
+  docs/quickstart, docs/README and llms.txt now name this audience and link the
+  playbook.
+- **Persona-aware team recommendation**: `roles recommend` / `do` / `route`
+  recognize 全栈/研发转型/独立开发/自己扛产品/full-stack/indie queries and add R26
+  (product management) to the lean team with the labeled reason
+  `任务触发：转型全栈研发的产品职责`; need discovery still leads with R09 and no
+  new role family is introduced (the persona composes existing roles).
+- `delivery.audiences` gains `fullstack_developer`; the engine contract and the
+  study template stay in sync and the sync is now test-enforced.
+
+### Tests
+
+- 282 tests pass. New: template/engine audience-consistency check and a persona
+  recommendation test (lean team, R26 with the persona reason, CLI parity).
+  The hardcoded audience expectations in the `init` and `do` workspace tests
+  now include `fullstack_developer`.
+
+### Verification
+
+- `python3 -m unittest discover -s tests` green (282).
+- `askovo roles recommend "我是后端研发，转型全栈要自己挖掘用户需求和设计产品"
+  --json` returns R09 (accountable) + R26 with the persona reason, lean scale.
+- README quickstart (`askovo do … --dry-run`, `askovo demo`) unchanged and green.
+
 ## 2.16.1 - 2026-11-05
 
 ### Fixed

@@ -65,6 +65,7 @@ QUERY_ROLE_HINTS = (
     (("结构设计", "机械结构"), ("R58", "机械与结构设计")),
     (("系统架构", "系统设计", "系统需求"), ("R61", "系统架构与系统工程")),
     (("临床", "患者", "医疗流程"), ("R19", "医疗与临床需求研究")),
+    (("全栈", "研发转型", "独立开发", "自己扛产品", "full-stack", "indie dev", "solo builder"), ("R26", "转型全栈研发的产品职责")),
 )
 TASK_TYPES = ("decide", "discover", "define", "design", "validate", "launch", "operate", "review")
 TASK_LABELS = {
