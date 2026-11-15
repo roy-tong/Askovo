@@ -15,12 +15,16 @@ askovo --help
 | `route "<需求>"` | 只路由，不写文件；含行业、岗位编排与研究模式 | 0/2 |
 | `mode "<需求>"` | 只判断 Discover / Validate / Optimize 与入口节点、上游假设、问题与停止条件，不写文件 | 0/2 |
 | `explore <study>` | 为 0→1 研究生成五层机会空间脚手架（JSON + Markdown），不产生结论 | 0/2 |
-| `external-research <study> --command … --authorize` | 运行宿主提供的研究命令，把输出保存为候选来源（不定级、不升级为证据） | 0/2 |
+| `external-research <study> --command <id> --authorize` | 运行**已登记**的宿主适配器（白名单环境、有界输出、独立 run id），把输出保存为候选来源（不定级、不升级为证据） | 0/2 |
 | `roles list/show/recommend/scaffold/template` | 80 岗位族、10 生命周期、10 行业的职责/KPI/SOP/交接/模板与项目执行包 | 0/2 |
 | `platforms "<需求>"` | 平台雷达：数据在哪、能否合规拿到、能证明什么 | 0/2 |
 | `collect <study>` | 通过 design gate 后运行采集适配器/本地导出/CDP，写 raw、manifest 与 normalized | 0/1/2/3/4 |
 | `research plan/authorize/run/status` | 宿主给定动作清单的逐条授权与受控执行 | 0/1/2/3/4 |
 | `loop plan/authorize/run/status/report/assess` | 缺口驱动的多轮受控采集、每轮复审、候选证据与复盘 | 0/1/2/3/4 |
+| `decide start/status/result/brief/cancel` | 一问题研究执行器：登记任务、规划、受门禁执行、C-01 状态投影与 partial Brief | 0/2 |
+| `issues import/extract/list/edit/accept/reject/status/report` | Issue → 用户任务/需求结构化：本地导出快照、机器候选、人工接受进 canonical 链 | 0/2/4 |
+| `brief <study>` | Decision Brief：PRD §2.3 九节只读投影、PRD 开发验收清单、`stale` 门禁 | 0/1/2 |
+| `delta sync/show/status/approve` | 增量研究 Delta：append-only 快照、新增/变更/删除、受影响节点与反证影响、`needs_re_review` | 0/1/2/4 |
 | `queue init/add/run/status/retry` | SQLite 队列、worker、重试、限速、断点续跑 | 0/1/2 |
 | `analyze <study>` | 归一化、去重、分布、候选主题、问题匹配 | 0/2 |
 | `chain <study>` | 生成/渲染“场景→用户→痛点→需求→特性→产品→商业”推理链 | 0/2 |
@@ -105,12 +109,17 @@ Discover 模式的 `askovo do` 会自动生成该地图；`explore` 用于补建
 ## external-research
 
 ```bash
-askovo external-research ./study \
-  --command "python /path/to/gpt_researcher_adapter.py" \
-  --question "端侧 AI 摄影的替代方案" --authorize
+# 1) 在 01-sources/external-research.json 里登记适配器（六个必填字段 + 适配器 sha256）
+# 2) 人工授权后按 id 运行
+askovo external-research ./study --command my-adapter --authorize --json
+askovo external-research ./study --command my-adapter --authorize \
+  --max-stdout-bytes 65536            # 只能调低上限
 ```
 
-命令通过 `ASKOVO_QUESTION` / `ASKOVO_STUDY` / `ASKOVO_MODE` 接收上下文，stdout 必须输出一个 JSON 对象，至少含 `sources: [{url, title, excerpt, claim}]`。输出保存到 `04-findings/external-research/`，记录为 `candidate`、`evidence_level: null`、`review_required: true`。`--authorize` 是必需的，因为命令以当前用户权限运行。
+- **A-06 边界**：子进程环境只含白名单变量（从白名单**构建**，不继承）；只跑注册表里 `sha256` 匹配的适配器；stdout/stderr 有硬上限，超界 `RATE_LIMITED` 失败而不是截断；每次运行有独立 `run_id`（同秒两次不覆盖）；`--output` 解析后必须落在 study 内。
+- 命令通过 `ASKOVO_QUESTION` / `ASKOVO_STUDY` / `ASKOVO_MODE` / `ASKOVO_RUN_ID` 接收上下文，stdout 必须输出一个 JSON 对象，至少含 `sources: [{url, title, excerpt, claim}]`。
+- 输出保存到 `04-findings/external-research/<run_id>.json`，记录为 `candidate`、`evidence_level: null`、`url_verification: not_attempted`、`review_required: true`；**不抓取也不验证链接**（A33）。
+- `--authorize` 是必需的，因为命令以当前用户权限运行。**破坏性变更**：任意 `--command` 不再默认可用，迁移方式见 [外部研究桥](external-bridge.md#6-破坏性变更与迁移v11--a-06)；一次性本机工作流用 `--trusted-local`（仍必须 `--authorize`，且会记入运行记录）。
 
 ## roles
 
@@ -232,6 +241,100 @@ askovo loop advise ./study
 - `loop advise` 只根据已记录映射给出只读建议，不关闭缺口、不评级；
 - `loop map` 只校验映射出处（候选记录、`study.hypotheses` 中声明的假设、原文片段与立场），不做语义评级；
 - MCP 可 `plan` / `status` / `report` / `run`，但不能授权，也不能 `assess` / `map`。
+
+## decide（一问题研究执行器）
+
+```bash
+# 登记 + 规划；默认 dry-run，只写计划不读记录
+askovo decide start --input task.json --study ./study
+askovo decide "下一版先修哪些问题" --repo owner/repo --approved-by owner --dry-run
+
+# 人工授权信封（唯一能解锁采集的步骤）
+askovo loop authorize ./study --by "researcher"
+
+# 恢复并推进（幂等：不重复导入、不重采已完成数据）
+askovo decide start --task A-TASK-1A2B3C4D --run --workspace ./decide-workspace
+
+# 状态 / 结果 / 取消
+askovo decide status A-TASK-1A2B3C4D --workspace ./decide-workspace
+askovo decide brief A-TASK-1A2B3C4D --workspace ./decide-workspace --format md
+askovo decide result A-TASK-1A2B3C4D --workspace ./decide-workspace
+askovo decide cancel A-TASK-1A2B3C4D --by owner --workspace ./decide-workspace
+
+# 专家入口：A-02 显式拒绝（exit 2, UNSUPPORTED_SCOPE），A-04 交付
+askovo decide review A-TASK-1A2B3C4D --by product-owner
+askovo decide delta A-TASK-1A2B3C4D --since latest-accepted
+```
+
+- 输入是 `askovo.decision-task/1`（PRD §2.2）；`--question`/`--repo`/`--approved-by`/`--allowed-source`/`--fixture` 是同一文档的命令行形态，`--mode discover|validate` 映射到 `prioritize_features` / `validate_hypothesis`。
+- **默认 dry-run**：`start` 只做规范化、绑定 study、写 loop plan 与 digest；`--run` 才尝试推进，而且只在人工 `loop authorize` 之后。decide 自己绝不 authorize、绝不 `loop assess`。
+- 产品状态是 loop 状态的投影：`created → scoped → collecting → analyzed → review_required → brief_ready → delivered`，异常 `needs_input|blocked|interrupted|cancelled`；`delivered` 不等于 `decision_approved`。
+- 每次 `status` 都返回 C-01 六字段（`next_actor`、`next_required_action`、`blocked_reason_code`、`last_updated_at`、`has_pending_external_effect`、`artifact_refs`）外加 `state`、`budget`、`gaps`。
+- 拒绝走稳定的 `reason_code`（`INPUT_REQUIRED` / `AUTH_REQUIRED` / `UNSUPPORTED_SCOPE` / `POLICY_DENIED` / `ARTIFACT_PARTIAL`），stdout 是拒绝文档，退出码 2，不生成貌似成功的任务。
+- 记录上限取 `authorization.max_records` 并同时写入 loop envelope；`cancel` 之后任何 `--run` 都返回 `POLICY_DENIED`，不再读取。
+- MCP 对应 `askovo_decide_start` / `askovo_decide_status` / `askovo_decide_result`，复用同一编排函数；细节见[一问题研究执行器](decide.md)。
+
+## delta（增量研究 Delta）
+
+```bash
+askovo delta sync ./study --file issues-v2.jsonl --authorized-by "research-lead"
+askovo delta show ./study --format md
+askovo delta status ./study
+askovo delta approve ./study --by "product-owner" --approval-ref "SIGNOFF-001" --option option-A
+askovo decide delta A-TASK-1A2B3C4D --workspace ./decide-workspace --since latest-accepted
+```
+
+- 按**来源 ID + 更新时间**比对两次授权导出：`added` / `changed` / `deleted`。不做内容相似度猜测。
+- 每次真实变化追加一个不可变版本目录 `04-findings/deltas/vNNN-<hash>/`；旧版本逐字节保留，被删除/被编辑的记录仍可读到原文、hash 与获取权说明。
+- 重复同步是 no-op：不生成新版本、`index.jsonl` 不动、`message` 写"无变化"。
+- 过滤条件（`--since`/`--label`）变化时**不**推断删除（`deletion_basis: not_asserted`）。
+- 同一 `source_id` 的编辑只算 `changed`；`author_id` 优先用稳定 `user.id`，登录名改名只记 `identity_drift`，不新增观测用户。
+- 新反证只置 `needs_re_review`：已批准的 `DecisionSnapshot` 保持只读（`decision_record_mutated: false`），`accepted`/`current`/`differences` 明确列出差异。
+- 来源不可达时 `show`/`status` 退出码 1，`stale: true` + `reason_code: STALE_SOURCE` + 上次成功时间；仍可浏览上次可用结果。
+- 细节见 [增量研究 Delta](research-delta.md)。
+
+## brief（Decision Brief 与 PRD 验收投影）
+
+```bash
+askovo brief ./study                 # 06-report/decision-brief.json + .md
+askovo brief ./study --format md
+askovo brief ./study --task A-TASK-1A2B3C4D --output /tmp/brief
+```
+
+- 只读投影 canonical 主链 + `demand-judgments.json` + `evidence.jsonl` + `decision_review`；写回只发生在 `06-report/`，**不新建可编辑的决策文档**。
+- 九节固定：问题/边界/时间窗/负责人、结论（`recommendation`，不是自动批准）、2–5 个同维度选项、支撑证据与反证、受限结论、不做的选择及原因、下一最低成本验证动作、PRD 开发验收清单、四态独立显示。
+- 验收清单字段与 PRD 原字段一致（`acceptance_conditions` / `acceptance_criteria`），每条可追溯到 `product-reasoning.json#chains/<id>/nodes/<node>`。
+- 引用断裂或输入过期 → `artifact_status: stale`、`reason_code: STALE_SOURCE`、`delivery_state: blocked`、`diagnostic_only: true`，退出码 1，只写诊断草稿。
+- 数字必须带单位/窗口/来源，否则不输出数值并列入 `numbers_without_provenance`；访谈人数/转化率/市场规模无来源时保持 `null`；`heuristic_score` 不是概率（`calibrated: false`）。
+- `askovo decide brief` / `askovo decide result` 复用同一份 Brief；`decide delta` 仍留给 A-05。
+- 细节见 [Decision Brief](decision-brief.md)。
+
+## issues（Issue → 用户任务/需求结构化）
+
+```bash
+# 1) 快照 + 规范化（人工授权，不联网）
+askovo issues import ./study --file issues.jsonl --authorized-by "research-lead"   --since 2026-08-01 --label bug
+
+# 2) 机器候选（规则法，13 个 PRD 字段）
+askovo issues extract ./study --question "下一版先修哪些解析问题"
+
+# 3) 复核
+askovo issues list ./study --claim-kind feature_request
+askovo issues status ./study
+askovo issues report ./study
+
+# 4) 人工编辑 / 接受 / 拒绝（均需具名的人）
+askovo issues edit ./study --candidate IC-01 --by "product-owner" --set user_role="CLI 使用者"
+askovo issues accept ./study --candidate IC-01 --by "product-owner"   --context-key nested-log-parse --judgment-id D03 --evidence-level E2
+askovo issues reject ./study --candidate IC-02 --by "product-owner" --reason "单一自述"
+```
+
+- 只读本地授权导出（`gh issue list --json` 形态的 JSONL/JSON）；`LIVE_CONNECTOR_ENABLED` 永久为 False，未来接真 connector 的接口位置留好但不开。
+- 机器候选带 PRD 逐字要求的 13 个字段；`source_quote_span` 是 `source_text` 的精确切片，抽不到就是 `null`。
+- 语义规则写在实现里：同一登录 10 条 = 1 名观测用户、评论不算用户、请求方案封顶 E1、无可复现文本 = `unverified`、来源被删留快照/hash、一条反证即 `challenged`、私有内容与白名单外字段永不落盘。
+- `accept` 写一条 evidence + 一条 demand judgment + 一条 product-reasoning 链 + 追加式 `issue-acceptance.jsonl` 轨迹；幂等，且 `accepted` 不等于 `validated`。
+- 退出码：0 已记录、2 语义门禁拒绝（`POLICY_DENIED`/`INPUT_REQUIRED`/`UNSUPPORTED_SCOPE`）、4 缺具名授权/复核人（`AUTH_REQUIRED`）。
+- 细节见 [Issue 结构化](issues.md)。
 
 ## queue
 
@@ -376,5 +479,6 @@ askovo platforms "..." --json | jq '.recommended[] | {id, decision, bulk}'
 | `ASKOVO_REDDIT_CLIENT_ID` / `ASKOVO_REDDIT_CLIENT_SECRET` | Reddit 官方 Data API |
 | `ASKOVO_REDDIT_USER_AGENT` | Reddit 要求的可识别 User-Agent |
 | `ASKOVO_AUTHOR_SALT` | 可选研究级 HMAC 盐；未设置时 normalized 不生成作者关联 hash，不把它当匿名化 |
+| `ASKOVO_DECIDE_HOME` | `askovo decide` 的 workspace 默认目录（未设置时用 `./askovo-decide`） |
 
 所有平台采集必须遵守平台条款、速率限制、数据权利与保留规则。没有合规通道时只接受授权导出/历史数据集。

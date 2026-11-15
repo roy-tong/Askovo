@@ -33,6 +33,10 @@ import sure_engine  # noqa: E402
 import research_run  # noqa: E402
 import research_loop  # noqa: E402
 import decision_review  # noqa: E402
+import decide  # noqa: E402
+import decision_brief  # noqa: E402
+import research_delta  # noqa: E402
+import issue_structuring  # noqa: E402
 import role_catalog  # noqa: E402
 
 research_loop.bind_cli(sys.modules[__name__])
@@ -2640,6 +2644,280 @@ def command_loop(args: argparse.Namespace) -> int:
         return 2
 
 
+def command_decide(args: argparse.Namespace) -> int:
+    """A-02 one-question decide orchestrator (PRD §2.4).
+
+    ``start`` defaults to a dry run: it registers the task, writes the loop plan
+    and stops before any read. Reading requires ``--run`` *and* a human
+    ``askovo loop authorize``; ``decide`` never authorizes and never assesses.
+    """
+    action = str(getattr(args, "action", "") or "")
+    workspace = Path(getattr(args, "workspace", "") or decide.default_workspace()).resolve()
+    task_id = str(getattr(args, "task", "") or getattr(args, "task_id", "") or "").strip()
+    dry_run = bool(getattr(args, "dry_run", False))
+    run = bool(getattr(args, "run", False))
+    try:
+        if action == "start" and dry_run and run:
+            raise decide.DecideError(
+                "--run and --dry-run are mutually exclusive; drop --dry-run to execute",
+                "INPUT_REQUIRED")
+        if action == "start":
+            raw_input = getattr(args, "task_input", None)
+            input_file = str(getattr(args, "input", "") or "").strip()
+            question = str(getattr(args, "question", "") or "").strip()
+            if raw_input is not None and input_file:
+                raise decide.DecideError(
+                    "start takes one input: a task file (--input) or flags (--question/--repo)",
+                    "INPUT_REQUIRED")
+            if input_file:
+                path = Path(input_file).resolve()
+                if not path.is_file():
+                    raise decide.DecideError(f"task file does not exist: {path}", "INPUT_REQUIRED")
+                try:
+                    raw_input = json.loads(path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError as exc:
+                    raise decide.DecideError(
+                        f"task file is not valid JSON: {path} ({exc})", "INPUT_REQUIRED")
+            elif raw_input is not None:
+                pass  # MCP supplies the askovo.decision-task/1 document directly
+            elif task_id:
+                if question:
+                    raise decide.DecideError(
+                        "resume takes --input FILE (to re-check the frozen input) or no input "
+                        "at all; --question alone cannot be verified", "INPUT_REQUIRED")
+            else:
+                if not question:
+                    raise decide.DecideError(
+                        "decide start needs --input TASK.json or --question TEXT",
+                        "INPUT_REQUIRED",
+                        "the question is the one fact decide cannot invent")
+                raw_input = decide.task_from_flags(
+                    question=question,
+                    repo=str(getattr(args, "repo", "") or ""),
+                    decision_type=str(getattr(args, "decision_type", "") or ""),
+                    max_records=int(getattr(args, "max_records", decide.DEFAULT_MAX_RECORDS)),
+                    fixture=str(getattr(args, "fixture", "") or ""),
+                    deadline=str(getattr(args, "deadline", "") or ""),
+                    approved_by=str(getattr(args, "approved_by", "") or ""),
+                    allowed_sources=list(getattr(args, "allowed_source", []) or []) or None,
+                )
+            if raw_input is not None:
+                raw_input = decide.apply_mode(raw_input, str(getattr(args, "mode", "") or ""))
+            document = decide.start(
+                workspace, raw_input=raw_input, task_id=task_id or None,
+                run=run,
+                study_dir=(Path(args.study).resolve()
+                           if str(getattr(args, "study", "") or "").strip() else None),
+            )
+        elif action == "status":
+            document = decide.status(workspace, task_id)
+        elif action == "brief":
+            document = decide.brief(workspace, task_id,
+                                    fmt=str(getattr(args, "format", "") or "json"))
+        elif action == "result":
+            document = decide.result(workspace, task_id)
+        elif action == "cancel":
+            document = decide.cancel(workspace, task_id,
+                                     by=str(getattr(args, "by", "") or ""))
+        elif action == "review":
+            document = decide.review(workspace, task_id,
+                                     by=str(getattr(args, "by", "") or ""))
+        elif action == "delta":
+            document = decide.delta(workspace, task_id,
+                                    since=str(getattr(args, "since", "") or ""))
+        else:
+            raise decide.DecideError(f"unknown decide action {action!r}", "UNSUPPORTED_SCOPE")
+    except decide.DecideError as exc:
+        print(json.dumps({
+            "status": "refused",
+            "reason_code": exc.reason_code,
+            "reason": str(exc),
+            "suggestion": exc.suggestion or None,
+            "next_required_action": exc.suggestion or None,
+        }, ensure_ascii=False, indent=2))
+        return 2
+    except (OSError, ValueError, json.JSONDecodeError, RuntimeError) as exc:
+        print(json.dumps({"status": "error", "reason": "%s: %s" % (type(exc).__name__, exc)},
+                         ensure_ascii=False, indent=2))
+        return 2
+    if action == "brief" and str(getattr(args, "format", "") or "") == "md":
+        print(document.get("markdown") or "")
+    else:
+        print(json.dumps(document, ensure_ascii=False, indent=2))
+    # A-04's stale gate must hold on every entry, not only `askovo brief`:
+    # a stale decision is a valid but undeliverable research status (exit 1).
+    if action in ("brief", "result") and document.get("artifact_status") == "stale":
+        return 1
+    return 0
+
+
+def command_delta(args: argparse.Namespace) -> int:
+    """A-05 incremental research delta (PRD §3 A-05 / §10.2).
+
+    ``sync`` compares an authorized export with the latest snapshot by source id
+    and ``updated_at`` and appends a version only when something changed. History
+    is never overwritten and an approved DecisionRecord is never mutated.
+    """
+    action = str(getattr(args, "action", "") or "")
+    study_dir = Path(str(getattr(args, "study_dir", "") or "")).resolve()
+    try:
+        if action == "sync":
+            document = research_delta.sync(
+                study_dir, str(getattr(args, "file", "") or ""),
+                authorized_by=str(getattr(args, "authorized_by", "") or ""),
+                since=str(getattr(args, "since", "") or ""),
+                label=str(getattr(args, "label", "") or ""),
+                question=str(getattr(args, "question", "") or ""),
+            )
+        elif action == "show":
+            document = research_delta.show(
+                study_dir, version=str(getattr(args, "version", "") or ""))
+        elif action == "status":
+            document = research_delta.status(study_dir)
+        elif action == "approve":
+            document = research_delta.approve(
+                study_dir,
+                by=str(getattr(args, "by", "") or ""),
+                approval_ref=str(getattr(args, "approval_ref", "") or ""),
+                option=str(getattr(args, "option", "") or ""),
+                decision_id=str(getattr(args, "decision_id", "") or ""),
+            )
+        else:
+            raise research_delta.DeltaError(
+                f"unknown delta action {action!r}", "UNSUPPORTED_SCOPE")
+    except research_delta.DeltaError as exc:
+        print(json.dumps({
+            "status": "refused",
+            "reason_code": exc.reason_code,
+            "reason": str(exc),
+            "suggestion": exc.suggestion or None,
+            "next_required_action": exc.suggestion or None,
+        }, ensure_ascii=False, indent=2))
+        return 4 if exc.reason_code == "AUTH_REQUIRED" else 2
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(json.dumps({"status": "error", "reason": "%s: %s" % (type(exc).__name__, exc)},
+                         ensure_ascii=False, indent=2))
+        return 2
+    if str(getattr(args, "format", "") or "json") == "md":
+        print(document.get("markdown") or research_delta.render_markdown(document))
+    else:
+        print(json.dumps({key: value for key, value in document.items() if key != "markdown"},
+                         ensure_ascii=False, indent=2))
+    return 1 if document.get("stale") else 0
+
+
+def command_brief(args: argparse.Namespace) -> int:
+    """A-04 Decision Brief: a read-only projection of the canonical chain (PRD §2.3).
+
+    Exit 1 means the brief is `stale`: the reference is broken or the input drifted,
+    so only a diagnostic draft is written and formal delivery is blocked.
+    """
+    study_dir = Path(str(getattr(args, "study_dir", "") or "")).resolve()
+    try:
+        document = decision_brief.build_and_write(
+            study_dir,
+            task_id=str(getattr(args, "task", "") or ""),
+            question=str(getattr(args, "question", "") or ""),
+            output_dir=(Path(str(args.output)).resolve()
+                        if str(getattr(args, "output", "") or "").strip() else None),
+        )
+    except decision_brief.BriefError as exc:
+        print(json.dumps({
+            "status": "refused",
+            "reason_code": exc.reason_code,
+            "reason": str(exc),
+            "suggestion": exc.suggestion or None,
+        }, ensure_ascii=False, indent=2))
+        return 2
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(json.dumps({"status": "error", "reason": "%s: %s" % (type(exc).__name__, exc)},
+                         ensure_ascii=False, indent=2))
+        return 2
+    if str(getattr(args, "format", "") or "json") == "md":
+        print(document["markdown"])
+    else:
+        print(json.dumps({key: value for key, value in document.items() if key != "markdown"},
+                         ensure_ascii=False, indent=2))
+    return 1 if document.get("artifact_status") == "stale" else 0
+
+
+def command_issues(args: argparse.Namespace) -> int:
+    """A-03 issue -> user task / demand structuring (PRD §3 A-03).
+
+    ``import`` snapshots an authorized local export (never a live read) and
+    normalizes its public issues; ``extract`` writes machine candidates; only a
+    named human can ``accept`` one into the canonical evidence/judgment chain.
+    """
+    action = str(getattr(args, "action", "") or "")
+    study_dir = Path(str(getattr(args, "study_dir", "") or "")).resolve()
+    try:
+        if action == "import":
+            document = issue_structuring.import_export(
+                study_dir,
+                Path(str(getattr(args, "file", "") or "")),
+                authorized_by=str(getattr(args, "authorized_by", "") or ""),
+                since=str(getattr(args, "since", "") or ""),
+                label=str(getattr(args, "label", "") or ""),
+                question=str(getattr(args, "question", "") or ""),
+                retention_rule=str(getattr(args, "retention_rule", "") or ""),
+            )
+        elif action == "extract":
+            document = issue_structuring.extract_candidates(
+                study_dir, question=str(getattr(args, "question", "") or ""))
+        elif action == "list":
+            document = issue_structuring.list_candidates(
+                study_dir,
+                status=str(getattr(args, "status", "") or ""),
+                claim_kind=str(getattr(args, "claim_kind", "") or ""),
+                limit=int(getattr(args, "limit", 50)),
+            )
+        elif action == "edit":
+            document = issue_structuring.edit_candidate(
+                study_dir, str(getattr(args, "candidate", "") or ""),
+                by=str(getattr(args, "by", "") or ""),
+                edits=issue_structuring._parse_edits(getattr(args, "set_values", []) or []),
+            )
+        elif action == "accept":
+            document = issue_structuring.accept_candidate(
+                study_dir, str(getattr(args, "candidate", "") or ""),
+                by=str(getattr(args, "by", "") or ""),
+                judgment_id=str(getattr(args, "judgment_id", "") or ""),
+                context_key=str(getattr(args, "context_key", "") or ""),
+                evidence_level=str(getattr(args, "evidence_level", "") or ""),
+                status=str(getattr(args, "status", "") or "hypothesis"),
+                edits=issue_structuring._parse_edits(getattr(args, "set_values", []) or []),
+            )
+        elif action == "reject":
+            document = issue_structuring.reject_candidate(
+                study_dir, str(getattr(args, "candidate", "") or ""),
+                by=str(getattr(args, "by", "") or ""),
+                reason=str(getattr(args, "reason", "") or ""),
+            )
+        elif action == "status":
+            document = issue_structuring.status(study_dir)
+        elif action == "report":
+            document = issue_structuring.report(study_dir)
+            print(document["markdown"])
+            return 0
+        else:
+            raise issue_structuring.IssueError(
+                f"unknown issues action {action!r}", "UNSUPPORTED_SCOPE")
+    except issue_structuring.IssueError as exc:
+        print(json.dumps({
+            "status": "refused",
+            "reason_code": exc.reason_code,
+            "reason": str(exc),
+            "suggestion": exc.suggestion or None,
+        }, ensure_ascii=False, indent=2))
+        return 4 if exc.reason_code == "AUTH_REQUIRED" else 2
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(json.dumps({"status": "error", "reason": "%s: %s" % (type(exc).__name__, exc)},
+                         ensure_ascii=False, indent=2))
+        return 2
+    print(json.dumps(document, ensure_ascii=False, indent=2))
+    return 0
+
+
 def command_review(args: argparse.Namespace) -> int:
     """Deterministic decision review: evidence, readiness, falsifiability, bias, deliverables."""
     study_dir = Path(args.study_dir).resolve()
@@ -3072,6 +3350,28 @@ def _render_audit_md(payload: dict[str, Any]) -> str:
         lines.append("尚无 demand judgment。")
     lines.append("")
 
+    qualification = payload.get("evidence_qualification") or {}
+    flagged = qualification.get("needs_requalification") or []
+    review_pending = qualification.get("review_required") or []
+    if flagged or review_pending:
+        lines.extend(["## 证据资格（A-01 正交维度）", ""])
+        eligibility_counts = (qualification.get("counts") or {}).get("claim_eligibility") or {}
+        lines.append(
+            "- 结论资格分布：" + json.dumps(eligibility_counts, ensure_ascii=False)
+            + f"；独立来源 {qualification.get('independent_sources', 0)} 个"
+            + f"（共 {qualification.get('records_total', 0)} 条记录；复制不提升独立性）"
+        )
+        per_record = qualification.get("records") or {}
+        for record_id in flagged:
+            info = per_record.get(record_id) or {}
+            reasons = "；".join(info.get("reasons") or []) or "跨维度冲突"
+            lines.append(f"- 待重审 `{record_id}`：{reasons}")
+        for record_id in review_pending:
+            if record_id in flagged:
+                continue
+            lines.append(f"- 待人工审核 `{record_id}`：商业行为 × 来源不可核实，未授予商业资格")
+        lines.append("")
+
     lines.extend(["## 缺口与下一步", ""])
     actions = payload.get("next_actions") or []
     if actions:
@@ -3157,6 +3457,8 @@ def audit_payload(root: Path, *, claim: str = "") -> dict[str, Any]:
 
     overclaims = [claim for claim in claims if claim["verdict"] == "exceeds_evidence"]
     status = "pass" if audit.status == "pass" and not overclaims else "fail"
+    # A-01 正交资格投影：不改写 evidence_level，只派生三属性并标记跨维度冲突
+    evidence_qualification = sure_engine.evidence_qualification(list(evidence_by_id.values()))
     reasoning_summary = audit.metrics.get("product_reasoning", {})
     summary = {
         "records": int(signals.get("record_count", 0) or 0),
@@ -3189,6 +3491,7 @@ def audit_payload(root: Path, *, claim: str = "") -> dict[str, Any]:
         "signals": signals,
         "claims": claims,
         "product_reasoning": reasoning_summary,
+        "evidence_qualification": evidence_qualification,
         "summary": summary,
         "meaning": AUDIT_BOUNDARY,
     }
@@ -4863,7 +5166,18 @@ def build_parser() -> argparse.ArgumentParser:
                                  help="外部研究命令；输出一个 JSON 对象到 stdout")
     external_parser.add_argument("--question", default="")
     external_parser.add_argument("--timeout", type=int, default=900)
-    external_parser.add_argument("--authorize", action="store_true")
+    external_parser.add_argument("--authorize", action="store_true",
+                                 help="required: the adapter runs with the current user's privileges")
+    external_parser.add_argument("--trusted-local", action="store_true",
+                                 help="A-06 escape hatch: run an unregistered --command "
+                                      "(still needs --authorize; recorded in the run)")
+    external_parser.add_argument("--output", default="",
+                                 help="output file inside the study "
+                                      "(default 04-findings/external-research/<run_id>.json)")
+    external_parser.add_argument("--max-stdout-bytes", type=int, default=None,
+                                 help="lower the stdout cap (cannot exceed the 256 KiB default)")
+    external_parser.add_argument("--max-stderr-bytes", type=int, default=None,
+                                 help="lower the stderr cap (cannot exceed the 64 KiB default)")
     external_parser.add_argument("--json", action="store_true")
     external_parser.set_defaults(func=sure_engine.cli_external_research)
 
@@ -4972,6 +5286,136 @@ def build_parser() -> argparse.ArgumentParser:
     loop_parser.add_argument("--file", default="",
                              help="map: JSON file with host-supplied evidence mappings")
     loop_parser.set_defaults(func=command_loop)
+
+    decide_parser = subparsers.add_parser(
+        "decide",
+        help="one-question decide orchestrator: register, plan and track a decision task over "
+             "the authorized research loop (dry run by default; never authorizes or assesses)",
+    )
+    decide_parser.add_argument(
+        "action", choices=("start", "status", "result", "brief", "review", "delta", "cancel"),
+        help="start = register/plan; status = C-01 projection; result = brief + evidence index "
+             "+ validation backlog; brief = partial decision brief; review/delta = expert "
+             "entries (explicitly unsupported in A-02); cancel = stop reading")
+    decide_parser.add_argument("task_id", nargs="?", default="",
+                               help="task id for status/review/brief/delta/cancel")
+    decide_parser.add_argument("--workspace", default="",
+                               help="decide workspace holding tasks/ and studies/ "
+                                    "(default: $ASKOVO_DECIDE_HOME or ./askovo-decide)")
+    decide_parser.add_argument("--input", "--scope", dest="input", default="",
+                               help="start: askovo.decision-task/1 JSON file (PRD §2.2)")
+    decide_parser.add_argument("--question", default="",
+                               help="start: inline decision question (alternative to --input)")
+    decide_parser.add_argument("--repo", default="",
+                               help="start: owner/name repository the question is about")
+    decide_parser.add_argument("--decision-type", default="",
+                               help="start: prioritize_features or validate_hypothesis")
+    decide_parser.add_argument("--mode", default="", choices=("", "discover", "validate", "optimize"),
+                               help="start: PRD §2.4 research-mode alias "
+                                    "(discover -> prioritize_features, validate -> validate_hypothesis)")
+    decide_parser.add_argument("--max-records", type=int, default=decide.DEFAULT_MAX_RECORDS,
+                               help="start: hard record cap for the run (default 200)")
+    decide_parser.add_argument("--fixture", default="",
+                               help="start: authorized offline export used instead of a live read")
+    decide_parser.add_argument("--deadline", default="", help="start: decision deadline")
+    decide_parser.add_argument("--approved-by", default="",
+                               help="start: named owner declaring the authorization "
+                                    "(a declaration only; the loop still needs its own authorize)")
+    decide_parser.add_argument("--allowed-source", action="append", default=[],
+                               help="start: approved source platform (repeatable; default github)")
+    decide_parser.add_argument("--study", default="",
+                               help="start: bind an existing study instead of scaffolding one")
+    decide_parser.add_argument("--task", default="",
+                               help="start: resume this task id instead of creating one")
+    decide_parser.add_argument("--run", action="store_true",
+                               help="start: advance past planning, gated by the loop's own "
+                                    "human authorization")
+    decide_parser.add_argument("--dry-run", action="store_true",
+                               help="start: explicit dry run (the default); plans without reading")
+    decide_parser.add_argument("--format", default="json", choices=("json", "md"),
+                               help="brief: output format (default json)")
+    decide_parser.add_argument("--by", default="", help="cancel/review: named operator")
+    decide_parser.add_argument("--since", default="", help="delta: baseline, e.g. latest-accepted")
+    decide_parser.set_defaults(func=command_decide)
+
+    delta_parser = subparsers.add_parser(
+        "delta",
+        help="incremental research delta: append-only evidence snapshots, "
+             "added/changed/deleted sources, affected nodes, counter-evidence impact "
+             "and needs_re_review (never rewrites an approved decision)",
+    )
+    delta_parser.add_argument("action", choices=("sync", "show", "status", "approve"),
+                              help="sync = compare + append a version; show = one delta; "
+                                   "status = versions + freshness; approve = human "
+                                   "DecisionSnapshot")
+    delta_parser.add_argument("study_dir")
+    delta_parser.add_argument("--file", default="",
+                              help="sync: local authorized issue export (.jsonl/.json); no network")
+    delta_parser.add_argument("--authorized-by", default="",
+                              help="sync: named human confirming the export's access and data rights")
+    delta_parser.add_argument("--since", default="", help="sync: created_at lower bound (YYYY-MM-DD)")
+    delta_parser.add_argument("--label", default="", help="sync: keep only issues carrying this label")
+    delta_parser.add_argument("--question", default="", help="sync: the decision question")
+    delta_parser.add_argument("--version", default="", help="show: delta version (default latest)")
+    delta_parser.add_argument("--format", default="json", choices=("json", "md"),
+                              help="output format (default json)")
+    delta_parser.add_argument("--by", default="", help="approve: named human recorder")
+    delta_parser.add_argument("--approval-ref", default="",
+                              help="approve: sign-off reference (a declaration, not a proof)")
+    delta_parser.add_argument("--option", default="", help="approve: chosen option id, e.g. option-A")
+    delta_parser.add_argument("--decision-id", default="", help="approve: decision id (default DS-<nnn>)")
+    delta_parser.set_defaults(func=command_delta)
+
+    brief_parser = subparsers.add_parser(
+        "brief",
+        help="decision brief: the nine-section PRD §2.3 projection of the canonical chain, "
+             "with a stale gate that blocks formal delivery",
+    )
+    brief_parser.add_argument("study_dir")
+    brief_parser.add_argument("--format", default="json", choices=("json", "md"),
+                              help="output format (default json; both are written to 06-report/)")
+    brief_parser.add_argument("--task", default="", help="optional decide task id to bind")
+    brief_parser.add_argument("--question", default="", help="override the decision question")
+    brief_parser.add_argument("--output", default="",
+                              help="output directory (default: <study>/06-report)")
+    brief_parser.set_defaults(func=command_brief)
+
+    issues_parser = subparsers.add_parser(
+        "issues",
+        help="issue -> user task / demand structuring: snapshot an authorized export, "
+             "extract machine candidates, and let a named human accept or reject them",
+    )
+    issues_parser.add_argument(
+        "action",
+        choices=("import", "extract", "list", "edit", "accept", "reject", "status", "report"),
+        help="import = snapshot + normalize a local export; extract = machine candidates; "
+             "list/edit = review; accept/reject = human decision into the canonical chain; "
+             "status/report = projections")
+    issues_parser.add_argument("study_dir")
+    issues_parser.add_argument("--file", default="",
+                               help="import: local GitHub issue export (.jsonl or .json); no network")
+    issues_parser.add_argument("--authorized-by", default="",
+                               help="import: named human confirming the export's access and data rights")
+    issues_parser.add_argument("--since", default="", help="import: created_at lower bound (YYYY-MM-DD)")
+    issues_parser.add_argument("--label", default="", help="import: keep only issues carrying this label")
+    issues_parser.add_argument("--retention-rule", default="",
+                               help="import: retention rule recorded in the manifest")
+    issues_parser.add_argument("--question", default="", help="import/extract: the decision question")
+    issues_parser.add_argument("--candidate", default="", help="edit/accept/reject: candidate id, e.g. IC-01")
+    issues_parser.add_argument("--by", default="", help="edit/accept/reject: named human reviewer")
+    issues_parser.add_argument("--set", dest="set_values", action="append", default=[],
+                               help="edit/accept: field=value override (repeatable)")
+    issues_parser.add_argument("--evidence-level", default="",
+                               help="accept: E0-E5; capped by the candidate's claim kind")
+    issues_parser.add_argument("--status", default="",
+                               help="accept/list: judgment status (accept, default hypothesis) "
+                                    "or candidate status filter (list)")
+    issues_parser.add_argument("--judgment-id", default="", help="accept: demand judgment id (default D<nn>)")
+    issues_parser.add_argument("--context-key", default="", help="accept: shared context key for the judgment")
+    issues_parser.add_argument("--reason", default="", help="reject: why the candidate is not adoptable")
+    issues_parser.add_argument("--claim-kind", default="", help="list: filter by claim kind")
+    issues_parser.add_argument("--limit", type=int, default=50, help="list: page size (default 50)")
+    issues_parser.set_defaults(func=command_issues)
 
     review_parser = subparsers.add_parser(
         "review",
@@ -5239,17 +5683,23 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+DECIDE_ACTIONS = ("start", "status", "result", "brief", "review", "delta", "cancel")
+
 CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "explore",
     "external-research", "do", "domains",
     "methods", "catalog", "platforms", "collect", "research", "loop", "analyze", "instruments", "import", "queue",
-    "codebook", "chain", "economics", "psm", "decision", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
+    "codebook", "chain", "economics", "psm", "decision", "decide", "issues", "brief", "delta", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }
 
 
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
+    if (raw and raw[0] == "decide" and len(raw) > 1 and not raw[1].startswith("-")
+            and raw[1] not in DECIDE_ACTIONS):
+        # PRD §2.4: `askovo decide "question" --repo owner/repo` is the start form.
+        raw = ["decide", "start", "--question", raw[1], *raw[2:]]
     if raw and not raw[0].startswith("-") and raw[0] not in CLI_COMMANDS:
         # Bare natural-language request in any language: route it through `do`.
         raw = ["do", *raw]

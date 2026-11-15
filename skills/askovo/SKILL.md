@@ -242,6 +242,99 @@ askovo loop advise <study>                        # read-only suggestion, never 
 - `loop advise` summarizes recorded mappings per analyzed gap (`insufficient` / `resolved_candidate` / `unresolvable_candidate` / `conflicted`); it never closes a gap or grades evidence.
 - `loop report` separates audit-supported claims from open hypotheses, blocked sources and gaps awaiting assessment. Quote that separation instead of compressing it into one progress number.
 
+## Track one decision question as a task
+
+`askovo decide` is a read-only orchestrator over the loop. It turns one `askovo.decision-task/1` document (question, repo, decision type, authorization, budget, deadline) into a tracked task with states, artifacts and a partial Decision Brief:
+
+```bash
+askovo decide start --input task.json --study <study>   # dry run: plan only, no reads
+askovo loop authorize <study> --by "<operator>"          # the only step that unlocks reading
+askovo decide start --task A-TASK-xxxxxxxx --run
+askovo decide status A-TASK-xxxxxxxx
+askovo decide brief A-TASK-xxxxxxxx --format md
+askovo decide cancel A-TASK-xxxxxxxx --by "<operator>"
+```
+
+- It never authorizes and never assesses: without a human `loop authorize` the task stays `scoped` or `needs_input` with `AUTH_REQUIRED` and reads nothing. A task with no declared owner or approved source stops before any plan exists.
+- Product states project the loop (`created → scoped → collecting → analyzed → review_required → brief_ready → delivered`; exceptions `needs_input|blocked|interrupted|cancelled`). Quote `status` instead of paraphrasing progress: it always carries `next_actor`, `next_required_action`, `blocked_reason_code`, `last_updated_at`, `has_pending_external_effect` and `artifact_refs`.
+- The record cap (`authorization.max_records`) is the loop envelope bound; a cancelled task refuses further runs with `POLICY_DENIED`; identical input resumes the same task, study and plan; an interrupted loop becomes `interrupted` and requires reconcile, never automatic replay.
+- The brief stays `partial` (`ARTIFACT_PARTIAL`) with every gap listed while any gap is open, and `decision_state` is `not_approved` — delivered research never means `decision_approved` or `hypothesis_validated`.
+- `decide review` / `decide delta` are refused with `UNSUPPORTED_SCOPE` until A-04; use `askovo review` or `askovo decide brief` meanwhile.
+
+## Run an external adapter inside a bounded subprocess
+
+`askovo external-research` is the only entry that executes someone else's code. A-06 makes the boundary explicit:
+
+```bash
+askovo external-research <study> --command <registry-id> --authorize --json
+```
+
+- **Environment allowlist (A29).** The child environment is *built* from `PATH`/`HOME`/`LANG`/… plus an entry's explicit `extra_env` plus four `ASKOVO_*` variables. The parent environment is never inherited, so an unregistered secret cannot leak. The run record lists allowlisted **keys**, never their values.
+- **Signed command registry (A30).** Only a command in `01-sources/external-research.json` with `adapter`, `argv`, `sha256`, `access_basis`, `reviewed_at` and `reviewed_by` may run, and the adapter hash must match. An arbitrary `--command` requires `--trusted-local` (still with `--authorize`) and is recorded.
+- **Bounded streams (A31).** stdout 256 KiB / stderr 64 KiB; exceeding the cap is `RATE_LIMITED` failure, never a truncated success. A caller can only lower the cap.
+- **Per-run identity (A32).** `ext-<utc>-<random>` plus exclusive create, so two runs in the same second both survive.
+- **No path escape (A30).** The output path is resolved (symlinks included) and must stay inside the study.
+- **URLs are candidates (A33).** `evidence_level: null`, `status: candidate`, `url_verification: not_attempted`. The bridge makes **no network access** and promotes no evidence level; a timeout is `INDETERMINATE_EXTERNAL_ACTION` and must not be replayed.
+
+## Track what changed without rewriting history
+
+`askovo delta` is the incremental layer over A-03/A-04. New issue material never overwrites the old snapshot and never auto-changes an approved decision.
+
+```bash
+askovo delta sync <study> --file issues-v2.jsonl --authorized-by "<operator>"
+askovo delta show <study> --format md
+askovo delta approve <study> --by "<reviewer>" --approval-ref "<signoff>"
+askovo decide delta <task_id> --since latest-accepted
+```
+
+- **Append-only.** Every real change creates `04-findings/deltas/vNNN-<hash>/`; older versions stay byte-identical, so a deleted or edited record keeps its previous content, hash and acquisition basis.
+- **Identity, not content.** `added`/`changed`/`deleted` are keyed by source id + `updated_at`. An edited issue is not new evidence; an author rename is not a new observed user (`author_id` prefers the stable GitHub `user.id`, otherwise `identity_drift`).
+- **Idempotent.** The same export twice is a no-op: no new version, untouched index, delta says 无变化.
+- **Never auto-approve.** New counter-evidence only raises `needs_re_review`; the approved `DecisionSnapshot` stays read-only (`decision_record_mutated: false`) and `accepted`/`current`/`differences` spell out the gap. Approval is a declaration (`identity_basis: declaration_only`), not proof.
+- **`decision_delta.md` has four blocks**: added evidence, affected canonical nodes with record references, counter-evidence impact, re-review recommendation.
+- **Degraded read.** An unreachable source still shows the last good snapshot marked `stale` with the reason and last success time — never as current.
+
+## Render the decision brief from the chain, never from prose
+
+`askovo brief` is the one-page decision artifact. It is a **read-only projection** of the canonical chain plus `decision_review`; it writes only `06-report/decision-brief.{json,md}` and never edits the chain, the judgments or the evidence.
+
+```bash
+askovo brief <study> --format md
+askovo decide brief <task_id> --workspace <decide-workspace>
+```
+
+- Nine fixed sections: question/boundary/window/owner, recommendation, 2-5 options on the same five dimensions (user/task/opportunity/cost/risk), supporting evidence **and** counter-evidence with source/date/context/qualification, limitations, rejected options with reasons, the next cheapest validation action with owner and stop condition, the PRD dev-acceptance checklist, and four independent states.
+- **No evidence means `hold`.** A brief never renders a validated decision or an approval; `recommendation.not_approved` is always `true` and `approval.approved` is always `false`.
+- **Counter-evidence re-reviews, it does not overwrite.** Any counter-evidence sets `needs_re_review` and `decision_status: needs_review`, lists the counter records and keeps the previous recommendation.
+- **Acceptance items keep the PRD field names** (`acceptance_conditions` / `acceptance_criteria`) and cite `product-reasoning.json#chains/<id>/nodes/<node>`. An empty checklist is `undefined`, not done.
+- **Numbers keep unit, window and source.** A number missing any of them is withheld and listed in `numbers_without_provenance`; `null` always carries an `unavailable_reason`.
+- **Never invent research facts.** `research_facts` stay `null` unless canonical data has them; `heuristic_score` is not a probability (`calibrated: false`).
+- **`stale` blocks formal delivery.** A broken reference or a drifted input gives `artifact_status: stale`, `reason_code: STALE_SOURCE`, `delivery_state: blocked` and exit 1 — only a diagnostic draft is written.
+
+## Structure public issues before calling them demand
+
+`askovo issues` turns an authorized local GitHub issue export into machine candidates. Nothing enters the chain until a named human accepts it:
+
+```bash
+askovo issues import <study> --file issues.jsonl --authorized-by "<operator>"
+askovo issues extract <study> --question "<question>"
+askovo issues list <study> --claim-kind feature_request
+askovo issues accept <study> --candidate IC-01 --by "<reviewer>" \
+  --context-key <key> --judgment-id D03 --evidence-level E2
+askovo issues reject <study> --candidate IC-02 --by "<reviewer>" --reason "<why>"
+```
+
+- **Records are not users.** Ten issues from one login are one observed user, comments on one issue are context, and distinct logins are never claimed to be distinct people (`identity_basis: login_only`). Report `observed_users`, not `record_count`.
+- **Four claim kinds stay apart**: `bug_reproduction`, `observed_behavior`, `feature_request`, `subjective_complaint` (plus `unknown` when there is no quotable body text). Never collapse them into one `type`.
+- **A request is not demand.** A feature request caps at E1: `severity_candidate: unknown`, `demand_claim: none`, and accepting it as E2 is refused with `POLICY_DENIED`.
+- **No text, no evidence.** An empty body stays `unverified` with `source_quote_span: null`; never invent a quote. A quote span is an exact slice of `source_text`.
+- **One counter-evidence is never outvoted.** Any counter record makes the candidate `challenged` with `majority_wins: false`; support and counter counts are reported separately.
+- **Private stays private.** Non-public rows are dropped and counted; snapshots are built from a field whitelist, so private notes never reach an artifact.
+- **Maintainer feedback is listed separately** and never counted as a user observation.
+- **A deleted source keeps its snapshot**, SHA-256, acquisition basis and retention rule; the candidate reports `snapshot_only`.
+- **Acceptance is human and idempotent**: it writes one evidence record + one demand judgment + one product-reasoning chain + an append-only acceptance trail. `accepted` never means `validated`; `askovo audit` still judges the evidence.
+- Zero network: only local exports. `LIVE_CONNECTOR_ENABLED` stays False.
+
 ## Gate demand judgments
 
 Use **demand judgment** / **需求判断**, not a translated “opportunity card,” unless the user explicitly requests that format.

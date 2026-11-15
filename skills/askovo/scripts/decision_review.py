@@ -67,6 +67,33 @@ def _item(dimension: str, item_id: str, status: str, detail: str, next_action: s
     }
 
 
+def _qualification_items(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """A-01 正交资格核对：跨维度冲突只标记待重审，不改写证据原值。"""
+    qualification = payload.get("evidence_qualification")
+    if not isinstance(qualification, dict):
+        return []
+    items: List[Dict[str, Any]] = []
+    per_record = qualification.get("records") if isinstance(qualification.get("records"), dict) else {}
+    for record_id in qualification.get("needs_requalification") or []:
+        info = per_record.get(str(record_id)) or {}
+        reasons = "；".join(str(value) for value in info.get("reasons") or []) or "跨维度冲突"
+        items.append(_item(
+            "evidence", f"qualification:{record_id}", "warn",
+            f"{record_id} 证据资格待重审：{reasons}",
+            "人工重审证据等级；注意力指标/未验证来源不得作为商业 E5",
+        ))
+    for record_id in qualification.get("review_required") or []:
+        if str(record_id) in {str(item_id.split(":", 1)[-1]) for item_id in
+                              [item["id"] for item in items]}:
+            continue
+        items.append(_item(
+            "evidence", f"qualification:{record_id}", "warn",
+            f"{record_id} 商业行为 × 来源不可核实：未授予商业资格，需人工审核",
+            "补来源核验（收据/订单/平台记录）后再谈商业结论",
+        ))
+    return items
+
+
 def _claim_items(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     mapping = {"supported": "pass", "open": "warn", "exceeds_evidence": "fail",
@@ -423,6 +450,44 @@ def _registered_evidence(study_dir: Path) -> Dict[str, Dict[str, Any]]:
 
 def _registered_evidence_ids(study_dir: Path) -> set:
     return set(_registered_evidence(study_dir))
+
+
+#: Fields that make a record "the same record". A change to any of them under the
+#: same ``record_id`` is input drift, not a fresh record (D4).
+FINGERPRINT_FIELDS = (
+    "record_id", "text", "text_excerpt", "body", "evidence_level", "corpus_role",
+    "context_key", "source_ref", "normalized_text_hash",
+)
+
+
+def evidence_fingerprint(record: Dict[str, Any]) -> str:
+    """Content fingerprint of one evidence record (stable under key reordering)."""
+    payload = {field: record.get(field) for field in FINGERPRINT_FIELDS}
+    blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def cited_evidence_ids(reasoning: Any, judgments: Any) -> set:
+    """Every evidence id the canonical chain or a demand judgment points at."""
+    cited: set = set()
+    chains = (reasoning or {}).get("chains") if isinstance(reasoning, dict) else []
+    for chain in chains if isinstance(chains, list) else []:
+        if not isinstance(chain, dict):
+            continue
+        for node in (chain.get("nodes") or {}).values():
+            if isinstance(node, dict):
+                cited.update(str(value) for value in node.get("evidence_ids") or [])
+        cited.update(str(value) for value in chain.get("counter_evidence_ids") or [])
+        for entry in chain.get("change_log") or []:
+            if isinstance(entry, dict):
+                cited.update(str(value) for value in entry.get("reason_evidence_ids") or [])
+    for judgment in judgments if isinstance(judgments, list) else []:
+        if not isinstance(judgment, dict):
+            continue
+        for key in ("problem_evidence_ids", "solution_evidence_ids",
+                    "commercial_evidence_ids", "counter_evidence_ids"):
+            cited.update(str(value) for value in judgment.get(key) or [])
+    return {value for value in cited if value}
 
 
 def _recommendation_state(chain: Dict[str, Any]) -> Dict[str, Any]:
@@ -989,6 +1054,7 @@ def review(study_dir: Path) -> Dict[str, Any]:
     else:
         items.append(_item("audit", "audit_gate", "pass", "审计门通过"))
     items.extend(_claim_items(payload))
+    items.extend(_qualification_items(payload))
     items.extend(_decision_items(study, reasoning))
     items.extend(_falsifiability_items(study, reasoning))
     items.extend(_bias_items(payload, analysis))
@@ -1010,6 +1076,18 @@ def review(study_dir: Path) -> Dict[str, Any]:
             for dimension in DIMENSIONS
         },
         "items": items,
+        # D4: the review pins the content of every record it reasons about, so a
+        # same-id edit is detected as INPUT_DRIFT later instead of being copied
+        # into a brief as if it were current.
+        "input_fingerprints": {
+            "evidence": {
+                record_id: evidence_fingerprint(record)
+                for record_id, record in sorted(
+                    _registered_evidence(study_dir).items())
+                if record_id in cited_evidence_ids(reasoning, _load(
+                    study_dir / "04-findings" / "demand-judgments.json"))
+            },
+        },
         "boundary": (
             "复盘只核对现有材料是否可验证、可证伪、覆盖与新鲜；不判断业务成败，不替代语义复核、"
             "财务/市场评审和业务签收。"

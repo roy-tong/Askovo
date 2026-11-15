@@ -55,6 +55,8 @@ SERVER_INSTRUCTIONS = (
     "rationales, evidence gates and per-claim verdicts; (6) askovo_deliver assembles the "
     "business plan (plan), corpus analysis (analysis), chain-led memo, MRD, PRD, BRD, ops or tracker. Legacy text/platform planning remains available as "
     "askovo_plan; askovo_check remains the low-level gate command. "
+    "askovo_decide_start / askovo_decide_status / askovo_decide_result track one decision question "
+    "as a task over the same loop (dry run by default; decide never authorizes or assesses). "
     "exit codes: 1 = failed gate or claim exceeding evidence, 3 = no feasible platform or "
     "adapter, 4 = safety/ethics gate not acknowledged. These are research statuses to report, "
     "never reasons to substitute a commercial provider, merchant API, saved login, internal "
@@ -326,6 +328,61 @@ def _build_research(arguments: dict[str, Any]) -> argparse.Namespace:
         max_steps=int(arguments.get("max_steps", 1)),
         analyze=_boolean(arguments, "analyze"),
     )
+
+
+def _build_decide_start(arguments: dict[str, Any]) -> argparse.Namespace:
+    task = arguments.get("task")
+    if not isinstance(task, dict):
+        raise ValueError("task must be an askovo.decision-task/1 object")
+    return _namespace(
+        action="start",
+        task_id="",
+        workspace=_optional_string(arguments, "workspace") or "",
+        input="",
+        question="",
+        repo="",
+        decision_type="",
+        max_records=askovo_cli.decide.DEFAULT_MAX_RECORDS,
+        fixture="",
+        deadline="",
+        approved_by="",
+        allowed_source=[],
+        study=_optional_string(arguments, "study") or "",
+        task="",
+        run=_boolean(arguments, "run"),
+        dry_run=False,
+        format="json",
+        by="",
+        since="",
+        task_input=task,
+    )
+
+
+def _build_decide_task_id(action: str):
+    def build(arguments: dict[str, Any]) -> argparse.Namespace:
+        return _namespace(
+            action=action,
+            task_id=_string(arguments.get("task_id"), "task_id"),
+            workspace=_optional_string(arguments, "workspace") or "",
+            input="",
+            question="",
+            repo="",
+            decision_type="",
+            max_records=askovo_cli.decide.DEFAULT_MAX_RECORDS,
+            fixture="",
+            deadline="",
+            approved_by="",
+            allowed_source=[],
+            study="",
+            task="",
+            run=False,
+            dry_run=False,
+            format="json",
+            by=_optional_string(arguments, "by") or "",
+            since=_optional_string(arguments, "since") or "",
+        )
+
+    return build
 
 
 def _build_loop(arguments: dict[str, Any]) -> argparse.Namespace:
@@ -786,6 +843,74 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "askovo_decide_start",
+        "description": (
+            "Register or resume one decision question (askovo.decision-task/1, PRD §2.2) as a "
+            "tracked research task. Dry run by default: it scopes the task and writes the "
+            "research-loop plan without reading a single record. `run` advances only inside an "
+            "envelope a human already authorized with `askovo loop authorize`; decide never "
+            "authorizes and never assesses. An unsupported decision_type or source is refused "
+            "with a reason code instead of a look-alike task."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "workspace": {
+                    "type": "string",
+                    "description": "decide workspace (default: $ASKOVO_DECIDE_HOME or ./askovo-decide)",
+                },
+                "task": {
+                    "type": "object",
+                    "description": "askovo.decision-task/1 document (PRD §2.2 minimal start input)",
+                },
+                "study": {
+                    "type": "string",
+                    "description": "bind an existing study instead of scaffolding a new one",
+                },
+                "run": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "advance past planning; still gated by the loop's human authorization",
+                },
+            },
+            "required": ["task"],
+        },
+    },
+    {
+        "name": "askovo_decide_status",
+        "description": (
+            "C-01 status projection for one decide task: product state, next_actor, "
+            "next_required_action, blocked_reason_code, last_updated_at, "
+            "has_pending_external_effect, artifact_refs, budget and the remaining gaps. A status "
+            "always names a concrete next step; delivered never means decision_approved."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "workspace": {"type": "string"},
+                "task_id": {"type": "string", "description": "decide task id, e.g. A-TASK-1A2B3C4D"},
+            },
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "askovo_decide_result",
+        "description": (
+            "Result projection for one decide task: partial Decision Brief, evidence index, "
+            "validation backlog, canonical refs and review status. artifact_status=partial lists "
+            "every gap; decision_state stays not_approved because delivered research never means "
+            "decision_approved or hypothesis_validated."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "workspace": {"type": "string"},
+                "task_id": {"type": "string", "description": "decide task id, e.g. A-TASK-1A2B3C4D"},
+            },
+            "required": ["task_id"],
+        },
+    },
+    {
         "name": "askovo_review",
         "description": (
             "Deterministic decision review: audit gate, evidence sufficiency, decision readiness, "
@@ -1080,6 +1205,9 @@ TOOL_BUILDERS = {
     "askovo_collect": (askovo_cli.command_collect, _build_collect),
     "askovo_research": (askovo_cli.command_research, _build_research),
     "askovo_research_loop": (askovo_cli.command_loop, _build_loop),
+    "askovo_decide_start": (askovo_cli.command_decide, _build_decide_start),
+    "askovo_decide_status": (askovo_cli.command_decide, _build_decide_task_id("status")),
+    "askovo_decide_result": (askovo_cli.command_decide, _build_decide_task_id("result")),
     "askovo_analyze": (askovo_cli.sure_engine.cli_analyze, _build_analyze),
     "askovo_instruments": (askovo_cli.sure_engine.cli_instruments, _build_instruments),
     "askovo_codebook": (askovo_cli.sure_engine.cli_codebook, _build_codebook),

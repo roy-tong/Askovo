@@ -317,8 +317,12 @@ class ResearchModeTests(unittest.TestCase):
             command = f"{_sys.executable} -c \"{script}\""
             denied = run_cli("external-research", str(study_dir), "--command", command)
             self.assertEqual(2, denied.returncode)
+            # A-06: the pre-A-06 arbitrary `--command` path now needs the explicit
+            # trusted-local bridge (the signed registry is the default); the
+            # candidate-only assertions below are unchanged.
             completed = run_cli("external-research", str(study_dir), "--command", command,
-                                "--authorize", "--question", "端侧摄影替代方案", "--json")
+                                "--authorize", "--trusted-local",
+                                "--question", "端侧摄影替代方案", "--json")
             self.assertEqual(0, completed.returncode, completed.stderr + completed.stdout)
             record = json.loads(completed.stdout)
             self.assertEqual("askovo.external-research/1", record["schema"])

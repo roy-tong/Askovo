@@ -50,3 +50,16 @@ skills/askovo/scripts/askovo_mcp.py    # askovo MCP 外壳
 ## 一句话
 
 > **Askovo 负责“从用户推理到产品与商业”，SURE 负责“让推理有据、证据有界”。**
+
+## 外部适配器边界（A-06）
+
+`sure_engine.cli_external_research` 只是 CLI 薄壳：真正的子进程边界在 `external_bridge.py`。引擎**不导入**外部研究框架，也不联网——它执行一个经人工 `--authorize` 的本地命令，把 stdout 的 JSON 存成**候选来源**。
+
+- 子进程环境从白名单**构建**（`PATH` / `HOME` / `LANG` / `LC_ALL` / `TMPDIR` / `PYTHONIOENCODING` / `SYSTEMROOT` / `TZ` + 条目显式 `extra_env` + 4 个 `ASKOVO_*`），不是继承父进程再删。
+- 命令来自 study 内的签名注册表（`01-sources/external-research.json`），适配器 SHA-256 必须匹配。
+- stdout/stderr 有硬上限；超界是失败（`RATE_LIMITED`），不是截断。
+- 每次运行独立 `run_id`，输出路径解析后必须落在 study 内。
+- URL 只是指向：不抓取、不解析、不验证；记录 `evidence_level: null`、`status: candidate`、`url_verification: not_attempted`。
+- 超时是 `INDETERMINATE_EXTERNAL_ACTION`：外部效果未知，禁止自动重放。
+
+边界细节与迁移说明见[外部研究桥](external-bridge.md)。

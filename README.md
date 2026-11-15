@@ -22,7 +22,7 @@ askovo do "your question" --domain software --dry-run   # routes it, writes noth
 
 Askovo is built for product managers, user researchers, business analysts, and developers stepping into full-stack roles who now own **what to build**, not just how to build it. The default run: ① frame the question as a seven-node hypothesis canvas, ② design the data-collection plan (platforms, queries, quotas), ③ collect a large corpus through permitted routes, ④ turn the data into scene/user/pain/need/feature/product/GTM judgments, ⑤ render the **Business Plan** (`askovo deliver --kind plan`) — every judgment showing its data basis (sources, corpus size, time window) and user voices from the corpus, in business language. MRD/PRD/BRD and the Decision Package remain projections of the same chain for analyst and decision-side readers.
 
-CLI, Skill, and MCP surfaces are live today. The host agent can author the action list, or `askovo loop` derives rounds from audit gaps inside an authorized envelope; the executor runs only what was authorized. Source gaps and human semantic review are kept explicit, never hidden. See [capability status and trade-offs](docs/feature-status.md) (Chinese).
+CLI, Skill, and MCP surfaces are live today. The host agent can author the action list, or `askovo loop` derives rounds from audit gaps inside an authorized envelope; the executor runs only what was authorized, and `askovo decide` tracks a single decision question as a task over the same loop. Source gaps and human semantic review are kept explicit, never hidden. See [capability status and trade-offs](docs/feature-status.md) (Chinese).
 
 > **scene → user → pain → need → feature → product → business**
 
@@ -211,6 +211,56 @@ askovo loop authorize ./study --by "researcher"
 askovo loop run ./study
 askovo loop report ./study
 ```
+
+When the whole job is one decision ("which parsing bugs should the next release fix?"), `askovo decide` wraps that same loop as a tracked task: it normalizes an `askovo.decision-task/1` input, binds the study, writes the plan and stops — **a dry run until a human authorizes the envelope**. It never authorizes and never assesses, so a task without a human `loop authorize` reads nothing and reports `AUTH_REQUIRED`.
+
+```bash
+askovo decide start --input task.json --study ./study   # dry run: plan only, no reads
+askovo loop authorize ./study --by "researcher"
+askovo decide start --task A-TASK-1A2B3C4D --run        # execute inside the envelope
+askovo decide brief A-TASK-1A2B3C4D --format md         # partial brief + every gap
+askovo decide status A-TASK-1A2B3C4D                    # C-01 next actor / next action
+```
+
+The brief stays `partial` while gaps remain, and `delivered` never means `decision_approved`. See [one-question decide executor](docs/decide.md) (Chinese).
+
+`askovo brief` renders the same evidence as a one-page Decision Brief: the nine PRD sections, the PRD dev-acceptance checklist with node references, and four independent states. It is read-only — a broken reference or drifted input marks it `stale` and blocks formal delivery (exit 1, diagnostic draft only):
+
+```bash
+askovo brief ./study --format md     # 06-report/decision-brief.{json,md}
+askovo decide brief A-TASK-1A2B3C4D  # same document, bound to a decide task
+```
+
+No evidence still yields a `hold` with a next action, never a validated decision; a number without unit, window and source is withheld; interviews and conversion rates are never invented. See [Decision Brief](docs/decision-brief.md) (Chinese).
+
+When new issues arrive for the same question, `askovo delta` shows what changed without ever rewriting history:
+
+```bash
+askovo delta sync ./study --file issues-v2.jsonl --authorized-by "research-lead"
+askovo delta show ./study --format md     # 新增证据 / 已影响节点 / 反证影响 / 建议是否重审
+askovo delta approve ./study --by "product-owner" --approval-ref "SIGNOFF-001"
+```
+
+Every real change appends an immutable snapshot version; a repeated sync is a no-op. A new counter-evidence only raises `needs_re_review` — the approved decision stays read-only — and an unreachable source still shows the last good result, marked `stale`. See [research delta](docs/research-delta.md) (Chinese).
+
+Running your own research adapter is the one operation that executes someone else's code, so it stays inside a bounded subprocess: an env allowlist, a signed command registry with adapter hashes, capped stdout/stderr, a per-run id and an output path that cannot leave the study. Returned URLs stay candidates — the bridge never fetches them.
+
+```bash
+askovo external-research ./study --command my-adapter --authorize --json
+```
+
+An arbitrary `--command` now needs `--trusted-local` (still with `--authorize`) and is recorded. See [external research bridge](docs/external-bridge.md) (Chinese).
+
+Public GitHub issues are the usual raw material. `askovo issues` turns an authorized export into machine candidates and, only after a named human accepts one, into canonical evidence — the thirteen PRD fields stay candidates until then:
+
+```bash
+askovo issues import ./study --file issues.jsonl --authorized-by "research-lead"
+askovo issues extract ./study --question "下一版先修哪些解析问题"
+askovo issues accept ./study --candidate IC-01 --by "product-owner" \
+  --context-key nested-log-parse --judgment-id D03 --evidence-level E2
+```
+
+Ten issues from one login are still one observed user, comments are not users, "please add a button" caps at E1, and one counter-evidence is never outvoted. No network: `LIVE_CONNECTOR_ENABLED` stays False. See [issue structuring](docs/issues.md) (Chinese).
 
 For writing/decision gaps with existing local JSONL, `analyze` is an executable offline candidate: it reuses the descriptive analyzer and writes an execution record and follow-up review state without promoting candidates. Collection retains its authorization and Design gate; experiments and external-evidence requests are not auto-run. `stop` is separate from positive action scoring: an explicit three-condition `StopDecision` can rank it first only when more research cannot change the decision and is not worth its cost/risk; otherwise stopping for its own sake is not allowed.
 

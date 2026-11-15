@@ -37,6 +37,20 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 try:
+    import external_bridge
+except ModuleNotFoundError as exc:  # direct importlib loading used by embedders/tests
+    if exc.name != "external_bridge":
+        raise
+    _bridge_spec = importlib.util.spec_from_file_location(
+        "askovo_external_bridge", Path(__file__).with_name("external_bridge.py")
+    )
+    if _bridge_spec is None or _bridge_spec.loader is None:  # pragma: no cover
+        raise RuntimeError("cannot load external_bridge.py beside sure_engine.py")
+    external_bridge = importlib.util.module_from_spec(_bridge_spec)
+    sys.modules.setdefault("askovo_external_bridge", external_bridge)
+    _bridge_spec.loader.exec_module(external_bridge)
+
+try:
     import delivery_projection
 except ModuleNotFoundError as exc:  # direct importlib loading used by embedders/tests
     if exc.name != "delivery_projection":
@@ -2115,7 +2129,14 @@ def _evidence_summary(study_dir: Path) -> dict[str, Any]:
         claim = _evidence_claim(record)
         by_form[form] = by_form.get(form, 0) + 1
         by_claim[claim] = by_claim.get(claim, 0) + 1
-    return {"count": len(records), "by_form": by_form, "by_claim": by_claim, "records": records}
+    return {
+        "count": len(records),
+        "by_form": by_form,
+        "by_claim": by_claim,
+        "records": records,
+        # A-01 正交资格投影：三属性 + needs_requalification 标记（不改写原值）
+        "qualification": evidence_qualification(records),
+    }
 
 
 def _delivery_records(reasoning: dict[str, Any] | None, evidence: dict[str, Any]) -> list[dict[str, Any]]:
@@ -3028,6 +3049,233 @@ def _evidence_claim(record: dict[str, Any]) -> str:
         return explicit
     level = str(record.get("evidence_level") or "").strip().upper()
     return _CLAIM_BY_LEVEL.get(level, "未标注")
+
+
+# ---------------------------------------------------------------------------
+# A-01 正交证据资格（orthogonal evidence qualification，2026-11-15）。
+#
+# E0–E5 契约保持不变；这里新增三条**正交、非单调**的显示属性，只做解释投影：
+#   measurement_integrity  数值/记录真实性（观测可信度）；
+#   behavior_kind          记录捕捉的行为类型（内容特征，不从 evidence_level 派生）；
+#   claim_eligibility      该记录有资格支撑的结论类别（按规则派生，高风险关联需人工审核）。
+# 「观测真实」不等于「商业结论支持强度」：API 可核实的 star 数是
+# confirmed_source + attention_metric + descriptive_only，永远推不出商业 E5 资格。
+# 资格派生只读记录既有字段，不改写 evidence_level、不迁移历史数据；检测到
+# 「注意力指标被标 E5」这类跨维度冲突时输出 needs_requalification 标记，
+# 原值保持不动，由人工重审。
+# ---------------------------------------------------------------------------
+
+MEASUREMENT_INTEGRITY_VALUES = ("confirmed_source", "self_reported", "unverified", "conflicted")
+BEHAVIOR_KIND_VALUES = (
+    "statement",
+    "problem_behavior",
+    "solution_acceptance",
+    "commercial_intent",
+    "commercial_transaction",
+    "attention_metric",
+)
+CLAIM_ELIGIBILITY_VALUES = ("problem", "solution", "commercial", "descriptive_only", "none")
+
+_COMMERCE_TRANSACTION_CONFIRMING = {"verified_purchase", "transaction_linked"}
+_COMMERCE_TRANSACTION_WEAKENING = {"vine_free_product", "incentivized_disclosed", "unknown"}
+_KICKSTARTER_TRANSACTION_CONFIRMING = {"charged", "fulfilled", "refunded", "dropped"}
+_KICKSTARTER_INTENT_STATUSES = {"pledged", "pledge_adjusted"}
+_ATTENTION_CONTENT_TYPES = {"tracker_snapshot", "funding_snapshot", "rating_only"}
+
+
+def _first_field(record: dict[str, Any], *names: str) -> str:
+    """Return the first non-empty normalized value among the given field names."""
+    for name in names:
+        value = str(record.get(name) or "").strip().lower()
+        if value:
+            return value
+    return ""
+
+
+def _explicit_measurement_integrity(record: dict[str, Any]) -> str:
+    explicit = str(record.get("measurement_integrity") or "").strip().lower()
+    return explicit if explicit in MEASUREMENT_INTEGRITY_VALUES else ""
+
+
+def _derive_measurement_integrity(record: dict[str, Any]) -> str:
+    """数值/记录真实性：显式人工标注优先，否则按来源特征确定性派生。"""
+    explicit = _explicit_measurement_integrity(record)
+    if explicit:
+        return explicit
+    form = _first_field(record, "evidence_form")
+    if "self_report" in form:
+        return "self_reported"
+    commerce_status = _first_field(record, "commerce_transaction_status")
+    if commerce_status:
+        if commerce_status in _COMMERCE_TRANSACTION_CONFIRMING:
+            return "confirmed_source"
+        if commerce_status == "unverified":
+            return "unverified"
+        if commerce_status in _COMMERCE_TRANSACTION_WEAKENING:
+            return "self_reported"
+    kickstarter_status = _first_field(record, "commercial_status")
+    if kickstarter_status:
+        if kickstarter_status in _KICKSTARTER_TRANSACTION_CONFIRMING or kickstarter_status == "public_aggregate":
+            return "confirmed_source"
+        if kickstarter_status in _KICKSTARTER_INTENT_STATUSES:
+            return "self_reported"
+    # 采集管线带回可回查定位（来源 URL + 采集运行号）→ 来源可核实
+    if str(record.get("source_url") or "").strip() and str(record.get("collection_run_id") or "").strip():
+        return "confirmed_source"
+    return "unverified"
+
+
+def _derive_behavior_kind(record: dict[str, Any]) -> str:
+    """行为类型：从内容特征派生（显式标注优先），不从 evidence_level 派生。"""
+    explicit = str(record.get("behavior_kind") or "").strip().lower()
+    if explicit in BEHAVIOR_KIND_VALUES:
+        return explicit
+    claim_type = _first_field(record, "claim_type")
+    form = _first_field(record, "evidence_form")
+    if claim_type == "attention_metric" or form == "attention_metric":
+        return "attention_metric"
+    content_type = _first_field(
+        record,
+        "content_type",
+        "source_content_type",
+        "commerce_content_type",
+        "kickstarter_content_type",
+    )
+    if content_type in _ATTENTION_CONTENT_TYPES:
+        return "attention_metric"
+    if claim_type == "commercial_transaction" or form in {"transaction", "purchase"}:
+        return "commercial_transaction"
+    if commerce_status := _first_field(record, "commerce_transaction_status"):
+        if commerce_status in _COMMERCE_TRANSACTION_CONFIRMING:
+            return "commercial_transaction"
+    if content_type in {"pledge_record", "refund_record", "fulfillment_record"}:
+        return "commercial_transaction"
+    if claim_type == "commercial_intent" or form == "commercial_intent":
+        return "commercial_intent"
+    if _first_field(record, "commercial_status") in _KICKSTARTER_INTENT_STATUSES:
+        return "commercial_intent"
+    if claim_type in {"acceptance", "solution"} or form in {"acceptance", "solution"}:
+        return "solution_acceptance"
+    if claim_type in {"problem", "need"} or form in {"problem_behavior", "problem"}:
+        return "problem_behavior"
+    if str(record.get("corpus_role") or "").strip().lower() in {"substitute_rejector"}:
+        return "problem_behavior"
+    if str(record.get("corpus_role") or "").strip().lower() in {"direct_solution", "post_purchase_support"}:
+        return "solution_acceptance"
+    return "statement"
+
+
+def _derive_claim_eligibility(measurement_integrity: str, behavior_kind: str) -> tuple[str, bool]:
+    """结论资格（派生）：返回 (claim_eligibility, review_required)。
+
+    高风险关联（商业交易但来源不可核实）不授予 commercial，必须人工审核。
+    """
+    if measurement_integrity == "conflicted":
+        return "none", True
+    if behavior_kind == "attention_metric":
+        # 注意力指标只能作描述性观测，任何来源真实都不改变这一点
+        return ("descriptive_only" if measurement_integrity == "confirmed_source" else "none"), False
+    if behavior_kind == "commercial_transaction":
+        if measurement_integrity == "confirmed_source":
+            return "commercial", False
+        # 「已付款」陈述但来源 unverified/self_reported：不得作为商业证据
+        return "none", True
+    if behavior_kind == "commercial_intent":
+        # 意向/锚点/聚合只支撑描述，不授予商业结论资格
+        return ("descriptive_only" if measurement_integrity in {"confirmed_source", "self_reported"} else "none"), False
+    if behavior_kind == "problem_behavior":
+        return ("problem" if measurement_integrity in {"confirmed_source", "self_reported"} else "none"), False
+    if behavior_kind == "solution_acceptance":
+        return ("solution" if measurement_integrity in {"confirmed_source", "self_reported"} else "none"), False
+    # statement：陈述本身可作描述性事实，但不支撑问题/方案/商业结论
+    return ("descriptive_only" if measurement_integrity == "confirmed_source" else "none"), False
+
+
+def qualify_evidence(record: dict[str, Any]) -> dict[str, Any]:
+    """对单条 evidence 记录派生三条正交资格属性（只读，不修改记录）。
+
+    返回 measurement_integrity / behavior_kind / claim_eligibility，以及
+    needs_requalification（跨维度冲突，例如注意力指标被标 E5——只标记，
+    不改写 evidence_level）与 review_required（高风险关联需人工审核）。
+    """
+    measurement_integrity = _derive_measurement_integrity(record)
+    behavior_kind = _derive_behavior_kind(record)
+    claim_eligibility, review_required = _derive_claim_eligibility(measurement_integrity, behavior_kind)
+    reasons: list[str] = []
+    needs_requalification = False
+    level = str(record.get("evidence_level") or "").strip().upper()
+    if level == "E5" and claim_eligibility != "commercial":
+        needs_requalification = True
+        reasons.append(
+            f"E5 要求已完成商业/持续使用行为，但该记录资格为 {claim_eligibility}"
+            f"（{measurement_integrity} / {behavior_kind}）；原值保留，需人工重审"
+        )
+    explicit_eligibility = str(record.get("claim_eligibility") or "").strip().lower()
+    if explicit_eligibility and explicit_eligibility in CLAIM_ELIGIBILITY_VALUES and explicit_eligibility != claim_eligibility:
+        needs_requalification = True
+        reasons.append(
+            f"记录自带 claim_eligibility={explicit_eligibility} 与派生值 {claim_eligibility} 不一致；以派生规则为准，需人工重审"
+        )
+    if review_required:
+        reasons.append("高风险关联（商业行为 × 来源不可核实）：不授予商业资格，需人工审核")
+    return {
+        "measurement_integrity": measurement_integrity,
+        "behavior_kind": behavior_kind,
+        "claim_eligibility": claim_eligibility,
+        "needs_requalification": needs_requalification,
+        "review_required": review_required,
+        "reasons": reasons,
+    }
+
+
+def _source_identity_key(record: dict[str, Any]) -> str:
+    """同一外部来源的稳定标识：source_url 优先，退化到采集运行号+来源引用。"""
+    url = " ".join(str(record.get("source_url") or "").strip().casefold().split())
+    if url:
+        return f"url:{url}"
+    run_id = str(record.get("collection_run_id") or "").strip()
+    source_ref = str(record.get("source_ref") or "").strip()
+    if run_id or source_ref:
+        return f"ref:{run_id}|{source_ref}"
+    return f"record:{str(record.get('record_id') or record.get('normalized_text_hash') or id(record))}"
+
+
+def independent_source_count(records: list[dict[str, Any]]) -> int:
+    """独立来源数：按来源标识去重。同一来源复制 N 条只算一个来源。"""
+    return len({_source_identity_key(record) for record in records})
+
+
+def evidence_qualification(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """批量资格投影：逐条三属性 + 汇总计数 + 冲突清单 + 独立来源数。"""
+    per_record: dict[str, dict[str, Any]] = {}
+    integrity_counts: dict[str, int] = {}
+    kind_counts: dict[str, int] = {}
+    eligibility_counts: dict[str, int] = {}
+    needs_requalification: list[str] = []
+    review_required: list[str] = []
+    for record in records:
+        record_id = str(record.get("record_id") or "<unknown>")
+        info = qualify_evidence(record)
+        per_record[record_id] = info
+        integrity_counts[info["measurement_integrity"]] = integrity_counts.get(info["measurement_integrity"], 0) + 1
+        kind_counts[info["behavior_kind"]] = kind_counts.get(info["behavior_kind"], 0) + 1
+        eligibility_counts[info["claim_eligibility"]] = eligibility_counts.get(info["claim_eligibility"], 0) + 1
+        if info["needs_requalification"]:
+            needs_requalification.append(record_id)
+        if info["review_required"]:
+            review_required.append(record_id)
+    return {
+        "records": per_record,
+        "counts": {
+            "measurement_integrity": dict(sorted(integrity_counts.items())),
+            "behavior_kind": dict(sorted(kind_counts.items())),
+            "claim_eligibility": dict(sorted(eligibility_counts.items())),
+        },
+        "needs_requalification": needs_requalification,
+        "review_required": review_required,
+        "independent_sources": independent_source_count(records),
+        "records_total": len(records),
+    }
 
 
 def _plan_observed_levels(node_name: str | None = None) -> set:
@@ -6396,91 +6644,41 @@ def cli_explore(args: Any) -> int:
 
 
 def cli_external_research(args: Any) -> int:
-    """Run a host-provided research command and store its output as candidates.
+    """Run an authorized host adapter and store its output as unverified candidates.
 
-    Askovo does not import the external framework.  The command receives the
-    question/study through environment variables and must print one JSON object
-    on stdout.  Its output is a candidate list, never evidence or a validated
-    claim.
+    A-06: the subprocess boundary (env allowlist, signed command registry, bounded
+    streams, per-run id, no path escape) lives in :mod:`external_bridge`. Askovo
+    never fetches the returned URLs; they stay candidates with no evidence level.
     """
-    if not getattr(args, "authorize", False):
-        print("外部研究命令会以当前用户权限运行；确认来源与命令后加 --authorize", file=sys.stderr)
-        return 2
-    study_dir = Path(args.study_dir).resolve()
-    study_file = study_dir / "study.json"
-    if not study_file.is_file():
-        print(f"找不到 study.json: {study_file}", file=sys.stderr)
-        return 2
-    study = load_json(study_file)
-    command = shlex.split(str(args.command or ""))
-    if not command:
-        print("--command 不能为空", file=sys.stderr)
-        return 2
-    env = dict(os.environ)
-    env.update({
-        "ASKOVO_QUESTION": str(args.question or study.get("title") or ""),
-        "ASKOVO_STUDY": str(study_dir),
-        "ASKOVO_MODE": str((study.get("research_mode") or {}).get("mode") or ""),
-    })
     try:
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=args.timeout,
-                                   env=env, cwd=str(study_dir))
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        print(f"外部研究命令失败：{exc}", file=sys.stderr)
+        record = external_bridge.run(
+            Path(str(args.study_dir)),
+            str(args.command or ""),
+            authorize=bool(getattr(args, "authorize", False)),
+            trusted_local=bool(getattr(args, "trusted_local", False)),
+            question=str(getattr(args, "question", "") or ""),
+            output=str(getattr(args, "output", "") or ""),
+            timeout=getattr(args, "timeout", None),
+            max_stdout_bytes=getattr(args, "max_stdout_bytes", None),
+            max_stderr_bytes=getattr(args, "max_stderr_bytes", None),
+        )
+    except external_bridge.BridgeError as exc:
+        print(json.dumps({
+            "status": "refused",
+            "reason_code": exc.reason_code,
+            "reason": str(exc),
+            "suggestion": exc.suggestion or None,
+        }, ensure_ascii=False, indent=2))
         return 2
-    if completed.returncode != 0:
-        print(f"外部研究命令退出码 {completed.returncode}：{completed.stderr[:500]}", file=sys.stderr)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(json.dumps({"status": "error", "reason": "%s: %s" % (type(exc).__name__, exc)},
+                         ensure_ascii=False, indent=2))
         return 2
-    try:
-        payload = json.loads(completed.stdout)
-    except json.JSONDecodeError as exc:
-        print(f"外部研究输出不是 JSON：{exc}", file=sys.stderr)
-        return 2
-    sources = payload.get("sources") if isinstance(payload, dict) else None
-    if not isinstance(sources, list) or not sources:
-        print("外部研究输出必须包含非空 sources 列表", file=sys.stderr)
-        return 2
-    cleaned = []
-    for index, item in enumerate(sources, start=1):
-        if not isinstance(item, dict):
-            print(f"sources[{index}] 必须是对象", file=sys.stderr)
-            return 2
-        url = str(item.get("url") or "").strip()
-        if not url.startswith(("http://", "https://")):
-            print(f"sources[{index}].url 必须是 http(s) 链接", file=sys.stderr)
-            return 2
-        cleaned.append({
-            "id": f"X{index:02d}",
-            "url": url,
-            "title": str(item.get("title") or "").strip(),
-            "excerpt": str(item.get("excerpt") or "").strip(),
-            "claim": str(item.get("claim") or "").strip(),
-            "retrieved_at": str(item.get("retrieved_at") or datetime.now(timezone.utc).isoformat()),
-            "evidence_level": None,
-            "status": "candidate",
-        })
-    record = {
-        "schema": "askovo.external-research/1",
-        "study_id": study.get("study_id"),
-        "question": env["ASKOVO_QUESTION"],
-        "mode": env["ASKOVO_MODE"],
-        "command": command,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "sources": cleaned,
-        "notes": [str(item) for item in payload.get("notes") or []],
-        "review_required": True,
-        "boundary": ("外部框架返回的是候选材料：未定级、未与需求判断相连；"
-                     "只有人工把来源与记录映射到研究问题后才可能成为证据。"),
-    }
-    target_dir = study_dir / "04-findings" / "external-research"
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / (datetime.now().strftime("external-%Y%m%dT%H%M%S") + ".json")
-    target.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if getattr(args, "json", False):
         print(json.dumps(record, ensure_ascii=False, indent=2))
     else:
-        print(f"已保存外部研究候选：{target}")
-        print(f"- 来源：{len(cleaned)} 条；状态：candidate；需要人工定级与映射")
+        for line in external_bridge.summary_lines(record):
+            print(line)
     return 0
 
 

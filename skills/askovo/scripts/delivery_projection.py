@@ -141,12 +141,19 @@ def _decision_projection(
     return result
 
 
-def _basis_projection(reasoning: dict[str, Any] | None, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _basis_projection(
+    reasoning: dict[str, Any] | None,
+    records: list[dict[str, Any]],
+    qualification_map: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     families = sorted({str(item.get("source_family")) for item in records if item.get("source_family")})
+    records_by_id = {str(item.get("record_id")): item for item in records if item.get("record_id")}
+    qualification_map = qualification_map or {}
     result: list[dict[str, Any]] = []
     for chain in _chains(reasoning):
         nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
         node_basis: list[dict[str, Any]] = []
+        cited_ids: list[str] = []
         for name in FLOW:
             node = nodes.get(name) if isinstance(nodes.get(name), dict) else {}
             if not node:
@@ -157,6 +164,20 @@ def _basis_projection(reasoning: dict[str, Any] | None, records: list[dict[str, 
                 "rationale": node.get("rationale"),
                 "evidence_ids": list(node.get("evidence_ids") or []),
             })
+            cited_ids.extend(str(value) for value in node.get("evidence_ids") or [])
+        cited_ids.extend(str(value) for value in chain.get("counter_evidence_ids") or [])
+        cited_ids = list(dict.fromkeys(cited_ids))
+        # A-01：链级资格聚合——引用记录的资格计数 + 冲突清单（只标记，不改写）
+        cited_qualification = [qualification_map[value] for value in cited_ids if value in qualification_map]
+        eligibility_counts: dict[str, int] = {}
+        flagged: list[str] = []
+        for record_id in cited_ids:
+            info = qualification_map.get(record_id)
+            if not info:
+                continue
+            eligibility_counts[info["claim_eligibility"]] = eligibility_counts.get(info["claim_eligibility"], 0) + 1
+            if info.get("needs_requalification"):
+                flagged.append(record_id)
         prioritization = chain.get("prioritization") if isinstance(chain.get("prioritization"), dict) else {}
         result.append({
             "chain_id": chain.get("id"),
@@ -168,6 +189,11 @@ def _basis_projection(reasoning: dict[str, Any] | None, records: list[dict[str, 
             "evidence_records": len(records),
             "source_families": families,
             "source_independence": "多个来源族不代表独立观察；来源间相关性未被字符串去重或族名自动排除",
+            "evidence_qualification": {
+                "claim_eligibility": dict(sorted(eligibility_counts.items())),
+                "cited_records": len(cited_qualification),
+                "needs_requalification": flagged,
+            },
         })
     return result
 
@@ -281,6 +307,13 @@ def _text_summary(payload: dict[str, Any]) -> str:
             lines.append(f"  - 优先级依据：{item.get('prioritization_rationale') or '未记录'}；{item.get('source_independence')}")
     else:
         lines.append("- 无可用七节点依据。")
+    qualification = payload.get("evidence_qualification") or {}
+    flagged = qualification.get("needs_requalification") or []
+    if flagged:
+        lines.append(
+            f"- 证据资格待重审：{', '.join(str(item) for item in flagged)}"
+            "（注意力指标/未验证来源不得作为商业 E5；原值保留，需人工重审）"
+        )
     lines.extend(["", "## 行动", ""])
     lines.extend(f"- [{item.get('type')}] {item.get('chain_id') or '研究层面'}：{item.get('action')}" for item in payload.get("actions") or [])
     lines.extend(["", "## 成本与边界", ""])
@@ -324,6 +357,21 @@ def build_chat_summary(
     study = study if isinstance(study, dict) else {}
     evidence = evidence if isinstance(evidence, dict) else {}
     records = [item for item in evidence.get("records") or [] if isinstance(item, dict)]
+    # A-01 正交资格投影由引擎侧（sure_engine.evidence_qualification）预先算好挂在这里；
+    # 直接调用（如测试）未提供时保持空结构，不在此重复实现派生规则。
+    evidence_qualification = (
+        evidence.get("qualification")
+        if isinstance(evidence.get("qualification"), dict)
+        else {
+            "records": {},
+            "counts": {},
+            "needs_requalification": [],
+            "review_required": [],
+            "independent_sources": 0,
+            "records_total": len(records),
+        }
+    )
+    qualification_map = evidence_qualification.get("records") if isinstance(evidence_qualification.get("records"), dict) else {}
     audit_info = audit_info if isinstance(audit_info, dict) else {"status": "not_run", "checks": []}
     audit_status = str(audit_info.get("status") or "not_run")
     command_parts = ["askovo", "deliver", str(study_dir), "--kind", str(kind)]
@@ -416,7 +464,8 @@ def build_chat_summary(
             {"id": item.get("id"), "detail": item.get("detail")} for item in failed_checks
         ],
         "decision": _decision_projection(study, reasoning, audit_status),
-        "basis": _basis_projection(reasoning, records),
+        "basis": _basis_projection(reasoning, records, qualification_map),
+        "evidence_qualification": evidence_qualification,
         "actions": _action_projection(reasoning, audit_info, artifact_exists, stale, reproduce_command),
         "costs_and_boundaries": costs_and_boundaries,
         "unknowns": list(dict.fromkeys(unknowns)),
