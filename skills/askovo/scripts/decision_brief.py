@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -86,6 +87,14 @@ LIMITATION_SAMPLES = (
     "无真实付费/留存/复购等商业行为证据时不得宣称商业验证或商业成立",
 )
 RESEARCH_FACT_KEYS = ("interviews_conducted", "conversion_rate", "market_size_estimate")
+
+#: Money, percentages and thousands-separated quantities. Deliberately narrow so
+#: identifiers like ``PR01``, ``G0`` or ``two-week`` are not treated as numbers.
+_UNVERIFIED_NUMBER = re.compile(
+    r"(?:[$€£¥]\s?\d[\d,]*(?:\.\d+)?"
+    r"|\d[\d,]*(?:\.\d+)?\s?%"
+    r"|\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b)")
+REDACTION = "[未核验数字]"
 
 
 class BriefError(ValueError):
@@ -203,6 +212,8 @@ def stale_reasons(
     chains: List[Dict[str, Any]],
     judgments: List[Dict[str, Any]],
     record_ids: set,
+    *,
+    previous_fingerprints: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, Any]]:
     """Broken references or drifted inputs block formal delivery.
 
@@ -259,6 +270,34 @@ def stale_reasons(
                 "refs": [judgment_id] + unknown,
             })
 
+    # D4: the review pins each cited record's content. A same-id edit keeps the
+    # reference intact but changes what the decision was made on, so it is drift.
+    records_by_id: Dict[str, Dict[str, Any]] = {}
+    for relative in ("02-data/evidence.jsonl",):
+        path = study_dir / relative
+        if not path.is_file():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict) and item.get("record_id"):
+                records_by_id[str(item["record_id"])] = item
+    for record_id, recorded in sorted((previous_fingerprints or {}).items()):
+        current = records_by_id.get(str(record_id))
+        if current is None:
+            continue  # a missing record is already a BROKEN_REFERENCE
+        if decision_review.evidence_fingerprint(current) != str(recorded):
+            reasons.append({
+                "code": "INPUT_DRIFT",
+                "detail": (f"{record_id} 的内容在决策复盘之后被修改（同一 record_id 不同内容）；"
+                           f"当前 Brief 不能当作已复核结论"),
+                "refs": [record_id],
+            })
+
     review_path = study_dir / REVIEW_REF
     canonical = study_dir / CANONICAL_REF
     if review_path.is_file() and canonical.is_file():
@@ -291,7 +330,11 @@ def stale_inputs(study_dir: Path) -> List[Dict[str, Any]]:
         if isinstance(judgments, list) else []
     record_ids = {str(item.get("record_id")) for item in _records(study_dir)
                   if item.get("record_id")}
-    return stale_reasons(study_dir, chains, judgments, record_ids)
+    recorded_review = _load(study_dir / REVIEW_REF)
+    fingerprints = ((recorded_review or {}).get("input_fingerprints") or {}).get("evidence") \
+        if isinstance(recorded_review, dict) else None
+    return stale_reasons(study_dir, chains, judgments, record_ids,
+                         previous_fingerprints=fingerprints)
 
 
 def _question_section(study: Dict[str, Any], chain: Dict[str, Any],
@@ -353,27 +396,36 @@ def _recommendation(chain: Dict[str, Any], *, supported: int,
     }
 
 
-def _dimensions(chain: Dict[str, Any], business: Dict[str, Any]) -> Dict[str, str]:
+def _dimensions(chain: Dict[str, Any], business: Dict[str, Any],
+                findings: List[Dict[str, Any]]) -> Dict[str, str]:
     nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
     user = nodes.get("user") if isinstance(nodes.get("user"), dict) else {}
     need = nodes.get("need") if isinstance(nodes.get("need"), dict) else {}
     pain = nodes.get("pain") if isinstance(nodes.get("pain"), dict) else {}
     return {
-        "user": str(user.get("statement") or "unknown"),
-        "task": str(need.get("statement") or "unknown"),
-        "opportunity": str(pain.get("statement") or "unknown"),
-        "cost": "; ".join(str(item) for item in business.get("cost_drivers") or []) or "unknown",
-        "risk": "; ".join(str(item) for item in business.get("non_goals") or []) or "unknown",
+        "user": _guard_text(str(user.get("statement") or "unknown"),
+                            "node.user.statement", findings),
+        "task": _guard_text(str(need.get("statement") or "unknown"),
+                            "node.need.statement", findings),
+        "opportunity": _guard_text(str(pain.get("statement") or "unknown"),
+                                   "node.pain.statement", findings),
+        "cost": _guard_text(
+            "; ".join(str(item) for item in business.get("cost_drivers") or []) or "unknown",
+            "business.cost_drivers", findings),
+        "risk": _guard_text(
+            "; ".join(str(item) for item in business.get("non_goals") or []) or "unknown",
+            "business.non_goals", findings),
     }
 
 
 def _options(study: Dict[str, Any], chain: Dict[str, Any],
-             recommended_option_id: Optional[str]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+             recommended_option_id: Optional[str],
+             findings: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     decision = study.get("decision") if isinstance(study.get("decision"), dict) else {}
     statements = [str(item) for item in decision.get("options") or [] if str(item).strip()]
     nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
     business = nodes.get("business") if isinstance(nodes.get("business"), dict) else {}
-    dimensions = _dimensions(chain, business)
+    dimensions = _dimensions(chain, business, findings)
     evidence_ids = _chain_evidence_ids(chain)
     options: List[Dict[str, Any]] = []
     rejected: List[Dict[str, Any]] = []
@@ -437,13 +489,14 @@ def _evidence_entry(record: Dict[str, Any], qualification: Dict[str, Any],
 
 
 def _verification_actions(chain: Dict[str, Any], review_payload: Dict[str, Any],
-                          owner: Optional[str]) -> List[Dict[str, Any]]:
+                          owner: Optional[str],
+                          findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     actions: List[Dict[str, Any]] = []
     next_test = str(chain.get("next_test") or "").strip()
     tasks = chain.get("external_validation_tasks") if isinstance(chain, dict) else None
     if next_test:
         actions.append({
-            "action": next_test,
+            "action": _guard_text(next_test, "chain.next_test", findings),
             "owner": owner or "product_owner",
             "falsified_if": "该动作无法复现问题，或反证条件被满足",
             "stop_condition": "预算/时间窗用尽，或反证条件成立时停止并重审",
@@ -457,7 +510,7 @@ def _verification_actions(chain: Dict[str, Any], review_payload: Dict[str, Any],
         if not item.get("next_action"):
             continue
         actions.append({
-            "action": str(item["next_action"]),
+            "action": _guard_text(str(item["next_action"]), "review.next_action", findings),
             "owner": owner or "product_owner",
             "falsified_if": "修复后审计仍失败",
             "stop_condition": "审计通过即停止",
@@ -467,7 +520,7 @@ def _verification_actions(chain: Dict[str, Any], review_payload: Dict[str, Any],
         })
     for gap in chain.get("gaps") or []:
         actions.append({
-            "action": f"补证：{gap}",
+            "action": _guard_text(f"补证：{gap}", "chain.gaps", findings),
             "owner": owner or "product_owner",
             "falsified_if": "补证材料与该判断矛盾",
             "stop_condition": "该缺口被 assess 关闭",
@@ -488,7 +541,8 @@ def _verification_actions(chain: Dict[str, Any], review_payload: Dict[str, Any],
     return actions[:10]
 
 
-def _prd_acceptance(chain: Dict[str, Any]) -> Dict[str, Any]:
+def _prd_acceptance(chain: Dict[str, Any],
+                    findings: List[Dict[str, Any]]) -> Dict[str, Any]:
     chain_id = str(chain.get("id") or "chain")
     nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
     feature = nodes.get("feature") if isinstance(nodes.get("feature"), dict) else {}
@@ -500,7 +554,8 @@ def _prd_acceptance(chain: Dict[str, Any]) -> Dict[str, Any]:
         for index, statement in enumerate(node.get(field_name) or []):
             checklist.append({
                 "id": f"{chain_id}.{node_name}.{field_name}[{index}]",
-                "statement": str(statement),
+                "statement": _guard_text(
+                    str(statement), f"{node_name}.{field_name}", findings),
                 "source_field": field_name,
                 "source_node": node_name,
                 "source_ref": f"{CANONICAL_REF}#chains/{chain_id}/nodes/{node_name}",
@@ -511,7 +566,8 @@ def _prd_acceptance(chain: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "checklist": checklist,
         "undefined": not checklist,
-        "non_goals": [str(item) for item in product.get("non_goals") or []],
+        "non_goals": [_guard_text(str(item), "business.non_goals", findings)
+                      for item in product.get("non_goals") or []],
         "linked_issues": [],
         "note": (
             "验收清单为空：主链尚未写 acceptance_conditions / acceptance_criteria；"
@@ -526,6 +582,27 @@ def _prd_acceptance(chain: Dict[str, Any]) -> Dict[str, Any]:
 # --------------------------------------------------------------------------- #
 # A22 / A23: numbers and fabrication guard
 # --------------------------------------------------------------------------- #
+
+def _guard_text(text: str, field: str, findings: List[Dict[str, Any]],
+                *, redact: bool = True) -> str:
+    """A22 second pass: free text copied into the brief is scanned for numbers.
+
+    ``numbers[]`` only covers structured business fields. Free text (cost drivers,
+    non-goals, statements, rationales) is also copied, so a number there is either
+    withheld with a redaction marker or it silently bypasses the A22 guard (D5).
+    """
+    value = str(text or "")
+    hits = _UNVERIFIED_NUMBER.findall(value)
+    if not hits:
+        return value
+    findings.append({
+        "field": field,
+        "numbers": sorted(set(hits)),
+        "excerpt": value[:200],
+        "reason": "自由文本中的数字没有单位/窗口/来源，不进入 numbers[]；已标注未核验",
+    })
+    return _UNVERIFIED_NUMBER.sub(REDACTION, value) if redact else value
+
 
 def _number_entry(kind: str, item: Dict[str, Any],
                   problems: List[str]) -> Dict[str, Any]:
@@ -626,14 +703,29 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
     chain = chains[0]
     records = _records(study_dir)
     record_by_id = {str(item.get("record_id")): item for item in records if item.get("record_id")}
-    review_payload = review_payload if isinstance(review_payload, dict) else \
-        decision_review.review(study_dir)
+    findings: List[Dict[str, Any]] = []
+    recorded_review = _load(study_dir / REVIEW_REF)
+    # The brief projects the **recorded** review; it only generates one when none
+    # exists. Regenerating it would refresh the fingerprints and erase the very
+    # drift it is supposed to detect (D4).
+    review_payload = review_payload if isinstance(review_payload, dict) else (
+        recorded_review if isinstance(recorded_review, dict)
+        else decision_review.review(study_dir))
     audit = research_loop.cli_module().audit_payload(study_dir)
     claims = [item for item in audit.get("claims") or [] if isinstance(item, dict)]
     supported = sum(1 for claim in claims if claim.get("verdict") == "supported")
 
-    reasons = stale_reasons(study_dir, chains, judgments, set(record_by_id))
-    signal = review_signal(chain)
+    reasons = stale_reasons(
+        study_dir, chains, judgments, set(record_by_id),
+        previous_fingerprints=((recorded_review or {}).get("input_fingerprints") or {}).get(
+            "evidence") if isinstance(recorded_review, dict) else None)
+    # A study may carry several chains (one per candidate); a counter-evidence on
+    # any of them challenges the decision, so the signal unions them all instead
+    # of only looking at the first chain.
+    all_counter_ids: List[str] = []
+    for item in chains:
+        all_counter_ids.extend(str(value) for value in item.get("counter_evidence_ids") or [])
+    signal = review_signal(chain, extra_counter_ids=all_counter_ids)
     counter_ids = signal["counter_evidence_ids"]
     needs_re_review = signal["needs_re_review"]
 
@@ -641,17 +733,30 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
     # support) can only hold. It must never be rendered as a validated recommendation.
     cited = [value for value in _chain_evidence_ids(chain) if value in record_by_id]
     grounded = bool(cited) and supported > 0
+    nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
+    business = nodes.get("business") if isinstance(nodes.get("business"), dict) else {}
     recommendation_kind = _recommendation(chain, supported=supported if grounded else 0,
                                           recommended_option_id=None)["kind"]
     recommended_option_id = _recommended_option_id(study, chain, recommendation_kind)
     recommendation = _recommendation(chain, supported=supported if grounded else 0,
                                      recommended_option_id=recommended_option_id)
+    recommendation["statement"] = _guard_text(
+        recommendation["statement"], "business.statement", findings)
+    # The business statement is the canonical claim behind the recommendation; the
+    # gate decision may shadow it in the brief, so scan it too rather than letting a
+    # number hide behind the shadowed field.
+    _guard_text(str(business.get("statement") or ""), "business.statement", findings,
+                redact=False)
+    # Rationales are not copied into the brief, but a number there is still an
+    # unprovenanced claim: record it so the boundary is visible.
+    for node_name, node in (chain.get("nodes") or {}).items():
+        if isinstance(node, dict):
+            _guard_text(str(node.get("rationale") or ""), f"node.{node_name}.rationale",
+                        findings, redact=False)
 
-    nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
-    business = nodes.get("business") if isinstance(nodes.get("business"), dict) else {}
-    options, rejected_options = _options(study, chain, recommended_option_id)
+    options, rejected_options = _options(study, chain, recommended_option_id, findings)
     numbers, number_problems = _numbers(business)
-    prd_acceptance = _prd_acceptance(chain)
+    prd_acceptance = _prd_acceptance(chain, findings)
     prd_acceptance["linked_issues"] = [
         str(item) for item in (study.get("decision") or {}).get("linked_issues") or []
         if str(item).strip()
@@ -701,6 +806,10 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
         limitations.append("主链尚未 decided；当前只能等待验证，不能当作已批准")
     if number_problems:
         limitations.append("存在缺少单位/窗口/来源的数字：" + ", ".join(number_problems))
+    if findings:
+        limitations.append(
+            "自由文本中的数字未核验（已在正文标注 " + REDACTION + "）："
+            + ", ".join(sorted({str(item["field"]) for item in findings})))
     limitations = list(dict.fromkeys(limitations))
 
     challenge = None
@@ -755,7 +864,7 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
         ],
         "limitations": limitations,
         "rejected_options": rejected_options,
-        "verification_actions": _verification_actions(chain, review_payload, owner),
+        "verification_actions": _verification_actions(chain, review_payload, owner, findings),
         "prd_acceptance": prd_acceptance,
         "states": states,
         "decision_state": states["decision_state"],
@@ -767,6 +876,7 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
         "fabrication": {
             "invented_facts": [],
             "numbers_without_provenance": number_problems,
+            "unverified_numbers": findings,
             "checked_numbers": len(numbers),
             "checked_fields": [key for key in RESEARCH_FACT_KEYS],
             "boundary": "只从 canonical 摘录；未出现的访谈人数、转化率、市场规模保持 null",
