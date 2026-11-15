@@ -355,6 +355,24 @@ class DecideRunTests(DecideHelpers, unittest.TestCase):
                        .read_text(encoding="utf-8"))["candidates"])
         self.assertEqual(candidates_first, candidates_after)
 
+    def test_dry_start_never_rewinds_a_completed_task(self) -> None:
+        task = decision_task(self.dir)
+        task_id, _ = self.run_full(task)
+        state_path = self.workspace / "tasks" / task_id / "task.json"
+        before = json.loads(state_path.read_text(encoding="utf-8"))
+        self.assertEqual("review_required", before["state"])
+        # A dry start is read-only: same input, same task, no phase added.
+        completed, payload = self.start_bound(task)
+        self.assertEqual(0, completed.returncode, payload)
+        self.assertEqual("review_required", payload["state"])
+        self.assertEqual("human_reviewer", payload["next_actor"])
+        self.assertNotIn("loop authorize", payload["next_required_action"],
+                         "a collected task must not regress to the authorization gate")
+        after = json.loads(state_path.read_text(encoding="utf-8"))
+        self.assertEqual(before["state"], after["state"])
+        self.assertEqual(before["phase_history"], after["phase_history"],
+                         "a dry start must not append a phase")
+
     def test_interrupted_resume_requires_reconcile_and_recollects_nothing(self) -> None:
         task = decision_task(self.dir)
         completed, payload = self.start_bound(task, "--run")
@@ -392,7 +410,19 @@ class DecideStatusAndBriefTests(DecideHelpers, unittest.TestCase):
                 self.assertIn(field, payload, f"{stage} status missing {field}")
             self.assertTrue(payload["next_required_action"],
                             "a status without a concrete next step is not acceptable")
-        _, payload = self.status(self.start_bound(decision_task(self.dir))[1]["task_id"])
+        # A fresh question on a fresh (unplanned) study: a dry start reports
+        # `scoped` and the human gate. A task that already collected must not
+        # rewind (see test_dry_start_never_rewinds_a_completed_task).
+        study_b = self.dir / "study-b"
+        shutil.copytree(self.study, study_b)
+        for name in ("research-loop.json", "loop-candidates.json"):
+            (study_b / "04-findings" / name).unlink(missing_ok=True)
+        fresh = decision_task(self.dir, question="下一个问题：下一版先修哪些告警？")
+        fresh_path = self.write_input(fresh, name="fresh.json")
+        completed = run_cli("start", "--workspace", str(self.workspace),
+                            "--input", str(fresh_path), "--study", str(study_b))
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        _, payload = self.status(json.loads(completed.stdout)["task_id"])
         self.assertEqual("scoped", payload["state"])
         self.assertIn("loop authorize", payload["next_required_action"])
         task_id, _ = self.run_full(decision_task(self.dir))

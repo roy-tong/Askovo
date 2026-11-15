@@ -630,28 +630,20 @@ def _absorb_terminal(workspace: Path, task: Dict[str, Any], study_dir: Path) -> 
 # public orchestration API (shared by CLI and MCP)
 # --------------------------------------------------------------------------- #
 
-# Post-collection states that `decide start` (without --run) may re-scope. Delivery
-# is final, so `delivered` is deliberately absent.
-_RESCOPABLE_STATES = ("analyzed", "review_required", "brief_ready")
+def _ensure_plan(workspace: Path, task: Dict[str, Any]) -> None:
+    """Fill in a missing plan; never rewind a phase.
 
-
-def _rescore(workspace: Path, task: Dict[str, Any]) -> None:
-    """Re-scope an existing task without touching the loop journal.
-
-    ``decide start`` is idempotent by input hash: submitting the same task again
-    re-derives the plan instead of creating a second study or a second import. A
-    task that already collected drops back to ``scoped`` (pre-delivery only) so the
-    operator sees the plan; the next ``--run`` re-absorbs the completed loop, so no
-    evidence, candidate or artifact is lost.
+    A dry ``decide start`` is read-only (PRD §2.4: the default shows the plan
+    without reading). The A-02 product state machine only moves forward
+    (``created -> scoped -> collecting -> analyzed -> review_required ->
+    brief_ready -> delivered``), so re-submitting an identical task must not pull
+    a task that already collected back to ``scoped`` and must not send its
+    ``status`` next action back to "loop authorize". Only a task without a plan
+    gets one derived; everything else is reported as it is.
     """
-    if str(task.get("state")) not in _RESCOPABLE_STATES:
+    if task.get("plan", {}).get("planned"):
         return
-    if not task.get("plan", {}).get("planned"):
-        _plan(workspace, task)
-        return
-    previous = task.get("state")
-    _transition(workspace, task, "scoped",
-                detail=f"re-scoped from {previous}; loop journal and candidates unchanged")
+    _plan(workspace, task)
 
 
 def start(workspace: Path, raw_input: Optional[Dict[str, Any]] = None, *,
@@ -677,7 +669,7 @@ def start(workspace: Path, raw_input: Optional[Dict[str, Any]] = None, *,
             if run:
                 _execute(workspace, task)
             else:
-                _rescore(workspace, task)
+                _ensure_plan(workspace, task)
             return status(workspace, task_id)
 
     if raw_input is None:
@@ -728,7 +720,7 @@ def start(workspace: Path, raw_input: Optional[Dict[str, Any]] = None, *,
         else:
             task = existing
             if not run:
-                _rescore(workspace, task)
+                _ensure_plan(workspace, task)
         if run:
             _execute(workspace, task)
         return status(workspace, new_id)
