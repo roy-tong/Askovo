@@ -227,9 +227,14 @@ def _snapshot_row(raw: Dict[str, Any]) -> Dict[str, Any]:
             row["comments"] = comments
         elif field == "user":
             user = raw.get("user")
-            row["user"] = ({"login": str(user.get("login") or ""),
-                            "type": str(user.get("type") or "User")}
-                           if isinstance(user, dict) else {"login": str(user or ""), "type": "User"})
+            if isinstance(user, dict):
+                entry = {"login": str(user.get("login") or ""),
+                         "type": str(user.get("type") or "User")}
+                if user.get("id") is not None:
+                    entry["id"] = user.get("id")
+                row["user"] = entry
+            else:
+                row["user"] = {"login": str(user or ""), "type": "User"}
         elif field == "labels":
             labels = []
             for label in raw.get("labels") or []:
@@ -241,6 +246,21 @@ def _snapshot_row(raw: Dict[str, Any]) -> Dict[str, Any]:
         else:
             row[field] = raw.get(field)
     return row
+
+
+def _identity(login: Any, user_id: Any = None) -> Tuple[str, str]:
+    """Normalize a GitHub identity.
+
+    Logins are case-insensitive and may carry surrounding whitespace, so they are
+    ``casefold``-ed before use; the numeric ``user.id`` is the stable identity and
+    wins whenever the export provides it (D2: ``Alice``/``alice``/``  alice  `` is
+    one observed user, and a rename does not create a second one).
+    """
+    normalized = str(login or "").strip().casefold()
+    author_ref = f"github:{normalized}"
+    has_id = user_id is not None and str(user_id).strip() != ""
+    author_id = f"github-user:{user_id}" if has_id else f"login:{normalized}"
+    return author_ref, author_id
 
 
 def _login(raw: Dict[str, Any]) -> str:
@@ -470,14 +490,20 @@ def import_export(study_dir: Path, file_path: Path, *, authorized_by: str = "",
                  "created_at": raw.get("created_at") or "",
                  "claim_type": "need", "evidence_form": "self_report"},
                 "github", run_id, question)
+            author_ref, author_id = _identity(
+                login, (raw.get("user") or {}).get("id")
+                if isinstance(raw.get("user"), dict) else None)
             normalized["issue"] = {
                 "number": number,
                 "state": str(raw.get("state") or ""),
                 "updated_at": str(raw.get("updated_at") or ""),
-                "author_ref": f"github:{login}",
+                "author_ref": author_ref,
+                "author_id": author_id,
+                "user_id": ((raw.get("user") or {}).get("id")
+                            if isinstance(raw.get("user"), dict) else None),
                 "author_association": str(raw.get("author_association") or ""),
                 "labels": [item["name"] for item in raw.get("labels") or []],
-                "comments": [{"author_ref": f"github:{_login(comment)}",
+                "comments": [{"author_ref": _identity(_login(comment))[0],
                               "body": str(comment.get("body") or ""),
                               "created_at": str(comment.get("created_at") or "")}
                              for comment in raw.get("comments") or []],
@@ -821,12 +847,15 @@ def extract_candidates(study_dir: Path, *, question: str = "") -> Dict[str, Any]
                        for record in records
                        for comment in (record.get("issue") or {}).get("comments") or []}
     per_author: Dict[str, int] = {}
+    identities: set = set()
     for record in user_records:
-        author = str((record.get("issue") or {}).get("author_ref") or "")
+        issue = record.get("issue") or {}
+        author = str(issue.get("author_ref") or "")
         per_author[author] = per_author.get(author, 0) + 1
+        identities.add(str(issue.get("author_id") or author))
     observation = {
         "record_count": len(records),
-        "observed_users": len(per_author),
+        "observed_users": len(identities),
         "identity_basis": "login_only",
         "identity_basis_note": _identity_basis_note(),
         "records_per_author": dict(sorted(per_author.items())),
@@ -1004,6 +1033,55 @@ def _evidence_record(candidate: Dict[str, Any], *, level: str, context_key: str,
     }
 
 
+def _counter_ids(candidate: Dict[str, Any]) -> List[str]:
+    """The candidate's counter-evidence record ids, in a stable order.
+
+    One helper, used by both the judgment and the chain, so the two projections
+    cannot disagree (D3: A-03 -> A-04 ``review_signal``).
+    """
+    ids = [str(item.get("record_id") or "").strip()
+           for item in candidate.get("counter_evidence") or [] if isinstance(item, dict)]
+    return list(dict.fromkeys([record_id for record_id in ids if record_id]))
+
+
+def _counter_record(candidate: Dict[str, Any], record_id: str, item: Dict[str, Any], *,
+                    operator: str) -> Dict[str, Any]:
+    """Canonical evidence record for one counter-evidence id.
+
+    Registered with ``evidence_level: unclassified``: accepting a counter record
+    must not assign it a level, and the chain may only cite records the evidence
+    store contains (otherwise the brief reports a broken reference).
+    """
+    quote = str(item.get("quote") or "").strip()
+    return {
+        "record_id": record_id,
+        "context_key": "",
+        "user_role": str(candidate.get("user_role") or "unknown"),
+        "scene_trigger": "unknown",
+        "task_outcome": "unknown",
+        "current_substitute": "unknown",
+        "friction_cost": "unknown",
+        "consequence": "unknown",
+        "evidence_level": "unclassified",
+        "evidence_basis": (
+            f"counter-evidence of issue candidate {candidate.get('id')} "
+            f"({candidate.get('claim_kind')}); accepted by {operator}; level not assigned"),
+        "corpus_role": "counter",
+        "source_family": "github",
+        "source_ref": str(candidate.get("issue_ref") or ""),
+        "normalized_text_hash": _sha_text(quote or record_id),
+        "text": quote,
+        "claim_type": "counter",
+        "evidence_form": "self_report",
+        "platform": "github",
+        "issue_candidate_id": str(candidate.get("id") or ""),
+        "imported_at": _now(),
+        "boundary": (
+            "Counter-evidence candidate: it challenges the recommendation, not an "
+            "evidence level; human review decides what it means."),
+    }
+
+
 def _judgment(candidate: Dict[str, Any], *, judgment_id: str, record_id: str,
               context_key: str, status: str, operator: str) -> Dict[str, Any]:
     claim_kind = str(candidate.get("claim_kind") or "unknown")
@@ -1037,7 +1115,7 @@ def _judgment(candidate: Dict[str, Any], *, judgment_id: str, record_id: str,
         "problem_evidence_ids": problem_ids,
         "solution_evidence_ids": [],
         "commercial_evidence_ids": [],
-        "counter_evidence_ids": [],
+        "counter_evidence_ids": _counter_ids(candidate),
         "status": status,
         "confidence": "low",
         "gaps": gaps,
@@ -1105,7 +1183,7 @@ def _chain(candidate: Dict[str, Any], judgment: Dict[str, Any], *, chain_id: str
             "另一种解释：发帖人只代表自选择样本，目标用户整体可能并不这样任务",
             "另一种解释：这是方案请求而非已发生的行为，真实需求可能更弱",
         ],
-        "counter_evidence_ids": [],
+        "counter_evidence_ids": _counter_ids(candidate),
         "gaps": list(judgment.get("gaps") or []),
         "supporting_states": {
             "delivery": {"status": "unplanned", "release_plan_ref": ""},
@@ -1181,9 +1259,22 @@ def accept_candidate(study_dir: Path, candidate_id: str, *, by: str = "",
     evidence_path = study_dir / EVIDENCE_RELATIVE
     evidence_path.parent.mkdir(parents=True, exist_ok=True)
     existing_ids = {str(item.get("record_id")) for item in _read_jsonl(evidence_path)}
-    if record["record_id"] not in existing_ids:
-        with evidence_path.open("a", encoding="utf-8") as handle:
+    counter_records = [
+        _counter_record(candidate, record_id, item, operator=operator)
+        for record_id, item in ((str(entry.get("record_id") or "").strip(), entry)
+                                for entry in candidate.get("counter_evidence") or []
+                                if isinstance(entry, dict))
+        if record_id
+    ]
+    with evidence_path.open("a", encoding="utf-8") as handle:
+        if record["record_id"] not in existing_ids:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+            existing_ids.add(record["record_id"])
+        for counter_record in counter_records:
+            if counter_record["record_id"] in existing_ids:
+                continue
+            handle.write(json.dumps(counter_record, ensure_ascii=False) + "\n")
+            existing_ids.add(counter_record["record_id"])
 
     judgments_path = study_dir / JUDGMENTS_RELATIVE
     judgments_path.parent.mkdir(parents=True, exist_ok=True)
