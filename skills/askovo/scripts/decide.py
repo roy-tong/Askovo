@@ -706,19 +706,35 @@ def start(workspace: Path, raw_input: Optional[Dict[str, Any]] = None, *,
             _append_log(workspace, new_id, {"event": "created", "to": "created",
                                             "detail": normalized["question"]})
             _transition(workspace, task, "created", detail="task registered")
-            if study_dir is not None:
-                task["study"] = {"mode": "bound", "dir": str(Path(study_dir).resolve())}
-                _bind_study(workspace, new_id, task["study"])
+            if not _declared_authorization(task):
+                # D1 (PRD §3 A-02 细则 3/4, C-01 "read-only orchestrator"): the
+                # authorization gate precedes **any** source touch. A task without
+                # a named owner and an approved source gets neither a study
+                # scaffold nor a copied byte — only the task record and the
+                # import tasks a human needs.
+                task["plan"] = {"planned": False}
+                task["state_detail"] = {
+                    "reason": "no declared authorization for any source",
+                    "import_tasks": _import_tasks(task, []),
+                }
+                _transition(workspace, task, "needs_input", reason_code="AUTH_REQUIRED",
+                            detail="a named owner must declare allowed_sources before decide "
+                                   "creates a study or copies any source")
             else:
-                task["study"] = {"mode": "scaffolded", "study_id": "decide-" + new_id[-8:].lower(),
-                                 "dir": None}
-                task["study"]["dir"] = str(_scaffold_study(workspace, task))
-            task["artifacts"]["study"] = task["study"]["dir"]
-            _save_task(workspace, task)
-            _append_log(workspace, new_id, {
-                "event": "study_bound", "mode": task["study"]["mode"],
-                "study_dir": task["study"]["dir"]})
-            _plan(workspace, task)
+                if study_dir is not None:
+                    task["study"] = {"mode": "bound", "dir": str(Path(study_dir).resolve())}
+                    _bind_study(workspace, new_id, task["study"])
+                else:
+                    task["study"] = {"mode": "scaffolded",
+                                     "study_id": "decide-" + new_id[-8:].lower(),
+                                     "dir": None}
+                    task["study"]["dir"] = str(_scaffold_study(workspace, task))
+                task["artifacts"]["study"] = task["study"]["dir"]
+                _save_task(workspace, task)
+                _append_log(workspace, new_id, {
+                    "event": "study_bound", "mode": task["study"]["mode"],
+                    "study_dir": task["study"]["dir"]})
+                _plan(workspace, task)
         else:
             task = existing
             if not run:
