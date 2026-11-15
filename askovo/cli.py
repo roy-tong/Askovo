@@ -52,6 +52,7 @@ research:
   review <study>       decision review: evidence, readiness, falsifiability, bias, deliverables
   decision <action> <study> record/list/replay versioned decisions and current drift
   loop <action> <study>  gap-driven research rounds: plan/authorize/run/status/report
+  decide <action>      one-question decide executor: start/status/result/brief/cancel
   plan <study>         supporting platform/feasibility plan
   demo                 run the bundled offline sample
   doctor               check runtime, catalog, packs and version

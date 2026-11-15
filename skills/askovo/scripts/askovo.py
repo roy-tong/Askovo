@@ -33,6 +33,7 @@ import sure_engine  # noqa: E402
 import research_run  # noqa: E402
 import research_loop  # noqa: E402
 import decision_review  # noqa: E402
+import decide  # noqa: E402
 import role_catalog  # noqa: E402
 
 research_loop.bind_cli(sys.modules[__name__])
@@ -2640,6 +2641,108 @@ def command_loop(args: argparse.Namespace) -> int:
         return 2
 
 
+def command_decide(args: argparse.Namespace) -> int:
+    """A-02 one-question decide orchestrator (PRD §2.4).
+
+    ``start`` defaults to a dry run: it registers the task, writes the loop plan
+    and stops before any read. Reading requires ``--run`` *and* a human
+    ``askovo loop authorize``; ``decide`` never authorizes and never assesses.
+    """
+    action = str(getattr(args, "action", "") or "")
+    workspace = Path(getattr(args, "workspace", "") or decide.default_workspace()).resolve()
+    task_id = str(getattr(args, "task", "") or getattr(args, "task_id", "") or "").strip()
+    dry_run = bool(getattr(args, "dry_run", False))
+    run = bool(getattr(args, "run", False))
+    try:
+        if action == "start" and dry_run and run:
+            raise decide.DecideError(
+                "--run and --dry-run are mutually exclusive; drop --dry-run to execute",
+                "INPUT_REQUIRED")
+        if action == "start":
+            raw_input = getattr(args, "task_input", None)
+            input_file = str(getattr(args, "input", "") or "").strip()
+            question = str(getattr(args, "question", "") or "").strip()
+            if raw_input is not None and input_file:
+                raise decide.DecideError(
+                    "start takes one input: a task file (--input) or flags (--question/--repo)",
+                    "INPUT_REQUIRED")
+            if input_file:
+                path = Path(input_file).resolve()
+                if not path.is_file():
+                    raise decide.DecideError(f"task file does not exist: {path}", "INPUT_REQUIRED")
+                try:
+                    raw_input = json.loads(path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError as exc:
+                    raise decide.DecideError(
+                        f"task file is not valid JSON: {path} ({exc})", "INPUT_REQUIRED")
+            elif raw_input is not None:
+                pass  # MCP supplies the askovo.decision-task/1 document directly
+            elif task_id:
+                if question:
+                    raise decide.DecideError(
+                        "resume takes --input FILE (to re-check the frozen input) or no input "
+                        "at all; --question alone cannot be verified", "INPUT_REQUIRED")
+            else:
+                if not question:
+                    raise decide.DecideError(
+                        "decide start needs --input TASK.json or --question TEXT",
+                        "INPUT_REQUIRED",
+                        "the question is the one fact decide cannot invent")
+                raw_input = decide.task_from_flags(
+                    question=question,
+                    repo=str(getattr(args, "repo", "") or ""),
+                    decision_type=str(getattr(args, "decision_type", "") or ""),
+                    max_records=int(getattr(args, "max_records", decide.DEFAULT_MAX_RECORDS)),
+                    fixture=str(getattr(args, "fixture", "") or ""),
+                    deadline=str(getattr(args, "deadline", "") or ""),
+                    approved_by=str(getattr(args, "approved_by", "") or ""),
+                    allowed_sources=list(getattr(args, "allowed_source", []) or []) or None,
+                )
+            if raw_input is not None:
+                raw_input = decide.apply_mode(raw_input, str(getattr(args, "mode", "") or ""))
+            document = decide.start(
+                workspace, raw_input=raw_input, task_id=task_id or None,
+                run=run,
+                study_dir=(Path(args.study).resolve()
+                           if str(getattr(args, "study", "") or "").strip() else None),
+            )
+        elif action == "status":
+            document = decide.status(workspace, task_id)
+        elif action == "brief":
+            document = decide.brief(workspace, task_id,
+                                    fmt=str(getattr(args, "format", "") or "json"))
+        elif action == "result":
+            document = decide.result(workspace, task_id)
+        elif action == "cancel":
+            document = decide.cancel(workspace, task_id,
+                                     by=str(getattr(args, "by", "") or ""))
+        elif action == "review":
+            document = decide.review(workspace, task_id,
+                                     by=str(getattr(args, "by", "") or ""))
+        elif action == "delta":
+            document = decide.delta(workspace, task_id,
+                                    since=str(getattr(args, "since", "") or ""))
+        else:
+            raise decide.DecideError(f"unknown decide action {action!r}", "UNSUPPORTED_SCOPE")
+    except decide.DecideError as exc:
+        print(json.dumps({
+            "status": "refused",
+            "reason_code": exc.reason_code,
+            "reason": str(exc),
+            "suggestion": exc.suggestion or None,
+        }, ensure_ascii=False, indent=2))
+        return 2
+    except (OSError, ValueError, json.JSONDecodeError, RuntimeError) as exc:
+        print(json.dumps({"status": "error", "reason": "%s: %s" % (type(exc).__name__, exc)},
+                         ensure_ascii=False, indent=2))
+        return 2
+    if action == "brief" and str(getattr(args, "format", "") or "") == "md":
+        print(document.get("markdown") or "")
+    else:
+        print(json.dumps(document, ensure_ascii=False, indent=2))
+    return 0
+
+
 def command_review(args: argparse.Namespace) -> int:
     """Deterministic decision review: evidence, readiness, falsifiability, bias, deliverables."""
     study_dir = Path(args.study_dir).resolve()
@@ -4992,6 +5095,57 @@ def build_parser() -> argparse.ArgumentParser:
                              help="map: JSON file with host-supplied evidence mappings")
     loop_parser.set_defaults(func=command_loop)
 
+    decide_parser = subparsers.add_parser(
+        "decide",
+        help="one-question decide orchestrator: register, plan and track a decision task over "
+             "the authorized research loop (dry run by default; never authorizes or assesses)",
+    )
+    decide_parser.add_argument(
+        "action", choices=("start", "status", "result", "brief", "review", "delta", "cancel"),
+        help="start = register/plan; status = C-01 projection; result = brief + evidence index "
+             "+ validation backlog; brief = partial decision brief; review/delta = expert "
+             "entries (explicitly unsupported in A-02); cancel = stop reading")
+    decide_parser.add_argument("task_id", nargs="?", default="",
+                               help="task id for status/review/brief/delta/cancel")
+    decide_parser.add_argument("--workspace", default="",
+                               help="decide workspace holding tasks/ and studies/ "
+                                    "(default: $ASKOVO_DECIDE_HOME or ./askovo-decide)")
+    decide_parser.add_argument("--input", "--scope", dest="input", default="",
+                               help="start: askovo.decision-task/1 JSON file (PRD §2.2)")
+    decide_parser.add_argument("--question", default="",
+                               help="start: inline decision question (alternative to --input)")
+    decide_parser.add_argument("--repo", default="",
+                               help="start: owner/name repository the question is about")
+    decide_parser.add_argument("--decision-type", default="",
+                               help="start: prioritize_features or validate_hypothesis")
+    decide_parser.add_argument("--mode", default="", choices=("", "discover", "validate", "optimize"),
+                               help="start: PRD §2.4 research-mode alias "
+                                    "(discover -> prioritize_features, validate -> validate_hypothesis)")
+    decide_parser.add_argument("--max-records", type=int, default=decide.DEFAULT_MAX_RECORDS,
+                               help="start: hard record cap for the run (default 200)")
+    decide_parser.add_argument("--fixture", default="",
+                               help="start: authorized offline export used instead of a live read")
+    decide_parser.add_argument("--deadline", default="", help="start: decision deadline")
+    decide_parser.add_argument("--approved-by", default="",
+                               help="start: named owner declaring the authorization "
+                                    "(a declaration only; the loop still needs its own authorize)")
+    decide_parser.add_argument("--allowed-source", action="append", default=[],
+                               help="start: approved source platform (repeatable; default github)")
+    decide_parser.add_argument("--study", default="",
+                               help="start: bind an existing study instead of scaffolding one")
+    decide_parser.add_argument("--task", default="",
+                               help="start: resume this task id instead of creating one")
+    decide_parser.add_argument("--run", action="store_true",
+                               help="start: advance past planning, gated by the loop's own "
+                                    "human authorization")
+    decide_parser.add_argument("--dry-run", action="store_true",
+                               help="start: explicit dry run (the default); plans without reading")
+    decide_parser.add_argument("--format", default="json", choices=("json", "md"),
+                               help="brief: output format (default json)")
+    decide_parser.add_argument("--by", default="", help="cancel/review: named operator")
+    decide_parser.add_argument("--since", default="", help="delta: baseline, e.g. latest-accepted")
+    decide_parser.set_defaults(func=command_decide)
+
     review_parser = subparsers.add_parser(
         "review",
         help="deterministic decision review: audit gate, evidence, decision readiness, "
@@ -5258,17 +5412,23 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+DECIDE_ACTIONS = ("start", "status", "result", "brief", "review", "delta", "cancel")
+
 CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "explore",
     "external-research", "do", "domains",
     "methods", "catalog", "platforms", "collect", "research", "loop", "analyze", "instruments", "import", "queue",
-    "codebook", "chain", "economics", "psm", "decision", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
+    "codebook", "chain", "economics", "psm", "decision", "decide", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }
 
 
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
+    if (raw and raw[0] == "decide" and len(raw) > 1 and not raw[1].startswith("-")
+            and raw[1] not in DECIDE_ACTIONS):
+        # PRD §2.4: `askovo decide "question" --repo owner/repo` is the start form.
+        raw = ["decide", "start", "--question", raw[1], *raw[2:]]
     if raw and not raw[0].startswith("-") and raw[0] not in CLI_COMMANDS:
         # Bare natural-language request in any language: route it through `do`.
         raw = ["do", *raw]
