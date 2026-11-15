@@ -19,11 +19,12 @@ askovo 用同一主链服务五域产品经理、用户研究、用户运营及�
 13. [一问题研究执行器](decide.md) —— 一个问题 → 一个受跟踪任务：`decide start/status/brief/cancel`、C-01 状态字段、partial 产物与记录上限。
 14. [Issue 结构化](issues.md) —— 公开 Issue 导出 → 机器候选 → 人工接受：13 个候选字段、A13–A18 语义规则、选择偏差与私有内容边界。
 15. [Decision Brief](decision-brief.md) —— 一页决策九节：结论/选项/证据与反证/受限结论/不做的选择/下一动作/PRD 验收/四态，以及 `stale` 门禁与数字来源。
-16. [决策复盘](cli.md#review决策复盘) —— 审计门、决策就绪、可证伪、偏差与交付物核验。
-17. [SURE 引擎](sure-engine.md) —— 产品主链与研究支撑引擎的关系。
-18. [故障排查](troubleshooting.md) —— 安装、断链、门禁、采集与 MCP。
-19. [十二项证据检查](plan-evidence-check.md) —— 评审前过一遍：目标、因果链、判据、反证、成本、单点假设。
-20. [开源集成清单](open-source-integrations.md) —— 三个产品对 Docling/Playwright/Stagehand 等组件的实际接入状态与取舍。
+16. [增量研究 Delta](research-delta.md) —— append-only 证据快照、新增/变更/删除来源、受影响节点与反证影响、`needs_re_review` 与降级可读。
+17. [决策复盘](cli.md#review决策复盘) —— 审计门、决策就绪、可证伪、偏差与交付物核验。
+18. [SURE 引擎](sure-engine.md) —— 产品主链与研究支撑引擎的关系。
+19. [故障排查](troubleshooting.md) —— 安装、断链、门禁、采集与 MCP。
+20. [十二项证据检查](plan-evidence-check.md) —— 评审前过一遍：目标、因果链、判据、反证、成本、单点假设。
+21. [开源集成清单](open-source-integrations.md) —— 三个产品对 Docling/Playwright/Stagehand 等组件的实际接入状态与取舍。
 
 | 你想做什么 | 去哪 |
 | --- | --- |
@@ -32,6 +33,7 @@ askovo 用同一主链服务五域产品经理、用户研究、用户运营及�
 | 把一个问题变成一个受跟踪、可恢复、不越权的任务 | `askovo decide start --input task.json`（见 [一问题研究执行器](decide.md)） |
 | 把一堆公开 Issue 变成可复核的用户任务/需求 | `askovo issues import/…/accept`（见 [Issue 结构化](issues.md)） |
 | 把研究结论压成一页可复核的决策 Brief | `askovo brief <study>`（见 [Decision Brief](decision-brief.md)） |
+| 新素材进来时只看差异、不覆盖历史 | `askovo delta sync/show`（见 [增量研究 Delta](research-delta.md)） |
 | 出一份业务方案（给产品/市场问题） | `askovo deliver <study> --kind plan`（见 [CLI 参考](cli.md)） |
 | 我是研发转型全栈，要自己挖需求、定产品 | [快速开始·研发转全栈](quickstart.md#研发转全栈先证据后编码) 与[全栈研发入门手册](../skills/askovo/references/fullstack-developer-playbook.md) |
 | 看语料分布与判断覆盖 | `askovo deliver <study> --kind analysis` |

@@ -24,6 +24,7 @@ askovo --help
 | `decide start/status/result/brief/cancel` | 一问题研究执行器：登记任务、规划、受门禁执行、C-01 状态投影与 partial Brief | 0/2 |
 | `issues import/extract/list/edit/accept/reject/status/report` | Issue → 用户任务/需求结构化：本地导出快照、机器候选、人工接受进 canonical 链 | 0/2/4 |
 | `brief <study>` | Decision Brief：PRD §2.3 九节只读投影、PRD 开发验收清单、`stale` 门禁 | 0/1/2 |
+| `delta sync/show/status/approve` | 增量研究 Delta：append-only 快照、新增/变更/删除、受影响节点与反证影响、`needs_re_review` | 0/1/2/4 |
 | `queue init/add/run/status/retry` | SQLite 队列、worker、重试、限速、断点续跑 | 0/1/2 |
 | `analyze <study>` | 归一化、去重、分布、候选主题、问题匹配 | 0/2 |
 | `chain <study>` | 生成/渲染“场景→用户→痛点→需求→特性→产品→商业”推理链 | 0/2 |
@@ -267,6 +268,25 @@ askovo decide delta A-TASK-1A2B3C4D --since latest-accepted
 - 拒绝走稳定的 `reason_code`（`INPUT_REQUIRED` / `AUTH_REQUIRED` / `UNSUPPORTED_SCOPE` / `POLICY_DENIED` / `ARTIFACT_PARTIAL`），stdout 是拒绝文档，退出码 2，不生成貌似成功的任务。
 - 记录上限取 `authorization.max_records` 并同时写入 loop envelope；`cancel` 之后任何 `--run` 都返回 `POLICY_DENIED`，不再读取。
 - MCP 对应 `askovo_decide_start` / `askovo_decide_status` / `askovo_decide_result`，复用同一编排函数；细节见[一问题研究执行器](decide.md)。
+
+## delta（增量研究 Delta）
+
+```bash
+askovo delta sync ./study --file issues-v2.jsonl --authorized-by "research-lead"
+askovo delta show ./study --format md
+askovo delta status ./study
+askovo delta approve ./study --by "product-owner" --approval-ref "SIGNOFF-001" --option option-A
+askovo decide delta A-TASK-1A2B3C4D --workspace ./decide-workspace --since latest-accepted
+```
+
+- 按**来源 ID + 更新时间**比对两次授权导出：`added` / `changed` / `deleted`。不做内容相似度猜测。
+- 每次真实变化追加一个不可变版本目录 `04-findings/deltas/vNNN-<hash>/`；旧版本逐字节保留，被删除/被编辑的记录仍可读到原文、hash 与获取权说明。
+- 重复同步是 no-op：不生成新版本、`index.jsonl` 不动、`message` 写"无变化"。
+- 过滤条件（`--since`/`--label`）变化时**不**推断删除（`deletion_basis: not_asserted`）。
+- 同一 `source_id` 的编辑只算 `changed`；`author_id` 优先用稳定 `user.id`，登录名改名只记 `identity_drift`，不新增观测用户。
+- 新反证只置 `needs_re_review`：已批准的 `DecisionSnapshot` 保持只读（`decision_record_mutated: false`），`accepted`/`current`/`differences` 明确列出差异。
+- 来源不可达时 `show`/`status` 退出码 1，`stale: true` + `reason_code: STALE_SOURCE` + 上次成功时间；仍可浏览上次可用结果。
+- 细节见 [增量研究 Delta](research-delta.md)。
 
 ## brief（Decision Brief 与 PRD 验收投影）
 

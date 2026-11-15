@@ -261,6 +261,24 @@ askovo decide cancel A-TASK-xxxxxxxx --by "<operator>"
 - The brief stays `partial` (`ARTIFACT_PARTIAL`) with every gap listed while any gap is open, and `decision_state` is `not_approved` — delivered research never means `decision_approved` or `hypothesis_validated`.
 - `decide review` / `decide delta` are refused with `UNSUPPORTED_SCOPE` until A-04; use `askovo review` or `askovo decide brief` meanwhile.
 
+## Track what changed without rewriting history
+
+`askovo delta` is the incremental layer over A-03/A-04. New issue material never overwrites the old snapshot and never auto-changes an approved decision.
+
+```bash
+askovo delta sync <study> --file issues-v2.jsonl --authorized-by "<operator>"
+askovo delta show <study> --format md
+askovo delta approve <study> --by "<reviewer>" --approval-ref "<signoff>"
+askovo decide delta <task_id> --since latest-accepted
+```
+
+- **Append-only.** Every real change creates `04-findings/deltas/vNNN-<hash>/`; older versions stay byte-identical, so a deleted or edited record keeps its previous content, hash and acquisition basis.
+- **Identity, not content.** `added`/`changed`/`deleted` are keyed by source id + `updated_at`. An edited issue is not new evidence; an author rename is not a new observed user (`author_id` prefers the stable GitHub `user.id`, otherwise `identity_drift`).
+- **Idempotent.** The same export twice is a no-op: no new version, untouched index, delta says 无变化.
+- **Never auto-approve.** New counter-evidence only raises `needs_re_review`; the approved `DecisionSnapshot` stays read-only (`decision_record_mutated: false`) and `accepted`/`current`/`differences` spell out the gap. Approval is a declaration (`identity_basis: declaration_only`), not proof.
+- **`decision_delta.md` has four blocks**: added evidence, affected canonical nodes with record references, counter-evidence impact, re-review recommendation.
+- **Degraded read.** An unreachable source still shows the last good snapshot marked `stale` with the reason and last success time — never as current.
+
 ## Render the decision brief from the chain, never from prose
 
 `askovo brief` is the one-page decision artifact. It is a **read-only projection** of the canonical chain plus `decision_review`; it writes only `06-report/decision-brief.{json,md}` and never edits the chain, the judgments or the evidence.

@@ -160,7 +160,8 @@ class DeltaSyncTests(DeltaHelpers, unittest.TestCase):
     def test_first_sync_creates_a_versioned_snapshot(self) -> None:
         completed, payload = self.sync(self.base)
         self.assertEqual(0, completed.returncode, payload)
-        self.assertTrue(payload["changed"])
+        self.assertTrue(payload["has_changes"])
+        self.assertEqual(2, payload["counts"]["added"])
         self.assertEqual(1, len(self.versions()))
         version = self.versions()[0]["version"]
         self.assertTrue(version.startswith("v001-"), version)
@@ -180,7 +181,7 @@ class DeltaSyncTests(DeltaHelpers, unittest.TestCase):
         completed, payload = self.sync(self.base)
         self.assertEqual(0, completed.returncode, payload)
         self.assertTrue(payload["noop"])
-        self.assertFalse(payload["changed"])
+        self.assertFalse(payload["has_changes"])
         self.assertEqual(1, len(self.versions()), "a no-op must not create a new version")
         self.assertEqual(first_index, self.index_path().read_text(encoding="utf-8"))
         self.assertIn("无变化", payload["message"])
@@ -253,7 +254,8 @@ class DeltaHistoryTests(DeltaHelpers, unittest.TestCase):
         preserved = [item for item in self.evidence_lines(version)
                      if item["source_id"] == "github:10002"]
         self.assertEqual(1, len(preserved))
-        self.assertIn("dark mode", preserved[0]["body"])
+        self.assertEqual("add dark mode", preserved[0]["title"],
+                         "the deleted record keeps its previous content")
 
     def test_edited_record_keeps_the_previous_body(self) -> None:
         self.sync(self.base)
@@ -350,8 +352,9 @@ class DeltaDocumentTests(DeltaHelpers, unittest.TestCase):
 
     def test_affected_nodes_point_back_to_records(self) -> None:
         self.sync(self.base)
-        rows = self.base + [issue(3, "third", "third body", author="carol", author_id=503,
-                                  updated_at="2026-09-06T10:00:00Z")]
+        rows = json.loads(json.dumps(self.base))
+        rows[0]["body"] = "Nested JSON logs fail to parse; we retry by hand every day."
+        rows[0]["updated_at"] = "2026-09-06T10:00:00Z"
         _, payload = self.sync(rows)
         affected = {item["record_id"]: item for item in payload["affected_nodes"]
                     if item["record_id"] == "github:10001"}

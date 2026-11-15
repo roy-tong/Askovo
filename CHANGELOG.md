@@ -4,6 +4,26 @@
 
 ### Added
 
+- **A-05: incremental research delta** (`askovo delta`). The same decision
+  question keeps accumulating public issue material; `sync` compares an
+  authorized local export with the latest snapshot by **source id + `updated_at`**
+  and appends an immutable `04-findings/deltas/vNNN-<hash>/` version only when
+  something changed. Older versions stay byte-identical, so a deleted or edited
+  record keeps its previous content, hash and acquisition basis (A25); the
+  append-only `index.jsonl` and `state.json` make the history auditable. A
+  repeated sync is a no-op — no new version, untouched index, and a delta that
+  says 无变化 (A24). Identity is normalised through A-03's `author_ref`, with
+  `author_id` preferring the stable GitHub `user.id`, so an author rename is not
+  a new observed user and a login-only rename becomes `identity_drift` instead of
+  inflating the count (A26). `decision_delta.md` carries the four blocks — added
+  evidence, affected canonical nodes with record references, counter-evidence
+  impact, re-review recommendation — and a new counter-evidence only raises
+  `needs_re_review`: the approved `DecisionSnapshot` stays read-only
+  (`decision_record_mutated: false`) and `accepted` / `current` / `differences`
+  spell out the current-vs-accepted gap (A27). An unreachable source still shows
+  the last good snapshot, marked `stale` with `STALE_SOURCE`, the reason and the
+  last success time (A28). `askovo decide delta --since latest-accepted` now
+  returns the same document, replacing A-02's explicit refusal.
 - **A-04: Decision Brief + PRD dev acceptance** (`askovo brief`). One page per
   decision question, projected read-only from `product-reasoning.json`,
   `demand-judgments.json`, `evidence.jsonl` and `decision_review`; it writes
@@ -143,6 +163,18 @@
   without them, null-is-not-zero, no invented interviews or rates, uncalibrated
   heuristic scores, the stale gate at exit 1 with a diagnostic draft, and
   `decide brief` sharing the same builder. Full suite: 381 passed.
+- 25 new regression tests (`tests/test_research_delta.py`) freeze AC A24-A28
+  offline: versioned first sync with the full `DecisionSnapshot` field set,
+  no-op repeat sync, added/changed/deleted classification, deletion not asserted
+  under changed filters, old versions byte-identical, deleted and edited records
+  keeping their previous content, append-only index, content-addressed versions,
+  stable-id rename not a new user, login-only rename recorded as drift,
+  edit never becoming new evidence, the four delta blocks with record
+  references, counter-evidence impact, deterministic digests, declaration-only
+  approval, `needs_re_review` without mutating the approved record,
+  current-vs-accepted differences, no accepted baseline, degraded read at
+  `stale` with exit 1, authorization required, and `decide delta` sharing the
+  same document. Full suite: 406 passed.
 
 ## 2.17.1 - 2026-11-14
 

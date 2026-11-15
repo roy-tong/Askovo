@@ -226,6 +226,16 @@ askovo decide brief A-TASK-1A2B3C4D  # 同一份文档，绑定 decide 任务
 
 没有证据时只出 `hold` 与下一动作，绝不输出 validated；缺单位/窗口/来源的数字不予输出；访谈人数与转化率永不编造。详见[Decision Brief](docs/decision-brief.md)。
 
+同一个问题有新素材时，`askovo delta` 只显示差异、绝不改写历史：
+
+```bash
+askovo delta sync ./study --file issues-v2.jsonl --authorized-by "research-lead"
+askovo delta show ./study --format md     # 新增证据 / 已影响节点 / 反证影响 / 建议是否重审
+askovo delta approve ./study --by "product-owner" --approval-ref "SIGNOFF-001"
+```
+
+每次真实变化追加一个不可变快照版本，重复同步是 no-op。新反证只置 `needs_re_review`——已批准决定保持只读；来源不可达时仍显示上次可用结果并标 `stale`。详见[增量研究 Delta](docs/research-delta.md)。
+
 公开 GitHub issue 通常是最原始的素材。`askovo issues` 把授权导出变成机器候选，**只有具名的人接受后**才写进 canonical 证据——在那之前，PRD 那 13 个字段只是候选：
 
 ```bash

@@ -233,6 +233,16 @@ askovo decide brief A-TASK-1A2B3C4D  # same document, bound to a decide task
 
 No evidence still yields a `hold` with a next action, never a validated decision; a number without unit, window and source is withheld; interviews and conversion rates are never invented. See [Decision Brief](docs/decision-brief.md) (Chinese).
 
+When new issues arrive for the same question, `askovo delta` shows what changed without ever rewriting history:
+
+```bash
+askovo delta sync ./study --file issues-v2.jsonl --authorized-by "research-lead"
+askovo delta show ./study --format md     # 新增证据 / 已影响节点 / 反证影响 / 建议是否重审
+askovo delta approve ./study --by "product-owner" --approval-ref "SIGNOFF-001"
+```
+
+Every real change appends an immutable snapshot version; a repeated sync is a no-op. A new counter-evidence only raises `needs_re_review` — the approved decision stays read-only — and an unreachable source still shows the last good result, marked `stale`. See [research delta](docs/research-delta.md) (Chinese).
+
 Public GitHub issues are the usual raw material. `askovo issues` turns an authorized export into machine candidates and, only after a named human accepts one, into canonical evidence — the thirteen PRD fields stay candidates until then:
 
 ```bash
