@@ -37,6 +37,20 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 try:
+    import external_bridge
+except ModuleNotFoundError as exc:  # direct importlib loading used by embedders/tests
+    if exc.name != "external_bridge":
+        raise
+    _bridge_spec = importlib.util.spec_from_file_location(
+        "askovo_external_bridge", Path(__file__).with_name("external_bridge.py")
+    )
+    if _bridge_spec is None or _bridge_spec.loader is None:  # pragma: no cover
+        raise RuntimeError("cannot load external_bridge.py beside sure_engine.py")
+    external_bridge = importlib.util.module_from_spec(_bridge_spec)
+    sys.modules.setdefault("askovo_external_bridge", external_bridge)
+    _bridge_spec.loader.exec_module(external_bridge)
+
+try:
     import delivery_projection
 except ModuleNotFoundError as exc:  # direct importlib loading used by embedders/tests
     if exc.name != "delivery_projection":
@@ -6630,91 +6644,41 @@ def cli_explore(args: Any) -> int:
 
 
 def cli_external_research(args: Any) -> int:
-    """Run a host-provided research command and store its output as candidates.
+    """Run an authorized host adapter and store its output as unverified candidates.
 
-    Askovo does not import the external framework.  The command receives the
-    question/study through environment variables and must print one JSON object
-    on stdout.  Its output is a candidate list, never evidence or a validated
-    claim.
+    A-06: the subprocess boundary (env allowlist, signed command registry, bounded
+    streams, per-run id, no path escape) lives in :mod:`external_bridge`. Askovo
+    never fetches the returned URLs; they stay candidates with no evidence level.
     """
-    if not getattr(args, "authorize", False):
-        print("外部研究命令会以当前用户权限运行；确认来源与命令后加 --authorize", file=sys.stderr)
-        return 2
-    study_dir = Path(args.study_dir).resolve()
-    study_file = study_dir / "study.json"
-    if not study_file.is_file():
-        print(f"找不到 study.json: {study_file}", file=sys.stderr)
-        return 2
-    study = load_json(study_file)
-    command = shlex.split(str(args.command or ""))
-    if not command:
-        print("--command 不能为空", file=sys.stderr)
-        return 2
-    env = dict(os.environ)
-    env.update({
-        "ASKOVO_QUESTION": str(args.question or study.get("title") or ""),
-        "ASKOVO_STUDY": str(study_dir),
-        "ASKOVO_MODE": str((study.get("research_mode") or {}).get("mode") or ""),
-    })
     try:
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=args.timeout,
-                                   env=env, cwd=str(study_dir))
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        print(f"外部研究命令失败：{exc}", file=sys.stderr)
+        record = external_bridge.run(
+            Path(str(args.study_dir)),
+            str(args.command or ""),
+            authorize=bool(getattr(args, "authorize", False)),
+            trusted_local=bool(getattr(args, "trusted_local", False)),
+            question=str(getattr(args, "question", "") or ""),
+            output=str(getattr(args, "output", "") or ""),
+            timeout=getattr(args, "timeout", None),
+            max_stdout_bytes=getattr(args, "max_stdout_bytes", None),
+            max_stderr_bytes=getattr(args, "max_stderr_bytes", None),
+        )
+    except external_bridge.BridgeError as exc:
+        print(json.dumps({
+            "status": "refused",
+            "reason_code": exc.reason_code,
+            "reason": str(exc),
+            "suggestion": exc.suggestion or None,
+        }, ensure_ascii=False, indent=2))
         return 2
-    if completed.returncode != 0:
-        print(f"外部研究命令退出码 {completed.returncode}：{completed.stderr[:500]}", file=sys.stderr)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(json.dumps({"status": "error", "reason": "%s: %s" % (type(exc).__name__, exc)},
+                         ensure_ascii=False, indent=2))
         return 2
-    try:
-        payload = json.loads(completed.stdout)
-    except json.JSONDecodeError as exc:
-        print(f"外部研究输出不是 JSON：{exc}", file=sys.stderr)
-        return 2
-    sources = payload.get("sources") if isinstance(payload, dict) else None
-    if not isinstance(sources, list) or not sources:
-        print("外部研究输出必须包含非空 sources 列表", file=sys.stderr)
-        return 2
-    cleaned = []
-    for index, item in enumerate(sources, start=1):
-        if not isinstance(item, dict):
-            print(f"sources[{index}] 必须是对象", file=sys.stderr)
-            return 2
-        url = str(item.get("url") or "").strip()
-        if not url.startswith(("http://", "https://")):
-            print(f"sources[{index}].url 必须是 http(s) 链接", file=sys.stderr)
-            return 2
-        cleaned.append({
-            "id": f"X{index:02d}",
-            "url": url,
-            "title": str(item.get("title") or "").strip(),
-            "excerpt": str(item.get("excerpt") or "").strip(),
-            "claim": str(item.get("claim") or "").strip(),
-            "retrieved_at": str(item.get("retrieved_at") or datetime.now(timezone.utc).isoformat()),
-            "evidence_level": None,
-            "status": "candidate",
-        })
-    record = {
-        "schema": "askovo.external-research/1",
-        "study_id": study.get("study_id"),
-        "question": env["ASKOVO_QUESTION"],
-        "mode": env["ASKOVO_MODE"],
-        "command": command,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "sources": cleaned,
-        "notes": [str(item) for item in payload.get("notes") or []],
-        "review_required": True,
-        "boundary": ("外部框架返回的是候选材料：未定级、未与需求判断相连；"
-                     "只有人工把来源与记录映射到研究问题后才可能成为证据。"),
-    }
-    target_dir = study_dir / "04-findings" / "external-research"
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / (datetime.now().strftime("external-%Y%m%dT%H%M%S") + ".json")
-    target.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if getattr(args, "json", False):
         print(json.dumps(record, ensure_ascii=False, indent=2))
     else:
-        print(f"已保存外部研究候选：{target}")
-        print(f"- 来源：{len(cleaned)} 条；状态：candidate；需要人工定级与映射")
+        for line in external_bridge.summary_lines(record):
+            print(line)
     return 0
 
 

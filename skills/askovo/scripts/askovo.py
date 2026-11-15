@@ -5156,7 +5156,18 @@ def build_parser() -> argparse.ArgumentParser:
                                  help="外部研究命令；输出一个 JSON 对象到 stdout")
     external_parser.add_argument("--question", default="")
     external_parser.add_argument("--timeout", type=int, default=900)
-    external_parser.add_argument("--authorize", action="store_true")
+    external_parser.add_argument("--authorize", action="store_true",
+                                 help="required: the adapter runs with the current user's privileges")
+    external_parser.add_argument("--trusted-local", action="store_true",
+                                 help="A-06 escape hatch: run an unregistered --command "
+                                      "(still needs --authorize; recorded in the run)")
+    external_parser.add_argument("--output", default="",
+                                 help="output file inside the study "
+                                      "(default 04-findings/external-research/<run_id>.json)")
+    external_parser.add_argument("--max-stdout-bytes", type=int, default=None,
+                                 help="lower the stdout cap (cannot exceed the 256 KiB default)")
+    external_parser.add_argument("--max-stderr-bytes", type=int, default=None,
+                                 help="lower the stderr cap (cannot exceed the 64 KiB default)")
     external_parser.add_argument("--json", action="store_true")
     external_parser.set_defaults(func=sure_engine.cli_external_research)
 
