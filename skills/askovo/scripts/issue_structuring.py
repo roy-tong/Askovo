@@ -37,9 +37,10 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import sure_engine
+import write_integrity
 
 SCHEMA_VERSION = "1.0"
 CANDIDATES_KIND = "askovo.issue-candidates"
@@ -54,6 +55,7 @@ MANIFEST_RELATIVE = Path("01-sources/manifests")
 NORMALIZED_RELATIVE = Path("02-data/normalized.jsonl")
 EVIDENCE_RELATIVE = Path("02-data/evidence.jsonl")
 JUDGMENTS_RELATIVE = Path("04-findings/demand-judgments.json")
+REASONING_RELATIVE = Path("04-findings/product-reasoning.json")
 
 #: Deliberate seam for a future reviewed GitHub connector. Flipping this on
 #: without the reviewed connector and its access basis would be the exact
@@ -173,29 +175,85 @@ def _study(study_dir: Path) -> Dict[str, Any]:
     if not path.is_file():
         raise IssueError(f"study.json not found under {Path(study_dir).resolve()}",
                          "INPUT_REQUIRED", "run `askovo do` first")
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise IssueError(f"cannot read study.json: {exc}", "INTERNAL_ERROR")
-    if not isinstance(payload, dict):
-        raise IssueError("study.json must be an object", "INTERNAL_ERROR")
-    return payload
+    return _read_canonical_json(path, expected=dict, missing_ok=False)
+
+
+def _issue_error(exc: write_integrity.IntegrityError) -> IssueError:
+    """Map a storage-integrity refusal into the C-01 ``IssueError`` contract."""
+    return IssueError(str(exc), "INTERNAL_ERROR", exc.suggestion or "")
 
 
 def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
-    if not path.is_file():
+    """Read an append-only store; the first unreadable line is refused (A-07).
+
+    The pre-A-07 ``except JSONDecodeError: continue`` silently dropped records, so
+    a corrupt line looked like absent history. A line number is more useful than a
+    truncated view.
+    """
+    try:
+        return write_integrity.read_jsonl(path, missing_ok=True, label=path.name)
+    except write_integrity.IntegrityError as exc:
+        raise _issue_error(exc) from exc
+
+
+def _read_canonical_json(path: Path, *, expected: Any, missing_ok: bool) -> Any:
+    try:
+        return write_integrity.read_json(path, missing_ok=missing_ok, expected=expected,
+                                         label=path.name)
+    except write_integrity.IntegrityError as exc:
+        raise _issue_error(exc) from exc
+
+
+def _read_judgments(study_dir: Path, *, missing_ok: bool = True) -> List[Dict[str, Any]]:
+    path = Path(study_dir) / JUDGMENTS_RELATIVE
+    loaded = _read_canonical_json(path, expected=list, missing_ok=missing_ok)
+    if loaded is None:
         return []
-    records: List[Dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            item = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(item, dict):
-            records.append(item)
-    return records
+    for index, item in enumerate(loaded):
+        if not isinstance(item, dict):
+            raise IssueError(
+                f"canonical judgment {path} entry {index} must be a JSON object, got "
+                f"{type(item).__name__}", "INTERNAL_ERROR",
+                "repair demand-judgments.json; refusing to rewrite a file whose shape is unknown")
+    return loaded
+
+
+def _read_reasoning(study_dir: Path, *, missing_ok: bool = True) -> Dict[str, Any]:
+    path = Path(study_dir) / REASONING_RELATIVE
+    loaded = _read_canonical_json(path, expected=dict, missing_ok=missing_ok)
+    if loaded is None:
+        return {}
+    chains = loaded.get("chains")
+    if chains is None:
+        chains = []
+    if not isinstance(chains, list):
+        raise IssueError(
+            f"canonical chain file {path} has a non-list 'chains' field "
+            f"({type(chains).__name__})", "INTERNAL_ERROR",
+            "repair product-reasoning.json; refusing to rewrite a file whose shape is unknown")
+    for index, item in enumerate(chains):
+        if not isinstance(item, dict):
+            raise IssueError(
+                f"canonical chain file {path} chains[{index}] must be a JSON object, got "
+                f"{type(item).__name__}", "INTERNAL_ERROR")
+    loaded["chains"] = chains
+    return loaded
+
+
+def _json_bytes(document: Any) -> bytes:
+    return (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
+def _trail_payload(entry: Dict[str, Any]) -> str:
+    payload = {"schema_version": SCHEMA_VERSION, "kind": ACCEPTANCE_KIND, **entry}
+    return json.dumps(payload, ensure_ascii=False) + "\n"
+
+
+def _attach_recovery(document: Dict[str, Any], txn: write_integrity.Transaction) -> Dict[str, Any]:
+    if txn.recovery and txn.recovery.get("status") not in (None, "none"):
+        document["recovery"] = txn.recovery
+    return document
+
 
 
 # --------------------------------------------------------------------------- #
@@ -303,8 +361,12 @@ def _ensure_source_plan(study_dir: Path, *, record_count: int, selection_bias: s
             with path.open(encoding="utf-8-sig", newline="") as handle:
                 rows = [dict(row) for row in csv.DictReader(handle)
                         if str(row.get("source_family") or "").strip()]
-        except OSError:
-            rows = []
+        except OSError as exc:
+            raise IssueError(
+                f"cannot read source plan {path}: {type(exc).__name__}: {exc}",
+                "INTERNAL_ERROR",
+                "repair source-plan.csv; refusing to overwrite a plan whose rows could not "
+                "be read") from exc
     if any(str(row.get("source_family")) == "github" for row in rows):
         return
     rows.append({
@@ -520,8 +582,11 @@ def import_export(study_dir: Path, file_path: Path, *, authorized_by: str = "",
 
     state_path = study_dir / IMPORTS_RELATIVE
     state_path.parent.mkdir(parents=True, exist_ok=True)
+    previous = _read_canonical_json(state_path, expected=dict, missing_ok=True) or {}
+    previous_imports = [item for item in previous.get("imports") or []
+                        if isinstance(item, dict)]
     state = {"schema_version": SCHEMA_VERSION, "kind": IMPORTS_KIND,
-             "updated_at": _now(), "imports": _read_jsonl(state_path)}
+             "updated_at": _now(), "imports": previous_imports}
     state["imports"] = [item for item in state["imports"] if item.get("run_id") != run_id]
     state["imports"].append({
         "run_id": run_id, "manifest": str(manifest_path), "snapshot": str(snapshot_path),
@@ -709,14 +774,24 @@ def _import_context(study_dir: Path) -> Dict[str, Any]:
     path = Path(study_dir) / IMPORTS_RELATIVE
     if not path.is_file():
         return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    payload = _read_canonical_json(path, expected=dict, missing_ok=False)
+    imports = payload.get("imports")
+    if imports is None:
         return {}
-    imports = payload.get("imports") if isinstance(payload, dict) else None
-    if not isinstance(imports, list) or not imports:
+    if not isinstance(imports, list):
+        raise IssueError(
+            f"issue import record {path} has a non-list 'imports' field "
+            f"({type(imports).__name__})", "INTERNAL_ERROR",
+            "repair issue-imports.json; selection bias cannot be reconstructed from a guess")
+    if not imports:
         return {}
-    return imports[-1] if isinstance(imports[-1], dict) else {}
+    return imports[-1] if isinstance(imports[-1], dict) else _corrupt_import_context(path)
+
+
+def _corrupt_import_context(path: Path) -> Dict[str, Any]:
+    raise IssueError(
+        f"issue import record {path} ends with a non-object entry", "INTERNAL_ERROR",
+        "repair issue-imports.json before re-extracting candidates")
 
 
 def extract_candidates(study_dir: Path, *, question: str = "") -> Dict[str, Any]:
@@ -724,10 +799,23 @@ def extract_candidates(study_dir: Path, *, question: str = "") -> Dict[str, Any]
 
     Re-extraction is deterministic and preserves human decisions: an accepted or
     rejected candidate keeps its status, edits and acceptance reference; only the
-    machine-derived fields are refreshed.
+    machine-derived fields are refreshed. A-07 runs it under the canonical write
+    lock so a concurrent accept cannot be overwritten by a stale candidate file.
     """
     study_dir = Path(study_dir).resolve()
     study = _study(study_dir)
+    try:
+        with write_integrity.Transaction(study_dir, purpose="issues extract") as txn:
+            document = _extract_candidates_locked(study_dir, study=study, question=question)
+            txn.add(CANDIDATES_RELATIVE, _json_bytes(document), mode="replace")
+            txn.commit()
+            return _attach_recovery(dict(document), txn)
+    except write_integrity.IntegrityError as exc:
+        raise _issue_error(exc) from exc
+
+
+def _extract_candidates_locked(study_dir: Path, *, study: Dict[str, Any],
+                               question: str = "") -> Dict[str, Any]:
     records = [record for record in _read_jsonl(study_dir / NORMALIZED_RELATIVE)
                if record.get("issue")]
     if not records:
@@ -746,13 +834,15 @@ def extract_candidates(study_dir: Path, *, question: str = "") -> Dict[str, Any]
 
     previous: Dict[str, Dict[str, Any]] = {}
     if (study_dir / CANDIDATES_RELATIVE).is_file():
-        try:
-            existing = json.loads((study_dir / CANDIDATES_RELATIVE).read_text(encoding="utf-8"))
-            for item in existing.get("candidates") or []:
-                if isinstance(item, dict) and item.get("id"):
-                    previous[str(item["id"])] = item
-        except (OSError, json.JSONDecodeError):
-            previous = {}
+        # A corrupt candidate file must never be treated as "no previous
+        # candidates": that would silently re-propose every accepted candidate.
+        existing = _validate_candidates_document(
+            _read_canonical_json(study_dir / CANDIDATES_RELATIVE,
+                                 expected=dict, missing_ok=False),
+            study_dir / CANDIDATES_RELATIVE)
+        for item in existing.get("candidates") or []:
+            if isinstance(item, dict) and item.get("id"):
+                previous[str(item["id"])] = item
 
     context = _import_context(study_dir)
     selection_bias = str(context.get("selection_bias") or "")
@@ -905,9 +995,6 @@ def extract_candidates(study_dir: Path, *, question: str = "") -> Dict[str, Any]
         "observation": observation,
         "selection_bias": selection_bias,
     })
-    (study_dir / CANDIDATES_RELATIVE).parent.mkdir(parents=True, exist_ok=True)
-    (study_dir / CANDIDATES_RELATIVE).write_text(
-        json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return document
 
 
@@ -927,23 +1014,28 @@ _EDITABLE_FIELDS = set(CANDIDATE_FIELDS) | {"user_role"}
 _ACCEPT_FIELDS = {"status", "confidence", "judgment_id", "context_key"}
 
 
+def _validate_candidates_document(document: Dict[str, Any], path: Path) -> Dict[str, Any]:
+    candidates = document.get("candidates")
+    if candidates is not None and not isinstance(candidates, list):
+        raise IssueError(
+            f"issue candidate file {path} has a non-list 'candidates' field "
+            f"({type(candidates).__name__})", "INTERNAL_ERROR",
+            "repair issue-candidates.json; refusing to rewrite a file whose shape is unknown")
+    for index, item in enumerate(candidates or []):
+        if not isinstance(item, dict):
+            raise IssueError(
+                f"issue candidate file {path} candidates[{index}] must be a JSON object, "
+                f"got {type(item).__name__}", "INTERNAL_ERROR")
+    return document
+
+
 def _load_candidates(study_dir: Path) -> Dict[str, Any]:
     path = Path(study_dir).resolve() / CANDIDATES_RELATIVE
     if not path.is_file():
         raise IssueError("no issue candidates yet; run `askovo issues extract STUDY`",
                          "INPUT_REQUIRED")
-    try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise IssueError(f"cannot read issue candidates: {exc}", "INTERNAL_ERROR")
-    if not isinstance(document, dict):
-        raise IssueError("issue candidates document must be an object", "INTERNAL_ERROR")
-    return document
-
-
-def _save_candidates(study_dir: Path, document: Dict[str, Any]) -> None:
-    (Path(study_dir) / CANDIDATES_RELATIVE).write_text(
-        json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    document = _read_canonical_json(path, expected=dict, missing_ok=False)
+    return _validate_candidates_document(document, path)
 
 
 def _find_candidate(document: Dict[str, Any], candidate_id: str) -> Dict[str, Any]:
@@ -953,14 +1045,6 @@ def _find_candidate(document: Dict[str, Any], candidate_id: str) -> Dict[str, An
             return candidate
     raise IssueError(f"unknown candidate {wanted!r}", "INPUT_REQUIRED",
                      "run `askovo issues list STUDY` to see candidate ids")
-
-
-def _append_trail(study_dir: Path, entry: Dict[str, Any]) -> None:
-    path = Path(study_dir) / ACCEPTANCE_RELATIVE
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"schema_version": SCHEMA_VERSION, "kind": ACCEPTANCE_KIND, **entry}
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
 def _parse_edits(pairs: List[str]) -> Dict[str, str]:
@@ -990,21 +1074,29 @@ def edit_candidate(study_dir: Path, candidate_id: str, *, by: str = "",
     changes = dict(edits or {})
     if not changes:
         raise IssueError("edit needs at least one --set field=value", "INPUT_REQUIRED")
-    document = _load_candidates(study_dir)
-    candidate = _find_candidate(document, candidate_id)
-    for key, value in changes.items():
-        candidate[key] = value
-    candidate.setdefault("edits", []).append({
-        "by": operator, "at": _now(), "fields": changes,
-    })
-    _save_candidates(study_dir, document)
-    _append_trail(study_dir, {
-        "candidate_id": candidate_id, "issue_ref": candidate.get("issue_ref"),
-        "status": "edited", "accepted_by": operator, "accepted_at": _now(),
-        "edits": changes, "evidence": None, "judgment_id": None, "reason": "",
-    })
-    return {"status": "edited", "candidate_id": candidate_id, "edits": changes,
-            "candidate": candidate}
+    try:
+        with write_integrity.Transaction(
+                study_dir, purpose=f"issues edit {candidate_id}",
+                meta={"candidate_id": str(candidate_id), "operator": operator}) as txn:
+            document = _load_candidates(study_dir)
+            candidate = _find_candidate(document, candidate_id)
+            for key, value in changes.items():
+                candidate[key] = value
+            candidate.setdefault("edits", []).append({
+                "by": operator, "at": _now(), "fields": changes,
+            })
+            txn.add(CANDIDATES_RELATIVE, _json_bytes(document), mode="replace")
+            txn.add(ACCEPTANCE_RELATIVE, _trail_payload({
+                "candidate_id": candidate_id, "issue_ref": candidate.get("issue_ref"),
+                "status": "edited", "accepted_by": operator, "accepted_at": _now(),
+                "edits": changes, "evidence": None, "judgment_id": None, "reason": "",
+            }), mode="append")
+            txn.commit()
+            return _attach_recovery({
+                "status": "edited", "candidate_id": candidate_id, "edits": changes,
+                "candidate": candidate}, txn)
+    except write_integrity.IntegrityError as exc:
+        raise _issue_error(exc) from exc
 
 
 def _evidence_record(candidate: Dict[str, Any], *, level: str, context_key: str,
@@ -1211,6 +1303,35 @@ def _chain(candidate: Dict[str, Any], judgment: Dict[str, Any], *, chain_id: str
     }
 
 
+def _verify_accepted_join(candidate: Dict[str, Any], *, evidence_ids: Set[str],
+                          judgments: List[Dict[str, Any]],
+                          chains: List[Dict[str, Any]], study_dir: Path) -> None:
+    """An ``accepted`` flag without its evidence/judgment/chain is not success (A-07)."""
+    accepted = candidate.get("accepted") if isinstance(candidate.get("accepted"), dict) else {}
+    record_id = str(accepted.get("evidence_record_id") or "")
+    judgment_id = str(accepted.get("judgment_id") or "")
+    problems: List[str] = []
+    if not record_id or record_id not in evidence_ids:
+        problems.append(
+            f"evidence record {record_id or '<missing>'} is not in "
+            f"{study_dir / EVIDENCE_RELATIVE}")
+    if not judgment_id or not any(str(item.get("id")) == judgment_id for item in judgments):
+        problems.append(
+            f"judgment {judgment_id or '<missing>'} is not in "
+            f"{study_dir / JUDGMENTS_RELATIVE}")
+    if not judgment_id or not any(str(item.get("demand_judgment_id")) == judgment_id
+                                  for item in chains):
+        problems.append(
+            f"chain for judgment {judgment_id or '<missing>'} is not in "
+            f"{study_dir / REASONING_RELATIVE}")
+    if problems:
+        raise IssueError(
+            f"candidate {candidate.get('id')} is marked accepted but the canonical join is "
+            f"incomplete: " + "; ".join(problems), "INTERNAL_ERROR",
+            "run `askovo issues recover STUDY --apply`, then inspect the study with "
+            "`askovo audit`")
+
+
 def accept_candidate(study_dir: Path, candidate_id: str, *, by: str = "",
                      judgment_id: str = "", context_key: str = "",
                      evidence_level: str = "", status: str = "hypothesis",
@@ -1220,6 +1341,11 @@ def accept_candidate(study_dir: Path, candidate_id: str, *, by: str = "",
     A named human is mandatory (``AUTH_REQUIRED``); the evidence level is capped
     by the claim kind, so a feature request can never be registered as observed
     behaviour (``POLICY_DENIED``).
+
+    A-07: every canonical input is read strictly *before* the first byte is
+    written (a corrupt file is an ``INTERNAL_ERROR`` refusal, never ``[]/{}``),
+    the five writes are one journaled transaction, and the cross-process lock is
+    held from the re-read to the commit.
     """
     study_dir = Path(study_dir).resolve()
     _study(study_dir)
@@ -1229,154 +1355,152 @@ def accept_candidate(study_dir: Path, candidate_id: str, *, by: str = "",
             "accepting a candidate requires a named human reviewer (--by NAME)",
             "AUTH_REQUIRED",
             "machine candidates never promote themselves into the chain")
-    document = _load_candidates(study_dir)
-    candidate = _find_candidate(document, candidate_id)
-    if str(candidate.get("status")) == "accepted":
-        return {
-            "status": "accepted",
-            "already_accepted": True,
-            "candidate_id": str(candidate.get("id")),
-            "evidence_record_id": (candidate.get("accepted") or {}).get("evidence_record_id"),
-            "evidence_level": (candidate.get("accepted") or {}).get("evidence_level"),
-            "judgment_id": (candidate.get("accepted") or {}).get("judgment_id"),
-            "next_required_action": "already accepted; review the judgment and collect the next gap",
-        }
-    claim_kind = str(candidate.get("claim_kind") or "unknown")
-    cap = str(candidate.get("evidence_cap") or EVIDENCE_CAP.get(claim_kind, "E0"))
-    level = str(evidence_level or cap).strip().upper()
-    if level not in _LEVEL_ORDER:
-        raise IssueError(f"unknown evidence_level {level!r}", "INPUT_REQUIRED",
-                         "E0, E1, E2, E3, E4-, E4+, E5")
-    if _LEVEL_ORDER[level] > _LEVEL_ORDER[cap]:
-        raise IssueError(
-            f"candidate {candidate_id} is a {claim_kind}; its evidence cap is {cap}, so {level} "
-            f"is refused. A feature request states a desire (E1) and cannot be registered as "
-            f"observed behaviour", "POLICY_DENIED",
-            "record the request as a hypothesis, or collect behaviour evidence first")
-    status_value = str(status or "hypothesis").strip()
-    if status_value not in ("hypothesis", "needs-validation", "rejected", "deprioritized"):
-        raise IssueError(
-            f"accepting an issue candidate cannot set status {status_value!r}; a single "
-            f"self-reported issue cannot validate a judgment", "POLICY_DENIED",
-            "use hypothesis or needs-validation; validated needs the full three-chain evidence")
-    changes = dict(edits or {})
-    unknown = sorted(set(changes) - _EDITABLE_FIELDS)
-    if unknown:
-        raise IssueError(
-            "cannot edit field(s) " + ", ".join(unknown) + "; editable: "
-            + ", ".join(sorted(_EDITABLE_FIELDS)), "UNSUPPORTED_SCOPE")
-    for key, value in changes.items():
-        candidate[key] = value
-    context = str(context_key or "").strip()
-    record = _evidence_record(candidate, level=level, context_key=context, operator=operator)
-    evidence_path = study_dir / EVIDENCE_RELATIVE
-    evidence_path.parent.mkdir(parents=True, exist_ok=True)
-    existing_ids = {str(item.get("record_id")) for item in _read_jsonl(evidence_path)}
-    counter_records = [
-        _counter_record(candidate, record_id, item, operator=operator)
-        for record_id, item in ((str(entry.get("record_id") or "").strip(), entry)
-                                for entry in candidate.get("counter_evidence") or []
-                                if isinstance(entry, dict))
-        if record_id
-    ]
-    with evidence_path.open("a", encoding="utf-8") as handle:
-        if record["record_id"] not in existing_ids:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-            existing_ids.add(record["record_id"])
-        for counter_record in counter_records:
-            if counter_record["record_id"] in existing_ids:
-                continue
-            handle.write(json.dumps(counter_record, ensure_ascii=False) + "\n")
-            existing_ids.add(counter_record["record_id"])
+    try:
+        with write_integrity.Transaction(
+                study_dir, purpose=f"issues accept {candidate_id}",
+                meta={"candidate_id": str(candidate_id), "operator": operator}) as txn:
+            document = _load_candidates(study_dir)
+            candidate = _find_candidate(document, candidate_id)
+            evidence_path = study_dir / EVIDENCE_RELATIVE
+            evidence_records = _read_jsonl(evidence_path)
+            existing_ids = {str(item.get("record_id")) for item in evidence_records}
+            judgments = _read_judgments(study_dir)
+            reasoning = _read_reasoning(study_dir)
+            chains = reasoning["chains"]
+            if str(candidate.get("status")) == "accepted":
+                _verify_accepted_join(candidate, evidence_ids=existing_ids,
+                                      judgments=judgments, chains=chains,
+                                      study_dir=study_dir)
+                accepted = candidate.get("accepted") or {}
+                return _attach_recovery({
+                    "status": "accepted",
+                    "already_accepted": True,
+                    "candidate_id": str(candidate.get("id")),
+                    "evidence_record_id": accepted.get("evidence_record_id"),
+                    "evidence_level": accepted.get("evidence_level"),
+                    "judgment_id": accepted.get("judgment_id"),
+                    "next_required_action": (
+                        "already accepted; review the judgment and collect the next gap"),
+                }, txn)
+            claim_kind = str(candidate.get("claim_kind") or "unknown")
+            cap = str(candidate.get("evidence_cap") or EVIDENCE_CAP.get(claim_kind, "E0"))
+            level = str(evidence_level or cap).strip().upper()
+            if level not in _LEVEL_ORDER:
+                raise IssueError(f"unknown evidence_level {level!r}", "INPUT_REQUIRED",
+                                 "E0, E1, E2, E3, E4-, E4+, E5")
+            if _LEVEL_ORDER[level] > _LEVEL_ORDER[cap]:
+                raise IssueError(
+                    f"candidate {candidate_id} is a {claim_kind}; its evidence cap is {cap}, so "
+                    f"{level} is refused. A feature request states a desire (E1) and cannot be "
+                    f"registered as observed behaviour", "POLICY_DENIED",
+                    "record the request as a hypothesis, or collect behaviour evidence first")
+            status_value = str(status or "hypothesis").strip()
+            if status_value not in ("hypothesis", "needs-validation", "rejected", "deprioritized"):
+                raise IssueError(
+                    f"accepting an issue candidate cannot set status {status_value!r}; a single "
+                    f"self-reported issue cannot validate a judgment", "POLICY_DENIED",
+                    "use hypothesis or needs-validation; validated needs the full three-chain "
+                    "evidence")
+            changes = dict(edits or {})
+            unknown = sorted(set(changes) - _EDITABLE_FIELDS)
+            if unknown:
+                raise IssueError(
+                    "cannot edit field(s) " + ", ".join(unknown) + "; editable: "
+                    + ", ".join(sorted(_EDITABLE_FIELDS)), "UNSUPPORTED_SCOPE")
+            for key, value in changes.items():
+                candidate[key] = value
+            context = str(context_key or "").strip()
+            record = _evidence_record(candidate, level=level, context_key=context,
+                                      operator=operator)
+            counter_records = [
+                _counter_record(candidate, record_id, item, operator=operator)
+                for record_id, item in ((str(entry.get("record_id") or "").strip(), entry)
+                                        for entry in candidate.get("counter_evidence") or []
+                                        if isinstance(entry, dict))
+                if record_id
+            ]
+            appended: List[str] = []
+            for new_record in [record] + counter_records:
+                if new_record["record_id"] in existing_ids:
+                    continue
+                appended.append(json.dumps(new_record, ensure_ascii=False) + "\n")
+                existing_ids.add(new_record["record_id"])
+            wanted_id = str(judgment_id or "").strip() or f"D{len(judgments) + 1:02d}"
+            judgment = _judgment(candidate, judgment_id=wanted_id,
+                                 record_id=record["record_id"],
+                                 context_key=context, status=status_value,
+                                 operator=operator)
+            judgments = [item for item in judgments if str(item.get("id")) != wanted_id]
+            judgments.append(judgment)
 
-    judgments_path = study_dir / JUDGMENTS_RELATIVE
-    judgments_path.parent.mkdir(parents=True, exist_ok=True)
-    judgments: List[Dict[str, Any]] = []
-    if judgments_path.is_file():
-        try:
-            loaded = json.loads(judgments_path.read_text(encoding="utf-8"))
-            judgments = [item for item in loaded if isinstance(item, dict)] \
-                if isinstance(loaded, list) else []
-        except (OSError, json.JSONDecodeError):
-            judgments = []
-    wanted_id = str(judgment_id or "").strip() or f"D{len(judgments) + 1:02d}"
-    judgment = _judgment(candidate, judgment_id=wanted_id, record_id=record["record_id"],
-                         context_key=context, status=status_value, operator=operator)
-    judgments = [item for item in judgments if str(item.get("id")) != wanted_id]
-    judgments.append(judgment)
-    judgments_path.write_text(json.dumps(judgments, ensure_ascii=False, indent=2) + "\n",
-                              encoding="utf-8")
+            # The accepted judgment is projected into the canonical seven-node chain: the
+            # evidence -> demand-judgments -> product-reasoning join stays the only truth.
+            chain_id = ""
+            for item in chains:
+                if str(item.get("demand_judgment_id")) == wanted_id:
+                    chain_id = str(item.get("id") or "")
+                    break
+            if not chain_id:
+                taken = {str(item.get("id")) for item in chains}
+                position = 1
+                while f"PR{position:02d}" in taken:
+                    position += 1
+                chain_id = f"PR{position:02d}"
+            chain_status = (status_value if status_value in ("rejected", "deprioritized")
+                            else "hypothesis")
+            chains = [item for item in chains
+                      if str(item.get("id")) != chain_id
+                      and str(item.get("demand_judgment_id")) != wanted_id]
+            chain = _chain(candidate, judgment, chain_id=chain_id, context_key=context,
+                           record_id=record["record_id"], status_value=chain_status)
+            chains.append(chain)
+            reasoning["chains"] = chains
+            reasoning.setdefault("schema_version", "2.0")
+            reasoning.setdefault("flow", list(sure_engine.REASONING_NODES))
 
-    # The accepted judgment is projected into the canonical seven-node chain: the
-    # evidence -> demand-judgments -> product-reasoning join stays the only truth.
-    reasoning_path = study_dir / "04-findings" / "product-reasoning.json"
-    reasoning: Dict[str, Any] = {}
-    if reasoning_path.is_file():
-        try:
-            loaded = json.loads(reasoning_path.read_text(encoding="utf-8"))
-            reasoning = loaded if isinstance(loaded, dict) else {}
-        except (OSError, json.JSONDecodeError):
-            reasoning = {}
-    chains = [item for item in reasoning.get("chains") or [] if isinstance(item, dict)]
-    chain_id = ""
-    for item in chains:
-        if str(item.get("demand_judgment_id")) == wanted_id:
-            chain_id = str(item.get("id") or "")
-            break
-    if not chain_id:
-        taken = {str(item.get("id")) for item in chains}
-        position = 1
-        while f"PR{position:02d}" in taken:
-            position += 1
-        chain_id = f"PR{position:02d}"
-    chain_status = status_value if status_value in ("rejected", "deprioritized") else "hypothesis"
-    chains = [item for item in chains
-              if str(item.get("id")) != chain_id
-              and str(item.get("demand_judgment_id")) != wanted_id]
-    chain = _chain(candidate, judgment, chain_id=chain_id, context_key=context,
-                   record_id=record["record_id"], status_value=chain_status)
-    chains.append(chain)
-    reasoning["chains"] = chains
-    reasoning.setdefault("schema_version", "2.0")
-    reasoning.setdefault("flow", list(sure_engine.REASONING_NODES))
-    reasoning_path.write_text(json.dumps(reasoning, ensure_ascii=False, indent=2) + "\n",
-                              encoding="utf-8")
-
-    accepted_at = _now()
-    candidate["status"] = "accepted"
-    candidate["accepted"] = {
-        "accepted_by": operator, "accepted_at": accepted_at,
-        "evidence_record_id": record["record_id"], "evidence_level": level,
-        "judgment_id": wanted_id, "context_key": context,
-    }
-    candidate.setdefault("edits", []).append({"by": operator, "at": accepted_at,
-                                             "fields": changes})
-    _save_candidates(study_dir, document)
-    _append_trail(study_dir, {
-        "candidate_id": str(candidate.get("id")), "issue_ref": candidate.get("issue_ref"),
-        "status": "accepted", "accepted_by": operator, "accepted_at": accepted_at,
-        "edits": changes,
-        "evidence": {"record_id": record["record_id"], "evidence_level": level,
-                     "context_key": context},
-        "judgment_id": wanted_id, "reason": "",
-    })
-    return {
-        "status": "accepted",
-        "already_accepted": False,
-        "candidate_id": str(candidate.get("id")),
-        "evidence_record_id": record["record_id"],
-        "evidence_level": level,
-        "judgment_id": wanted_id,
-        "judgment": judgment,
-        "evidence_file": str(evidence_path),
-        "judgments_file": str(judgments_path),
-        "chain_id": chain_id,
-        "chain_file": str(reasoning_path),
-        "next_required_action": (
-            "人工复核该判断与缺口，并按需补一条可复现行为证据；accepted 不等于 validated"),
-        "boundary": ("验收只把候选写入 canonical 链；判断状态、证据等级代表强度与总体推断"
-                     "仍由人工与后续证据决定。"),
-    }
+            accepted_at = _now()
+            candidate["status"] = "accepted"
+            candidate["accepted"] = {
+                "accepted_by": operator, "accepted_at": accepted_at,
+                "evidence_record_id": record["record_id"], "evidence_level": level,
+                "judgment_id": wanted_id, "context_key": context,
+            }
+            candidate.setdefault("edits", []).append({"by": operator, "at": accepted_at,
+                                                     "fields": changes})
+            trail_entry = {
+                "candidate_id": str(candidate.get("id")),
+                "issue_ref": candidate.get("issue_ref"),
+                "status": "accepted", "accepted_by": operator, "accepted_at": accepted_at,
+                "edits": changes,
+                "evidence": {"record_id": record["record_id"], "evidence_level": level,
+                             "context_key": context},
+                "judgment_id": wanted_id, "reason": "",
+            }
+            txn.add(EVIDENCE_RELATIVE, "".join(appended), mode="append")
+            txn.add(JUDGMENTS_RELATIVE, _json_bytes(judgments), mode="replace")
+            txn.add(REASONING_RELATIVE, _json_bytes(reasoning), mode="replace")
+            txn.add(CANDIDATES_RELATIVE, _json_bytes(document), mode="replace")
+            txn.add(ACCEPTANCE_RELATIVE, _trail_payload(trail_entry), mode="append")
+            txn.commit()
+            return _attach_recovery({
+                "status": "accepted",
+                "already_accepted": False,
+                "candidate_id": str(candidate.get("id")),
+                "evidence_record_id": record["record_id"],
+                "evidence_level": level,
+                "judgment_id": wanted_id,
+                "judgment": judgment,
+                "evidence_file": str(evidence_path),
+                "judgments_file": str(study_dir / JUDGMENTS_RELATIVE),
+                "chain_id": chain_id,
+                "chain_file": str(study_dir / REASONING_RELATIVE),
+                "next_required_action": (
+                    "人工复核该判断与缺口，并按需补一条可复现行为证据；accepted 不等于 validated"),
+                "boundary": ("验收只把候选写入 canonical 链；判断状态、证据等级代表强度与总体推断"
+                             "仍由人工与后续证据决定。"),
+            }, txn)
+    except write_integrity.IntegrityError as exc:
+        raise _issue_error(exc) from exc
 
 
 def reject_candidate(study_dir: Path, candidate_id: str, *, by: str = "",
@@ -1392,30 +1516,44 @@ def reject_candidate(study_dir: Path, candidate_id: str, *, by: str = "",
     if not why:
         raise IssueError("rejecting a candidate requires --reason", "INPUT_REQUIRED",
                          "an unexplained rejection is not reviewable later")
-    document = _load_candidates(study_dir)
-    candidate = _find_candidate(document, candidate_id)
-    candidate["status"] = "rejected"
-    candidate["rejected"] = {"by": operator, "at": _now(), "reason": why}
-    _save_candidates(study_dir, document)
-    _append_trail(study_dir, {
-        "candidate_id": str(candidate.get("id")), "issue_ref": candidate.get("issue_ref"),
-        "status": "rejected", "accepted_by": operator, "accepted_at": _now(),
-        "edits": {}, "evidence": None, "judgment_id": None, "reason": why,
-    })
-    return {"status": "rejected", "candidate_id": str(candidate.get("id")), "reason": why,
-            "next_required_action": "该候选不进入主链；如需重开，请新导出并重新 extract"}
+    try:
+        with write_integrity.Transaction(
+                study_dir, purpose=f"issues reject {candidate_id}",
+                meta={"candidate_id": str(candidate_id), "operator": operator}) as txn:
+            document = _load_candidates(study_dir)
+            candidate = _find_candidate(document, candidate_id)
+            rejected_at = _now()
+            candidate["status"] = "rejected"
+            candidate["rejected"] = {"by": operator, "at": rejected_at, "reason": why}
+            txn.add(CANDIDATES_RELATIVE, _json_bytes(document), mode="replace")
+            txn.add(ACCEPTANCE_RELATIVE, _trail_payload({
+                "candidate_id": str(candidate.get("id")),
+                "issue_ref": candidate.get("issue_ref"),
+                "status": "rejected", "accepted_by": operator, "accepted_at": rejected_at,
+                "edits": {}, "evidence": None, "judgment_id": None, "reason": why,
+            }), mode="append")
+            txn.commit()
+            return _attach_recovery({
+                "status": "rejected", "candidate_id": str(candidate.get("id")),
+                "reason": why,
+                "next_required_action": (
+                    "该候选不进入主链；如需重开，请新导出并重新 extract")}, txn)
+    except write_integrity.IntegrityError as exc:
+        raise _issue_error(exc) from exc
 
 
 def list_candidates(study_dir: Path, *, status: str = "", claim_kind: str = "",
                     limit: int = 50) -> Dict[str, Any]:
     """List machine candidates, optionally filtered by status or claim kind."""
-    document = _load_candidates(Path(study_dir).resolve())
+    study_dir = Path(study_dir).resolve()
+    recovery = recover_before_entry(study_dir, action="list")
+    document = _load_candidates(study_dir)
     items = [item for item in document.get("candidates") or [] if isinstance(item, dict)]
     if status:
         items = [item for item in items if str(item.get("status")) == str(status)]
     if claim_kind:
         items = [item for item in items if str(item.get("claim_kind")) == str(claim_kind)]
-    return {
+    payload = {
         "count": len(items),
         "total": len(document.get("candidates") or []),
         "candidates": items[: max(1, int(limit))],
@@ -1424,11 +1562,15 @@ def list_candidates(study_dir: Path, *, status: str = "", claim_kind: str = "",
         "artifact": str(Path(study_dir).resolve() / CANDIDATES_RELATIVE),
         "boundary": document.get("boundary") or "",
     }
+    if recovery:
+        payload["recovery"] = recovery
+    return payload
 
 
 def status(study_dir: Path) -> Dict[str, Any]:
     """C-01 status projection for issue structuring."""
     study_dir = Path(study_dir).resolve()
+    recovery = recover_before_entry(study_dir, action="status")
     study = _study(study_dir)
     path = study_dir / CANDIDATES_RELATIVE
     if not path.is_file():
@@ -1449,6 +1591,7 @@ def status(study_dir: Path) -> Dict[str, Any]:
                 "然后 askovo issues extract STUDY"),
             "artifact": None,
             "boundary": "尚未导入任何 issue 导出。",
+            **({"recovery": recovery} if recovery else {}),
         }
     document = _load_candidates(study_dir)
     items = [item for item in document.get("candidates") or [] if isinstance(item, dict)]
@@ -1482,6 +1625,7 @@ def status(study_dir: Path) -> Dict[str, Any]:
         "next_required_action": next_action,
         "artifact": str(path),
         "boundary": document.get("boundary") or "",
+        **({"recovery": recovery} if recovery else {}),
     }
 
 
@@ -1530,3 +1674,52 @@ def report(study_dir: Path) -> Dict[str, Any]:
     markdown = "\n".join(lines)
     return {"markdown": markdown, "candidates": len(document.get("candidates") or []),
             "observation": observation}
+
+
+# --------------------------------------------------------------------------- #
+# A-07 recovery entry
+# --------------------------------------------------------------------------- #
+
+def recover(study_dir: Path, *, apply: bool = False) -> Dict[str, Any]:
+    """Inspect or replay a journal left by an interrupted accept (A-07).
+
+    Dry-run by default: the report lists every completed / pending / conflicted
+    artifact and never touches the study. ``apply=True`` replays only the entries
+    whose current bytes still equal the recorded old hash; a third-party edit is a
+    conflict, not something to overwrite.
+    """
+    root = Path(study_dir).resolve()
+    try:
+        report = write_integrity.recover(root, apply=apply)
+    except write_integrity.IntegrityError as exc:
+        raise _issue_error(exc) from exc
+    report["schema_version"] = SCHEMA_VERSION
+    report["study_dir"] = str(root)
+    return report
+
+
+def recover_before_entry(study_dir: Path, *, action: str) -> Optional[Dict[str, Any]]:
+    """Finish a replayable journal before any ``issues`` entry point continues.
+
+    Returns the recovery report when something was recovered; raises the C-01
+    ``INTERNAL_ERROR`` refusal (with the completed/pending list) when the journal
+    cannot be replayed. Read-only actions included: a stale half-accept must never
+    look like a finished one.
+    """
+    root = Path(study_dir).resolve()
+    if not root.is_dir():
+        return None
+    try:
+        report = write_integrity.recover(root, apply=True)
+    except write_integrity.IntegrityError as exc:
+        raise _issue_error(exc) from exc
+    status = str(report.get("status") or "")
+    if status in ("", "none"):
+        return None
+    if status in ("conflict", "corrupt", "incomplete"):
+        raise IssueError(str(report.get("reason") or "上一次接受未完成，需人工核对"),
+                         "INTERNAL_ERROR",
+                         suggestion=str(report.get("next_required_action") or ""))
+    report["schema_version"] = SCHEMA_VERSION
+    report["entry_action"] = str(action or "")
+    return report

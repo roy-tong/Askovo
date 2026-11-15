@@ -215,6 +215,7 @@ class CorruptCanonicalRefusalTests(IntegrityHelpers):
     def test_corrupt_product_reasoning_is_refused_without_writing(self) -> None:
         self.ready_candidate()
         reasoning_count = len(self.chains())
+        original = self.reasoning_path.read_text(encoding="utf-8")
         self.reasoning_path.write_text('[not a reasoning object', encoding="utf-8")
         before = self.artifact_bytes()
 
@@ -227,6 +228,7 @@ class CorruptCanonicalRefusalTests(IntegrityHelpers):
         for path, data in before.items():
             self.assertEqual(data, path.read_bytes() if path.is_file() else None,
                              f"{path.name} changed although the accept was refused")
+        self.reasoning_path.write_text(original, encoding="utf-8")
         self.assertEqual(reasoning_count, len(self.chains()),
                          "the seven-node chain count must survive a corrupt read")
 
@@ -327,7 +329,8 @@ class JournalRecoveryTests(IntegrityHelpers):
         self.assertEqual("completed", self.payload(applied)["status"])
         self.assertFalse(self.journal_path.exists(), "a completed recovery deletes its journal")
         records = self.evidence()
-        self.assertEqual(evidence_before + 1, len(records))
+        self.assertEqual(evidence_before, len(records),
+                         "recovery must not append the evidence a second time")
         accepted = self.candidates()[0]
         self.assertEqual(candidate_id, accepted["id"])
         self.assertEqual("accepted", accepted["status"])

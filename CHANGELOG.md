@@ -4,6 +4,18 @@
 
 ### Added
 
+- **A-07 canonical decision write integrity.** Accepting an issue candidate now
+  writes the evidence store, `demand-judgments.json`, `product-reasoning.json`,
+  the candidate document and the acceptance trail as one journalled transaction.
+  A canonical file that cannot be parsed is refused with `INTERNAL_ERROR` before
+  anything is written — the previous `except JSONDecodeError: []` fallback could
+  silently rebuild an empty judgment array and destroy history. `askovo issues
+  recover` reports or replays a journal left by an interrupted accept
+  (`--apply`), an unrecoverable journal blocks every read and write entry with
+  the completed/pending list, and a cross-process lock makes two concurrent
+  accepts serialize instead of overwriting each other. Read errors are no longer
+  silently skipped: `issue-imports.json` is parsed as the JSON document it is.
+
 - **A-06: external research bridge safety boundary** (`askovo external-research`).
   Running a host adapter is the highest-privilege operation in the repository, so
   the subprocess boundary now lives in `external_bridge.py` and is enforced, not
