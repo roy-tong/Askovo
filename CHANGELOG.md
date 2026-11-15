@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### C-01-Lite minimal delegation projection
+
+`askovo decide status` now also returns a `delegation` block with the eight
+fields frozen in `ai输出/ovo-C01-Lite-最小委托契约-v1-20261115.md`
+(task_id / task_state / next_actor / next_required_action /
+blocked_reason_code / result_ref / authorization_scope / recovery_entry) plus a
+one-line boundary. `task_state` uses the six-word C-01 vocabulary and
+`next_actor` is normalised to human/agent/system; the older flat `state` and
+`next_actor` fields are kept unchanged so existing consumers do not break.
+
 ### Added
 
 - **A-07 canonical decision write integrity.** Accepting an issue candidate now
