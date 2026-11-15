@@ -206,13 +206,22 @@ class DeltaSyncTests(DeltaHelpers, unittest.TestCase):
     def test_repeat_sync_is_a_noop(self) -> None:
         self.sync(self.base)
         first_index = self.index_path().read_text(encoding="utf-8")
+        before = self._tree_digest()
         completed, payload = self.sync(self.base)
         self.assertEqual(0, completed.returncode, payload)
         self.assertTrue(payload["noop"])
         self.assertFalse(payload["has_changes"])
         self.assertEqual(1, len(self.versions()), "a no-op must not create a new version")
         self.assertEqual(first_index, self.index_path().read_text(encoding="utf-8"))
+        self.assertEqual(before, self._tree_digest(),
+                         "a no-op sync must not rewrite a single byte")
         self.assertIn("无变化", payload["message"])
+
+    def _tree_digest(self) -> dict:
+        roots = [self.deltas_dir(), self.study / "06-report"]
+        return {path.relative_to(self.study).as_posix(): sha(path)
+                for root in roots if root.is_dir()
+                for path in sorted(root.rglob("*")) if path.is_file()}
 
     def test_added_record_is_classified(self) -> None:
         self.sync(self.base)
@@ -263,14 +272,18 @@ class DeltaHistoryTests(DeltaHelpers, unittest.TestCase):
     """A25: history is append-only; deleted or edited records stay traceable."""
 
     def test_history_snapshots_are_never_overwritten(self) -> None:
-        self.sync(self.base)
+        first_completed, first = self.sync(self.base)
+        self.assertEqual(0, first_completed.returncode, first)
+        self.assertTrue(first["has_changes"])
         version = self.versions()[0]["version"]
         before = {path.name: sha(path)
                   for path in self.snapshot_dir(version).iterdir() if path.is_file()}
         rows = json.loads(json.dumps(self.base))
         rows[0]["body"] = "Rewritten body."
         rows[0]["updated_at"] = "2026-09-10T10:00:00Z"
-        self.sync(rows)
+        second_completed, second = self.sync(rows)
+        self.assertEqual(0, second_completed.returncode, second)
+        self.assertTrue(second["has_changes"], "the second sync must really append a version")
         after = {path.name: sha(path)
                  for path in self.snapshot_dir(version).iterdir() if path.is_file()}
         self.assertEqual(before, after, "an old snapshot version must stay byte-identical")

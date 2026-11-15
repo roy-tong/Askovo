@@ -342,6 +342,34 @@ class IssueExtractionTests(IssueHelpers, unittest.TestCase):
         self.assertEqual(3, len(set(candidates[0]["source_refs"])))
         self.assertEqual(3, candidates[0]["support_count"])
 
+    def test_login_case_and_whitespace_are_one_observed_user(self) -> None:
+        """D2: GitHub logins are case-insensitive; variants are one person."""
+        identical = "Nested JSON logs fail to parse; we retry by hand every week."
+        rows = [issue(1, "nested log parse failure", identical, author="Alice", author_id=501),
+                issue(2, "nested log parse failure", identical, author="alice", author_id=501),
+                issue(3, "nested log parse failure", identical, author="  alice  ", author_id=501)]
+        self.import_issues(rows)
+        self.extract()
+        doc = self.candidates_doc()
+        self.assertEqual(1, doc["observation"]["observed_users"],
+                         "login case and surrounding whitespace must not create users")
+        self.assertEqual(3, doc["observation"]["record_count"])
+        self.assertEqual({"github:alice": 3}, doc["observation"]["records_per_author"])
+        self.assertEqual(1, len(doc["candidates"]))
+        self.assertEqual("github:alice", doc["candidates"][0]["author_ref"])
+
+    def test_stable_user_id_survives_a_login_rename(self) -> None:
+        """D2: the snapshot keeps GitHub's stable user id, which is the identity key."""
+        rows = [issue(1, "nested log parse failure",
+                      "Nested JSON logs fail to parse; we retry by hand every week.",
+                      author="Alice", author_id=501)]
+        self.import_issues(rows)
+        normalized = [json.loads(line) for line in
+                      (self.study / "02-data" / "normalized.jsonl")
+                      .read_text(encoding="utf-8").splitlines() if line.strip()]
+        self.assertEqual(501, (normalized[0].get("issue") or {}).get("user_id"),
+                         "the snapshot must keep the stable user id")
+
     def test_extraction_is_deterministic(self) -> None:
         self._import_four_claim_kinds()
         first = self.candidates_doc()
@@ -541,6 +569,44 @@ class IssueAcceptanceTests(IssueHelpers, unittest.TestCase):
         trail = (self.study / "04-findings" / "issue-acceptance.jsonl").read_text(encoding="utf-8")
         self.assertIn("rejected", trail)
         self.assertIn("单一自述", trail)
+
+    def test_accept_registers_counter_evidence_on_both_artifacts(self) -> None:
+        """D3: acceptance must carry the candidate's counter-evidence into the chain.
+
+        A-03 maps candidates into `demand-judgments` + `product-reasoning`; dropping
+        `counter_evidence` there hides it from A-04's `review_signal`, so the brief
+        never flags `needs_re_review` (AC A17 x A21).
+        """
+        identical = "Nested JSON logs fail to parse; we retry by hand every week."
+        rows = [issue(1, "nested log parse failure", identical, author="alice", author_id=501),
+                issue(2, "nested log parse failure", identical, author="bob", author_id=502),
+                issue(3, "nested log parse failure",
+                      "This does not happen for us; nested logs parse fine and we would not pay.",
+                      author="skeptic", author_id=504)]
+        self.import_issues(rows)
+        self.extract()
+        candidate = [item for item in self.candidates() if item["counter_count"]][0]
+        counter_ids = [item["record_id"] for item in candidate["counter_evidence"]]
+        self.assertTrue(counter_ids, "the fixture must expose one counter record")
+        completed = run_cli("accept", str(self.study), "--candidate", candidate["id"],
+                            "--by", "product-owner", "--context-key", "nested-log-parse",
+                            "--judgment-id", "D03", "--evidence-level", "E2")
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        judgment = [item for item in self.judgments() if item["id"] == "D03"][0]
+        self.assertEqual(counter_ids, judgment["counter_evidence_ids"],
+                         "the accepted judgment must keep the counter evidence")
+        chain = json.loads((self.study / "04-findings" / "product-reasoning.json")
+                           .read_text(encoding="utf-8"))["chains"][0]
+        for record_id in counter_ids:
+            self.assertIn(record_id, chain["counter_evidence_ids"],
+                          "the canonical chain must keep the counter evidence")
+        brief = subprocess.run([sys.executable, str(CLI), "brief", str(self.study),
+                                "--format", "json"],
+                               capture_output=True, text=True, timeout=120)
+        document = json.loads(brief.stdout)
+        self.assertEqual("partial", document["artifact_status"], document.get("stale_reasons"))
+        self.assertTrue(document["needs_re_review"],
+                        "a counter-evidence must make the brief require re-review")
 
     def test_audit_passes_after_acceptance(self) -> None:
         candidate_id = self._ready_candidate()

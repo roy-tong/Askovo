@@ -439,6 +439,82 @@ class BriefStaleTests(BriefHelpers, unittest.TestCase):
         self.assertIn("stale", markdown)
 
 
+class BriefDriftTests(BriefHelpers, unittest.TestCase):
+    """D4: a same-id content change is input drift, not a fresh brief."""
+
+    def _rewrite_first_record(self, text_value: str) -> None:
+        rows = [json.loads(line) for line in
+                self.evidence_path().read_text(encoding="utf-8").splitlines() if line.strip()]
+        rows[0]["text"] = text_value
+        self.evidence_path().write_text(
+            "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n",
+            encoding="utf-8")
+
+    def test_same_id_content_change_is_input_drift(self) -> None:
+        reviewed = run_cli("review", str(self.study), "--json")
+        self.assertEqual(0, reviewed.returncode, reviewed.stdout + reviewed.stderr)
+        self._rewrite_first_record("TAMPERED: the record now says the opposite.")
+        completed, document = self.brief()
+        self.assertEqual(1, completed.returncode, document)
+        self.assertEqual("stale", document["artifact_status"])
+        self.assertEqual("STALE_SOURCE", document["reason_code"])
+        self.assertEqual("blocked", document["delivery_state"])
+        self.assertTrue(document["diagnostic_only"])
+        codes = {reason["code"] for reason in document["stale_reasons"]}
+        self.assertIn("INPUT_DRIFT", codes,
+                      f"a same-id content change must be INPUT_DRIFT, got {codes}")
+
+    def test_unreferenced_new_evidence_is_not_drift(self) -> None:
+        reviewed = run_cli("review", str(self.study), "--json")
+        self.assertEqual(0, reviewed.returncode, reviewed.stdout + reviewed.stderr)
+        with self.evidence_path().open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({
+                "record_id": "R99", "context_key": "synthetic-mobile-check",
+                "user_role": "unreferenced", "scene_trigger": "unknown",
+                "task_outcome": "unknown", "current_substitute": "unknown",
+                "friction_cost": "unknown", "consequence": "unknown",
+                "evidence_level": "E1", "evidence_basis": "added after review; not cited",
+                "corpus_role": "open_scene", "source_family": "interview",
+                "source_ref": "synthetic-unreferenced", "normalized_text_hash": "sha256:x",
+                "text": "An unreferenced record.", "claim_type": "need",
+                "evidence_form": "self_report",
+            }, ensure_ascii=False) + "\n")
+        completed, document = self.brief()
+        self.assertEqual(0, completed.returncode, document)
+        self.assertEqual("partial", document["artifact_status"],
+                         "adding an uncited record is not drift")
+
+
+class BriefFreeTextNumberTests(BriefHelpers, unittest.TestCase):
+    """D5: free text copied into the brief is scanned for unprovenanced numbers."""
+
+    def test_free_text_numbers_are_redacted_and_recorded(self) -> None:
+        def inject(payload: dict) -> None:
+            business = payload["chains"][0]["nodes"]["business"]
+            business["cost_drivers"] = ["Monthly infrastructure burn is $50,000 with 37% margin"]
+            business["non_goals"] = ["Reach 1,200 paying accounts in year one"]
+            business["statement"] = "Run a $50,000 paid pilot before any launch decision"
+            payload["chains"][0]["nodes"]["product"]["rationale"] = (
+                "A $50,000 pilot proves willingness to pay at 37% margin")
+
+        self._edit_reasoning(inject)
+        _, document = self.brief()
+        rendered = json.dumps(document["options"], ensure_ascii=False)
+        for token in ("$50,000", "37%", "1,200"):
+            self.assertNotIn(token, rendered,
+                             f"{token} must not be copied without provenance")
+        self.assertNotIn("$50,000", json.dumps(document["recommendation"], ensure_ascii=False))
+        findings = document["fabrication"]["unverified_numbers"]
+        self.assertTrue(findings, "every redacted field must be recorded")
+        fields = {item["field"] for item in findings}
+        self.assertTrue({"business.cost_drivers", "business.non_goals",
+                         "business.statement"} <= fields,
+                        f"unexpected fields: {sorted(fields)}")
+        for item in findings:
+            self.assertTrue(item["numbers"])
+            self.assertTrue(item["excerpt"])
+
+
 class BriefDecideIntegrationTests(BriefHelpers, unittest.TestCase):
     """A-02's `decide brief` now returns the A-04 document, not a stub."""
 

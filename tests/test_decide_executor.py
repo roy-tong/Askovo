@@ -9,6 +9,7 @@ bypass `loop authorize` or human `loop assess`.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -195,6 +196,8 @@ class DecideHelpers:
 class DecideStartTests(DecideHelpers, unittest.TestCase):
 
     def test_dry_run_is_default_and_reads_nothing(self) -> None:
+        fixture = self.study / "01-sources" / "authorized" / "export.jsonl"
+        before = hashlib.sha256(fixture.read_bytes()).hexdigest()
         completed, payload = self.start_bound(decision_task(self.dir))
         self.assertEqual(0, completed.returncode, payload)
         self.assertEqual("scoped", payload["state"])
@@ -206,6 +209,30 @@ class DecideStartTests(DecideHelpers, unittest.TestCase):
         self.assertEqual([], loop.get("rounds") or [])
         self.assertFalse((self.study / "02-data" / "normalized.jsonl").exists()
                          and self._normalized_nonempty(), "dry-run must not import records")
+        self.assertEqual(before, hashlib.sha256(fixture.read_bytes()).hexdigest(),
+                         "a dry run must not copy or rewrite the authorized export")
+
+    def test_unauthorized_start_copies_no_source_bytes(self) -> None:
+        """D1: authorization is checked before any source copy or study scaffold.
+
+        PRD §3 A-02 细则 3/4 + C-01: a read-only orchestrator must not touch a
+        source before the human authorization gate. The scaffolding path (no
+        ``--study``) used to copy the fixture first and only then refuse.
+        """
+        task = decision_task(self.dir)
+        task["authorization"] = {}
+        completed = run_cli("start", "--workspace", str(self.workspace),
+                            "--input", str(self.write_input(task)))
+        payload = json.loads(completed.stdout)
+        self.assertEqual(0, completed.returncode, payload)
+        self.assertEqual("needs_input", payload["state"])
+        self.assertEqual("AUTH_REQUIRED", payload["blocked_reason_code"])
+        task_id = payload["task_id"]
+        self.assertFalse((self.workspace / "studies" / task_id).exists(),
+                         "an unauthorized start must not scaffold a study")
+        copied = [path for path in (self.workspace / "studies").glob("**/*")
+                  if path.is_file() and "authorized" in path.parts]
+        self.assertEqual([], copied, "an unauthorized start must not copy source bytes")
 
     def _normalized_nonempty(self) -> bool:
         path = self.study / "02-data" / "normalized.jsonl"
