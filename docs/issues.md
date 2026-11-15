@@ -133,3 +133,25 @@ askovo issues reject ./study --candidate IC-02 --by "product-owner" \
 - [研究闭环](research-loop.md)：缺口驱动的采集与候选证据；`issues` 是同一候选层的 issue 专用投影。
 - [一问题研究执行器](decide.md)：A-02 的任务编排；A-03 的接受结果可作为它的输入证据。
 - [CLI 参考](cli.md)：命令、参数与退出码总表。
+
+## Write integrity (A-07)
+
+Accepting a candidate touches five artifacts: the evidence store, the demand
+judgment array, the seven-node chain, the candidate document and the acceptance
+trail. They are written as one transaction:
+
+- a journal at `04-findings/.write-journal.json` records the target of every
+  write, the old SHA-256 and the new SHA-256, and is fsynced before the first
+  visible change;
+- each file is installed with an atomic rename; an `OSError` in the middle rolls
+  the already-installed files back to their recorded old bytes;
+- a canonical file that will not parse is refused (`INTERNAL_ERROR`) before any
+  write happens — a corrupt file is never read as "empty" and then overwritten;
+- any entry point (`import`, `extract`, `list`, `edit`, `accept`, `reject`,
+  `status`, `report`) first resolves a journal left by an interrupted accept,
+  so a half-written study can never look like a finished one;
+- `askovo issues recover <study>` reports the transaction (dry-run) and
+  `--apply` replays it; a file edited by hand after the crash is a conflict, not
+  something to overwrite, and the journal stays for a human to resolve;
+- a cross-process lock (`04-findings/.write.lock`) serializes writers, so two
+  simultaneous accepts produce one judgment, not a lost update.

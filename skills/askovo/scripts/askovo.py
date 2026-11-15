@@ -2895,6 +2895,11 @@ def command_issues(args: argparse.Namespace) -> int:
             )
         elif action == "status":
             document = issue_structuring.status(study_dir)
+        elif action == "recover":
+            document = issue_structuring.recover(
+                study_dir, apply=bool(getattr(args, "apply", False)))
+            print(json.dumps(document, ensure_ascii=False, indent=2))
+            return int(document.get("exit_code") or 0)
         elif action == "report":
             document = issue_structuring.report(study_dir)
             print(document["markdown"])
@@ -5387,7 +5392,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     issues_parser.add_argument(
         "action",
-        choices=("import", "extract", "list", "edit", "accept", "reject", "status", "report"),
+        choices=("import", "extract", "list", "edit", "accept", "reject", "status",
+                 "report", "recover"),
         help="import = snapshot + normalize a local export; extract = machine candidates; "
              "list/edit = review; accept/reject = human decision into the canonical chain; "
              "status/report = projections")
@@ -5415,6 +5421,8 @@ def build_parser() -> argparse.ArgumentParser:
     issues_parser.add_argument("--reason", default="", help="reject: why the candidate is not adoptable")
     issues_parser.add_argument("--claim-kind", default="", help="list: filter by claim kind")
     issues_parser.add_argument("--limit", type=int, default=50, help="list: page size (default 50)")
+    issues_parser.add_argument("--apply", action="store_true",
+                               help="recover: replay the journal instead of only reporting it")
     issues_parser.set_defaults(func=command_issues)
 
     review_parser = subparsers.add_parser(
