@@ -853,6 +853,28 @@ class AuditTests(unittest.TestCase):
         self.assertEqual("exceeds_evidence", payload["claims"][0]["verdict"])
         self.assertTrue(any("commercial" in reason for reason in payload["claims"][0]["reasons"]))
 
+    def test_audit_flags_validated_claim_with_only_spoken_evidence(self) -> None:
+        verdicts = json.loads(
+            (self.target / "04-findings/demand-judgments.json").read_text(encoding="utf-8")
+        )
+        problem_ids = verdicts[0]["problem_evidence_ids"]
+        e1_only = []
+        for record_id in problem_ids:
+            for line in (self.target / "02-data/evidence.jsonl").read_text(encoding="utf-8").splitlines():
+                record = json.loads(line)
+                if record["record_id"] == record_id and record["evidence_level"] == "E1":
+                    e1_only.append(record_id)
+        self.assertTrue(e1_only, "sample study needs an E1 problem record for this test")
+        verdicts[0]["problem_evidence_ids"] = e1_only[:1]
+        (self.target / "04-findings/demand-judgments.json").write_text(
+            json.dumps(verdicts, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        completed = run_cli("audit", str(self.target))
+        self.assertEqual(1, completed.returncode, completed.stdout + completed.stderr)
+        payload = json.loads((self.target / "05-audit/audit.json").read_text(encoding="utf-8"))
+        self.assertEqual("exceeds_evidence", payload["claims"][0]["verdict"])
+        self.assertTrue(any("E2" in reason for reason in payload["claims"][0]["reasons"]))
+
     def test_audit_rejects_evidence_from_another_decision_context(self) -> None:
         evidence_path = self.target / "02-data/evidence.jsonl"
         records = [json.loads(line) for line in evidence_path.read_text(encoding="utf-8").splitlines()]
