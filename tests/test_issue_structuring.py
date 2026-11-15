@@ -189,7 +189,8 @@ class IssueImportTests(IssueHelpers, unittest.TestCase):
         self.assertNotIn("10k MRR", self.study_text())
 
     def test_selection_bias_is_explicit_for_filtered_windows(self) -> None:
-        rows = [issue(1, "cannot parse logs", "Nested JSON logs fail to parse.")]
+        rows = [issue(1, "cannot parse logs", "Nested JSON logs fail to parse.",
+                      labels=[{"name": "bug"}])]
         completed, payload = self.import_issues(
             rows, "--since", "2026-08-01", "--label", "bug")
         self.assertEqual(0, completed.returncode, payload)
@@ -213,6 +214,14 @@ class IssueImportTests(IssueHelpers, unittest.TestCase):
         self.assertTrue(manifest["retention_rule"])
         self.assertIn("deleted", json.dumps(manifest).lower(),
                       "a deleted source must be recorded, not silently dropped")
+
+
+    def test_live_source_is_not_reported_as_deleted(self) -> None:
+        rows = [issue(1, "cannot parse logs", "Nested JSON logs fail to parse.")]
+        self.import_issues(rows)
+        self.extract()
+        self.assertEqual("snapshot", self.candidates()[0]["source_availability"],
+                         "an existing source must not be reported as snapshot only")
 
 
 class IssueExtractionTests(IssueHelpers, unittest.TestCase):
@@ -442,11 +451,12 @@ class IssueAcceptanceTests(IssueHelpers, unittest.TestCase):
 
     def test_accept_requires_a_named_human(self) -> None:
         candidate_id = self._ready_candidate()
+        before = self.judgments()
         completed = run_cli("accept", str(self.study), "--candidate", candidate_id)
         self.assertEqual(4, completed.returncode, completed.stdout + completed.stderr)
         body = self._payload(completed)
         self.assertEqual("AUTH_REQUIRED", body["reason_code"])
-        self.assertEqual([], self.judgments(), "no human, no judgment")
+        self.assertEqual(before, self.judgments(), "no human, no new judgment")
 
     def test_accept_writes_one_evidence_record_and_one_judgment(self) -> None:
         candidate_id = self._ready_candidate()

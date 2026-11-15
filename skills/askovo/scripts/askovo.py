@@ -34,6 +34,7 @@ import research_run  # noqa: E402
 import research_loop  # noqa: E402
 import decision_review  # noqa: E402
 import decide  # noqa: E402
+import issue_structuring  # noqa: E402
 import role_catalog  # noqa: E402
 
 research_loop.bind_cli(sys.modules[__name__])
@@ -2743,6 +2744,83 @@ def command_decide(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_issues(args: argparse.Namespace) -> int:
+    """A-03 issue -> user task / demand structuring (PRD §3 A-03).
+
+    ``import`` snapshots an authorized local export (never a live read) and
+    normalizes its public issues; ``extract`` writes machine candidates; only a
+    named human can ``accept`` one into the canonical evidence/judgment chain.
+    """
+    action = str(getattr(args, "action", "") or "")
+    study_dir = Path(str(getattr(args, "study_dir", "") or "")).resolve()
+    try:
+        if action == "import":
+            document = issue_structuring.import_export(
+                study_dir,
+                Path(str(getattr(args, "file", "") or "")),
+                authorized_by=str(getattr(args, "authorized_by", "") or ""),
+                since=str(getattr(args, "since", "") or ""),
+                label=str(getattr(args, "label", "") or ""),
+                question=str(getattr(args, "question", "") or ""),
+                retention_rule=str(getattr(args, "retention_rule", "") or ""),
+            )
+        elif action == "extract":
+            document = issue_structuring.extract_candidates(
+                study_dir, question=str(getattr(args, "question", "") or ""))
+        elif action == "list":
+            document = issue_structuring.list_candidates(
+                study_dir,
+                status=str(getattr(args, "status", "") or ""),
+                claim_kind=str(getattr(args, "claim_kind", "") or ""),
+                limit=int(getattr(args, "limit", 50)),
+            )
+        elif action == "edit":
+            document = issue_structuring.edit_candidate(
+                study_dir, str(getattr(args, "candidate", "") or ""),
+                by=str(getattr(args, "by", "") or ""),
+                edits=issue_structuring._parse_edits(getattr(args, "set_values", []) or []),
+            )
+        elif action == "accept":
+            document = issue_structuring.accept_candidate(
+                study_dir, str(getattr(args, "candidate", "") or ""),
+                by=str(getattr(args, "by", "") or ""),
+                judgment_id=str(getattr(args, "judgment_id", "") or ""),
+                context_key=str(getattr(args, "context_key", "") or ""),
+                evidence_level=str(getattr(args, "evidence_level", "") or ""),
+                status=str(getattr(args, "status", "") or "hypothesis"),
+                edits=issue_structuring._parse_edits(getattr(args, "set_values", []) or []),
+            )
+        elif action == "reject":
+            document = issue_structuring.reject_candidate(
+                study_dir, str(getattr(args, "candidate", "") or ""),
+                by=str(getattr(args, "by", "") or ""),
+                reason=str(getattr(args, "reason", "") or ""),
+            )
+        elif action == "status":
+            document = issue_structuring.status(study_dir)
+        elif action == "report":
+            document = issue_structuring.report(study_dir)
+            print(document["markdown"])
+            return 0
+        else:
+            raise issue_structuring.IssueError(
+                f"unknown issues action {action!r}", "UNSUPPORTED_SCOPE")
+    except issue_structuring.IssueError as exc:
+        print(json.dumps({
+            "status": "refused",
+            "reason_code": exc.reason_code,
+            "reason": str(exc),
+            "suggestion": exc.suggestion or None,
+        }, ensure_ascii=False, indent=2))
+        return 4 if exc.reason_code == "AUTH_REQUIRED" else 2
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(json.dumps({"status": "error", "reason": "%s: %s" % (type(exc).__name__, exc)},
+                         ensure_ascii=False, indent=2))
+        return 2
+    print(json.dumps(document, ensure_ascii=False, indent=2))
+    return 0
+
+
 def command_review(args: argparse.Namespace) -> int:
     """Deterministic decision review: evidence, readiness, falsifiability, bias, deliverables."""
     study_dir = Path(args.study_dir).resolve()
@@ -5146,6 +5224,43 @@ def build_parser() -> argparse.ArgumentParser:
     decide_parser.add_argument("--since", default="", help="delta: baseline, e.g. latest-accepted")
     decide_parser.set_defaults(func=command_decide)
 
+    issues_parser = subparsers.add_parser(
+        "issues",
+        help="issue -> user task / demand structuring: snapshot an authorized export, "
+             "extract machine candidates, and let a named human accept or reject them",
+    )
+    issues_parser.add_argument(
+        "action",
+        choices=("import", "extract", "list", "edit", "accept", "reject", "status", "report"),
+        help="import = snapshot + normalize a local export; extract = machine candidates; "
+             "list/edit = review; accept/reject = human decision into the canonical chain; "
+             "status/report = projections")
+    issues_parser.add_argument("study_dir")
+    issues_parser.add_argument("--file", default="",
+                               help="import: local GitHub issue export (.jsonl or .json); no network")
+    issues_parser.add_argument("--authorized-by", default="",
+                               help="import: named human confirming the export's access and data rights")
+    issues_parser.add_argument("--since", default="", help="import: created_at lower bound (YYYY-MM-DD)")
+    issues_parser.add_argument("--label", default="", help="import: keep only issues carrying this label")
+    issues_parser.add_argument("--retention-rule", default="",
+                               help="import: retention rule recorded in the manifest")
+    issues_parser.add_argument("--question", default="", help="import/extract: the decision question")
+    issues_parser.add_argument("--candidate", default="", help="edit/accept/reject: candidate id, e.g. IC-01")
+    issues_parser.add_argument("--by", default="", help="edit/accept/reject: named human reviewer")
+    issues_parser.add_argument("--set", dest="set_values", action="append", default=[],
+                               help="edit/accept: field=value override (repeatable)")
+    issues_parser.add_argument("--evidence-level", default="",
+                               help="accept: E0-E5; capped by the candidate's claim kind")
+    issues_parser.add_argument("--status", default="",
+                               help="accept/list: judgment status (accept, default hypothesis) "
+                                    "or candidate status filter (list)")
+    issues_parser.add_argument("--judgment-id", default="", help="accept: demand judgment id (default D<nn>)")
+    issues_parser.add_argument("--context-key", default="", help="accept: shared context key for the judgment")
+    issues_parser.add_argument("--reason", default="", help="reject: why the candidate is not adoptable")
+    issues_parser.add_argument("--claim-kind", default="", help="list: filter by claim kind")
+    issues_parser.add_argument("--limit", type=int, default=50, help="list: page size (default 50)")
+    issues_parser.set_defaults(func=command_issues)
+
     review_parser = subparsers.add_parser(
         "review",
         help="deterministic decision review: audit gate, evidence, decision readiness, "
@@ -5418,7 +5533,7 @@ CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "explore",
     "external-research", "do", "domains",
     "methods", "catalog", "platforms", "collect", "research", "loop", "analyze", "instruments", "import", "queue",
-    "codebook", "chain", "economics", "psm", "decision", "decide", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
+    "codebook", "chain", "economics", "psm", "decision", "decide", "issues", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }
 
