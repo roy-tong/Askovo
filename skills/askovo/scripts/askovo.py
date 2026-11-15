@@ -2920,6 +2920,12 @@ def _claim_verdicts(
         if unknown:
             reasons.append("引用不存在的证据：" + ", ".join(unknown))
 
+        if status == "validated" and "E2" not in chains["problem"]["levels"]:
+            reasons.append(
+                "validated 判断缺 E2 行为证据：问题链只有口头陈述或背景，"
+                "至少需要一条观察到替代/绕行/失败行为的证据"
+            )
+
         if status == "validated":
             context_key = str(judgment.get("context_key") or "").strip()
             if not context_key:

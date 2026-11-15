@@ -65,6 +65,7 @@ h1 { font-size: 2.1em; line-height: 1.35; margin: 10px 0 14px; font-weight: 700;
 section { padding: 44px 0; border-bottom: 1px solid var(--line); }
 h2 { font-size: 1.35em; margin: 0 0 6px; }
 h2 .en { color: var(--muted); font-weight: 400; font-size: 0.72em; margin-left: 10px; font-family: var(--mono); }
+h3 { font-size: 1.02em; margin: 26px 0 8px; }
 .sub { color: var(--muted); margin: 0 0 18px; max-width: 46em; }
 
 .chain { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 18px 0; }

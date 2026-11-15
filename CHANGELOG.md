@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Audit now enforces E2 for validated demand judgments.** `askovo audit`
+  previously checked problem / solution / commercial chains, counter-evidence
+  and context keys, but a `validated` judgment whose problem chain held only
+  E1 spoken statements could still be reported as `supported`. The judgment
+  verdict now requires at least one E2 observed-behavior record in the problem
+  chain, matching the rule already enforced for product-reasoning need nodes.
+  Regression test: `tests/test_askovo_cli.py::test_audit_flags_validated_claim_with_only_spoken_evidence`.
+
 ## 2.17.1 - 2026-11-14
 
 ### Fixed
