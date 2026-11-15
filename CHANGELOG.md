@@ -134,6 +134,15 @@
 
 ### Fixed
 
+- **A-lane integration: two staleness contradictions between tickets.**
+  `decide brief` / `decide result` exited 0 on a `stale` brief while
+  `askovo brief` exited 1 for the same document (A-04 introduced the
+  "stale blocks delivery" exit-1 convention; A-02's task entry never adopted
+  it), and `delta show` / `delta sync` reported `fresh` for a broken canonical
+  reference while the brief reported `stale` / `delivery_state: blocked` (A-05
+  derived freshness only from its own sync error). Both entries now share
+  `decision_brief.stale_inputs()`: a projection over a broken chain is not
+  current, on every entry and in every projection.
 - **A-01: attention metrics no longer pass as commercial E5 evidence**
   (orthogonal evidence qualification). `docs/plan-evidence-check.md` graded the
   GitHub star baseline, the follower count and an internal precedent as E5,
@@ -220,6 +229,25 @@
   allowed, URLs stay candidates, a socket/`urlopen` trap proves no network is
   attempted, malformed and non-http payloads are refused, and the legacy
   `--command` path reports the migration hint. Full suite: 438 passed.
+- 5 suite-integrity guard tests (`tests/test_suite_integrity.py`) make "silently
+  skipped test" impossible to ship: every `tests/test_*.py` must collect exactly
+  as many cases as it defines `def test_` (a mismatch names the module and the
+  difference), a class defining `test_*` methods without inheriting
+  `unittest.TestCase` is reported by name, `@unittest.skip*` decorators must be
+  whitelisted with an optional-dependency reason, and a module-level
+  `load_tests` / `setUpModule` / `tearDownModule` hook is flagged. Verified by
+  deleting a base class: three assertions go red with precise messages. The
+  guard caught the new integration file's own two missing bases immediately.
+- 6 A-lane cross-ticket integration tests
+  (`tests/test_askovo_decision_service_integration.py`) cover what single-ticket
+  suites cannot: one lifecycle from dry start through the human gate, run,
+  brief, delta sync and approval (product state never moves backwards, the brief
+  stays `partial` with its gaps, brief and delta agree on `needs_re_review`, an
+  approved DecisionSnapshot stays byte-identical); MCP `askovo_decide_*` and the
+  `decide` CLI report the same task, state, reason code and next action; an A-06
+  external adapter produces candidates that never reach the brief's evidence and
+  never raise a level; and a deleted cited evidence record makes both the brief
+  (blocked) and the delta (exit 1) stale. Full suite: 449 passed.
 
 ## 2.17.1 - 2026-11-14
 

@@ -46,3 +46,23 @@ Build: SURE reasoning, evidence contracts, authorization, acceptance and deliver
 Research loop: `askovo loop plan/authorize/run/status/report/assess` detects gaps from the same audit verdicts, generates deterministic queries per gap and eligible source, executes them inside an authorized envelope (allowed platforms, per-action cap, round and record budgets), re-audits after each round and writes `04-findings/loop-candidates.json`, `04-findings/loop-analysis/<gap>.json`, `04-findings/loop-executions.json` for executable offline analysis, `04-findings/loop-evaluations.json` and `05-audit/research-loop-summary.md`. Candidates carry `proposed_evidence_level: null`: only human review assigns E0–E5 and links records to a demand judgment. A candidate advances its gap to `collected`; the analysis action advances it to `analyzed` and never closes it; `loop assess` is the only path to `resolved`/`unresolvable` and requires a named operator plus evidence (`resolved`) or a reason (`unresolvable`). The envelope is an operational bound, not tamper protection; platform policy, `allowed_sources`, adapter switches and the Design gate remain the enforcing controls. MCP can plan/status/report/run but cannot authorize or assess.
 
 Recovery: completed actions are checkpointed before analysis; an interrupted `running` action blocks replay. The loop records `interrupted_run` and requires inspection before replanning. Inspect collected files and provenance before preparing a replacement plan. Never reset blindly. Execution is serialized using an OS file lock on macOS/Linux. `research` authorization binds the actual action fields; `loop` authorization binds the envelope hash.
+
+## Test integrity and cross-ticket integration
+
+Two guard suites sit beside the feature tests. `tests/test_suite_integrity.py`
+turns "silently skipped test" into an immediate red: every `tests/test_*.py` must
+collect exactly as many cases as it defines `def test_`, a class with `test_*`
+methods that does not inherit `unittest.TestCase` is named, `@unittest.skip*`
+decorators must be whitelisted with an optional-dependency reason, and module-level
+`load_tests` / `setUpModule` / `tearDownModule` hooks are flagged. This exists
+because the A lane twice shipped a green suite whose tests were never collected.
+
+`tests/test_askovo_decision_service_integration.py` covers the A-lane seams: one
+lifecycle from dry start through the human authorization gate, run, brief, delta
+sync and approval (monotonic product state, `partial` brief with gaps, one
+`needs_re_review` verdict shared by the brief and the delta, byte-identical
+approved DecisionSnapshot); MCP `askovo_decide_start` / `_status` / `_result` and
+the `decide` CLI reporting the same task, state, reason code and next action; A-06
+external candidates staying out of the brief's evidence with no level promotion;
+and a deleted cited evidence record marking both the brief (delivery blocked) and
+the delta (exit 1) stale.
