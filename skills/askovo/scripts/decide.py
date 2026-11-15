@@ -960,6 +960,69 @@ def _artifact_refs(workspace: Path, task: Dict[str, Any]) -> List[str]:
     return refs
 
 
+
+#: C-01-Lite 状态词表：内部状态 → 六个对外词（冻结，见
+#: ai输出/ovo-C01-Lite-最小委托契约-v1-20261115.md）。
+_DELEGATION_STATE = {
+    "created": "NEEDS_INPUT",
+    "scoped": "READY",
+    "collecting": "READY",
+    "analyzed": "READY",
+    "review_required": "NEEDS_REVIEW",
+    "brief_ready": "PARTIAL",
+    "needs_input": "NEEDS_INPUT",
+    "blocked": "BLOCKED",
+    "interrupted": "BLOCKED",
+    "cancelled": "BLOCKED",
+    "delivered": "DELIVERED",
+}
+
+
+def delegation_view(task: Dict[str, Any], step: Dict[str, Any],
+                    refs: List[str]) -> Dict[str, Any]:
+    """C-01-Lite 最小委托投影：八个字段 + 一句边界。
+
+    只做投影：不改状态、不判断业务成立。外部 Agent 靠它回答「接下来谁做什么、
+    为什么被拒、去哪恢复」，不靠读产品文档。
+    """
+    state = str(task.get("state") or "")
+    mapped = _DELEGATION_STATE.get(state, "BLOCKED")
+    gaps = task.get("gaps") if isinstance(task.get("gaps"), dict) else {}
+    open_gaps = int(gaps.get("total") or 0)
+    if mapped == "READY" and open_gaps:
+        mapped = "PARTIAL"
+    recovery = None
+    if mapped == "BLOCKED" or state in ("interrupted", "needs_input"):
+        recovery = ("askovo decide status %s（先核对 loop journal 再决定是否 reconcile）"
+                    % (task.get("task_id") or "<task>"))
+    actor_raw = str(step.get("next_actor") or "")
+    if actor_raw.startswith("human") or actor_raw in ("business_owner", "reviewer"):
+        actor = "human"
+    elif "agent" in actor_raw:
+        actor = "agent"
+    elif actor_raw == "system":
+        actor = "system"
+    else:
+        actor = "human"   # 未识别的责任人一律当人：不能把闸门交给机器
+    scope = (task.get("input") or {}).get("authorization") or {}
+    return {
+        "task_id": str(task.get("task_id") or ""),
+        "task_state": mapped,
+        "next_actor": actor,
+        "next_required_action": str(step.get("next_required_action") or ""),
+        "blocked_reason_code": step.get("blocked_reason_code"),
+        "result_ref": (refs[0] if refs else None),
+        "authorization_scope": {
+            "approved_by": scope.get("approved_by"),
+            "allowed_sources": scope.get("allowed_sources") or [],
+            "max_records": scope.get("max_records"),
+        },
+        "recovery_entry": recovery,
+        "delegation_boundary": ("投影只说明任务推进到哪一步；DELIVERED 不等于决策已批准，"
+                                "也不等于需求成立"),
+    }
+
+
 def status(workspace: Path, task_id: str) -> Dict[str, Any]:
     """C-01 status projection: state, next actor/action, reason code, budget, gaps."""
     workspace = Path(workspace).resolve()
@@ -987,6 +1050,7 @@ def status(workspace: Path, task_id: str) -> Dict[str, Any]:
         "last_updated_at": task.get("updated_at"),
         "has_pending_external_effect": pending_effects,
         "artifact_refs": _artifact_refs(workspace, task),
+        "delegation": delegation_view(task, step, _artifact_refs(workspace, task)),
         "plan": task.get("plan") or {},
         "budget": task.get("budget") or {},
         "gaps": _gap_view(study_dir, loop_summary),
