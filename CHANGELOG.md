@@ -2,6 +2,288 @@
 
 ## Unreleased
 
+### Added
+
+- **A-06: external research bridge safety boundary** (`askovo external-research`).
+  Running a host adapter is the highest-privilege operation in the repository, so
+  the subprocess boundary now lives in `external_bridge.py` and is enforced, not
+  documented: the child environment is **built from an allowlist** (`PATH`,
+  `HOME`, `LANG`, … plus an entry's explicit `extra_env` plus four `ASKOVO_*`
+  context variables) instead of inheriting the parent environment (A29); only a
+  command in the signed per-study registry `01-sources/external-research.json`
+  may run, and its adapter SHA-256 must match, so a tampered adapter is refused
+  (A30); stdout/stderr go to temp files with hard caps (256 KiB / 64 KiB) and an
+  oversized run fails with `RATE_LIMITED` instead of being truncated into a
+  success, while a caller can only lower the cap (A31); each run gets its own
+  `ext-<utc>-<random>` id and writes `04-findings/external-research/<run_id>.json`
+  with exclusive create, so two runs in the same second both survive (A32); the
+  output path is resolved (symlinks included) and must stay inside the study
+  (A30); and a URL stays `candidate` with `evidence_level: null` and
+  `url_verification: not_attempted` — the bridge performs **no network access**
+  and never promotes an evidence level (A33). Timeouts report
+  `INDETERMINATE_EXTERNAL_ACTION` and must not be replayed. The run record
+  captures the command, adapter hash, allowlisted env **keys** (never values),
+  effective limits and boundary.
+- **A-05: incremental research delta** (`askovo delta`). The same decision
+  question keeps accumulating public issue material; `sync` compares an
+  authorized local export with the latest snapshot by **source id + `updated_at`**
+  and appends an immutable `04-findings/deltas/vNNN-<hash>/` version only when
+  something changed. Older versions stay byte-identical, so a deleted or edited
+  record keeps its previous content, hash and acquisition basis (A25); the
+  append-only `index.jsonl` and `state.json` make the history auditable. A
+  repeated sync is a no-op — no new version, untouched index, and a delta that
+  says 无变化 (A24). Identity is normalised through A-03's `author_ref`, with
+  `author_id` preferring the stable GitHub `user.id`, so an author rename is not
+  a new observed user and a login-only rename becomes `identity_drift` instead of
+  inflating the count (A26). `decision_delta.md` carries the four blocks — added
+  evidence, affected canonical nodes with record references, counter-evidence
+  impact, re-review recommendation — and a new counter-evidence only raises
+  `needs_re_review`: the approved `DecisionSnapshot` stays read-only
+  (`decision_record_mutated: false`) and `accepted` / `current` / `differences`
+  spell out the current-vs-accepted gap (A27). An unreachable source still shows
+  the last good snapshot, marked `stale` with `STALE_SOURCE`, the reason and the
+  last success time (A28). `askovo decide delta --since latest-accepted` now
+  returns the same document, replacing A-02's explicit refusal.
+- **A-04: Decision Brief + PRD dev acceptance** (`askovo brief`). One page per
+  decision question, projected read-only from `product-reasoning.json`,
+  `demand-judgments.json`, `evidence.jsonl` and `decision_review`; it writes
+  only `06-report/decision-brief.{json,md}` and a `source_fingerprint` over its
+  four inputs, so canonical artifacts are never rewritten. The document keeps
+  the PRD §5 `askovo.decision-brief/1` fields and the nine §2.3 sections
+  (question/boundary/window/owner, recommendation, 2-5 uniform-dimension
+  options, evidence and counter-evidence with source/date/context/qualification,
+  limitations, rejected options, next cheapest validation action with owner and
+  stop condition, PRD acceptance, four independent states). Gates: no evidence
+  yields `hold` with an action and never a validated decision or an approval
+  (A19); the acceptance checklist keeps the canonical `acceptance_conditions` /
+  `acceptance_criteria` field names with
+  `product-reasoning.json#chains/<id>/nodes/<node>` references and marks an
+  empty checklist `undefined` instead of done (A20); counter-evidence sets
+  `needs_re_review` + `decision_status: needs_review` and shows what it
+  challenges without overwriting the previous recommendation (A21); a number
+  missing its unit, time window or source is withheld and listed in
+  `numbers_without_provenance` (A22); `research_facts` stay `null` with
+  `invented_facts: []`, and `heuristic_score` is never a probability
+  (`calibrated: false`) (A23). Broken references or drifted inputs mark the
+  brief `stale` (`STALE_SOURCE`, `delivery_state: blocked`, `diagnostic_only`,
+  exit 1) and leave only a diagnostic draft. `askovo decide brief` and
+  `askovo decide result` now return the same document; `decide delta` stays with
+  A-05.
+- **A-03: issue -> user task / demand structuring** (`askovo issues`). A local
+  authorized GitHub issue export becomes machine candidates and — only through a
+  named human — canonical evidence. `import` snapshots the export
+  (`02-data/raw/issues/`, SHA-256, acquisition basis, retention rule), reuses
+  `sure_engine._normalize_platform_record` for `02-data/normalized.jsonl`, and
+  declares the `github` source family in `01-sources/source-plan.csv` so the
+  audit never sees evidence from an unplanned source. `extract` writes
+  `04-findings/issue-candidates.json` with the thirteen PRD candidate fields
+  plus claim kind, disposition, support/counter counts, snapshot provenance and
+  an explicit `selection_bias`. Semantic rules live in code: one login with ten
+  issues is one observed user and comments are not users (A13); a feature
+  request caps at E1 and is refused as behaviour evidence with `POLICY_DENIED`
+  (A14); no quotable body text stays `unverified` with a null span (A15); a
+  deleted source keeps snapshot + hash + rights note and reports
+  `snapshot_only` (A16); one counter-evidence yields `challenged` with
+  `majority_wins: false` (A17); non-public rows are dropped and counted while
+  snapshots are built from a field whitelist, so private content never reaches
+  an artifact (A18). `accept` requires a named human, is idempotent, and writes
+  one evidence record + one demand judgment + one product-reasoning chain plus
+  an append-only `04-findings/issue-acceptance.jsonl` trail; `reject` records
+  its reason. `LIVE_CONNECTOR_ENABLED` marks the future live-connector seam and
+  stays False: no network, no API call.
+- **A-02: one-question decide executor** (`askovo decide` + the
+  `askovo_decide_*` MCP entry points). An `askovo.decision-task/1` document
+  (PRD §2.2) now becomes a tracked task instead of a one-off prompt:
+  `decide start` normalizes the input, binds or scaffolds the study, writes the
+  research-loop plan and stops — **dry run by default**. Reading only happens
+  with `--run` *and* a human `askovo loop authorize`; decide never authorizes,
+  never calls `loop assess`, and a task without a declared owner and source
+  stops at `needs_input` / `AUTH_REQUIRED` with executable import tasks (AC A6).
+  The product state is a projection of the loop
+  (`created → scoped → collecting → analyzed → review_required → brief_ready →
+  delivered`, exceptions `needs_input|blocked|interrupted|cancelled`) and
+  `delivered` never means `decision_approved`. `status` always returns the C-01
+  §3 fields (`next_actor`, `next_required_action`, `blocked_reason_code`,
+  `last_updated_at`, `has_pending_external_effect`, `artifact_refs`) plus
+  `budget` and `gaps`; refusals carry stable reason codes (`INPUT_REQUIRED`,
+  `AUTH_REQUIRED`, `UNSUPPORTED_SCOPE`, `POLICY_DENIED`, `ARTIFACT_PARTIAL`)
+  and exit 2 instead of a look-alike success. `brief`/`result` write a
+  `partial` Decision Brief that lists every gap and keeps
+  `decision_state: not_approved` (AC A12). `authorization.max_records` becomes
+  the loop envelope bound (AC A7); `cancel` stops all further reading with
+  `POLICY_DENIED` (AC A8); identical input resumes the same task, study, plan
+  and candidate set (AC A9, A11); an interrupted loop becomes `interrupted` and
+  requires reconcile without replay (AC A10). Scaffolded studies copy their
+  authorized export into `01-sources/authorized/` so the study owns the snapshot
+  it cites. `decide review` / `decide delta` are explicit `UNSUPPORTED_SCOPE`
+  stubs until A-04. MCP exposes `askovo_decide_start` /
+  `askovo_decide_status` / `askovo_decide_result` on the same orchestration
+  functions, so the CLI, Skill and MCP keep one behavior.
+
+### Changed
+
+- **BREAKING (A-06):** `askovo external-research --command "<arbitrary command>"`
+  is no longer accepted by default. Only a command registered in
+  `01-sources/external-research.json` (with `adapter`, `argv`, `sha256`,
+  `access_basis`, `reviewed_at`, `reviewed_by`) may run. Migrate by registering
+  the adapter, or add `--trusted-local` (still requires `--authorize`) for a
+  one-off local workflow; its use is recorded in the run. The refusal JSON names
+  the registry path and the required fields. Reason: PRD §3 A-06 requires a
+  command allowlist / explicit signed path, which an arbitrary `--command` cannot
+  provide. See `docs/external-bridge.md` §6.
+
+### Changed
+
+- **C-01 §3: `INPUT_DRIFT` is a detail code, not a reason code.**
+  `decision_brief` put `INPUT_DRIFT` / `BROKEN_REFERENCE` on
+  `stale_reasons[].code`, which reads like an eleventh entry in the C-01 error
+  registry. The top-level `reason_code` is now always the registered
+  `STALE_SOURCE`; the challenged/expired distinction moved to
+  `stale_reasons[].detail_code` plus a top-level `input_drift: true`, so "the
+  content changed under the same id" stays visible without extending the frozen
+  vocabulary.
+
+### Fixed
+
+- **A-03: a counter-evidence record kept the supporter's provenance.** The
+  canonical record written by `issues accept` for a counter-evidence item used
+  `candidate["issue_ref"]` (the supporting issue, e.g. `github:o/r#1`) while its
+  `record_id` and `text` came from the counter issue (`github:10009`), so an audit
+  following `source_ref` landed on the wrong issue — worse than a dropped
+  counter-evidence because it looked traceable. `counter_evidence[]` now carries
+  each counter record's own `source_ref` / `author_ref` / `created_at` /
+  `updated_at`, and `_counter_record()` writes those; the supporting record is
+  pinned by a test too, so both branches of the same function family are covered.
+- **A-lane integration: two staleness contradictions between tickets.**
+  `decide brief` / `decide result` exited 0 on a `stale` brief while
+  `askovo brief` exited 1 for the same document (A-04 introduced the
+  "stale blocks delivery" exit-1 convention; A-02's task entry never adopted
+  it), and `delta show` / `delta sync` reported `fresh` for a broken canonical
+  reference while the brief reported `stale` / `delivery_state: blocked` (A-05
+  derived freshness only from its own sync error). Both entries now share
+  `decision_brief.stale_inputs()`: a projection over a broken chain is not
+  current, on every entry and in every projection.
+- **A-01: attention metrics no longer pass as commercial E5 evidence**
+  (orthogonal evidence qualification). `docs/plan-evidence-check.md` graded the
+  GitHub star baseline, the follower count and an internal precedent as E5,
+  conflating "the number is real" with "it supports a
+  paid/retention/repurchase conclusion". The E0–E5 contract is unchanged;
+  `sure_engine` now derives three orthogonal display attributes per evidence
+  record — `measurement_integrity`
+  (confirmed_source|self_reported|unverified|conflicted), `behavior_kind`
+  (statement|problem_behavior|solution_acceptance|commercial_intent|
+  commercial_transaction|attention_metric) and the rule-derived
+  `claim_eligibility` (problem|solution|commercial|descriptive_only|none).
+  An API-verified star count qualifies as confirmed_source / attention_metric /
+  descriptive_only and can never yield commercial E5 eligibility; an unverified
+  or self-reported "already paid" statement gets no commercial eligibility and
+  is marked for human review. Cross-dimension conflicts (e.g. an attention
+  metric coded E5) surface as a `needs_requalification` flag in `askovo audit`
+  output, decision review items and the delivery chat summary — original
+  levels are never rewritten and legacy studies stay read-compatible. Copying
+  one source into three records no longer raises the independent-source count
+  (`independent_source_count`). The three misgraded rows in
+  `docs/plan-evidence-check.md` are corrected to descriptive observations with
+  a revision note; no historical study data is migrated.
+
+### Tests
+
+- 13 new regression tests (`tests/test_evidence_qualification.py`) freeze the
+  counterexamples first (A1 verified star stays descriptive_only; A2
+  unverified payment gets no commercial eligibility; A3 copied source does not
+  raise independence; A4 legacy data stays read-only without silent promotion;
+  A5 doc, auditor and delivery projection agree on the same record). Full
+  suite: 300 passed.
+- 18 new regression tests (`tests/test_decide_executor.py`) freeze AC A6–A12
+  on synthetic fixtures only: dry run reads nothing, unsupported
+  decision_type/source are refused without a fake task, missing question is
+  `INPUT_REQUIRED`, identical input yields an identical task id and plan digest,
+  missing authorization reads nothing, the orchestrator never self-authorizes or
+  assesses, the state machine order holds, the record cap is never exceeded,
+  cancel stops all reading, repeat start/resume does not duplicate imports,
+  interrupted resume requires reconcile and recollects nothing, status carries
+  the C-01 fields at every gate, the brief is `partial` and lists its gaps, and
+  the MCP entries share the same orchestrator. Full suite: 318 passed.
+- 33 new regression tests (`tests/test_issue_structuring.py`) freeze AC
+  A13-A18 offline on synthetic GitHub issue exports: the thirteen PRD fields,
+  the four claim kinds (never collapsed into one `type`), exact quote spans,
+  same-author and same-issue comment accounting, login-only identity, separated
+  maintainer feedback, duplicate-theme merging that keeps every source,
+  deterministic re-extraction, feature-request caps, unverified-without-text,
+  deleted-source snapshots, counter-evidence not outvoted, private-row and
+  private-note containment, selection bias, human-only acceptance with an audit
+  trail, idempotent acceptance and a passing audit afterwards. Full suite: 351
+  passed.
+- 29 new regression tests (`tests/test_decision_brief.py`) freeze AC A19-A23
+  offline: the nine sections and PRD contract fields, 2-5 uniform-dimension
+  options, four independent states, limitations covering sample/population/
+  commercial gaps, read-only projection (canonical digests unchanged), JSON and
+  Markdown from one document, hold-without-validation, traceable PRD acceptance
+  with an undefined empty checklist, counter-evidence re-review that keeps the
+  previous recommendation, numbers keeping unit/window/source and being withheld
+  without them, null-is-not-zero, no invented interviews or rates, uncalibrated
+  heuristic scores, the stale gate at exit 1 with a diagnostic draft, and
+  `decide brief` sharing the same builder. Full suite: 381 passed.
+- 25 new regression tests (`tests/test_research_delta.py`) freeze AC A24-A28
+  offline: versioned first sync with the full `DecisionSnapshot` field set,
+  no-op repeat sync, added/changed/deleted classification, deletion not asserted
+  under changed filters, old versions byte-identical, deleted and edited records
+  keeping their previous content, append-only index, content-addressed versions,
+  stable-id rename not a new user, login-only rename recorded as drift,
+  edit never becoming new evidence, the four delta blocks with record
+  references, counter-evidence impact, deterministic digests, declaration-only
+  approval, `needs_re_review` without mutating the approved record,
+  current-vs-accepted differences, no accepted baseline, degraded read at
+  `stale` with exit 1, authorization required, and `decide delta` sharing the
+  same document. Full suite: 406 passed.
+- 26 new regression tests (`tests/test_external_bridge.py`) freeze AC A29-A33
+  against **real child processes** and temporary scripts (no mocks stand in for
+  "we did not pass the variable"): an unauthorized parent secret is unreadable
+  while `PATH` and `ASKOVO_*` are present, the allowlist (not the parent
+  environment) defines the child view, `extra_env` must be registered explicitly
+  and its value never reaches the run record, unregistered commands and tampered
+  adapter hashes are `POLICY_DENIED`, `--trusted-local` needs `--authorize` and
+  is recorded, oversized stdout/stderr fail with `RATE_LIMITED` and leave no
+  record, caps can only be lowered, two same-second runs keep distinct ids and
+  files, `..`/absolute/symlink output escapes are refused while an inside path is
+  allowed, URLs stay candidates, a socket/`urlopen` trap proves no network is
+  attempted, malformed and non-http payloads are refused, and the legacy
+  `--command` path reports the migration hint. Full suite: 438 passed.
+- 5 suite-integrity guard tests (`tests/test_suite_integrity.py`) make "silently
+  skipped test" impossible to ship: every `tests/test_*.py` must collect exactly
+  as many cases as it defines `def test_` (a mismatch names the module and the
+  difference), a class defining `test_*` methods without inheriting
+  `unittest.TestCase` is reported by name, `@unittest.skip*` decorators must be
+  whitelisted with an optional-dependency reason, and a module-level
+  `load_tests` / `setUpModule` / `tearDownModule` hook is flagged. Verified by
+  deleting a base class: three assertions go red with precise messages. The
+  guard caught the new integration file's own two missing bases immediately.
+- 6 A-lane cross-ticket integration tests
+  (`tests/test_askovo_decision_service_integration.py`) cover what single-ticket
+  suites cannot: one lifecycle from dry start through the human gate, run,
+  brief, delta sync and approval (product state never moves backwards, the brief
+  stays `partial` with its gaps, brief and delta agree on `needs_re_review`, an
+  approved DecisionSnapshot stays byte-identical); MCP `askovo_decide_*` and the
+  `decide` CLI report the same task, state, reason code and next action; an A-06
+  external adapter produces candidates that never reach the brief's evidence and
+  never raise a level; and a deleted cited evidence record makes both the brief
+  (blocked) and the delta (exit 1) stale. Full suite: 449 passed.
+- 5 C-01 reason-registry contract tests (`tests/test_reason_code_contract.py`)
+  freeze the ten-code vocabulary against
+  `ai输出/ovo-C01-委托语义合同-v1-20261115.md` §3: sorted equality with
+  `decide.REASON_CODES`, no duplicates and exactly ten entries (an eleventh code
+  is a three-repository contract change), every refusal class defaulting inside
+  the registry, a static scan proving no script emits a `reason_code` literal
+  outside it, and `INPUT_DRIFT` / `BROKEN_REFERENCE` staying detail codes.
+  Verified by injecting `SNEAKY_NEW_CODE`: two assertions go red with the
+  offending values. Full suite: 461 passed.
+- 1 more acceptance test pins per-record provenance: after accepting a challenged
+  candidate, the counter record's `source_ref` / `author_ref` / `created_at` /
+  `text` all describe the counter issue (and the supporting record describes its
+  own), so an audit cannot follow `source_ref` to the wrong issue. On the
+  previous implementation it fails with
+  `counter source_ref points at 'github:owner/repo#1'`. Full suite: 462 passed.
+
 ### Fixed
 
 - **Audit now enforces E2 for validated demand judgments.** `askovo audit`

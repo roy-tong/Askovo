@@ -34,7 +34,7 @@ one entry:
   route "<需求>"     route only, no writes
   mode "<需求>"      detect discover/validate/optimize and show the entry contract
   explore <study>    scaffold the five-layer opportunity space for a 0->1 study
-  external-research <study> --command "<cmd>" --authorize   run a host research command
+  external-research <study> --command <id> --authorize   run a signed host adapter (bounded)
   chain <study>       render the scene-user-pain-need-feature-product-business chain
   roles <action>      80 role families: list/show/recommend/scaffold/template
   platforms "<需求>" rank platforms by data availability and access
@@ -52,6 +52,10 @@ research:
   review <study>       decision review: evidence, readiness, falsifiability, bias, deliverables
   decision <action> <study> record/list/replay versioned decisions and current drift
   loop <action> <study>  gap-driven research rounds: plan/authorize/run/status/report
+  decide <action>      one-question decide executor: start/status/result/brief/cancel
+  issues <action>      issue -> user task/demand: import/extract/list/edit/accept/reject
+  brief <study>        Decision Brief: nine-section read-only projection + PRD acceptance
+  delta <action>       incremental research delta: sync/show/status/approve (append-only)
   plan <study>         supporting platform/feasibility plan
   demo                 run the bundled offline sample
   doctor               check runtime, catalog, packs and version
