@@ -243,6 +243,14 @@ askovo delta approve ./study --by "product-owner" --approval-ref "SIGNOFF-001"
 
 Every real change appends an immutable snapshot version; a repeated sync is a no-op. A new counter-evidence only raises `needs_re_review` — the approved decision stays read-only — and an unreachable source still shows the last good result, marked `stale`. See [research delta](docs/research-delta.md) (Chinese).
 
+Running your own research adapter is the one operation that executes someone else's code, so it stays inside a bounded subprocess: an env allowlist, a signed command registry with adapter hashes, capped stdout/stderr, a per-run id and an output path that cannot leave the study. Returned URLs stay candidates — the bridge never fetches them.
+
+```bash
+askovo external-research ./study --command my-adapter --authorize --json
+```
+
+An arbitrary `--command` now needs `--trusted-local` (still with `--authorize`) and is recorded. See [external research bridge](docs/external-bridge.md) (Chinese).
+
 Public GitHub issues are the usual raw material. `askovo issues` turns an authorized export into machine candidates and, only after a named human accepts one, into canonical evidence — the thirteen PRD fields stay candidates until then:
 
 ```bash

@@ -236,6 +236,14 @@ askovo delta approve ./study --by "product-owner" --approval-ref "SIGNOFF-001"
 
 每次真实变化追加一个不可变快照版本，重复同步是 no-op。新反证只置 `needs_re_review`——已批准决定保持只读；来源不可达时仍显示上次可用结果并标 `stale`。详见[增量研究 Delta](docs/research-delta.md)。
 
+跑自己的研究适配器是唯一会执行别人代码的操作，所以它被关在有界子进程里：环境白名单、带适配器 hash 的签名命令注册表、有界的 stdout/stderr、独立 run id、输出路径不能离开 study。返回的 URL 只是候选——桥从不抓取。
+
+```bash
+askovo external-research ./study --command my-adapter --authorize --json
+```
+
+任意 `--command` 现在需要 `--trusted-local`（仍必须 `--authorize`）且会被记录。详见[外部研究桥](docs/external-bridge.md)。
+
 公开 GitHub issue 通常是最原始的素材。`askovo issues` 把授权导出变成机器候选，**只有具名的人接受后**才写进 canonical 证据——在那之前，PRD 那 13 个字段只是候选：
 
 ```bash

@@ -4,6 +4,26 @@
 
 ### Added
 
+- **A-06: external research bridge safety boundary** (`askovo external-research`).
+  Running a host adapter is the highest-privilege operation in the repository, so
+  the subprocess boundary now lives in `external_bridge.py` and is enforced, not
+  documented: the child environment is **built from an allowlist** (`PATH`,
+  `HOME`, `LANG`, … plus an entry's explicit `extra_env` plus four `ASKOVO_*`
+  context variables) instead of inheriting the parent environment (A29); only a
+  command in the signed per-study registry `01-sources/external-research.json`
+  may run, and its adapter SHA-256 must match, so a tampered adapter is refused
+  (A30); stdout/stderr go to temp files with hard caps (256 KiB / 64 KiB) and an
+  oversized run fails with `RATE_LIMITED` instead of being truncated into a
+  success, while a caller can only lower the cap (A31); each run gets its own
+  `ext-<utc>-<random>` id and writes `04-findings/external-research/<run_id>.json`
+  with exclusive create, so two runs in the same second both survive (A32); the
+  output path is resolved (symlinks included) and must stay inside the study
+  (A30); and a URL stays `candidate` with `evidence_level: null` and
+  `url_verification: not_attempted` — the bridge performs **no network access**
+  and never promotes an evidence level (A33). Timeouts report
+  `INDETERMINATE_EXTERNAL_ACTION` and must not be replayed. The run record
+  captures the command, adapter hash, allowlisted env **keys** (never values),
+  effective limits and boundary.
 - **A-05: incremental research delta** (`askovo delta`). The same decision
   question keeps accumulating public issue material; `sync` compares an
   authorized local export with the latest snapshot by **source id + `updated_at`**
@@ -100,6 +120,18 @@
   `askovo_decide_status` / `askovo_decide_result` on the same orchestration
   functions, so the CLI, Skill and MCP keep one behavior.
 
+### Changed
+
+- **BREAKING (A-06):** `askovo external-research --command "<arbitrary command>"`
+  is no longer accepted by default. Only a command registered in
+  `01-sources/external-research.json` (with `adapter`, `argv`, `sha256`,
+  `access_basis`, `reviewed_at`, `reviewed_by`) may run. Migrate by registering
+  the adapter, or add `--trusted-local` (still requires `--authorize`) for a
+  one-off local workflow; its use is recorded in the run. The refusal JSON names
+  the registry path and the required fields. Reason: PRD §3 A-06 requires a
+  command allowlist / explicit signed path, which an arbitrary `--command` cannot
+  provide. See `docs/external-bridge.md` §6.
+
 ### Fixed
 
 - **A-01: attention metrics no longer pass as commercial E5 evidence**
@@ -175,6 +207,19 @@
   current-vs-accepted differences, no accepted baseline, degraded read at
   `stale` with exit 1, authorization required, and `decide delta` sharing the
   same document. Full suite: 406 passed.
+- 26 new regression tests (`tests/test_external_bridge.py`) freeze AC A29-A33
+  against **real child processes** and temporary scripts (no mocks stand in for
+  "we did not pass the variable"): an unauthorized parent secret is unreadable
+  while `PATH` and `ASKOVO_*` are present, the allowlist (not the parent
+  environment) defines the child view, `extra_env` must be registered explicitly
+  and its value never reaches the run record, unregistered commands and tampered
+  adapter hashes are `POLICY_DENIED`, `--trusted-local` needs `--authorize` and
+  is recorded, oversized stdout/stderr fail with `RATE_LIMITED` and leave no
+  record, caps can only be lowered, two same-second runs keep distinct ids and
+  files, `..`/absolute/symlink output escapes are refused while an inside path is
+  allowed, URLs stay candidates, a socket/`urlopen` trap proves no network is
+  attempted, malformed and non-http payloads are refused, and the legacy
+  `--command` path reports the migration hint. Full suite: 438 passed.
 
 ## 2.17.1 - 2026-11-14
 

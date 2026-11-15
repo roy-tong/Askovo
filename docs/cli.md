@@ -15,7 +15,7 @@ askovo --help
 | `route "<需求>"` | 只路由，不写文件；含行业、岗位编排与研究模式 | 0/2 |
 | `mode "<需求>"` | 只判断 Discover / Validate / Optimize 与入口节点、上游假设、问题与停止条件，不写文件 | 0/2 |
 | `explore <study>` | 为 0→1 研究生成五层机会空间脚手架（JSON + Markdown），不产生结论 | 0/2 |
-| `external-research <study> --command … --authorize` | 运行宿主提供的研究命令，把输出保存为候选来源（不定级、不升级为证据） | 0/2 |
+| `external-research <study> --command <id> --authorize` | 运行**已登记**的宿主适配器（白名单环境、有界输出、独立 run id），把输出保存为候选来源（不定级、不升级为证据） | 0/2 |
 | `roles list/show/recommend/scaffold/template` | 80 岗位族、10 生命周期、10 行业的职责/KPI/SOP/交接/模板与项目执行包 | 0/2 |
 | `platforms "<需求>"` | 平台雷达：数据在哪、能否合规拿到、能证明什么 | 0/2 |
 | `collect <study>` | 通过 design gate 后运行采集适配器/本地导出/CDP，写 raw、manifest 与 normalized | 0/1/2/3/4 |
@@ -109,12 +109,17 @@ Discover 模式的 `askovo do` 会自动生成该地图；`explore` 用于补建
 ## external-research
 
 ```bash
-askovo external-research ./study \
-  --command "python /path/to/gpt_researcher_adapter.py" \
-  --question "端侧 AI 摄影的替代方案" --authorize
+# 1) 在 01-sources/external-research.json 里登记适配器（六个必填字段 + 适配器 sha256）
+# 2) 人工授权后按 id 运行
+askovo external-research ./study --command my-adapter --authorize --json
+askovo external-research ./study --command my-adapter --authorize \
+  --max-stdout-bytes 65536            # 只能调低上限
 ```
 
-命令通过 `ASKOVO_QUESTION` / `ASKOVO_STUDY` / `ASKOVO_MODE` 接收上下文，stdout 必须输出一个 JSON 对象，至少含 `sources: [{url, title, excerpt, claim}]`。输出保存到 `04-findings/external-research/`，记录为 `candidate`、`evidence_level: null`、`review_required: true`。`--authorize` 是必需的，因为命令以当前用户权限运行。
+- **A-06 边界**：子进程环境只含白名单变量（从白名单**构建**，不继承）；只跑注册表里 `sha256` 匹配的适配器；stdout/stderr 有硬上限，超界 `RATE_LIMITED` 失败而不是截断；每次运行有独立 `run_id`（同秒两次不覆盖）；`--output` 解析后必须落在 study 内。
+- 命令通过 `ASKOVO_QUESTION` / `ASKOVO_STUDY` / `ASKOVO_MODE` / `ASKOVO_RUN_ID` 接收上下文，stdout 必须输出一个 JSON 对象，至少含 `sources: [{url, title, excerpt, claim}]`。
+- 输出保存到 `04-findings/external-research/<run_id>.json`，记录为 `candidate`、`evidence_level: null`、`url_verification: not_attempted`、`review_required: true`；**不抓取也不验证链接**（A33）。
+- `--authorize` 是必需的，因为命令以当前用户权限运行。**破坏性变更**：任意 `--command` 不再默认可用，迁移方式见 [外部研究桥](external-bridge.md#6-破坏性变更与迁移v11--a-06)；一次性本机工作流用 `--trusted-local`（仍必须 `--authorize`，且会记入运行记录）。
 
 ## roles
 

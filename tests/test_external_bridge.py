@@ -35,12 +35,16 @@ import external_bridge  # noqa: E402
 
 SECRET = "ASKOVO_TEST_SECRET_DO_NOT_LEAK"
 
+# The child dumps its own environment to a file the test controls, so the proof
+# is a real subprocess's view — not the parent's claim about what it passed.
 ENV_DUMP = """
 import json
 import os
+import sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps(dict(os.environ), ensure_ascii=False), encoding="utf-8")
 print(json.dumps({"sources": [{"url": "https://example.com/a", "title": "T",
-                               "excerpt": "E", "claim": "C"}],
-                  "env": dict(os.environ)}, ensure_ascii=False))
+                               "excerpt": "E", "claim": "C"}], "notes": ["n"]}))
 """
 
 
@@ -66,6 +70,7 @@ class BridgeHelpers:
         shutil.copytree(SAMPLE, self.study)
         self.runs = self.study / "04-findings" / "external-research"
         self.registry_path = self.study / "01-sources" / "external-research.json"
+        self.dump_path = self.dir / "child-env.json"
 
     # -- fixture plumbing -------------------------------------------------- #
 
@@ -91,7 +96,8 @@ class BridgeHelpers:
         entry = {
             "id": command_id,
             "label": "synthetic environment dumper",
-            "argv": [sys.executable, str(script)],
+            "adapter": str(script),
+            "argv": [sys.executable, str(script), str(self.dump_path)],
             "sha256": sha256_file(script),
             "access_basis": "synthetic local adapter; no network",
             "reviewed_at": "2026-11-15",
@@ -102,6 +108,9 @@ class BridgeHelpers:
             entry["extra_env"] = extra_env
         self.write_registry([entry])
         return entry
+
+    def child_env(self) -> dict:
+        return json.loads(self.dump_path.read_text(encoding="utf-8"))
 
     def run_entry(self, *extra: str, env: dict | None = None
                   ) -> tuple[subprocess.CompletedProcess, dict]:
@@ -117,15 +126,16 @@ class BridgeHelpers:
         return sorted(path for path in self.runs.glob("*.json") if path.is_file())
 
 
-class EnvAllowlistTests(BridgeHelpers):
+class EnvAllowlistTests(BridgeHelpers, unittest.TestCase):
     """A29: the child only sees the allowlist, never the parent environment."""
 
     def test_child_cannot_read_unauthorized_env_secret(self) -> None:
         script = self.write_script(ENV_DUMP)
         self.register(script)
-        completed, record = self.run_entry(env={SECRET: "leak-me"})
+        completed, record = self.run_entry("--command", "env-dumper",
+                                   env={SECRET: "leak-me"})
         self.assertEqual(0, completed.returncode, record)
-        child_env = record["env"]
+        child_env = self.child_env()
         self.assertNotIn(SECRET, child_env, "an unauthorized secret must not reach the adapter")
         self.assertNotIn("leak-me", json.dumps(child_env))
         self.assertTrue(child_env.get("PATH"), "PATH is on the allowlist and must be present")
@@ -133,38 +143,47 @@ class EnvAllowlistTests(BridgeHelpers):
     def test_env_is_built_from_the_allowlist_not_inherited(self) -> None:
         script = self.write_script(ENV_DUMP)
         self.register(script)
-        _, record = self.run_entry()
-        child_env = set(record["env"])
+        _, record = self.run_entry("--command", "env-dumper")
+        child_env = set(self.child_env())
+        # The record lists exactly what the bridge passed; anything else in the
+        # child's view was injected by the platform, not by Askovo.
+        platform_injected = {"__CF_USER_TEXT_ENCODING", "LC_CTYPE"}
+        self.assertEqual(set(), child_env - set(record["env_keys"]) - platform_injected,
+                         "the bridge must not pass a variable it did not list")
         allowed = set(external_bridge.DEFAULT_ENV_ALLOWLIST) | set(
-            external_bridge.CONTEXT_ENV_KEYS) | {"PYTHONPATH"}
+            external_bridge.CONTEXT_ENV_KEYS) | platform_injected
         self.assertTrue(child_env <= allowed, f"unexpected env keys: {sorted(child_env - allowed)}")
         for key in external_bridge.CONTEXT_ENV_KEYS:
             self.assertIn(key, child_env)
+        self.assertEqual(sorted(set(record["env_keys"])), record["env_keys"])
 
     def test_registry_can_allow_one_extra_variable_explicitly(self) -> None:
         script = self.write_script(ENV_DUMP)
         self.register(script, extra_env=["MY_ADAPTER_TOKEN"])
-        completed, record = self.run_entry(env={"MY_ADAPTER_TOKEN": "token-123"})
+        completed, record = self.run_entry("--command", "env-dumper",
+                                   env={"MY_ADAPTER_TOKEN": "token-123"})
         self.assertEqual(0, completed.returncode, record)
-        self.assertEqual("token-123", record["env"].get("MY_ADAPTER_TOKEN"))
+        self.assertEqual("token-123", self.child_env().get("MY_ADAPTER_TOKEN"))
         self.assertIn("MY_ADAPTER_TOKEN", record["env_allowlist"])
+        self.assertNotIn("token-123", json.dumps(record),
+                         "the run record lists allowlisted keys, never their secret values")
 
     def test_run_record_lists_the_effective_allowlist(self) -> None:
         script = self.write_script(ENV_DUMP)
         self.register(script)
-        _, record = self.run_entry()
+        _, record = self.run_entry("--command", "env-dumper")
         self.assertIn("PATH", record["env_allowlist"])
         self.assertNotIn(SECRET, record["env_allowlist"])
 
 
-class CommandWhitelistTests(BridgeHelpers):
+class CommandWhitelistTests(BridgeHelpers, unittest.TestCase):
     """A30: only a signed registry entry may run."""
 
     def test_unregistered_command_is_refused(self) -> None:
         script = self.write_script(ENV_DUMP)
         self.write_registry([])
         completed = run_cli(str(self.study), "--authorize", "--json",
-                            "--command", f"{sys.executable} {script}")
+                            "--command", f"{sys.executable} {script} {self.dump_path}")
         self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
         body = json.loads(completed.stdout)
         self.assertEqual("POLICY_DENIED", body["reason_code"])
@@ -192,7 +211,8 @@ class CommandWhitelistTests(BridgeHelpers):
         script = self.write_script(ENV_DUMP)
         self.write_registry([{
             "id": "no-basis",
-            "argv": [sys.executable, str(script)],
+            "adapter": str(script),
+            "argv": [sys.executable, str(script), str(self.dump_path)],
             "sha256": sha256_file(script),
         }])
         completed, body = self.run_entry("--command", "no-basis")
@@ -204,21 +224,21 @@ class CommandWhitelistTests(BridgeHelpers):
         script = self.write_script(ENV_DUMP)
         self.write_registry([])
         completed = run_cli(str(self.study), "--trusted-local", "--json",
-                            "--command", f"{sys.executable} {script}")
+                            "--command", f"{sys.executable} {script} {self.dump_path}")
         self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
 
     def test_trusted_local_is_recorded_in_the_run(self) -> None:
         script = self.write_script(ENV_DUMP)
         self.write_registry([])
-        completed, record = self.run_entry("--trusted-local",
-                                           "--command", f"{sys.executable} {script}")
+        completed, record = self.run_entry(
+            "--trusted-local", "--command", f"{sys.executable} {script} {self.dump_path}")
         self.assertEqual(0, completed.returncode, record)
         self.assertTrue(record["trusted_local"])
         self.assertTrue(record["command_sha256"].startswith("sha256:"))
         self.assertIn("trusted-local", json.dumps(record["notes"], ensure_ascii=False))
 
 
-class OutputCapTests(BridgeHelpers):
+class OutputCapTests(BridgeHelpers, unittest.TestCase):
     """A31: an oversized stream fails clearly; it is never truncated into success."""
 
     def test_oversized_stdout_fails_clearly(self) -> None:
@@ -253,7 +273,7 @@ class OutputCapTests(BridgeHelpers):
                          "an operator cannot raise the cap above the registry default")
 
 
-class RunIdTests(BridgeHelpers):
+class RunIdTests(BridgeHelpers, unittest.TestCase):
     """A32: every run gets its own id and never overwrites an older result."""
 
     def test_two_runs_in_the_same_second_do_not_overwrite(self) -> None:
@@ -279,7 +299,7 @@ class RunIdTests(BridgeHelpers):
         self.assertEqual("askovo.external-research/1", record["schema"])
 
 
-class PathEscapeTests(BridgeHelpers):
+class PathEscapeTests(BridgeHelpers, unittest.TestCase):
     """A30: the output path cannot leave the authorized study directory."""
 
     def _run_with_output(self, target: str) -> tuple[subprocess.CompletedProcess, dict]:
@@ -314,7 +334,7 @@ class PathEscapeTests(BridgeHelpers):
         self.assertTrue((self.study / "04-findings" / "custom-run.json").is_file())
 
 
-class CandidateOnlyTests(BridgeHelpers):
+class CandidateOnlyTests(BridgeHelpers, unittest.TestCase):
     """A33: URLs are candidates; nothing is fetched and no evidence level moves."""
 
     def test_urls_stay_candidates(self) -> None:
@@ -344,7 +364,7 @@ class CandidateOnlyTests(BridgeHelpers):
         try:
             record = external_bridge.run(
                 self.study, entry["id"], authorize=True, trusted_local=False,
-                question="q", json_output=True, echo=False)
+                question="q")
         finally:
             socket.socket = original_socket
             urllib.request.urlopen = original_urlopen
@@ -382,18 +402,18 @@ class CandidateOnlyTests(BridgeHelpers):
         self.assertIn("未定级", record["boundary"])
 
 
-class LegacyCompatibilityTests(BridgeHelpers):
+class LegacyCompatibilityTests(BridgeHelpers, unittest.TestCase):
     """The pre-A-06 `--command` path is refused with a migration hint."""
 
     def test_legacy_invocation_requires_trusted_local(self) -> None:
         script = self.write_script(ENV_DUMP)
         self.write_registry([])
         completed = run_cli(str(self.study), "--authorize", "--json",
-                            "--command", f"{sys.executable} {script}")
+                            "--command", f"{sys.executable} {script} {self.dump_path}")
         self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
         body = json.loads(completed.stdout)
         self.assertEqual("POLICY_DENIED", body["reason_code"])
-        self.assertIn("--trusted-local", body["suggestion"] or body["reason"])
+        self.assertIn("--trusted-local", (body.get("suggestion") or "") + body["reason"])
 
 
 if __name__ == "__main__":

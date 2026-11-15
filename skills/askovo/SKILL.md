@@ -261,6 +261,21 @@ askovo decide cancel A-TASK-xxxxxxxx --by "<operator>"
 - The brief stays `partial` (`ARTIFACT_PARTIAL`) with every gap listed while any gap is open, and `decision_state` is `not_approved` — delivered research never means `decision_approved` or `hypothesis_validated`.
 - `decide review` / `decide delta` are refused with `UNSUPPORTED_SCOPE` until A-04; use `askovo review` or `askovo decide brief` meanwhile.
 
+## Run an external adapter inside a bounded subprocess
+
+`askovo external-research` is the only entry that executes someone else's code. A-06 makes the boundary explicit:
+
+```bash
+askovo external-research <study> --command <registry-id> --authorize --json
+```
+
+- **Environment allowlist (A29).** The child environment is *built* from `PATH`/`HOME`/`LANG`/… plus an entry's explicit `extra_env` plus four `ASKOVO_*` variables. The parent environment is never inherited, so an unregistered secret cannot leak. The run record lists allowlisted **keys**, never their values.
+- **Signed command registry (A30).** Only a command in `01-sources/external-research.json` with `adapter`, `argv`, `sha256`, `access_basis`, `reviewed_at` and `reviewed_by` may run, and the adapter hash must match. An arbitrary `--command` requires `--trusted-local` (still with `--authorize`) and is recorded.
+- **Bounded streams (A31).** stdout 256 KiB / stderr 64 KiB; exceeding the cap is `RATE_LIMITED` failure, never a truncated success. A caller can only lower the cap.
+- **Per-run identity (A32).** `ext-<utc>-<random>` plus exclusive create, so two runs in the same second both survive.
+- **No path escape (A30).** The output path is resolved (symlinks included) and must stay inside the study.
+- **URLs are candidates (A33).** `evidence_level: null`, `status: candidate`, `url_verification: not_attempted`. The bridge makes **no network access** and promotes no evidence level; a timeout is `INDETERMINATE_EXTERNAL_ACTION` and must not be replayed.
+
 ## Track what changed without rewriting history
 
 `askovo delta` is the incremental layer over A-03/A-04. New issue material never overwrites the old snapshot and never auto-changes an approved decision.
