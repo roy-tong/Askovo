@@ -172,9 +172,10 @@ def _comments(raw: Dict[str, Any]) -> List[Dict[str, str]]:
 def _record(raw: Dict[str, Any], *, run_id: str, version: str) -> Dict[str, Any]:
     """One source record: identity is the source id, content is hashed separately."""
     user = raw.get("user") if isinstance(raw.get("user"), dict) else {}
-    login = str(user.get("login") or raw.get("author") or "").strip()
+    login = str(user.get("login") or raw.get("author") or "").strip().casefold()
     user_id = user.get("id")
-    author_id = (f"github-user:{user_id}" if user_id not in (None, "") else f"login:{login}")
+    author_id = (f"github-user:{user_id}"
+                 if user_id is not None and str(user_id).strip() != "" else f"login:{login}")
     record = {
         "source_id": f"github:{raw.get('id') or raw.get('number') or ''}",
         "issue_ref": _issue_ref(raw),
@@ -473,21 +474,12 @@ def sync(study_dir: Path, file_path: Any, *, authorized_by: str = "",
         _write_version(study_dir, document, records, evidence_text, evidence_hash,
                        operator=operator, filters=filters, question=question)
     else:
-        state = _state(study_dir)
-        state.update({
-            "schema_version": SCHEMA_VERSION,
-            "kind": "askovo.delta-state",
-            "last_checked_at": document["generated_at"],
-            "last_success_at": state.get("last_success_at"),
-            "latest_version": state.get("latest_version"),
-            "last_error": None,
-            "last_error_code": None,
-            "last_error_at": None,
-            "acquisition_basis": "human-authorized local export; no network read, no API call",
-            "retention_rule": "keep the snapshot with its hash; the study owns the copy",
-        })
-        _save_state(study_dir, state)
+        # D6: a no-op sync writes **nothing**. Updating `last_checked_at` here made
+        # "no change" and "failed" indistinguishable by byte comparison, which is
+        # exactly what an append-only history must not do; the check time is
+        # reported in the returned document instead of on disk.
         document.update(_freshness(study_dir, extra_reason=""))
+        document["last_checked_at"] = document["generated_at"]
         document["next_required_action"] = _next_action(document)
     return document
 
