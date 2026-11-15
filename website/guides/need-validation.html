@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>用户「说想要」，就是需求吗？口头陈述与行为证据的区分 | Askovo 指南</title>
+  <meta name="description" content="需求验证方法指南：用户口头说想要不等于真实需求。四种常见误读、替代行为检查表（绕行/自建/放弃/付费）、E0–E5 证据分级判断标准——说了不算，做了才算。附不装工具也能用的三步验证法。">
+  <link rel="canonical" href="https://roy-tong.github.io/Askovo/guides/need-validation.html">
+  <meta name="theme-color" content="#090C10">
+  <!-- GSC/Bing 验证码插在这行下面 -->
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Askovo">
+  <meta property="og:title" content="用户「说想要」，就是需求吗？">
+  <meta property="og:description" content="需求验证的判断标准只有一条：有没有观察到的行为，而不只是口头表述。四种误读、行为检查表、E0–E5 分级。">
+  <meta property="og:url" content="https://roy-tong.github.io/Askovo/guides/need-validation.html">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="../">Askovo<span class="cursor">_</span></a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="../#chain">推理链</a>
+        <a href="../glossary.html">术语表</a>
+        <a href="../faq.html">常见问题</a>
+        <a href="https://github.com/roy-tong/askovo">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="hero" id="top">
+      <p class="kicker">GUIDE · NEED VALIDATION</p>
+      <h1>用户「说想要」，就是需求吗？</h1>
+      <p class="lead">访谈里人人客气，问卷里人人选「愿意」。判断需求是否真实，标准只有一条：<strong>有没有观察到的行为，而不只是口头表述</strong>。这篇指南给出四种常见误读的识别方法、一份不装任何工具就能用的行为检查表，以及把结论分级的写法。</p>
+    </div>
+
+    <section>
+      <h2>先说结论<span class="en">THE ONE-LINE RULE</span></h2>
+      <p><strong>说了不算，做了才算。</strong>口头表述（「我想要」「我会买」）是证据，但只是最弱的一层（E1：问题被表达）；观察到替代行为、绕行、付费，才分别构成 E2 与 E4+/E5 级证据。一条只有口头支撑的需求，无论重复多少次，都只能停在「待验证」。</p>
+    </section>
+
+    <section>
+      <h2>四种常见误读<span class="en">FOUR MISREADINGS</span></h2>
+      <table>
+        <thead><tr><th>误读</th><th>长什么样</th><th>识别方法</th></tr></thead>
+        <tbody>
+          <tr><td>把客气当需求</td><td>访谈对象点头说「挺好的，我想要」</td><td>追问：<strong>「上次你为解决这个问题实际做了什么？」</strong>答不出具体行为的，是客气不是需求</td></tr>
+          <tr><td>把功能请求当痛点</td><td>用户直接给方案：「你们加个导出 Excel 就行」</td><td>问：「这个功能替代了你现在流程里的哪一步？」——先找回被跳过的痛点与场景</td></tr>
+          <tr><td>把个案当普遍</td><td>一个重度用户天天用，就推断「市场很大」</td><td>个案可以证明需求存在（E2），<strong>不能证明普遍率</strong>；普遍率需要口径完整的市场估计，两者分开写</td></tr>
+          <tr><td>把意向当付费</td><td>问卷里 60% 勾选「愿意付费」</td><td>意向是 E1。价格锚点、真实购买、持续使用、复购才是 E4+/E5——口头意愿永远不是付费行为</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>替代行为检查表<span class="en">E2 SIGNALS CHECKLIST</span></h2>
+      <p class="sub">在目标用户的社区、工单、访谈记录里找这些<strong>行为痕迹</strong>——任何一条 E2 证据都比十句「我想要」更硬：</p>
+      <ul>
+        <li><strong>绕行</strong>：用 Excel、脚本、手工流程硬拼出解决方案（「我用三个表格 + 定时任务凑合」）</li>
+        <li><strong>自建</strong>：为解决这个问题写过内部工具或买了不相干的工具来凑</li>
+        <li><strong>切换成本</strong>：抱怨迁移麻烦、数据搬家痛——痛到愿意付出成本才会抱怨</li>
+        <li><strong>放弃与退货</strong>：用了一半放弃、退订、差评「没解决我的问题」——负面行为同样是证据（E4−）</li>
+        <li><strong>为替代品付费</strong>：已经在为某个不完美的替代方案付钱</li>
+      </ul>
+      <p>搜目标社区时用问题语言而不是方案语言：<code>how do I</code>、<code>workaround</code>、<code>spreadsheet</code>、<code>有没有办法</code>、<code>手动</code>——这些词后面跟着的就是真实场景。</p>
+    </section>
+
+    <section>
+      <h2>把结论分级写下来<span class="en">GRADE YOUR CONCLUSIONS</span></h2>
+      <p>证据强度分级（E0–E5，Askovo 内部使用的完整定义见<a href="../glossary.html">术语表</a>）：</p>
+      <table>
+        <thead><tr><th>级</th><th>证据形态</th><th>回答的问题</th></tr></thead>
+        <tbody>
+          <tr><td>E0</td><td>活动、角色或场景背景</td><td>场景出现</td></tr>
+          <tr><td>E1</td><td>未满足任务、目标或困难</td><td>问题被表达</td></tr>
+          <tr><td><strong>E2</strong></td><td>当前做法、绕行、失败或切换成本</td><td><strong>替代方案及摩擦</strong></td></tr>
+          <tr><td>E3</td><td>对研究方案的明确接受/偏好</td><td>方案在给定条件下被接受</td></tr>
+          <tr><td>E4+</td><td>价格锚点、购买/付费表达</td><td>直接商业意图</td></tr>
+          <tr><td>E5</td><td>付费持有、持续使用、复购</td><td>已实现的行为证据</td></tr>
+        </tbody>
+      </table>
+      <p>两条硬规则：<strong>需求判断升到「已验证」至少要一条 E2（观察到的行为）</strong>——仅有 E1 口头陈述只能停在「待验证」；<strong>商业判断只认 E4+/E5</strong>，反证与替代行为不会把它抬成「已观察到」。</p>
+    </section>
+
+    <section>
+      <h2>今天就能做的三步<span class="en">DO IT WITHOUT ANY TOOL</span></h2>
+      <ol>
+        <li>选一个目标社区（GitHub issue、Reddit 版块、垂直论坛），用问题语言搜 30 分钟，记下出现 ≥3 次的场景。</li>
+        <li>为每个场景收集 5 条 E2 证据（绕行/自建/付费），<strong>每条附原文链接</strong>——没有链接的不要。</li>
+        <li>把结论按 E0–E5 分级写成一页：哪些判断有 E2 支撑、哪些只有 E1、哪些完全没证据。没证据的格子写「未知」，不要写零。</li>
+      </ol>
+      <p>这三步不需要任何工具。它们的价值在于：<strong>让你在写第一行代码之前，就知道哪条判断站得住。</strong></p>
+    </section>
+
+    <section>
+      <h2>Askovo 把哪部分自动化<span class="en">WHERE THE PRODUCT HELPS</span></h2>
+      <p>上面的流程里，人工最耗且最容易走形的是「收集」和「不超证」两步：授权来源内的大批量采集、每条判断的证据登记、以及结论超出证据时逐条点名。<code>askovo do "&lt;你的问题&gt;" --dry-run</code> 可以先看它打算怎么拆解（本地运行，不上传数据）；<code>askovo demo</code> 一秒跑通合成样例。</p>
+      <div class="note">边界照写：合成样例只证明结构与推理链自洽，不证明真实需求或市场；语义复核始终由人负责。这套纪律对 Askovo 自己同样生效——见 <a href="../claims.html">claims 页</a>。</div>
+      <p><a class="btn btn-primary" href="../#try">30 秒本地验证</a> <a class="btn" href="../first-look.html">委托一个真实研究任务</a></p>
+    </section>
+  </main>
+
+  <footer class="footer wrap">
+    <p>方法依据：仓库 <a href="https://github.com/roy-tong/askovo/blob/main/docs/concepts.md">docs/concepts.md</a> 的 E0–E5 定义与门禁规则。</p>
+    <p class="row"><span>© 2026 Askovo</span><span>·</span><a href="../">首页</a><span>·</span><a href="../glossary.html">术语表</a><span>·</span><a href="../faq.html">常见问题</a><span>·</span><span>复核日期 2026-11-15</span></p>
+    <p class="row"><span>ovo 家族：研究 <strong>Askovo</strong> → 执行 <a href="https://roy-tong.github.io/Growovo/">Growovo</a> → 核验 <a href="https://roy-tong.github.io/Verovo/">Verovo</a></span></p>
+  </footer>
+</body>
+</html>
