@@ -17,6 +17,7 @@
     "mainEntity": [
       { "@type": "Question", "name": "Askovo 和直接让 AI 写一份调研报告有什么区别？", "acceptedAnswer": { "@type": "Answer", "text": "通用 AI 报告每句话同样自信，分不清哪句有证据、哪句是推测。Askovo 把判断拆成七节点推理链，每条结论标 E0–E5 证据等级；结论超出证据时 askovo audit 直接点名并给退出码 1，可以进 CI。它交付的是可检查的推理过程，不是一份语气笃定的文档。" } },
       { "@type": "Question", "name": "E0–E5 证据分级是什么？", "acceptedAnswer": { "@type": "Answer", "text": "引擎内部的证据分级：E0 场景背景、E1 问题被表达、E2 观察到替代/绕行/失败行为、E3 方案被接受、E4+ 购买或付费表达、E5 已付费/持续使用的行为证据。它只描述需求与商业证据强度，不是产品好坏的评分。详见术语表。" } },
+      { "@type": "Question", "name": "用户说想要，就算需求吗？", "acceptedAnswer": { "@type": "Answer", "text": "不算。口头表述只是 E1，是最弱的一层证据；需求要升到「已验证」，至少要有一条 E2——观察到的替代、绕行或失败行为。四种常见误读、替代行为检查表与分级写法见需求验证指南。" } },
       { "@type": "Question", "name": "数据从哪里来？会违规抓取吗？", "acceptedAnswer": { "@type": "Answer", "text": "采集走授权路由：GitHub、Reddit 官方 API 等；被平台阻塞的渠道不绕过，保持缺口记录；CDP 浏览器采集仅限明确授权的可见页面，且采集前须过设计门。不做未授权抓取，不绕过登录墙或平台挑战。" } },
       { "@type": "Question", "name": "收费吗？免费版有功能阉割吗？", "acceptedAnswer": { "@type": "Answer", "text": "引擎、CLI、Agent Skill、MCP 与五个领域的基础领域包都是 MIT 开源，无功能阉割版。付费的只可能是深度领域资产与人工交付（需求验证 study、团队工作坊），范围与费用按任务商定。" } },
       { "@type": "Question", "name": "怎么在 30 秒内验证它是不是真的？", "acceptedAnswer": { "@type": "Answer", "text": "pipx install askovo，然后跑 askovo demo：离线合成样例，本地运行、不上传数据，验证推理链与审计逻辑自洽（预期 status: pass、supported: 1、overclaims: 0）。注意：合成样例只证明结构自洽，不证明真实需求或市场。" } },
@@ -58,6 +59,11 @@
     </section>
 
     <section>
+      <h2>用户说想要，就算需求吗？</h2>
+      <p>不算。口头表述只是 E1，是最弱的一层证据；需求要升到<strong>「已验证」至少要有一条 E2</strong>——观察到的替代、绕行或失败行为。四种常见误读、替代行为检查表和分级写法见<a href="./guides/need-validation.html">需求验证指南</a>；「很多人这么说」不会让结论升级。</p>
+    </section>
+
+    <section>
       <h2>数据从哪里来？会违规抓取吗？</h2>
       <p>采集走<strong>授权路由</strong>：GitHub、Reddit 官方 API 等。被平台阻塞的渠道不绕过、保持缺口记录；CDP 浏览器采集仅限明确授权的可见页面，且采集前须过设计门（Design gate）。不做未授权抓取，不绕过登录墙或平台挑战。</p>
     </section>
@@ -92,7 +98,7 @@ askovo demo</code></pre>
 
   <footer class="footer wrap">
     <p>开源引擎永久免费（MIT）。</p>
-    <p class="row"><span>© 2026 Askovo</span><span>·</span><a href="./">首页</a><span>·</span><a href="./glossary.html">术语表</a><span>·</span><a href="./claims.html">Claims</a><span>·</span><span>复核日期 2026-11-14</span></p>
+    <p class="row"><span>© 2026 Askovo</span><span>·</span><a href="./">首页</a><span>·</span><a href="./glossary.html">术语表</a><span>·</span><a href="./guides/need-validation.html">需求验证指南</a><span>·</span><a href="./claims.html">Claims</a><span>·</span><span>复核日期 2026-11-15</span></p>
     <p class="row"><span>ovo 家族：研究 <strong>Askovo</strong> → 执行 <a href="https://roy-tong.github.io/Growovo/">Growovo</a> → 核验 <a href="https://roy-tong.github.io/Verovo/">Verovo</a></span></p>
   </footer>
 </body>

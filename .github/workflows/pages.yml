@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "website/**"
+      - "scripts/seo_check.py"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -18,7 +19,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Failure-injection self-test (the gate must be able to fail)
+        run: python3 scripts/seo_check.py --selftest
+      - name: Sitemap, canonical, links, JSON-LD and review dates
+        run: python3 scripts/seo_check.py
+
   deploy:
+    needs: check
     runs-on: ubuntu-latest
     environment:
       name: github-pages
