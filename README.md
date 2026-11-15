@@ -22,7 +22,7 @@ askovo do "your question" --domain software --dry-run   # routes it, writes noth
 
 Askovo is built for product managers, user researchers, business analysts, and developers stepping into full-stack roles who now own **what to build**, not just how to build it. The default run: ① frame the question as a seven-node hypothesis canvas, ② design the data-collection plan (platforms, queries, quotas), ③ collect a large corpus through permitted routes, ④ turn the data into scene/user/pain/need/feature/product/GTM judgments, ⑤ render the **Business Plan** (`askovo deliver --kind plan`) — every judgment showing its data basis (sources, corpus size, time window) and user voices from the corpus, in business language. MRD/PRD/BRD and the Decision Package remain projections of the same chain for analyst and decision-side readers.
 
-CLI, Skill, and MCP surfaces are live today. The host agent can author the action list, or `askovo loop` derives rounds from audit gaps inside an authorized envelope; the executor runs only what was authorized. Source gaps and human semantic review are kept explicit, never hidden. See [capability status and trade-offs](docs/feature-status.md) (Chinese).
+CLI, Skill, and MCP surfaces are live today. The host agent can author the action list, or `askovo loop` derives rounds from audit gaps inside an authorized envelope; the executor runs only what was authorized, and `askovo decide` tracks a single decision question as a task over the same loop. Source gaps and human semantic review are kept explicit, never hidden. See [capability status and trade-offs](docs/feature-status.md) (Chinese).
 
 > **scene → user → pain → need → feature → product → business**
 
@@ -211,6 +211,18 @@ askovo loop authorize ./study --by "researcher"
 askovo loop run ./study
 askovo loop report ./study
 ```
+
+When the whole job is one decision ("which parsing bugs should the next release fix?"), `askovo decide` wraps that same loop as a tracked task: it normalizes an `askovo.decision-task/1` input, binds the study, writes the plan and stops — **a dry run until a human authorizes the envelope**. It never authorizes and never assesses, so a task without a human `loop authorize` reads nothing and reports `AUTH_REQUIRED`.
+
+```bash
+askovo decide start --input task.json --study ./study   # dry run: plan only, no reads
+askovo loop authorize ./study --by "researcher"
+askovo decide start --task A-TASK-1A2B3C4D --run        # execute inside the envelope
+askovo decide brief A-TASK-1A2B3C4D --format md         # partial brief + every gap
+askovo decide status A-TASK-1A2B3C4D                    # C-01 next actor / next action
+```
+
+The brief stays `partial` while gaps remain, and `delivered` never means `decision_approved`. See [one-question decide executor](docs/decide.md) (Chinese).
 
 For writing/decision gaps with existing local JSONL, `analyze` is an executable offline candidate: it reuses the descriptive analyzer and writes an execution record and follow-up review state without promoting candidates. Collection retains its authorization and Design gate; experiments and external-evidence requests are not auto-run. `stop` is separate from positive action scoring: an explicit three-condition `StopDecision` can rank it first only when more research cannot change the decision and is not worth its cost/risk; otherwise stopping for its own sake is not allowed.
 

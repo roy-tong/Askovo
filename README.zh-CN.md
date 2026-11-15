@@ -22,7 +22,7 @@ askovo do "你的问题" --domain software --dry-run   # 只做路由，不写�
 
 Askovo 面向产品经理、用户研究、业务分析人员，以及转型全栈、要兼职扛起「挖需求、定产品」职责的研发。默认跑法五步：①把问题框成七节点假设画布；②制定数据爬取方案（平台、关键词、配额）；③经允许的渠道采集大量语料；④从数据里推出场景/用户/痛点/需求/特性/产品/GTM 判断；⑤渲染**业务方案**（`askovo deliver --kind plan`）——每个判断都标注依据强度（●已观察到/◐有线索/○假设，按引用记录自动计算）、数据基础（来源、语料量、时间窗）与来自语料的用户之声，通篇业务语言。MRD/PRD/BRD 与决策包仍是同一条主链面向分析师与决策侧的投影。
 
-当前支持 CLI、Skill 和 MCP；研究动作可由宿主 Agent 规划，也可由 `askovo loop` 从审计缺口生成信封授权下的多轮动作，执行器只运行获批内容。来源缺口和人工语义复核会明确保留。[能力进度与技术取舍](docs/feature-status.md)。
+当前支持 CLI、Skill 和 MCP；研究动作可由宿主 Agent 规划，也可由 `askovo loop` 从审计缺口生成信封授权下的多轮动作，执行器只运行获批内容；`askovo decide` 把单个决策问题变成一个受跟踪任务。来源缺口和人工语义复核会明确保留。[能力进度与技术取舍](docs/feature-status.md)。
 
 > **场景 → 用户 → 痛点 → 需求 → 特性 → 产品 → 商业**
 
@@ -204,6 +204,18 @@ askovo loop authorize ./study --by "researcher"
 askovo loop run ./study
 askovo loop report ./study
 ```
+
+如果整个工单就是**一个问题**（例如「下一版先修哪些解析问题」），`askovo decide` 把同一个闭环包装成一个受跟踪任务：规范化 `askovo.decision-task/1` 输入、绑定 study、写出计划后停下——**默认 dry-run，人工授权信封之前不读任何记录**。它自己绝不授权、绝不做 `loop assess`，所以没有人工 `loop authorize` 的任务只会报 `AUTH_REQUIRED`。
+
+```bash
+askovo decide start --input task.json --study ./study   # dry-run：只出计划，不读取
+askovo loop authorize ./study --by "researcher"
+askovo decide start --task A-TASK-1A2B3C4D --run        # 在信封内执行
+askovo decide brief A-TASK-1A2B3C4D --format md         # partial Brief + 逐条缺口
+askovo decide status A-TASK-1A2B3C4D                    # C-01 下一个角色 / 下一个动作
+```
+
+只要还有缺口，Brief 就停在 `partial`；`delivered` 永远不等于 `decision_approved`。详见[一问题研究执行器](docs/decide.md)。
 
 对已有本地 JSONL 的写作/决策缺口，`analyze` 是可执行的离线候选：复用描述性分析器，写入执行记录和后续复核状态，不提升 candidate。采集仍守原授权与 Design gate；实验和外部证据请求不会自动执行。`stop` 与其他动作的正收益评分分离：只有显式 `StopDecision` 同时确认证据足够、剩余未知不改变决定、继续研究不抵成本/风险时才可排第一，否则不能为了停止而停止。
 

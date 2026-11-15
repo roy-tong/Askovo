@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### Added
+
+- **A-02: one-question decide executor** (`askovo decide` + the
+  `askovo_decide_*` MCP entry points). An `askovo.decision-task/1` document
+  (PRD §2.2) now becomes a tracked task instead of a one-off prompt:
+  `decide start` normalizes the input, binds or scaffolds the study, writes the
+  research-loop plan and stops — **dry run by default**. Reading only happens
+  with `--run` *and* a human `askovo loop authorize`; decide never authorizes,
+  never calls `loop assess`, and a task without a declared owner and source
+  stops at `needs_input` / `AUTH_REQUIRED` with executable import tasks (AC A6).
+  The product state is a projection of the loop
+  (`created → scoped → collecting → analyzed → review_required → brief_ready →
+  delivered`, exceptions `needs_input|blocked|interrupted|cancelled`) and
+  `delivered` never means `decision_approved`. `status` always returns the C-01
+  §3 fields (`next_actor`, `next_required_action`, `blocked_reason_code`,
+  `last_updated_at`, `has_pending_external_effect`, `artifact_refs`) plus
+  `budget` and `gaps`; refusals carry stable reason codes (`INPUT_REQUIRED`,
+  `AUTH_REQUIRED`, `UNSUPPORTED_SCOPE`, `POLICY_DENIED`, `ARTIFACT_PARTIAL`)
+  and exit 2 instead of a look-alike success. `brief`/`result` write a
+  `partial` Decision Brief that lists every gap and keeps
+  `decision_state: not_approved` (AC A12). `authorization.max_records` becomes
+  the loop envelope bound (AC A7); `cancel` stops all further reading with
+  `POLICY_DENIED` (AC A8); identical input resumes the same task, study, plan
+  and candidate set (AC A9, A11); an interrupted loop becomes `interrupted` and
+  requires reconcile without replay (AC A10). Scaffolded studies copy their
+  authorized export into `01-sources/authorized/` so the study owns the snapshot
+  it cites. `decide review` / `decide delta` are explicit `UNSUPPORTED_SCOPE`
+  stubs until A-04. MCP exposes `askovo_decide_start` /
+  `askovo_decide_status` / `askovo_decide_result` on the same orchestration
+  functions, so the CLI, Skill and MCP keep one behavior.
+
 ### Fixed
 
 - **A-01: attention metrics no longer pass as commercial E5 evidence**
@@ -35,6 +66,16 @@
   raise independence; A4 legacy data stays read-only without silent promotion;
   A5 doc, auditor and delivery projection agree on the same record). Full
   suite: 300 passed.
+- 18 new regression tests (`tests/test_decide_executor.py`) freeze AC A6–A12
+  on synthetic fixtures only: dry run reads nothing, unsupported
+  decision_type/source are refused without a fake task, missing question is
+  `INPUT_REQUIRED`, identical input yields an identical task id and plan digest,
+  missing authorization reads nothing, the orchestrator never self-authorizes or
+  assesses, the state machine order holds, the record cap is never exceeded,
+  cancel stops all reading, repeat start/resume does not duplicate imports,
+  interrupted resume requires reconcile and recollects nothing, status carries
+  the C-01 fields at every gate, the brief is `partial` and lists its gaps, and
+  the MCP entries share the same orchestrator. Full suite: 318 passed.
 
 ## 2.17.1 - 2026-11-14
 

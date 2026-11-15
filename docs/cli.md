@@ -21,6 +21,7 @@ askovo --help
 | `collect <study>` | 通过 design gate 后运行采集适配器/本地导出/CDP，写 raw、manifest 与 normalized | 0/1/2/3/4 |
 | `research plan/authorize/run/status` | 宿主给定动作清单的逐条授权与受控执行 | 0/1/2/3/4 |
 | `loop plan/authorize/run/status/report/assess` | 缺口驱动的多轮受控采集、每轮复审、候选证据与复盘 | 0/1/2/3/4 |
+| `decide start/status/result/brief/cancel` | 一问题研究执行器：登记任务、规划、受门禁执行、C-01 状态投影与 partial Brief | 0/2 |
 | `queue init/add/run/status/retry` | SQLite 队列、worker、重试、限速、断点续跑 | 0/1/2 |
 | `analyze <study>` | 归一化、去重、分布、候选主题、问题匹配 | 0/2 |
 | `chain <study>` | 生成/渲染“场景→用户→痛点→需求→特性→产品→商业”推理链 | 0/2 |
@@ -233,6 +234,38 @@ askovo loop advise ./study
 - `loop map` 只校验映射出处（候选记录、`study.hypotheses` 中声明的假设、原文片段与立场），不做语义评级；
 - MCP 可 `plan` / `status` / `report` / `run`，但不能授权，也不能 `assess` / `map`。
 
+## decide（一问题研究执行器）
+
+```bash
+# 登记 + 规划；默认 dry-run，只写计划不读记录
+askovo decide start --input task.json --study ./study
+askovo decide "下一版先修哪些问题" --repo owner/repo --approved-by owner --dry-run
+
+# 人工授权信封（唯一能解锁采集的步骤）
+askovo loop authorize ./study --by "researcher"
+
+# 恢复并推进（幂等：不重复导入、不重采已完成数据）
+askovo decide start --task A-TASK-1A2B3C4D --run --workspace ./decide-workspace
+
+# 状态 / 结果 / 取消
+askovo decide status A-TASK-1A2B3C4D --workspace ./decide-workspace
+askovo decide brief A-TASK-1A2B3C4D --workspace ./decide-workspace --format md
+askovo decide result A-TASK-1A2B3C4D --workspace ./decide-workspace
+askovo decide cancel A-TASK-1A2B3C4D --by owner --workspace ./decide-workspace
+
+# 专家入口：A-02 显式拒绝（exit 2, UNSUPPORTED_SCOPE），A-04 交付
+askovo decide review A-TASK-1A2B3C4D --by product-owner
+askovo decide delta A-TASK-1A2B3C4D --since latest-accepted
+```
+
+- 输入是 `askovo.decision-task/1`（PRD §2.2）；`--question`/`--repo`/`--approved-by`/`--allowed-source`/`--fixture` 是同一文档的命令行形态，`--mode discover|validate` 映射到 `prioritize_features` / `validate_hypothesis`。
+- **默认 dry-run**：`start` 只做规范化、绑定 study、写 loop plan 与 digest；`--run` 才尝试推进，而且只在人工 `loop authorize` 之后。decide 自己绝不 authorize、绝不 `loop assess`。
+- 产品状态是 loop 状态的投影：`created → scoped → collecting → analyzed → review_required → brief_ready → delivered`，异常 `needs_input|blocked|interrupted|cancelled`；`delivered` 不等于 `decision_approved`。
+- 每次 `status` 都返回 C-01 六字段（`next_actor`、`next_required_action`、`blocked_reason_code`、`last_updated_at`、`has_pending_external_effect`、`artifact_refs`）外加 `state`、`budget`、`gaps`。
+- 拒绝走稳定的 `reason_code`（`INPUT_REQUIRED` / `AUTH_REQUIRED` / `UNSUPPORTED_SCOPE` / `POLICY_DENIED` / `ARTIFACT_PARTIAL`），stdout 是拒绝文档，退出码 2，不生成貌似成功的任务。
+- 记录上限取 `authorization.max_records` 并同时写入 loop envelope；`cancel` 之后任何 `--run` 都返回 `POLICY_DENIED`，不再读取。
+- MCP 对应 `askovo_decide_start` / `askovo_decide_status` / `askovo_decide_result`，复用同一编排函数；细节见[一问题研究执行器](decide.md)。
+
 ## queue
 
 ```bash
@@ -376,5 +409,6 @@ askovo platforms "..." --json | jq '.recommended[] | {id, decision, bulk}'
 | `ASKOVO_REDDIT_CLIENT_ID` / `ASKOVO_REDDIT_CLIENT_SECRET` | Reddit 官方 Data API |
 | `ASKOVO_REDDIT_USER_AGENT` | Reddit 要求的可识别 User-Agent |
 | `ASKOVO_AUTHOR_SALT` | 可选研究级 HMAC 盐；未设置时 normalized 不生成作者关联 hash，不把它当匿名化 |
+| `ASKOVO_DECIDE_HOME` | `askovo decide` 的 workspace 默认目录（未设置时用 `./askovo-decide`） |
 
 所有平台采集必须遵守平台条款、速率限制、数据权利与保留规则。没有合规通道时只接受授权导出/历史数据集。

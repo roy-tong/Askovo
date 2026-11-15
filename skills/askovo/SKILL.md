@@ -242,6 +242,25 @@ askovo loop advise <study>                        # read-only suggestion, never 
 - `loop advise` summarizes recorded mappings per analyzed gap (`insufficient` / `resolved_candidate` / `unresolvable_candidate` / `conflicted`); it never closes a gap or grades evidence.
 - `loop report` separates audit-supported claims from open hypotheses, blocked sources and gaps awaiting assessment. Quote that separation instead of compressing it into one progress number.
 
+## Track one decision question as a task
+
+`askovo decide` is a read-only orchestrator over the loop. It turns one `askovo.decision-task/1` document (question, repo, decision type, authorization, budget, deadline) into a tracked task with states, artifacts and a partial Decision Brief:
+
+```bash
+askovo decide start --input task.json --study <study>   # dry run: plan only, no reads
+askovo loop authorize <study> --by "<operator>"          # the only step that unlocks reading
+askovo decide start --task A-TASK-xxxxxxxx --run
+askovo decide status A-TASK-xxxxxxxx
+askovo decide brief A-TASK-xxxxxxxx --format md
+askovo decide cancel A-TASK-xxxxxxxx --by "<operator>"
+```
+
+- It never authorizes and never assesses: without a human `loop authorize` the task stays `scoped` or `needs_input` with `AUTH_REQUIRED` and reads nothing. A task with no declared owner or approved source stops before any plan exists.
+- Product states project the loop (`created → scoped → collecting → analyzed → review_required → brief_ready → delivered`; exceptions `needs_input|blocked|interrupted|cancelled`). Quote `status` instead of paraphrasing progress: it always carries `next_actor`, `next_required_action`, `blocked_reason_code`, `last_updated_at`, `has_pending_external_effect` and `artifact_refs`.
+- The record cap (`authorization.max_records`) is the loop envelope bound; a cancelled task refuses further runs with `POLICY_DENIED`; identical input resumes the same task, study and plan; an interrupted loop becomes `interrupted` and requires reconcile, never automatic replay.
+- The brief stays `partial` (`ARTIFACT_PARTIAL`) with every gap listed while any gap is open, and `decision_state` is `not_approved` — delivered research never means `decision_approved` or `hypothesis_validated`.
+- `decide review` / `decide delta` are refused with `UNSUPPORTED_SCOPE` until A-04; use `askovo review` or `askovo decide brief` meanwhile.
+
 ## Gate demand judgments
 
 Use **demand judgment** / **需求判断**, not a translated “opportunity card,” unless the user explicitly requests that format.
