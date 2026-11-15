@@ -23,6 +23,7 @@ askovo --help
 | `loop plan/authorize/run/status/report/assess` | 缺口驱动的多轮受控采集、每轮复审、候选证据与复盘 | 0/1/2/3/4 |
 | `decide start/status/result/brief/cancel` | 一问题研究执行器：登记任务、规划、受门禁执行、C-01 状态投影与 partial Brief | 0/2 |
 | `issues import/extract/list/edit/accept/reject/status/report` | Issue → 用户任务/需求结构化：本地导出快照、机器候选、人工接受进 canonical 链 | 0/2/4 |
+| `brief <study>` | Decision Brief：PRD §2.3 九节只读投影、PRD 开发验收清单、`stale` 门禁 | 0/1/2 |
 | `queue init/add/run/status/retry` | SQLite 队列、worker、重试、限速、断点续跑 | 0/1/2 |
 | `analyze <study>` | 归一化、去重、分布、候选主题、问题匹配 | 0/2 |
 | `chain <study>` | 生成/渲染“场景→用户→痛点→需求→特性→产品→商业”推理链 | 0/2 |
@@ -266,6 +267,22 @@ askovo decide delta A-TASK-1A2B3C4D --since latest-accepted
 - 拒绝走稳定的 `reason_code`（`INPUT_REQUIRED` / `AUTH_REQUIRED` / `UNSUPPORTED_SCOPE` / `POLICY_DENIED` / `ARTIFACT_PARTIAL`），stdout 是拒绝文档，退出码 2，不生成貌似成功的任务。
 - 记录上限取 `authorization.max_records` 并同时写入 loop envelope；`cancel` 之后任何 `--run` 都返回 `POLICY_DENIED`，不再读取。
 - MCP 对应 `askovo_decide_start` / `askovo_decide_status` / `askovo_decide_result`，复用同一编排函数；细节见[一问题研究执行器](decide.md)。
+
+## brief（Decision Brief 与 PRD 验收投影）
+
+```bash
+askovo brief ./study                 # 06-report/decision-brief.json + .md
+askovo brief ./study --format md
+askovo brief ./study --task A-TASK-1A2B3C4D --output /tmp/brief
+```
+
+- 只读投影 canonical 主链 + `demand-judgments.json` + `evidence.jsonl` + `decision_review`；写回只发生在 `06-report/`，**不新建可编辑的决策文档**。
+- 九节固定：问题/边界/时间窗/负责人、结论（`recommendation`，不是自动批准）、2–5 个同维度选项、支撑证据与反证、受限结论、不做的选择及原因、下一最低成本验证动作、PRD 开发验收清单、四态独立显示。
+- 验收清单字段与 PRD 原字段一致（`acceptance_conditions` / `acceptance_criteria`），每条可追溯到 `product-reasoning.json#chains/<id>/nodes/<node>`。
+- 引用断裂或输入过期 → `artifact_status: stale`、`reason_code: STALE_SOURCE`、`delivery_state: blocked`、`diagnostic_only: true`，退出码 1，只写诊断草稿。
+- 数字必须带单位/窗口/来源，否则不输出数值并列入 `numbers_without_provenance`；访谈人数/转化率/市场规模无来源时保持 `null`；`heuristic_score` 不是概率（`calibrated: false`）。
+- `askovo decide brief` / `askovo decide result` 复用同一份 Brief；`decide delta` 仍留给 A-05。
+- 细节见 [Decision Brief](decision-brief.md)。
 
 ## issues（Issue → 用户任务/需求结构化）
 

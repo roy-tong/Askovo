@@ -261,6 +261,23 @@ askovo decide cancel A-TASK-xxxxxxxx --by "<operator>"
 - The brief stays `partial` (`ARTIFACT_PARTIAL`) with every gap listed while any gap is open, and `decision_state` is `not_approved` — delivered research never means `decision_approved` or `hypothesis_validated`.
 - `decide review` / `decide delta` are refused with `UNSUPPORTED_SCOPE` until A-04; use `askovo review` or `askovo decide brief` meanwhile.
 
+## Render the decision brief from the chain, never from prose
+
+`askovo brief` is the one-page decision artifact. It is a **read-only projection** of the canonical chain plus `decision_review`; it writes only `06-report/decision-brief.{json,md}` and never edits the chain, the judgments or the evidence.
+
+```bash
+askovo brief <study> --format md
+askovo decide brief <task_id> --workspace <decide-workspace>
+```
+
+- Nine fixed sections: question/boundary/window/owner, recommendation, 2-5 options on the same five dimensions (user/task/opportunity/cost/risk), supporting evidence **and** counter-evidence with source/date/context/qualification, limitations, rejected options with reasons, the next cheapest validation action with owner and stop condition, the PRD dev-acceptance checklist, and four independent states.
+- **No evidence means `hold`.** A brief never renders a validated decision or an approval; `recommendation.not_approved` is always `true` and `approval.approved` is always `false`.
+- **Counter-evidence re-reviews, it does not overwrite.** Any counter-evidence sets `needs_re_review` and `decision_status: needs_review`, lists the counter records and keeps the previous recommendation.
+- **Acceptance items keep the PRD field names** (`acceptance_conditions` / `acceptance_criteria`) and cite `product-reasoning.json#chains/<id>/nodes/<node>`. An empty checklist is `undefined`, not done.
+- **Numbers keep unit, window and source.** A number missing any of them is withheld and listed in `numbers_without_provenance`; `null` always carries an `unavailable_reason`.
+- **Never invent research facts.** `research_facts` stay `null` unless canonical data has them; `heuristic_score` is not a probability (`calibrated: false`).
+- **`stale` blocks formal delivery.** A broken reference or a drifted input gives `artifact_status: stale`, `reason_code: STALE_SOURCE`, `delivery_state: blocked` and exit 1 — only a diagnostic draft is written.
+
 ## Structure public issues before calling them demand
 
 `askovo issues` turns an authorized local GitHub issue export into machine candidates. Nothing enters the chain until a named human accepts it:

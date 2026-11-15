@@ -4,6 +4,31 @@
 
 ### Added
 
+- **A-04: Decision Brief + PRD dev acceptance** (`askovo brief`). One page per
+  decision question, projected read-only from `product-reasoning.json`,
+  `demand-judgments.json`, `evidence.jsonl` and `decision_review`; it writes
+  only `06-report/decision-brief.{json,md}` and a `source_fingerprint` over its
+  four inputs, so canonical artifacts are never rewritten. The document keeps
+  the PRD §5 `askovo.decision-brief/1` fields and the nine §2.3 sections
+  (question/boundary/window/owner, recommendation, 2-5 uniform-dimension
+  options, evidence and counter-evidence with source/date/context/qualification,
+  limitations, rejected options, next cheapest validation action with owner and
+  stop condition, PRD acceptance, four independent states). Gates: no evidence
+  yields `hold` with an action and never a validated decision or an approval
+  (A19); the acceptance checklist keeps the canonical `acceptance_conditions` /
+  `acceptance_criteria` field names with
+  `product-reasoning.json#chains/<id>/nodes/<node>` references and marks an
+  empty checklist `undefined` instead of done (A20); counter-evidence sets
+  `needs_re_review` + `decision_status: needs_review` and shows what it
+  challenges without overwriting the previous recommendation (A21); a number
+  missing its unit, time window or source is withheld and listed in
+  `numbers_without_provenance` (A22); `research_facts` stay `null` with
+  `invented_facts: []`, and `heuristic_score` is never a probability
+  (`calibrated: false`) (A23). Broken references or drifted inputs mark the
+  brief `stale` (`STALE_SOURCE`, `delivery_state: blocked`, `diagnostic_only`,
+  exit 1) and leave only a diagnostic draft. `askovo decide brief` and
+  `askovo decide result` now return the same document; `decide delta` stays with
+  A-05.
 - **A-03: issue -> user task / demand structuring** (`askovo issues`). A local
   authorized GitHub issue export becomes machine candidates and — only through a
   named human — canonical evidence. `import` snapshots the export
@@ -108,6 +133,16 @@
   private-note containment, selection bias, human-only acceptance with an audit
   trail, idempotent acceptance and a passing audit afterwards. Full suite: 351
   passed.
+- 29 new regression tests (`tests/test_decision_brief.py`) freeze AC A19-A23
+  offline: the nine sections and PRD contract fields, 2-5 uniform-dimension
+  options, four independent states, limitations covering sample/population/
+  commercial gaps, read-only projection (canonical digests unchanged), JSON and
+  Markdown from one document, hold-without-validation, traceable PRD acceptance
+  with an undefined empty checklist, counter-evidence re-review that keeps the
+  previous recommendation, numbers keeping unit/window/source and being withheld
+  without them, null-is-not-zero, no invented interviews or rates, uncalibrated
+  heuristic scores, the stale gate at exit 1 with a diagnostic draft, and
+  `decide brief` sharing the same builder. Full suite: 381 passed.
 
 ## 2.17.1 - 2026-11-14
 

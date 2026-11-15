@@ -217,6 +217,15 @@ askovo decide status A-TASK-1A2B3C4D                    # C-01 下一个角色 /
 
 只要还有缺口，Brief 就停在 `partial`；`delivered` 永远不等于 `decision_approved`。详见[一问题研究执行器](docs/decide.md)。
 
+`askovo brief` 把同一份证据压成一页 Decision Brief：PRD 九节、带节点引用的 PRD 开发验收清单、四态独立显示。它是只读投影——引用断裂或输入过期会标 `stale` 并阻止正式交付（退出码 1，只写诊断草稿）：
+
+```bash
+askovo brief ./study --format md     # 06-report/decision-brief.{json,md}
+askovo decide brief A-TASK-1A2B3C4D  # 同一份文档，绑定 decide 任务
+```
+
+没有证据时只出 `hold` 与下一动作，绝不输出 validated；缺单位/窗口/来源的数字不予输出；访谈人数与转化率永不编造。详见[Decision Brief](docs/decision-brief.md)。
+
 公开 GitHub issue 通常是最原始的素材。`askovo issues` 把授权导出变成机器候选，**只有具名的人接受后**才写进 canonical 证据——在那之前，PRD 那 13 个字段只是候选：
 
 ```bash

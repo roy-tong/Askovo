@@ -224,6 +224,15 @@ askovo decide status A-TASK-1A2B3C4D                    # C-01 next actor / next
 
 The brief stays `partial` while gaps remain, and `delivered` never means `decision_approved`. See [one-question decide executor](docs/decide.md) (Chinese).
 
+`askovo brief` renders the same evidence as a one-page Decision Brief: the nine PRD sections, the PRD dev-acceptance checklist with node references, and four independent states. It is read-only — a broken reference or drifted input marks it `stale` and blocks formal delivery (exit 1, diagnostic draft only):
+
+```bash
+askovo brief ./study --format md     # 06-report/decision-brief.{json,md}
+askovo decide brief A-TASK-1A2B3C4D  # same document, bound to a decide task
+```
+
+No evidence still yields a `hold` with a next action, never a validated decision; a number without unit, window and source is withheld; interviews and conversion rates are never invented. See [Decision Brief](docs/decision-brief.md) (Chinese).
+
 Public GitHub issues are the usual raw material. `askovo issues` turns an authorized export into machine candidates and, only after a named human accepts one, into canonical evidence — the thirteen PRD fields stay candidates until then:
 
 ```bash
