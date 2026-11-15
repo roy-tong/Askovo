@@ -37,6 +37,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import decision_brief
 import research_loop
 import sure_engine
 
@@ -980,7 +981,7 @@ def status(workspace: Path, task_id: str) -> Dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 def brief(workspace: Path, task_id: str, *, fmt: str = "json") -> Dict[str, Any]:
-    """Write a partial decision brief: findings so far plus every gap, no invention."""
+    """Project the A-04 Decision Brief for one task (read-only, never a second truth)."""
     workspace = Path(workspace).resolve()
     with _lock(workspace, task_id):
         task = load_task(workspace, task_id)
@@ -989,79 +990,31 @@ def brief(workspace: Path, task_id: str, *, fmt: str = "json") -> Dict[str, Any]
         study_dir = _study_dir_of(workspace, task)
         if not (study_dir / "study.json").is_file():
             raise DecideError("bound study is missing study.json", "INPUT_REQUIRED")
-        loop_summary = None
-        if (study_dir / "04-findings" / "research-loop.json").is_file():
-            loop_summary = research_loop.status(study_dir)
         try:
-            import decision_review
-            review_payload = decision_review.review(study_dir)
+            document = decision_brief.build(
+                study_dir, task_id=task_id,
+                question=str((task.get("input") or {}).get("question") or ""))
+        except decision_brief.BriefError as exc:
+            raise DecideError(str(exc), exc.reason_code, exc.suggestion)
         except (OSError, ValueError, json.JSONDecodeError) as exc:
-            review_payload = {"status": "unavailable", "reason": str(exc), "items": []}
-        gaps = _gap_view(study_dir, loop_summary)
-        unresolved = gaps.get("unresolved") or 0
-        candidates = int((loop_summary or {}).get("candidates") or 0)
-        supported = sum(1 for claim in _claims(study_dir) if claim.get("verdict") == "supported")
-        artifact_status = "partial" if unresolved or not supported else "ready"
-        document = {
-            "schema_version": "1.0",
-            "kind": BRIEF_KIND,
-            "task_id": task_id,
-            "question": (task.get("input") or {}).get("question"),
-            "decision_type": (task.get("input") or {}).get("decision_type"),
-            "generated_at": _now(),
-            "artifact_status": artifact_status,
-            "reason_code": "ARTIFACT_PARTIAL" if artifact_status == "partial" else None,
-            "conclusion": {
-                "kind": "recommendation_required",
-                "current": "hold" if not supported else "candidate_ready_for_review",
-                "note": "机器只给候选与缺口；结论是 recommendation，不是自动批准",
-            },
-            "options": _options(study_dir),
-            "evidence": {
-                "supported_claims": supported,
-                "candidate_groups": candidates,
-                "candidates_are_evidence": False,
-                "note": "loop 候选没有证据等级；人工定级并写入判断后才改变结论",
-            },
-            "gaps": _gap_details(study_dir, loop_summary, review_payload),
-            "restricted": [
-                "样本为授权来源便利样本，不能外推总体比例",
-                "无真实付费/留存行为证据时不得宣称商业验证",
-                "delivered/brief_ready 不等于 decision_approved",
-            ],
-            "next_validation": _validation_backlog(study_dir, loop_summary, review_payload),
-            "decision_state": "not_approved",
-            "delivery_state": "partial" if artifact_status == "partial" else "brief_ready",
-            "outcome_state": "not_measured",
-            "causality_state": "not_claimed",
-            "canonical_refs": [str(study_dir / relative) for relative in
-                               ("study.json", "04-findings/product-reasoning.json",
-                                "04-findings/demand-judgments.json",
-                                "04-findings/loop-candidates.json")
-                               if (study_dir / relative).is_file()],
-            "boundary": (
-                "Brief 是 canonical 链与研究循环的只读投影：列出缺口与假设，不编造访谈、"
-                "转化率或验证结论；商业成立需要研究设计与可重复验证。"),
-        }
+            raise DecideError(f"brief projection failed: {exc}", "INTERNAL_ERROR")
         task_dir = _task_dir(workspace, task_id)
         task_dir.mkdir(parents=True, exist_ok=True)
-        (task_dir / "brief.json").write_text(
-            json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        (task_dir / "brief.md").write_text(_brief_markdown(document), encoding="utf-8")
-        task["artifacts"]["brief_md"] = str(task_dir / "brief.md")
-        task["artifacts"]["brief_json"] = str(task_dir / "brief.json")
+        document = decision_brief.write(study_dir, document, output_dir=task_dir,
+                                        json_name="brief.json", md_name="brief.md")
+        task["artifacts"]["brief_md"] = document["markdown_path"]
+        task["artifacts"]["brief_json"] = document["json_path"]
         if str(task.get("state")) in ("analyzed", "review_required", "brief_ready"):
-            _transition(workspace, task, "brief_ready", reason_code="ARTIFACT_PARTIAL",
-                        detail="partial brief written; gaps stay visible")
+            _transition(workspace, task, "brief_ready",
+                        reason_code=document["reason_code"] or "ARTIFACT_PARTIAL",
+                        detail="decision brief written; gaps stay visible")
         else:
             _save_task(workspace, task)
             _append_log(workspace, task_id, {
-                "event": "brief_written", "artifact_status": artifact_status,
+                "event": "brief_written", "artifact_status": document["artifact_status"],
                 "state_unchanged": task.get("state")})
-        document["markdown_path"] = str(task_dir / "brief.md")
-        document["json_path"] = str(task_dir / "brief.json")
-        if fmt == "md":
-            document["markdown"] = _brief_markdown(document)
+        if fmt != "md":
+            document = {key: value for key, value in document.items() if key != "markdown"}
         return document
 
 
@@ -1108,66 +1061,6 @@ def result(workspace: Path, task_id: str) -> Dict[str, Any]:
 # brief helpers (deterministic projections only)
 # --------------------------------------------------------------------------- #
 
-def _claims(study_dir: Path) -> List[Dict[str, Any]]:
-    try:
-        payload = research_loop.cli_module().audit_payload(Path(study_dir))
-        return [claim for claim in payload.get("claims") or [] if isinstance(claim, dict)]
-    except (OSError, ValueError, json.JSONDecodeError, RuntimeError):
-        return []
-
-
-def _options(study_dir: Path) -> List[str]:
-    try:
-        study = json.loads((Path(study_dir) / "study.json").read_text(encoding="utf-8"))
-        options = study.get("decision") or {}
-        return [str(item) for item in options.get("options") or []]
-    except (OSError, json.JSONDecodeError):
-        return []
-
-
-def _gap_details(study_dir: Path, loop_summary: Optional[Dict[str, Any]],
-                 review_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-    details: List[Dict[str, Any]] = []
-    if loop_summary is not None:
-        state = research_loop.load_state_or_none(Path(study_dir)) or {}
-        resolved = research_loop._resolved_keys(state)
-        for gap in (state.get("gaps") or [])[:12]:
-            if not isinstance(gap, dict) or str(gap.get("key")) in resolved:
-                continue
-            details.append({
-                "id": gap.get("id"), "kind": gap.get("kind"), "severity": gap.get("severity"),
-                "gap_state": research_loop.gap_state(state, str(gap.get("key"))),
-                "detail": gap.get("detail"),
-            })
-    for item in (review_payload.get("items") or [])[:10]:
-        if isinstance(item, dict) and item.get("status") in ("fail", "warn"):
-            details.append({"kind": "review_item", "severity": item.get("status"),
-                            "detail": item.get("detail")})
-    return details
-
-
-def _validation_backlog(study_dir: Path, loop_summary: Optional[Dict[str, Any]],
-                        review_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-    backlog: List[Dict[str, Any]] = []
-    if loop_summary is not None:
-        state = research_loop.load_state_or_none(Path(study_dir)) or {}
-        for task_item in state.get("external_validation_tasks") or []:
-            if isinstance(task_item, dict):
-                backlog.append({"kind": "external_validation", "gap_key": task_item.get("gap_key"),
-                                "recommended_action": task_item.get("recommended_action"),
-                                "requires": task_item.get("requires")})
-        for action in (loop_summary.get("next_best_actions") or [])[:5]:
-            candidate = (action or {}).get("candidate") or {}
-            if candidate.get("action") in ("experiment", "request_external_evidence"):
-                backlog.append({"kind": "candidate_action", "gap_key": action.get("gap_key"),
-                                "action": candidate.get("action"),
-                                "requires_separate_authorization": True})
-    for item in (review_payload.get("items") or [])[:5]:
-        if isinstance(item, dict) and item.get("status") == "fail" and item.get("next_action"):
-            backlog.append({"kind": "review_next_action", "detail": item.get("next_action")})
-    return backlog[:10]
-
-
 def _review_status(study_dir: Path) -> str:
     path = Path(study_dir) / "06-decision-review.json"
     if not path.is_file():
@@ -1176,48 +1069,3 @@ def _review_status(study_dir: Path) -> str:
         return str(json.loads(path.read_text(encoding="utf-8")).get("status") or "unknown")
     except (OSError, json.JSONDecodeError):
         return "unknown"
-
-
-def _brief_markdown(document: Dict[str, Any]) -> str:
-    lines = [
-        f"# Decision Brief（partial）：{document.get('question')}",
-        "",
-        f"- task：`{document.get('task_id')}`；artifact：**{document.get('artifact_status')}**"
-        f"（reason_code：{document.get('reason_code') or '-'}）",
-        f"- decision_state：`{document.get('decision_state')}`；delivery_state："
-        f"`{document.get('delivery_state')}`；outcome_state：`{document.get('outcome_state')}`；"
-        f"causality_state：`{document.get('causality_state')}`",
-        "",
-        "## 结论（recommendation，不是自动批准）",
-        "",
-        f"- 当前：**{document['conclusion']['current']}**。{document['conclusion']['note']}",
-        "",
-        "## 选项",
-        "",
-    ]
-    lines.extend(f"- {option}" for option in document.get("options") or []) or lines.append("- 无登记选项")
-    lines.extend(["", "## 证据（候选，不是定级证据）", ""])
-    evidence = document.get("evidence") or {}
-    lines.append(f"- 通过审计的判断：{evidence.get('supported_claims', 0)}；"
-                 f"候选证据组：{evidence.get('candidate_groups', 0)}。{evidence.get('note')}")
-    lines.extend(["", "## 缺口（一屏可见）", ""])
-    gaps = document.get("gaps") or []
-    if gaps:
-        for gap in gaps:
-            lines.append(f"- [{gap.get('severity')}] {gap.get('kind')}（{gap.get('gap_state', '')}）："
-                         f"{gap.get('detail')}")
-    else:
-        lines.append("- 无未解决缺口。")
-    lines.extend(["", "## 受限结论", ""])
-    lines.extend(f"- {item}" for item in document.get("restricted") or [])
-    lines.extend(["", "## 下一个最低成本验证动作", ""])
-    backlog = document.get("next_validation") or []
-    if backlog:
-        for item in backlog:
-            lines.append(f"- {json.dumps(item, ensure_ascii=False)}")
-    else:
-        lines.append("- 无（先人工语义复核候选）。")
-    lines.extend(["", "## Canonical 引用", ""])
-    lines.extend(f"- {ref}" for ref in document.get("canonical_refs") or [])
-    lines.extend(["", "## 边界", "", str(document.get("boundary")), ""])
-    return "\n".join(lines)

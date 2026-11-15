@@ -54,6 +54,7 @@ research:
   loop <action> <study>  gap-driven research rounds: plan/authorize/run/status/report
   decide <action>      one-question decide executor: start/status/result/brief/cancel
   issues <action>      issue -> user task/demand: import/extract/list/edit/accept/reject
+  brief <study>        Decision Brief: nine-section read-only projection + PRD acceptance
   plan <study>         supporting platform/feasibility plan
   demo                 run the bundled offline sample
   doctor               check runtime, catalog, packs and version

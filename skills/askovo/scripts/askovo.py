@@ -34,6 +34,7 @@ import research_run  # noqa: E402
 import research_loop  # noqa: E402
 import decision_review  # noqa: E402
 import decide  # noqa: E402
+import decision_brief  # noqa: E402
 import issue_structuring  # noqa: E402
 import role_catalog  # noqa: E402
 
@@ -2744,6 +2745,41 @@ def command_decide(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_brief(args: argparse.Namespace) -> int:
+    """A-04 Decision Brief: a read-only projection of the canonical chain (PRD §2.3).
+
+    Exit 1 means the brief is `stale`: the reference is broken or the input drifted,
+    so only a diagnostic draft is written and formal delivery is blocked.
+    """
+    study_dir = Path(str(getattr(args, "study_dir", "") or "")).resolve()
+    try:
+        document = decision_brief.build_and_write(
+            study_dir,
+            task_id=str(getattr(args, "task", "") or ""),
+            question=str(getattr(args, "question", "") or ""),
+            output_dir=(Path(str(args.output)).resolve()
+                        if str(getattr(args, "output", "") or "").strip() else None),
+        )
+    except decision_brief.BriefError as exc:
+        print(json.dumps({
+            "status": "refused",
+            "reason_code": exc.reason_code,
+            "reason": str(exc),
+            "suggestion": exc.suggestion or None,
+        }, ensure_ascii=False, indent=2))
+        return 2
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(json.dumps({"status": "error", "reason": "%s: %s" % (type(exc).__name__, exc)},
+                         ensure_ascii=False, indent=2))
+        return 2
+    if str(getattr(args, "format", "") or "json") == "md":
+        print(document["markdown"])
+    else:
+        print(json.dumps({key: value for key, value in document.items() if key != "markdown"},
+                         ensure_ascii=False, indent=2))
+    return 1 if document.get("artifact_status") == "stale" else 0
+
+
 def command_issues(args: argparse.Namespace) -> int:
     """A-03 issue -> user task / demand structuring (PRD §3 A-03).
 
@@ -5224,6 +5260,20 @@ def build_parser() -> argparse.ArgumentParser:
     decide_parser.add_argument("--since", default="", help="delta: baseline, e.g. latest-accepted")
     decide_parser.set_defaults(func=command_decide)
 
+    brief_parser = subparsers.add_parser(
+        "brief",
+        help="decision brief: the nine-section PRD §2.3 projection of the canonical chain, "
+             "with a stale gate that blocks formal delivery",
+    )
+    brief_parser.add_argument("study_dir")
+    brief_parser.add_argument("--format", default="json", choices=("json", "md"),
+                              help="output format (default json; both are written to 06-report/)")
+    brief_parser.add_argument("--task", default="", help="optional decide task id to bind")
+    brief_parser.add_argument("--question", default="", help="override the decision question")
+    brief_parser.add_argument("--output", default="",
+                              help="output directory (default: <study>/06-report)")
+    brief_parser.set_defaults(func=command_brief)
+
     issues_parser = subparsers.add_parser(
         "issues",
         help="issue -> user task / demand structuring: snapshot an authorized export, "
@@ -5533,7 +5583,7 @@ CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "explore",
     "external-research", "do", "domains",
     "methods", "catalog", "platforms", "collect", "research", "loop", "analyze", "instruments", "import", "queue",
-    "codebook", "chain", "economics", "psm", "decision", "decide", "issues", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
+    "codebook", "chain", "economics", "psm", "decision", "decide", "issues", "brief", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }
 
