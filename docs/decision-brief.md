@@ -54,7 +54,8 @@ PRD §5 字段逐字保留，并补齐九节与门禁：
 | `artifact_status` | `stale` / `partial`（`ready` 需要已批准决定 + 审计通过 + 无缺口） |
 | `reason_code` | `STALE_SOURCE` / `ARTIFACT_PARTIAL` / `null` |
 | `diagnostic_only` | `stale` 时为 `true`：只能当草稿看 |
-| `stale_reasons[]` | `{code, detail, refs}`，`code ∈ {BROKEN_REFERENCE, INPUT_DRIFT}` |
+| `stale_reasons[]` | `{detail_code, detail, refs}`，`detail_code ∈ {BROKEN_REFERENCE, INPUT_DRIFT}`（**细节码**，不是 C-01 原因码） |
+| `input_drift` | `true` 表示「同一 `record_id` 内容变了」——与 `BROKEN_REFERENCE`（引用不存在）区分开 |
 | `decision_status` | `hold` / `needs_validation` / `needs_review` / `ready` |
 | `recommended_option_id` | 只在 `recommend` 时有值，否则 `null` |
 | `recommendation` | `{kind, statement, option_id, not_approved: true, heuristic_score, calibrated: false, ranking_basis, confidence, meaning}` |
@@ -94,9 +95,12 @@ PRD §5 字段逐字保留，并补齐九节与门禁：
 
 | 触发 | code | 后果 |
 | --- | --- | --- |
-| 链节点/反证/判断引用了 `evidence.jsonl` 中不存在的记录 | `BROKEN_REFERENCE` | `artifact_status: stale`、`reason_code: STALE_SOURCE`、`delivery_state: blocked`、`diagnostic_only: true`、退出码 1 |
-| 链关联的 `demand_judgment_id` 不存在 | `BROKEN_REFERENCE` | 同上 |
-| canonical 主链在 `05-audit/decision-review.json` 之后被修改 | `INPUT_DRIFT` | 同上 |
+| 链节点/反证/判断引用了 `evidence.jsonl` 中不存在的记录 | `detail_code: BROKEN_REFERENCE` | `artifact_status: stale`、`reason_code: STALE_SOURCE`、`delivery_state: blocked`、`diagnostic_only: true`、退出码 1 |
+| 链关联的 `demand_judgment_id` 不存在 | `detail_code: BROKEN_REFERENCE` | 同上 |
+| 被引用的记录**同一 `record_id` 内容变了**（复盘记录的内容指纹不符） | `detail_code: INPUT_DRIFT` + `input_drift: true` | 同上 |
+| canonical 主链在 `05-audit/decision-review.json` 之后被修改 | `detail_code: INPUT_DRIFT` + `input_drift: true` | 同上 |
+
+**码的层级**：顶层 `reason_code` 只取 C-01 §3 注册表内的值（这里是 `STALE_SOURCE`）；`BROKEN_REFERENCE` / `INPUT_DRIFT` 是**细节码**，只出现在 `stale_reasons[].detail_code`，不新增第 11 个合同码。合同测试见 `tests/test_reason_code_contract.py`。
 
 `stale` 时 Brief 仍然渲染（诊断草稿），但 `next_required_action` 明确要求先重跑 `askovo review` 修复断链，不得当作正式交付。
 

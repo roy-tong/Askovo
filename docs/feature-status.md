@@ -47,6 +47,13 @@ Research loop: `askovo loop plan/authorize/run/status/report/assess` detects gap
 
 Recovery: completed actions are checkpointed before analysis; an interrupted `running` action blocks replay. The loop records `interrupted_run` and requires inspection before replanning. Inspect collected files and provenance before preparing a replacement plan. Never reset blindly. Execution is serialized using an OS file lock on macOS/Linux. `research` authorization binds the actual action fields; `loop` authorization binds the envelope hash.
 
+## Known contract gaps (C-01)
+
+| Gap | Current behavior | Owner |
+| --- | --- | --- |
+| business owner 与 data authorizer 共用一方 | `decide` 把 `study.decision.owner` 直接取自 `authorization.approved_by`，即「谁批准了数据访问」同时被当作「谁对业务决定负责」。C-01 六方分离要求这两方可辨识（提出 Job / 授予数据权限 / 调用 / 验收 / 承担损失 / 批准付款）。字段结构本批不改 | C-01-IMPL 新工单 |
+| `reason_code` 与 `detail_code` | 顶层 `reason_code` 已收敛到 C-01 §3 的 10 个码；`INPUT_DRIFT` / `BROKEN_REFERENCE` 只作为 `stale_reasons[].detail_code` 出现，`tests/test_reason_code_contract.py` 冻结该约束 | 已收敛 |
+
 ## Test integrity and cross-ticket integration
 
 Two guard suites sit beside the feature tests. `tests/test_suite_integrity.py`

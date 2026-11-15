@@ -132,6 +132,17 @@
   command allowlist / explicit signed path, which an arbitrary `--command` cannot
   provide. See `docs/external-bridge.md` §6.
 
+### Changed
+
+- **C-01 §3: `INPUT_DRIFT` is a detail code, not a reason code.**
+  `decision_brief` put `INPUT_DRIFT` / `BROKEN_REFERENCE` on
+  `stale_reasons[].code`, which reads like an eleventh entry in the C-01 error
+  registry. The top-level `reason_code` is now always the registered
+  `STALE_SOURCE`; the challenged/expired distinction moved to
+  `stale_reasons[].detail_code` plus a top-level `input_drift: true`, so "the
+  content changed under the same id" stays visible without extending the frozen
+  vocabulary.
+
 ### Fixed
 
 - **A-lane integration: two staleness contradictions between tickets.**
@@ -248,6 +259,15 @@
   external adapter produces candidates that never reach the brief's evidence and
   never raise a level; and a deleted cited evidence record makes both the brief
   (blocked) and the delta (exit 1) stale. Full suite: 449 passed.
+- 5 C-01 reason-registry contract tests (`tests/test_reason_code_contract.py`)
+  freeze the ten-code vocabulary against
+  `ai输出/ovo-C01-委托语义合同-v1-20261115.md` §3: sorted equality with
+  `decide.REASON_CODES`, no duplicates and exactly ten entries (an eleventh code
+  is a three-repository contract change), every refusal class defaulting inside
+  the registry, a static scan proving no script emits a `reason_code` literal
+  outside it, and `INPUT_DRIFT` / `BROKEN_REFERENCE` staying detail codes.
+  Verified by injecting `SNEAKY_NEW_CODE`: two assertions go red with the
+  offending values. Full suite: 461 passed.
 
 ## 2.17.1 - 2026-11-14
 

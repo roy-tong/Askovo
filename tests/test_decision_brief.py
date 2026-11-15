@@ -408,7 +408,9 @@ class BriefStaleTests(BriefHelpers, unittest.TestCase):
         self.assertTrue(document["diagnostic_only"])
         self.assertEqual("blocked", document["states"]["delivery_state"])
         self.assertTrue(document["stale_reasons"])
-        self.assertEqual("BROKEN_REFERENCE", document["stale_reasons"][0]["code"])
+        self.assertEqual("BROKEN_REFERENCE", document["stale_reasons"][0]["detail_code"])
+        self.assertNotIn("code", document["stale_reasons"][0],
+                         "the contract vocabulary belongs on `reason_code`, not on a detail")
 
     def test_stale_brief_names_the_next_action(self) -> None:
         def break_ref(payload: dict) -> None:
@@ -452,7 +454,14 @@ class BriefDriftTests(BriefHelpers, unittest.TestCase):
 
     def test_same_id_content_change_is_input_drift(self) -> None:
         reviewed = run_cli("review", str(self.study), "--json")
-        self.assertEqual(0, reviewed.returncode, reviewed.stdout + reviewed.stderr)
+        # `askovo review` exits 1 when audit items fail (a valid research status);
+        # what matters here is that it recorded the fingerprints.
+        self.assertIn(reviewed.returncode, (0, 1), reviewed.stdout + reviewed.stderr)
+        self.assertTrue(
+            ((json.loads((self.study / "05-audit" / "decision-review.json")
+                          .read_text(encoding="utf-8")).get("input_fingerprints") or {})
+             .get("evidence")),
+            "the review must record evidence fingerprints")
         self._rewrite_first_record("TAMPERED: the record now says the opposite.")
         completed, document = self.brief()
         self.assertEqual(1, completed.returncode, document)
@@ -460,13 +469,17 @@ class BriefDriftTests(BriefHelpers, unittest.TestCase):
         self.assertEqual("STALE_SOURCE", document["reason_code"])
         self.assertEqual("blocked", document["delivery_state"])
         self.assertTrue(document["diagnostic_only"])
-        codes = {reason["code"] for reason in document["stale_reasons"]}
+        codes = {reason["detail_code"] for reason in document["stale_reasons"]}
         self.assertIn("INPUT_DRIFT", codes,
                       f"a same-id content change must be INPUT_DRIFT, got {codes}")
+        # C-01 §3: the top-level code is the registry one; INPUT_DRIFT is a detail.
+        self.assertEqual("STALE_SOURCE", document["reason_code"])
+        self.assertTrue(document["input_drift"],
+                        "the same-id-content-change distinction must stay visible")
 
     def test_unreferenced_new_evidence_is_not_drift(self) -> None:
         reviewed = run_cli("review", str(self.study), "--json")
-        self.assertEqual(0, reviewed.returncode, reviewed.stdout + reviewed.stderr)
+        self.assertIn(reviewed.returncode, (0, 1), reviewed.stdout + reviewed.stderr)
         with self.evidence_path().open("a", encoding="utf-8") as handle:
             handle.write(json.dumps({
                 "record_id": "R99", "context_key": "synthetic-mobile-check",

@@ -232,7 +232,7 @@ def stale_reasons(
                              if str(value) not in record_ids)
             if unknown:
                 reasons.append({
-                    "code": "BROKEN_REFERENCE",
+                    "detail_code": "BROKEN_REFERENCE",
                     "detail": f"{chain_id}.{name} 引用了不存在的证据：" + ", ".join(unknown),
                     "refs": [f"{chain_id}.{name}"] + unknown,
                 })
@@ -240,7 +240,7 @@ def stale_reasons(
                                  if str(value) not in record_ids)
         if unknown_counter:
             reasons.append({
-                "code": "BROKEN_REFERENCE",
+                "detail_code": "BROKEN_REFERENCE",
                 "detail": f"{chain_id}.counter_evidence_ids 引用了不存在的证据："
                           + ", ".join(unknown_counter),
                 "refs": [f"{chain_id}.counter_evidence_ids"] + unknown_counter,
@@ -248,7 +248,7 @@ def stale_reasons(
         linked = str(chain.get("demand_judgment_id") or "").strip()
         if linked and linked not in judgment_ids:
             reasons.append({
-                "code": "BROKEN_REFERENCE",
+                "detail_code": "BROKEN_REFERENCE",
                 "detail": f"{chain_id} 关联的需求判断 {linked} 不存在",
                 "refs": [f"{chain_id}.demand_judgment_id", linked],
             })
@@ -264,7 +264,7 @@ def stale_reasons(
         unknown = sorted({value for value in cited if value not in record_ids})
         if unknown:
             reasons.append({
-                "code": "BROKEN_REFERENCE",
+                "detail_code": "BROKEN_REFERENCE",
                 "detail": f"demand-judgments[{judgment_id}] 引用了不存在的证据："
                           + ", ".join(unknown),
                 "refs": [judgment_id] + unknown,
@@ -292,7 +292,7 @@ def stale_reasons(
             continue  # a missing record is already a BROKEN_REFERENCE
         if decision_review.evidence_fingerprint(current) != str(recorded):
             reasons.append({
-                "code": "INPUT_DRIFT",
+                "detail_code": "INPUT_DRIFT",
                 "detail": (f"{record_id} 的内容在决策复盘之后被修改（同一 record_id 不同内容）；"
                            f"当前 Brief 不能当作已复核结论"),
                 "refs": [record_id],
@@ -304,7 +304,7 @@ def stale_reasons(
         try:
             if canonical.stat().st_mtime > review_path.stat().st_mtime + 0.000001:
                 reasons.append({
-                    "code": "INPUT_DRIFT",
+                    "detail_code": "INPUT_DRIFT",
                     "detail": "canonical 主链在决策复盘之后被修改，Brief 不能当作当前结论",
                     "refs": [CANONICAL_REF, REVIEW_REF],
                 })
@@ -842,7 +842,12 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
         "artifact_status": artifact_status,
         "reason_code": reason_code,
         "diagnostic_only": stale,
+        # C-01 §3: the contract vocabulary lives on `reason_code` only. The
+        # challenged/expired distinction is a **detail** code, so the brief can
+        # still say "the content changed under the same id" without inventing an
+        # eleventh registry entry.
         "stale_reasons": reasons,
+        "input_drift": any(item.get("detail_code") == "INPUT_DRIFT" for item in reasons),
         "decision_status": decision_status,
         "recommended_option_id": recommended_option_id,
         "needs_re_review": needs_re_review,
@@ -950,7 +955,7 @@ def render_markdown(document: Dict[str, Any]) -> str:
     if document.get("stale_reasons"):
         lines.extend(["## 为什么是 stale", ""])
         for reason in document["stale_reasons"]:
-            lines.append(f"- [{reason.get('code')}] {reason.get('detail')}")
+            lines.append(f"- [{reason.get('detail_code')}] {reason.get('detail')}")
         lines.append("")
 
     lines.extend([
