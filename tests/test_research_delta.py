@@ -86,6 +86,34 @@ class DeltaHelpers:
         payload["chains"][0]["nodes"]["scene"]["evidence_ids"] = ["github:10001"]
         payload["chains"][0]["counter_evidence_ids"] = []
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        # A-06 cross-ticket invariant: a chain that cites a record the evidence
+        # store does not contain is a broken reference, and both the brief and the
+        # delta now report it as stale. Keep the fixture internally consistent by
+        # registering the cited record, so this file still tests the delta rather
+        # than the stale gate.
+        evidence = self.study / "02-data" / "evidence.jsonl"
+        existing = [line for line in evidence.read_text(encoding="utf-8").splitlines()
+                    if line.strip()] if evidence.is_file() else []
+        existing.append(json.dumps({
+            "record_id": "github:10001",
+            "context_key": "synthetic-mobile-check",
+            "user_role": "CLI user",
+            "scene_trigger": "nested log parse failure",
+            "task_outcome": "parse nested logs",
+            "current_substitute": "manual retry",
+            "friction_cost": "weekly manual work",
+            "consequence": "delayed alerts",
+            "evidence_level": "E2",
+            "evidence_basis": "synthetic fixture record for the delta scenario",
+            "corpus_role": "open_scene",
+            "source_family": "github",
+            "source_ref": "github:o/r#1",
+            "normalized_text_hash": "sha256:fixture",
+            "text": "Nested JSON logs fail to parse; we retry by hand every week.",
+            "claim_type": "need",
+            "evidence_form": "self_report",
+        }, ensure_ascii=False))
+        evidence.write_text("\n".join(existing) + "\n", encoding="utf-8")
 
     # -- fixture plumbing -------------------------------------------------- #
 

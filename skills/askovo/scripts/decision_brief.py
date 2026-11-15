@@ -198,13 +198,17 @@ def _chain_evidence_ids(chain: Dict[str, Any]) -> List[str]:
 # stale gate
 # --------------------------------------------------------------------------- #
 
-def _stale_reasons(
+def stale_reasons(
     study_dir: Path,
     chains: List[Dict[str, Any]],
     judgments: List[Dict[str, Any]],
     record_ids: set,
 ) -> List[Dict[str, Any]]:
-    """Broken references or drifted inputs block formal delivery."""
+    """Broken references or drifted inputs block formal delivery.
+
+    Shared by the brief and the delta: a broken reference must not be "stale" in
+    one projection and "fresh" in the other.
+    """
     reasons: List[Dict[str, Any]] = []
     judgment_ids = {str(item.get("id")) for item in judgments if isinstance(item, dict)}
 
@@ -273,6 +277,22 @@ def _stale_reasons(
 # --------------------------------------------------------------------------- #
 # section builders
 # --------------------------------------------------------------------------- #
+
+def stale_inputs(study_dir: Path) -> List[Dict[str, Any]]:
+    """Read the canonical inputs and return every staleness reason.
+
+    The single reader both ``decision_brief`` and ``research_delta`` call, so the
+    two projections cannot disagree about whether the decision is still current.
+    """
+    study_dir = Path(study_dir).resolve()
+    chains = _chains(_load(study_dir / CANONICAL_REF))
+    judgments = _load(study_dir / "04-findings" / "demand-judgments.json")
+    judgments = [item for item in judgments if isinstance(item, dict)] \
+        if isinstance(judgments, list) else []
+    record_ids = {str(item.get("record_id")) for item in _records(study_dir)
+                  if item.get("record_id")}
+    return stale_reasons(study_dir, chains, judgments, record_ids)
+
 
 def _question_section(study: Dict[str, Any], chain: Dict[str, Any],
                       question: str) -> Dict[str, Any]:
@@ -612,7 +632,7 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
     claims = [item for item in audit.get("claims") or [] if isinstance(item, dict)]
     supported = sum(1 for claim in claims if claim.get("verdict") == "supported")
 
-    stale_reasons = _stale_reasons(study_dir, chains, judgments, set(record_by_id))
+    reasons = stale_reasons(study_dir, chains, judgments, set(record_by_id))
     signal = review_signal(chain)
     counter_ids = signal["counter_evidence_ids"]
     needs_re_review = signal["needs_re_review"]
@@ -648,7 +668,7 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
     else:
         decision_status = "ready"
 
-    stale = bool(stale_reasons)
+    stale = bool(reasons)
     artifact_status = "stale" if stale else "partial"
     reason_code = "STALE_SOURCE" if stale else "ARTIFACT_PARTIAL"
     supporting_states = chain.get("supporting_states") if isinstance(
@@ -713,7 +733,7 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
         "artifact_status": artifact_status,
         "reason_code": reason_code,
         "diagnostic_only": stale,
-        "stale_reasons": stale_reasons,
+        "stale_reasons": reasons,
         "decision_status": decision_status,
         "recommended_option_id": recommended_option_id,
         "needs_re_review": needs_re_review,

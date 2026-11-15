@@ -2744,6 +2744,10 @@ def command_decide(args: argparse.Namespace) -> int:
         print(document.get("markdown") or "")
     else:
         print(json.dumps(document, ensure_ascii=False, indent=2))
+    # A-04's stale gate must hold on every entry, not only `askovo brief`:
+    # a stale decision is a valid but undeliverable research status (exit 1).
+    if action in ("brief", "result") and document.get("artifact_status") == "stale":
+        return 1
     return 0
 
 

@@ -687,15 +687,26 @@ def _differences(added: List[Dict[str, Any]], changed: List[Dict[str, Any]],
 
 
 def _freshness(study_dir: Path, *, extra_reason: str) -> Dict[str, Any]:
+    """Staleness has two sources: a failed sync, or a broken canonical reference.
+
+    The second is shared with :func:`decision_brief.stale_inputs`: the brief and
+    the delta must never disagree about whether the decision is still current.
+    """
     state = _state(study_dir)
     last_error_at = str(state.get("last_error_at") or "")
     last_success_at = str(state.get("last_success_at") or "")
-    stale = bool(last_error_at) and (not last_success_at or last_error_at > last_success_at)
+    sync_failed = bool(last_error_at) and (
+        not last_success_at or last_error_at > last_success_at)
+    broken = decision_brief.stale_inputs(study_dir)
+    stale = bool(sync_failed or broken)
     reason = str(state.get("last_error") or "") or extra_reason
+    if broken and not sync_failed:
+        reason = "；".join(str(item.get("detail")) for item in broken)
     return {
         "stale": stale,
         "reason_code": "STALE_SOURCE" if stale else None,
         "last_success_at": last_success_at or None,
+        "stale_reasons": broken,
         "freshness": {
             "status": "stale" if stale else "fresh",
             "reason": reason,
