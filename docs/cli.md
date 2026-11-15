@@ -22,6 +22,7 @@ askovo --help
 | `research plan/authorize/run/status` | 宿主给定动作清单的逐条授权与受控执行 | 0/1/2/3/4 |
 | `loop plan/authorize/run/status/report/assess` | 缺口驱动的多轮受控采集、每轮复审、候选证据与复盘 | 0/1/2/3/4 |
 | `decide start/status/result/brief/cancel` | 一问题研究执行器：登记任务、规划、受门禁执行、C-01 状态投影与 partial Brief | 0/2 |
+| `issues import/extract/list/edit/accept/reject/status/report` | Issue → 用户任务/需求结构化：本地导出快照、机器候选、人工接受进 canonical 链 | 0/2/4 |
 | `queue init/add/run/status/retry` | SQLite 队列、worker、重试、限速、断点续跑 | 0/1/2 |
 | `analyze <study>` | 归一化、去重、分布、候选主题、问题匹配 | 0/2 |
 | `chain <study>` | 生成/渲染“场景→用户→痛点→需求→特性→产品→商业”推理链 | 0/2 |
@@ -265,6 +266,33 @@ askovo decide delta A-TASK-1A2B3C4D --since latest-accepted
 - 拒绝走稳定的 `reason_code`（`INPUT_REQUIRED` / `AUTH_REQUIRED` / `UNSUPPORTED_SCOPE` / `POLICY_DENIED` / `ARTIFACT_PARTIAL`），stdout 是拒绝文档，退出码 2，不生成貌似成功的任务。
 - 记录上限取 `authorization.max_records` 并同时写入 loop envelope；`cancel` 之后任何 `--run` 都返回 `POLICY_DENIED`，不再读取。
 - MCP 对应 `askovo_decide_start` / `askovo_decide_status` / `askovo_decide_result`，复用同一编排函数；细节见[一问题研究执行器](decide.md)。
+
+## issues（Issue → 用户任务/需求结构化）
+
+```bash
+# 1) 快照 + 规范化（人工授权，不联网）
+askovo issues import ./study --file issues.jsonl --authorized-by "research-lead"   --since 2026-08-01 --label bug
+
+# 2) 机器候选（规则法，13 个 PRD 字段）
+askovo issues extract ./study --question "下一版先修哪些解析问题"
+
+# 3) 复核
+askovo issues list ./study --claim-kind feature_request
+askovo issues status ./study
+askovo issues report ./study
+
+# 4) 人工编辑 / 接受 / 拒绝（均需具名的人）
+askovo issues edit ./study --candidate IC-01 --by "product-owner" --set user_role="CLI 使用者"
+askovo issues accept ./study --candidate IC-01 --by "product-owner"   --context-key nested-log-parse --judgment-id D03 --evidence-level E2
+askovo issues reject ./study --candidate IC-02 --by "product-owner" --reason "单一自述"
+```
+
+- 只读本地授权导出（`gh issue list --json` 形态的 JSONL/JSON）；`LIVE_CONNECTOR_ENABLED` 永久为 False，未来接真 connector 的接口位置留好但不开。
+- 机器候选带 PRD 逐字要求的 13 个字段；`source_quote_span` 是 `source_text` 的精确切片，抽不到就是 `null`。
+- 语义规则写在实现里：同一登录 10 条 = 1 名观测用户、评论不算用户、请求方案封顶 E1、无可复现文本 = `unverified`、来源被删留快照/hash、一条反证即 `challenged`、私有内容与白名单外字段永不落盘。
+- `accept` 写一条 evidence + 一条 demand judgment + 一条 product-reasoning 链 + 追加式 `issue-acceptance.jsonl` 轨迹；幂等，且 `accepted` 不等于 `validated`。
+- 退出码：0 已记录、2 语义门禁拒绝（`POLICY_DENIED`/`INPUT_REQUIRED`/`UNSUPPORTED_SCOPE`）、4 缺具名授权/复核人（`AUTH_REQUIRED`）。
+- 细节见 [Issue 结构化](issues.md)。
 
 ## queue
 

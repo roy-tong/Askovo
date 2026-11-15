@@ -4,6 +4,28 @@
 
 ### Added
 
+- **A-03: issue -> user task / demand structuring** (`askovo issues`). A local
+  authorized GitHub issue export becomes machine candidates and — only through a
+  named human — canonical evidence. `import` snapshots the export
+  (`02-data/raw/issues/`, SHA-256, acquisition basis, retention rule), reuses
+  `sure_engine._normalize_platform_record` for `02-data/normalized.jsonl`, and
+  declares the `github` source family in `01-sources/source-plan.csv` so the
+  audit never sees evidence from an unplanned source. `extract` writes
+  `04-findings/issue-candidates.json` with the thirteen PRD candidate fields
+  plus claim kind, disposition, support/counter counts, snapshot provenance and
+  an explicit `selection_bias`. Semantic rules live in code: one login with ten
+  issues is one observed user and comments are not users (A13); a feature
+  request caps at E1 and is refused as behaviour evidence with `POLICY_DENIED`
+  (A14); no quotable body text stays `unverified` with a null span (A15); a
+  deleted source keeps snapshot + hash + rights note and reports
+  `snapshot_only` (A16); one counter-evidence yields `challenged` with
+  `majority_wins: false` (A17); non-public rows are dropped and counted while
+  snapshots are built from a field whitelist, so private content never reaches
+  an artifact (A18). `accept` requires a named human, is idempotent, and writes
+  one evidence record + one demand judgment + one product-reasoning chain plus
+  an append-only `04-findings/issue-acceptance.jsonl` trail; `reject` records
+  its reason. `LIVE_CONNECTOR_ENABLED` marks the future live-connector seam and
+  stays False: no network, no API call.
 - **A-02: one-question decide executor** (`askovo decide` + the
   `askovo_decide_*` MCP entry points). An `askovo.decision-task/1` document
   (PRD §2.2) now becomes a tracked task instead of a one-off prompt:
@@ -76,6 +98,16 @@
   interrupted resume requires reconcile and recollects nothing, status carries
   the C-01 fields at every gate, the brief is `partial` and lists its gaps, and
   the MCP entries share the same orchestrator. Full suite: 318 passed.
+- 33 new regression tests (`tests/test_issue_structuring.py`) freeze AC
+  A13-A18 offline on synthetic GitHub issue exports: the thirteen PRD fields,
+  the four claim kinds (never collapsed into one `type`), exact quote spans,
+  same-author and same-issue comment accounting, login-only identity, separated
+  maintainer feedback, duplicate-theme merging that keeps every source,
+  deterministic re-extraction, feature-request caps, unverified-without-text,
+  deleted-source snapshots, counter-evidence not outvoted, private-row and
+  private-note containment, selection bias, human-only acceptance with an audit
+  trail, idempotent acceptance and a passing audit afterwards. Full suite: 351
+  passed.
 
 ## 2.17.1 - 2026-11-14
 

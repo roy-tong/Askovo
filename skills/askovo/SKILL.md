@@ -261,6 +261,30 @@ askovo decide cancel A-TASK-xxxxxxxx --by "<operator>"
 - The brief stays `partial` (`ARTIFACT_PARTIAL`) with every gap listed while any gap is open, and `decision_state` is `not_approved` — delivered research never means `decision_approved` or `hypothesis_validated`.
 - `decide review` / `decide delta` are refused with `UNSUPPORTED_SCOPE` until A-04; use `askovo review` or `askovo decide brief` meanwhile.
 
+## Structure public issues before calling them demand
+
+`askovo issues` turns an authorized local GitHub issue export into machine candidates. Nothing enters the chain until a named human accepts it:
+
+```bash
+askovo issues import <study> --file issues.jsonl --authorized-by "<operator>"
+askovo issues extract <study> --question "<question>"
+askovo issues list <study> --claim-kind feature_request
+askovo issues accept <study> --candidate IC-01 --by "<reviewer>" \
+  --context-key <key> --judgment-id D03 --evidence-level E2
+askovo issues reject <study> --candidate IC-02 --by "<reviewer>" --reason "<why>"
+```
+
+- **Records are not users.** Ten issues from one login are one observed user, comments on one issue are context, and distinct logins are never claimed to be distinct people (`identity_basis: login_only`). Report `observed_users`, not `record_count`.
+- **Four claim kinds stay apart**: `bug_reproduction`, `observed_behavior`, `feature_request`, `subjective_complaint` (plus `unknown` when there is no quotable body text). Never collapse them into one `type`.
+- **A request is not demand.** A feature request caps at E1: `severity_candidate: unknown`, `demand_claim: none`, and accepting it as E2 is refused with `POLICY_DENIED`.
+- **No text, no evidence.** An empty body stays `unverified` with `source_quote_span: null`; never invent a quote. A quote span is an exact slice of `source_text`.
+- **One counter-evidence is never outvoted.** Any counter record makes the candidate `challenged` with `majority_wins: false`; support and counter counts are reported separately.
+- **Private stays private.** Non-public rows are dropped and counted; snapshots are built from a field whitelist, so private notes never reach an artifact.
+- **Maintainer feedback is listed separately** and never counted as a user observation.
+- **A deleted source keeps its snapshot**, SHA-256, acquisition basis and retention rule; the candidate reports `snapshot_only`.
+- **Acceptance is human and idempotent**: it writes one evidence record + one demand judgment + one product-reasoning chain + an append-only acceptance trail. `accepted` never means `validated`; `askovo audit` still judges the evidence.
+- Zero network: only local exports. `LIVE_CONNECTOR_ENABLED` stays False.
+
 ## Gate demand judgments
 
 Use **demand judgment** / **需求判断**, not a translated “opportunity card,” unless the user explicitly requests that format.

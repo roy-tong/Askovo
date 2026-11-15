@@ -224,6 +224,17 @@ askovo decide status A-TASK-1A2B3C4D                    # C-01 next actor / next
 
 The brief stays `partial` while gaps remain, and `delivered` never means `decision_approved`. See [one-question decide executor](docs/decide.md) (Chinese).
 
+Public GitHub issues are the usual raw material. `askovo issues` turns an authorized export into machine candidates and, only after a named human accepts one, into canonical evidence — the thirteen PRD fields stay candidates until then:
+
+```bash
+askovo issues import ./study --file issues.jsonl --authorized-by "research-lead"
+askovo issues extract ./study --question "下一版先修哪些解析问题"
+askovo issues accept ./study --candidate IC-01 --by "product-owner" \
+  --context-key nested-log-parse --judgment-id D03 --evidence-level E2
+```
+
+Ten issues from one login are still one observed user, comments are not users, "please add a button" caps at E1, and one counter-evidence is never outvoted. No network: `LIVE_CONNECTOR_ENABLED` stays False. See [issue structuring](docs/issues.md) (Chinese).
+
 For writing/decision gaps with existing local JSONL, `analyze` is an executable offline candidate: it reuses the descriptive analyzer and writes an execution record and follow-up review state without promoting candidates. Collection retains its authorization and Design gate; experiments and external-evidence requests are not auto-run. `stop` is separate from positive action scoring: an explicit three-condition `StopDecision` can rank it first only when more research cannot change the decision and is not worth its cost/risk; otherwise stopping for its own sake is not allowed.
 
 ### 3. Audit both "is the evidence enough" and "is the reasoning broken"

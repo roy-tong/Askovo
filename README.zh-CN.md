@@ -217,6 +217,17 @@ askovo decide status A-TASK-1A2B3C4D                    # C-01 下一个角色 /
 
 只要还有缺口，Brief 就停在 `partial`；`delivered` 永远不等于 `decision_approved`。详见[一问题研究执行器](docs/decide.md)。
 
+公开 GitHub issue 通常是最原始的素材。`askovo issues` 把授权导出变成机器候选，**只有具名的人接受后**才写进 canonical 证据——在那之前，PRD 那 13 个字段只是候选：
+
+```bash
+askovo issues import ./study --file issues.jsonl --authorized-by "research-lead"
+askovo issues extract ./study --question "下一版先修哪些解析问题"
+askovo issues accept ./study --candidate IC-01 --by "product-owner" \
+  --context-key nested-log-parse --judgment-id D03 --evidence-level E2
+```
+
+同一个登录发 10 条仍是一名观测用户，评论不算用户，「请加按钮」封顶 E1，一条反证不会被支持数淹没。全程零网络：`LIVE_CONNECTOR_ENABLED` 保持 False。详见[Issue 结构化](docs/issues.md)。
+
 对已有本地 JSONL 的写作/决策缺口，`analyze` 是可执行的离线候选：复用描述性分析器，写入执行记录和后续复核状态，不提升 candidate。采集仍守原授权与 Design gate；实验和外部证据请求不会自动执行。`stop` 与其他动作的正收益评分分离：只有显式 `StopDecision` 同时确认证据足够、剩余未知不改变决定、继续研究不抵成本/风险时才可排第一，否则不能为了停止而停止。
 
 ### 3. 同时审计“证据是否够”和“推理是否断”
