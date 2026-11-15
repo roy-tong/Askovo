@@ -451,17 +451,19 @@ class DecideStatusAndBriefTests(DecideHelpers, unittest.TestCase):
         self.assertEqual("brief_ready", task["state"])
         self.assertTrue((self.workspace / "tasks" / task_id / "brief.md").is_file())
 
-    def test_review_and_delta_are_explicit_stubs(self) -> None:
+    def test_review_is_an_explicit_stub(self) -> None:
+        # `decide delta` used to be refused here too. A-05 (PRD §3 A-05 +
+        # §10.2 decision delta) implements it, so only the expert `review`
+        # entry still refuses; delta is covered by tests/test_research_delta.py.
         _, payload = self.start_bound(decision_task(self.dir))
         task_id = payload["task_id"]
-        for action in ("review", "delta"):
-            completed = run_cli(action, task_id, "--workspace", str(self.workspace),
-                                "--by", "owner", "--since", "latest-accepted")
-            self.assertEqual(2, completed.returncode, action)
-            body = json.loads(completed.stdout)
-            self.assertEqual("UNSUPPORTED_SCOPE", body["reason_code"], action)
-            self.assertIn("后续工单", body["reason"])
-            self.assertNotEqual("ok", body.get("status"))
+        completed = run_cli("review", task_id, "--workspace", str(self.workspace),
+                            "--by", "owner", "--since", "latest-accepted")
+        self.assertEqual(2, completed.returncode, "review")
+        body = json.loads(completed.stdout)
+        self.assertEqual("UNSUPPORTED_SCOPE", body["reason_code"], "review")
+        self.assertIn("后续工单", body["reason"])
+        self.assertNotEqual("ok", body.get("status"))
 
 
 class DecideMcpTests(DecideHelpers, unittest.TestCase):
