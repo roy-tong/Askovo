@@ -461,7 +461,7 @@ class DeltaAcceptedDecisionTests(DeltaHelpers, unittest.TestCase):
         self.assertIn("approve", payload["next_required_action"])
 
 
-class DeltaStaleTests(DeltaHelpers):
+class DeltaStaleTests(DeltaHelpers, unittest.TestCase):
     """A28: an unreachable source still shows the last good result, marked stale."""
 
     def test_unreachable_source_keeps_the_last_good_snapshot(self) -> None:
@@ -472,7 +472,9 @@ class DeltaStaleTests(DeltaHelpers):
                             "--authorized-by", "research-lead")
         self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
         completed, payload = self.show()
-        self.assertEqual(0, completed.returncode, payload)
+        # Exit 1 = a valid but degraded research status (repo convention: gate not
+        # passed). The read still succeeds and shows the last good snapshot.
+        self.assertEqual(1, completed.returncode, payload)
         self.assertTrue(payload["stale"])
         self.assertEqual("STALE_SOURCE", payload["reason_code"])
         self.assertTrue(payload["last_success_at"])
@@ -504,7 +506,7 @@ class DeltaStaleTests(DeltaHelpers):
         self.assertTrue(payload["next_required_action"])
 
 
-class DeltaDecideIntegrationTests(DeltaHelpers):
+class DeltaDecideIntegrationTests(DeltaHelpers, unittest.TestCase):
     """A-05 replaces A-02's explicit `decide delta` refusal."""
 
     def _decide_task(self) -> tuple[Path, str]:
