@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Glossary: E0–E5 evidence levels, the seven-node reasoning chain, SURE | Askovo</title>
+  <meta name="description" content="Askovo glossary: level-by-level definitions of the E0–E5 evidence grading (E0 scene context to E5 behavioral evidence of payment), the seven-node reasoning chain scene→user→pain→need→feature→product→business, the SURE evidence engine boundary, the ●◐○ basis markers, and the six conclusion types.">
+  <link rel="canonical" href="https://roy-tong.github.io/Askovo/en/glossary.html">
+  <link rel="alternate" hreflang="zh-CN" href="https://roy-tong.github.io/Askovo/glossary.html">
+  <link rel="alternate" hreflang="en" href="https://roy-tong.github.io/Askovo/en/glossary.html">
+  <link rel="alternate" hreflang="x-default" href="https://roy-tong.github.io/Askovo/glossary.html">
+  <meta name="theme-color" content="#090C10">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Askovo">
+  <meta property="og:title" content="Askovo glossary: E0–E5 evidence grading and the seven-node reasoning chain">
+  <meta property="og:description" content="E0–E5 level by level, the seven-node chain, the SURE engine, the ●◐○ markers — Askovo's core concepts on one page.">
+  <meta property="og:url" content="https://roy-tong.github.io/Askovo/en/glossary.html">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Askovo glossary: E0–E5 evidence grading and the seven-node reasoning chain">
+  <meta name="twitter:description" content="E0–E5 level by level, the seven-node chain, the SURE engine, the ●◐○ markers — Askovo's core concepts on one page.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "DefinedTermSet",
+    "name": "Askovo glossary",
+    "description": "Core term definitions for Askovo's evidence-graded research method",
+    "url": "https://roy-tong.github.io/Askovo/en/glossary.html",
+    "inLanguage": "en",
+    "hasDefinedTerm": [
+      { "@type": "DefinedTerm", "name": "E0–E5 evidence grading", "description": "An evidence grading internal to the engine that describes demand and commercial evidence strength only: E0 scene context, E1 problem stated, E2 observed substitute/workaround/failure behavior, E3 concept accepted, E4+ purchase or payment intent, E5 behavioral evidence of payment or continued use." },
+      { "@type": "DefinedTerm", "name": "Seven-node reasoning chain", "description": "scene → user → pain → need → feature → product → business: the main chain that reasons from scene all the way to business; every node must state its current judgment, rationale, assumptions, and supporting evidence." },
+      { "@type": "DefinedTerm", "name": "SURE engine", "description": "Structured User Research with Evidence: the research and evidence engine underneath Askovo, responsible for method selection, evidence forms and grading, claim boundaries, anti-survivorship bias, safety gates, and judgment constraints. Askovo is the product; SURE is the engine." }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="./">Askovo<span class="cursor">_</span></a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="./#chain">Reasoning chain</a>
+        <a href="./first-look.html">Commission a task</a>
+        <a href="./faq.html">FAQ</a>
+        <a href="https://github.com/roy-tong/askovo">GitHub</a>
+        <a href="../glossary.html" hreflang="zh-CN" lang="zh-CN">中文</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="hero" id="top">
+      <p class="kicker">GLOSSARY</p>
+      <h1>Glossary</h1>
+      <p class="lead">Askovo's core concepts on one page. The definitions match the repository docs and each one can be traced back; this page is itself written to be citable — when someone needs to explain evidence grading, they can quote it from here.</p>
+    </div>
+
+    <section>
+      <h2>The seven-node reasoning chain<span class="en">SCENE → BUSINESS</span></h2>
+      <p class="sub">The main chain from user reasoning to product and business, and the skeleton of every deliverable:</p>
+      <div class="chain" aria-label="Seven-node reasoning chain">
+        <span class="node">Scene</span><span class="arrow">→</span>
+        <span class="node">User</span><span class="arrow">→</span>
+        <span class="node">Pain</span><span class="arrow">→</span>
+        <span class="node">Need</span><span class="arrow">→</span>
+        <span class="node">Feature</span><span class="arrow">→</span>
+        <span class="node">Product</span><span class="arrow">→</span>
+        <span class="node">Business</span>
+      </div>
+      <p>scene → user → pain → need → feature → product → business. Every node must record: the current statement, the rationale, the assumptions it rests on, the supporting evidence (<code>evidence_ids</code>), and a status. MRD, PRD, BRD, and the decision package are all projections of this chain.</p>
+    </section>
+
+    <section>
+      <h2>E0–E5 evidence grading<span class="en">EVIDENCE LEVELS</span></h2>
+      <p class="sub">An evidence grading internal to the engine, used for gates and audits; it does not enter the body of business deliverables (the narrative uses business language, and the grading stays in the method archive at the end). Level by level:</p>
+      <table>
+        <thead><tr><th>Level</th><th>Evidence form</th><th>Question answered</th></tr></thead>
+        <tbody>
+          <tr><td>E0</td><td>Activity, role, or scene context</td><td>The scene occurs</td></tr>
+          <tr><td>E1</td><td>Unmet job, goal, or difficulty</td><td>The problem is stated</td></tr>
+          <tr><td>E2</td><td>Current practice, workaround, failure, or switching cost</td><td>Substitutes and their friction</td></tr>
+          <tr><td>E3</td><td>Explicit acceptance of or preference for the research concept</td><td>The concept is accepted under stated conditions</td></tr>
+          <tr><td>E4+</td><td>Price anchor, purchase or payment intent</td><td>Direct commercial intent</td></tr>
+          <tr><td>E4−</td><td>Refusal, cancellation, return, abandonment</td><td>Direct negative commercial behavior</td></tr>
+          <tr><td>E5</td><td>Paid possession, deployment, continued use, repurchase</td><td>Realized behavioral evidence</td></tr>
+        </tbody>
+      </table>
+      <p>Two hard rules: a need node reaches validated only with at least one piece of <strong>E2</strong> (observed behavior) — E1 verbal statements alone stop at needs-validation; saying it does not count, doing it does. And <strong>business nodes accept only E4+/E5</strong>: counter-evidence and substitute behavior will not lift a business node to "observed".</p>
+      <p>E0–E5 <strong>describe demand and commercial evidence strength only</strong> — they are not a product/commercial reasoning score; usability, engineering performance, safety, and feasibility each carry their own verification requirements.</p>
+    </section>
+
+    <section>
+      <h2>●◐○ evidence-strength markers<span class="en">READING AIDS</span></h2>
+      <p>A reading aid inside the body of the Business Plan, taken per node: <span class="tag-ok">● observed</span> · <span class="tag-warn">◐ clues</span> · ○ assumption. Scene/user/pain/need accept behavioral records at E2 and above; feature/product accept only E3 (concept acceptance) and above; business nodes accept only E4+/E5.</p>
+    </section>
+
+    <section>
+      <h2>SURE evidence engine<span class="en">SURE ENGINE</span></h2>
+      <p><strong>SURE = Structured User Research with Evidence</strong>. Askovo is the product (CLI / Agent Skill / MCP / package); SURE is the research and evidence engine underneath it: it owns method selection, evidence forms and grading, claim boundaries, anti-survivorship bias, safety gates, and judgment constraints. In one line: Askovo handles "reasoning from users to product and business", and SURE makes sure "every step knows how far its evidence actually reaches".</p>
+    </section>
+
+    <section>
+      <h2>Six conclusion types<span class="en">SIX CONCLUSION TYPES</span></h2>
+      <p>need / acceptance / usability / performance / commercial / safety are never mixed: need does not pose as acceptance, and stated intent (E1) is never paying behavior (E4+/E5). The boundary for each type is on the <a href="./claims.html">claims page</a>.</p>
+    </section>
+
+    <section>
+      <h2>Overclaim<span class="en">OVERCLAIM</span></h2>
+      <p>A conclusion that exceeds what its evidence can support — for example, writing E1 stated intent up as "users are willing to pay". <code>askovo audit</code> checks every conclusion for overclaims and names them, exiting with code 1 so CI can gate on it.</p>
+    </section>
+
+    <section>
+      <h2>Machine truth<span class="en">MACHINE TRUTH</span></h2>
+      <p><code>product-reasoning.json</code> is the only semantic source of the seven-node chain; the MRD, PRD, BRD, and decision package are reader views projected from it, not parallel sources of fact. To change a judgment, change the truth — the projections follow.</p>
+    </section>
+  </main>
+
+  <footer class="footer wrap">
+    <p>Open-source engine, free forever (MIT).</p>
+    <p class="row"><span>© 2026 Askovo</span><span>·</span><a href="./">Home</a><span>·</span><a href="./faq.html">FAQ</a><span>·</span><a href="./claims.html">Claims</a><span>·</span><span>Reviewed 2026-11-15</span></p>
+    <p class="row"><span>ovo family: research <strong>Askovo</strong> → execution <a href="https://roy-tong.github.io/Growovo/">Growovo</a> → verification <a href="https://roy-tong.github.io/Verovo/">Verovo</a></span></p>
+  </footer>
+</body>
+</html>

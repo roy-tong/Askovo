@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>When a user says “I want it”, is it a need? Stated intent vs behavioral evidence | Askovo guide</title>
+  <meta name="description" content="A need-validation guide: a user saying they want something is not a real need. Four common misreadings, a substitute-behavior checklist (workaround / self-build / giving up / paying), and the E0–E5 grading criteria — saying it does not count, doing it does. Plus a three-step validation method that needs no tool at all.">
+  <link rel="canonical" href="https://roy-tong.github.io/Askovo/en/guides/need-validation.html">
+  <link rel="alternate" hreflang="zh-CN" href="https://roy-tong.github.io/Askovo/guides/need-validation.html">
+  <link rel="alternate" hreflang="en" href="https://roy-tong.github.io/Askovo/en/guides/need-validation.html">
+  <link rel="alternate" hreflang="x-default" href="https://roy-tong.github.io/Askovo/guides/need-validation.html">
+  <meta name="theme-color" content="#090C10">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Askovo">
+  <meta property="og:title" content="When a user says “I want it”, is it a need?">
+  <meta property="og:description" content="Need validation comes down to one criterion: is there observed behavior, or only a statement? Four misreadings, a behavior checklist, and E0–E5 grading.">
+  <meta property="og:url" content="https://roy-tong.github.io/Askovo/en/guides/need-validation.html">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="When a user says “I want it”, is it a need?">
+  <meta name="twitter:description" content="Need validation comes down to one criterion: is there observed behavior, or only a statement? Four misreadings, a behavior checklist, and E0–E5 grading.">
+  <link rel="icon" type="image/svg+xml" href="../../assets/favicon.svg">
+  <link rel="stylesheet" href="../../styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "name": "When a user says \"I want it\", is it a need? Stated intent vs behavioral evidence",
+    "description": "A need-validation guide: four common misreadings, a substitute-behavior checklist, the E0–E5 grading criteria, and a three-step validation method that needs no tool.",
+    "url": "https://roy-tong.github.io/Askovo/en/guides/need-validation.html",
+    "inLanguage": "en"
+  }
+  </script>
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="../">Askovo<span class="cursor">_</span></a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="../#chain">Reasoning chain</a>
+        <a href="../glossary.html">Glossary</a>
+        <a href="../faq.html">FAQ</a>
+        <a href="https://github.com/roy-tong/askovo">GitHub</a>
+        <a href="../../guides/need-validation.html" hreflang="zh-CN" lang="zh-CN">中文</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="hero" id="top">
+      <p class="kicker">GUIDE · NEED VALIDATION</p>
+      <h1>When a user says “I want it”, is it a need?</h1>
+      <p class="lead">Everyone is polite in an interview, and everyone ticks "willing" in a survey. Judging whether a need is real comes down to one criterion: <strong>is there observed behavior, or only a statement?</strong> This guide gives you the four common misreadings and how to spot them, a behavior checklist you can use without installing anything, and a way to grade your conclusions.</p>
+    </div>
+
+    <section>
+      <h2>Start with the conclusion<span class="en">THE ONE-LINE RULE</span></h2>
+      <p><strong>Saying it does not count; doing it does.</strong> A verbal statement ("I want it", "I would buy") is evidence, but only the weakest level (E1: the problem is stated); observed substitute behavior, workarounds, and payment are what make E2 and E4+/E5 evidence. A need backed only by words stays at "needs validation", however often it is repeated.</p>
+    </section>
+
+    <section>
+      <h2>Four common misreadings<span class="en">FOUR MISREADINGS</span></h2>
+      <table>
+        <thead><tr><th>Misreading</th><th>What it looks like</th><th>How to spot it</th></tr></thead>
+        <tbody>
+          <tr><td>Taking politeness for a need</td><td>The person nods and says "that sounds good, I'd want it"</td><td>Follow up: <strong>"What did you actually do last time this problem came up?"</strong> If no concrete behavior comes back, it is politeness, not a need</td></tr>
+          <tr><td>Taking a feature request for a pain</td><td>The user hands you the solution: "just add Excel export"</td><td>Ask: "which step of your current process would that replace?" — first recover the pain and scene that were skipped</td></tr>
+          <tr><td>Taking one case for a population</td><td>One heavy user uses it daily, so "the market is large" follows</td><td>A single case can show a need exists (E2), <strong>not how common it is</strong>; prevalence needs a market estimate with a complete denominator, and the two are written separately</td></tr>
+          <tr><td>Taking intent for payment</td><td>60% of survey respondents tick "willing to pay"</td><td>Intent is E1. Price anchors, real purchases, continued use, and repurchase are E4+/E5 — stated intent is never paying behavior</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Substitute-behavior checklist<span class="en">E2 SIGNALS CHECKLIST</span></h2>
+      <p class="sub">Look for these <strong>behavioral traces</strong> in your target users' communities, tickets, and interview notes — any single piece of E2 evidence is harder than ten sentences of "I want it":</p>
+      <ul>
+        <li><strong>Workarounds</strong>: forcing a solution out of Excel, scripts, or manual process ("I make do with three spreadsheets and a scheduled job")</li>
+        <li><strong>Self-build</strong>: an internal tool they wrote for this problem, or an unrelated tool bought to bridge it</li>
+        <li><strong>Switching cost</strong>: complaints that migration is painful, that moving the data hurts — people complain only when the pain is worth paying for</li>
+        <li><strong>Giving up and returning</strong>: abandoning halfway, unsubscribing, a review saying "it didn't solve my problem" — negative behavior is evidence too (E4−)</li>
+        <li><strong>Paying for a substitute</strong>: already paying for a substitute that is not good enough</li>
+      </ul>
+      <p>When you search a target community, use the language of the problem rather than the language of the solution: <code>how do I</code>, <code>workaround</code>, <code>spreadsheet</code>, <code>有没有办法</code>, <code>手动</code> — what follows those words is the real scene.</p>
+    </section>
+
+    <section>
+      <h2>Write your conclusions down, graded<span class="en">GRADE YOUR CONCLUSIONS</span></h2>
+      <p>Evidence-strength grading (E0–E5; the full definitions Askovo uses internally are in the <a href="../glossary.html">glossary</a>):</p>
+      <table>
+        <thead><tr><th>Level</th><th>Evidence form</th><th>Question answered</th></tr></thead>
+        <tbody>
+          <tr><td>E0</td><td>Activity, role, or scene context</td><td>The scene occurs</td></tr>
+          <tr><td>E1</td><td>Unmet job, goal, or difficulty</td><td>The problem is stated</td></tr>
+          <tr><td><strong>E2</strong></td><td>Current practice, workaround, failure, or switching cost</td><td><strong>Substitutes and their friction</strong></td></tr>
+          <tr><td>E3</td><td>Explicit acceptance of or preference for the research concept</td><td>The concept is accepted under stated conditions</td></tr>
+          <tr><td>E4+</td><td>Price anchor, purchase or payment intent</td><td>Direct commercial intent</td></tr>
+          <tr><td>E5</td><td>Paid possession, continued use, repurchase</td><td>Realized behavioral evidence</td></tr>
+        </tbody>
+      </table>
+      <p>Two hard rules: <strong>a need judgment reaches "validated" only with at least one piece of E2 (observed behavior)</strong> — E1 verbal statements alone stop at "needs validation"; and <strong>commercial judgments accept only E4+/E5</strong> — counter-evidence and substitute behavior will not lift them to "observed".</p>
+    </section>
+
+    <section>
+      <h2>Three steps you can take today<span class="en">DO IT WITHOUT ANY TOOL</span></h2>
+      <ol>
+        <li>Pick one target community (GitHub issues, a Reddit sub, a vertical forum), search it for 30 minutes in the language of the problem, and note the scenes that come up at least 3 times.</li>
+        <li>Collect 5 pieces of E2 evidence for each scene (workaround / self-build / paying), <strong>each with a link to the original text</strong> — no link, no entry.</li>
+        <li>Write the conclusions on one page, graded E0–E5: which judgments have E2 behind them, which have only E1, which have no evidence at all. A cell with no evidence says "unknown", not zero.</li>
+      </ol>
+      <p>These three steps need no tooling. Their value is this: <strong>before you write the first line of code, you already know which judgment holds up.</strong></p>
+    </section>
+
+    <section>
+      <h2>Where Askovo automates part of this<span class="en">WHERE THE PRODUCT HELPS</span></h2>
+      <p>In the process above, the two steps that cost the most manual effort and drift most easily are "collection" and "not overclaiming": collecting a large corpus from authorized sources, registering the evidence behind every judgment, and naming each conclusion that outruns its evidence. <code>askovo do "&lt;your question&gt;" --dry-run</code> first shows how it intends to break the question down (runs locally, uploads nothing); <code>askovo demo</code> runs the synthetic sample in a second.</p>
+      <div class="note">The boundary is stated here too: the synthetic sample proves that the structure and the reasoning chain are self-consistent, not real demand or a market; semantic review always stays with humans. The same discipline applies to Askovo itself — see the <a href="../claims.html">claims page</a>.</div>
+      <p><a class="btn btn-primary" href="../#try">Verify it locally in 30 seconds</a> <a class="btn" href="../first-look.html">Commission a real research task</a></p>
+    </section>
+  </main>
+
+  <footer class="footer wrap">
+    <p>Method basis: the E0–E5 definitions and gate rules in the repository's <a href="https://github.com/roy-tong/askovo/blob/main/docs/concepts.md">docs/concepts.md</a>.</p>
+    <p class="row"><span>© 2026 Askovo</span><span>·</span><a href="../">Home</a><span>·</span><a href="../glossary.html">Glossary</a><span>·</span><a href="../faq.html">FAQ</a><span>·</span><span>Reviewed 2026-11-15</span></p>
+    <p class="row"><span>ovo family: research <strong>Askovo</strong> → execution <a href="https://roy-tong.github.io/Growovo/">Growovo</a> → verification <a href="https://roy-tong.github.io/Verovo/">Verovo</a></span></p>
+  </footer>
+</body>
+</html>

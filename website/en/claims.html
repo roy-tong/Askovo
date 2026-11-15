@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>What we claim, and what we do not claim | Askovo</title>
+  <meta name="description" content="Askovo's claims discipline: what each kind of conclusion can claim and what it must not pose as; what the tests and the synthetic sample prove, and what they do not.">
+  <link rel="canonical" href="https://roy-tong.github.io/Askovo/en/claims.html">
+  <link rel="alternate" hreflang="zh-CN" href="https://roy-tong.github.io/Askovo/claims.html">
+  <link rel="alternate" hreflang="en" href="https://roy-tong.github.io/Askovo/en/claims.html">
+  <link rel="alternate" hreflang="x-default" href="https://roy-tong.github.io/Askovo/claims.html">
+  <meta name="theme-color" content="#090C10">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Askovo">
+  <meta property="og:title" content="What we claim, and what we do not claim">
+  <meta property="og:description" content="Six conclusion types that must not be conflated, what the tests and the synthetic sample actually prove, and the inferences we never make.">
+  <meta property="og:url" content="https://roy-tong.github.io/Askovo/en/claims.html">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="What we claim, and what we do not claim">
+  <meta name="twitter:description" content="Six conclusion types that must not be conflated, what the tests and the synthetic sample actually prove, and the inferences we never make.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "name": "What we claim, and what we do not claim",
+    "description": "Askovo's claims discipline: what each kind of conclusion can claim and what it must not pose as; what the tests and the synthetic sample prove, and what they do not.",
+    "url": "https://roy-tong.github.io/Askovo/en/claims.html",
+    "inLanguage": "en"
+  }
+  </script>
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="./">Askovo<span class="cursor">_</span></a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="./#chain">Reasoning chain</a>
+        <a href="./#today">What is available</a>
+        <a href="./#try">Verify locally</a>
+        <a href="./first-look.html">Commission a task</a>
+        <a href="https://github.com/roy-tong/askovo">GitHub</a>
+        <a href="../claims.html" hreflang="zh-CN" lang="zh-CN">中文</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="hero" id="top">
+      <p class="kicker">CLAIMS &amp; BOUNDARIES</p>
+      <h1>What we claim, and what we do not claim</h1>
+      <p class="lead">Askovo's value lies in knowing how far the evidence reaches. This page puts the product's own claims under the same discipline: what can be claimed is stated plainly, and what must not be passed off as more is said outright.</p>
+    </div>
+
+    <section>
+      <h2>Six conclusion types must not be conflated<span class="en">SIX CONCLUSION TYPES</span></h2>
+      <table>
+        <thead><tr><th>Type</th><th>Answers</th><th>Must not substitute for</th></tr></thead>
+        <tbody>
+          <tr><td>need</td><td>Who has what unmet job in what scene</td><td>Feature requests, single cases, prevalence</td></tr>
+          <tr><td>acceptance</td><td>Whether users understand or accept the solution</td><td>Liking ≠ will use / will buy</td></tr>
+          <tr><td>usability</td><td>Whether the task can be completed; learnable and low-error</td><td>Usable ≠ demand established</td></tr>
+          <tr><td>performance</td><td>Whether it meets the bar under stated conditions</td><td>Benchmark score ≠ experience</td></tr>
+          <tr><td>commercial</td><td>Purchase, retention, repurchase, returns</td><td>Stated intent ≠ transaction</td></tr>
+          <tr><td>safety</td><td>Usage risk and compliance gaps</td><td>User trials ≠ certification</td></tr>
+        </tbody>
+      </table>
+      <p>E0–E5 grade demand and commercial evidence strength only — they are not a product/commercial reasoning score; usability, engineering performance, safety, and feasibility each have their own verification requirements.</p>
+    </section>
+
+    <section>
+      <h2>What the tests and the sample prove<span class="en">WHAT TESTS PROVE</span></h2>
+      <table>
+        <thead><tr><th>Evidence</th><th>Can claim</th><th>Must not pose as</th></tr></thead>
+        <tbody>
+          <tr><td>Unit-test matrix (Python 3.9–3.12; current size in CI)</td><td>Command behavior, structure validation, and gate logic match the spec</td><td>That real demand holds, product quality, market size</td></tr>
+          <tr><td>Offline synthetic sample (askovo demo)</td><td>The chain, evidence references, and audit logic are self-consistent</td><td>Any real user or commercial fact</td></tr>
+          <tr><td>CI passing (tests.yml)</td><td>Those behaviors are reproducible on supported versions</td><td>Release feasibility, compliance, or certification</td></tr>
+          <tr><td>Collection via the official GitHub/Reddit APIs</td><td>Raw records from authorized sources, with bias recorded</td><td>A sample representing a population; record count = user count</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Inferences we never make<span class="en">NEVER</span></h2>
+      <ul>
+        <li>No purchase intent treated as a real purchase, no adoption rate treated as a product outcome, no one-time liking treated as repurchase</li>
+        <li>No convenience sample extrapolated to prevalence or market size; a market estimate must state population, boundary, and source in full, and null means unknown, not zero</li>
+        <li>No <code>decided</code> (a record of the current choice) passed off as release approval, commercial proof, or causal effect — delivery, outcome, and causality are three independent states</li>
+        <li>No unauthorized scraping; blocked connectors, login walls, and platform challenges are never bypassed</li>
+        <li>All automated deliverables are drafts by default; a passing CLI run never replaces human semantic review, product sign-off, or risk acceptance</li>
+      </ul>
+      <p class="scope">The full boundaries are in the repository's <a href="https://github.com/roy-tong/askovo/blob/main/README.md#boundaries">README boundaries section</a> and <a href="https://github.com/roy-tong/askovo/blob/main/docs/concepts.md">core concepts</a>.</p>
+    </section>
+
+    <section>
+      <h2>If this check was useful to you<span class="en">STAR, NEVER REQUIRED</span></h2>
+      <p>If Askovo helped you, a star on the <a href="https://github.com/roy-tong/askovo">repository</a> helps more people find it — entirely voluntary, with no conditions attached.</p>
+    </section>
+  </main>
+
+  <footer class="footer wrap">
+    <p>Open-source engine, free forever (MIT).</p>
+    <p class="row"><span>© 2026 Askovo</span><span>·</span><a href="./">Home</a><span>·</span><a href="./first-look.html">Commission a task</a><span>·</span><span>Reviewed 2026-11-15</span></p>
+  </footer>
+</body>
+</html>
