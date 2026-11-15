@@ -53,6 +53,8 @@ Recovery: completed actions are checkpointed before analysis; an interrupted `ru
 | --- | --- | --- |
 | business owner 与 data authorizer 共用一方 | `decide` 把 `study.decision.owner` 直接取自 `authorization.approved_by`，即「谁批准了数据访问」同时被当作「谁对业务决定负责」。C-01 六方分离要求这两方可辨识（提出 Job / 授予数据权限 / 调用 / 验收 / 承担损失 / 批准付款）。字段结构本批不改 | C-01-IMPL 新工单 |
 | `reason_code` 与 `detail_code` | 顶层 `reason_code` 已收敛到 C-01 §3 的 10 个码；`INPUT_DRIFT` / `BROKEN_REFERENCE` 只作为 `stale_reasons[].detail_code` 出现，`tests/test_reason_code_contract.py` 冻结该约束 | 已收敛 |
+| **fixture 复制发生在 `loop authorize` 之前** | 数据授权（`loop authorize`）**不**发生在源复制之前——`source_scope.fixture` 是用户显式声明的授权导出，复制发生在「授权声明之后、`loop authorize` 之前」。**为什么这样设计**：fixture 是调用方自己的本地文件（他们本来就持有），不是平台读取；`loop authorize` 授权的是**平台采集信封**（允许平台、单条上限、轮次与记录预算）。复制产出的是一份 study 拥有的快照（带 SHA-256），在 loop 运行前不会有一条记录被规范化、导入或计数；而 D1 已保证**没有任何授权声明时连字节都不复制**。若将来要更严格，可把复制移到 `loop authorize` 之后——代价是 `decide start` 的 dry-run 计划将看不到 fixture 是否存在 | 已知边界（有意保留） |
+| **identity 缺 host / instance 命名空间** | `author_ref` 形如 `github:<login>`、`author_id` 形如 `github-user:<id>`，都没有 host 段。GitHub.com 与 GitHub Enterprise 上相同的数字 `user.id` 会被合并成同一个人。首批**只支持 GitHub.com**；接入多实例需要把 host 加进命名空间（`github:github.com/<login>`、`github-user:ghe.example/<id>`），并同步 history/delta 的身份比对 | 已知边界（首批范围） |
 
 ## Test integrity and cross-ticket integration
 

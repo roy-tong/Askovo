@@ -145,6 +145,15 @@
 
 ### Fixed
 
+- **A-03: a counter-evidence record kept the supporter's provenance.** The
+  canonical record written by `issues accept` for a counter-evidence item used
+  `candidate["issue_ref"]` (the supporting issue, e.g. `github:o/r#1`) while its
+  `record_id` and `text` came from the counter issue (`github:10009`), so an audit
+  following `source_ref` landed on the wrong issue — worse than a dropped
+  counter-evidence because it looked traceable. `counter_evidence[]` now carries
+  each counter record's own `source_ref` / `author_ref` / `created_at` /
+  `updated_at`, and `_counter_record()` writes those; the supporting record is
+  pinned by a test too, so both branches of the same function family are covered.
 - **A-lane integration: two staleness contradictions between tickets.**
   `decide brief` / `decide result` exited 0 on a `stale` brief while
   `askovo brief` exited 1 for the same document (A-04 introduced the
@@ -268,6 +277,12 @@
   outside it, and `INPUT_DRIFT` / `BROKEN_REFERENCE` staying detail codes.
   Verified by injecting `SNEAKY_NEW_CODE`: two assertions go red with the
   offending values. Full suite: 461 passed.
+- 1 more acceptance test pins per-record provenance: after accepting a challenged
+  candidate, the counter record's `source_ref` / `author_ref` / `created_at` /
+  `text` all describe the counter issue (and the supporting record describes its
+  own), so an audit cannot follow `source_ref` to the wrong issue. On the
+  previous implementation it fails with
+  `counter source_ref points at 'github:owner/repo#1'`. Full suite: 462 passed.
 
 ## 2.17.1 - 2026-11-14
 

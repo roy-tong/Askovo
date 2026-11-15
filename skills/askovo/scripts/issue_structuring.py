@@ -639,6 +639,7 @@ def _extract_record(record: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "record_id": str(record.get("record_id") or ""),
+        "issue_ref": _issue_ref(record, 0),
         "author_ref": str((record.get("issue") or {}).get("author_ref") or ""),
         "title": title,
         "source_text": text,
@@ -803,8 +804,15 @@ def extract_candidates(study_dir: Path, *, question: str = "") -> Dict[str, Any]
                 "support_count": len(support),
                 "counter_count": len(counter),
                 "majority_wins": False,
+                # Each counter entry keeps **its own** provenance: the counter
+                # issue, its author and its timestamp. Copying the supporting
+                # candidate's issue_ref here made an audit land on the wrong issue.
                 "counter_evidence": [
                     {"record_id": item["record_id"],
+                     "source_ref": item["issue_ref"],
+                     "author_ref": item["author_ref"],
+                     "created_at": item["created_at"],
+                     "updated_at": item["updated_at"],
                      "quote": (item["source_quote_span"] or {}).get("text")
                               or item["body"][:200]}
                     for item in counter
@@ -1056,7 +1064,7 @@ def _counter_record(candidate: Dict[str, Any], record_id: str, item: Dict[str, A
     return {
         "record_id": record_id,
         "context_key": "",
-        "user_role": str(candidate.get("user_role") or "unknown"),
+        "user_role": "unknown",
         "scene_trigger": "unknown",
         "task_outcome": "unknown",
         "current_substitute": "unknown",
@@ -1068,7 +1076,12 @@ def _counter_record(candidate: Dict[str, Any], record_id: str, item: Dict[str, A
             f"({candidate.get('claim_kind')}); accepted by {operator}; level not assigned"),
         "corpus_role": "counter",
         "source_family": "github",
-        "source_ref": str(candidate.get("issue_ref") or ""),
+        # D3 follow-up: the counter record's provenance is the **counter** issue,
+        # never the supporting candidate's. All three fields must describe one
+        # issue so an audit following `source_ref` reaches the right one.
+        "source_ref": str(item.get("source_ref") or ""),
+        "author_ref": str(item.get("author_ref") or ""),
+        "created_at": str(item.get("created_at") or ""),
         "normalized_text_hash": _sha_text(quote or record_id),
         "text": quote,
         "claim_type": "counter",

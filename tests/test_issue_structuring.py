@@ -619,6 +619,43 @@ class IssueAcceptanceTests(IssueHelpers, unittest.TestCase):
         self.assertTrue(document["needs_re_review"],
                         "a counter-evidence must make the brief require re-review")
 
+    def test_accept_records_keep_their_own_provenance(self) -> None:
+        """The counter record must point at the counter issue, not at the supporter.
+
+        Regression: `_counter_record()` copied `candidate["issue_ref"]` (the
+        supporting issue #1) while the text came from the counter issue #9, so an
+        audit following `source_ref` landed on the wrong issue — worse than a
+        dropped counter-evidence, because it looks traceable.
+        """
+        identical = "Nested JSON logs fail to parse; we retry by hand every week."
+        rows = [issue(1, "nested log parse failure", identical, author="alice", author_id=501),
+                issue(2, "nested log parse failure", identical, author="bob", author_id=502),
+                issue(9, "nested log parse failure",
+                      "This does not happen for us; nested logs parse fine and we would not pay.",
+                      author="skeptic", author_id=509)]
+        self.import_issues(rows)
+        self.extract()
+        candidate = [item for item in self.candidates() if item["counter_count"]][0]
+        counter = candidate["counter_evidence"][0]
+        self.assertEqual("github:10009", counter["record_id"])
+        completed = run_cli("accept", str(self.study), "--candidate", candidate["id"],
+                            "--by", "product-owner", "--context-key", "nested-log-parse",
+                            "--judgment-id", "D03", "--evidence-level", "E2")
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        records = {item["record_id"]: item for item in self.evidence_records()}
+        counter_record = records[counter["record_id"]]
+        self.assertTrue(counter_record["source_ref"].endswith("#9"),
+                        f"counter source_ref points at {counter_record['source_ref']!r}")
+        self.assertEqual(counter["source_ref"], counter_record["source_ref"])
+        self.assertEqual(counter["author_ref"], counter_record["author_ref"])
+        self.assertEqual(counter["created_at"], counter_record["created_at"])
+        self.assertIn("does not happen", counter_record["text"],
+                      "the counter record's text must be the counter issue's body")
+        support_record = records[candidate["source_refs"][0]]
+        self.assertEqual(candidate["issue_ref"], support_record["source_ref"],
+                         "the supporting record must point at its own issue")
+        self.assertTrue(support_record["source_ref"].endswith("#1"))
+
     def test_audit_passes_after_acceptance(self) -> None:
         candidate_id = self._ready_candidate()
         completed = run_cli("accept", str(self.study), "--candidate", candidate_id,
