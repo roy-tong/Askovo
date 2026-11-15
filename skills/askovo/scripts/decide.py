@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import decision_brief
+import research_delta
 import research_loop
 import sure_engine
 
@@ -768,38 +769,44 @@ def apply_mode(task: Dict[str, Any], mode: str) -> Dict[str, Any]:
     return task
 
 
-def _expert_refusal(action: str, task_id: str, *, by: str = "",
-                    since: str = "") -> DecideError:
-    """Build the refusal for a PRD §2.4 expert entry this ticket does not implement.
+def review(workspace: Path, task_id: str, *, by: str = "") -> Dict[str, Any]:
+    """Expert entry (PRD §2.4): explicit refusal until the review engine ships.
 
     A named refusal is the correct answer: the alternative is a command that
-    prints a plausible-looking success without a review or a delta engine.
+    prints a plausible-looking success without a review engine.
     """
-    hint = {
-        "review": f"Until then use `askovo review {task_id}` (deterministic review) or "
-                  f"`askovo decide brief {task_id}` (partial brief).",
-        "delta": f"Until then use `askovo decide brief {task_id}`; the accepted-baseline "
-                 f"delta ships with the Decision Snapshot work (A-04).",
-    }[action]
     operator = f" by {by}" if str(by or "").strip() else ""
-    window = f" since {since}" if str(since or "").strip() else ""
-    return DecideError(
-        f"`askovo decide {action} {task_id}`{operator}{window} is not implemented in A-02; "
-        f"the {action} entry ships in 后续工单 (A-04 Decision Brief + Decision Snapshot). "
-        f"{hint}",
+    raise DecideError(
+        f"`askovo decide review {task_id}`{operator} is not implemented; the review entry "
+        f"ships in 后续工单 (A-04 review engine). Until then use `askovo review {task_id}` "
+        f"(deterministic review) or `askovo decide brief {task_id}` (partial brief).",
         "UNSUPPORTED_SCOPE",
         "report the gap instead of treating a stub as a completed review",
     )
 
 
-def review(workspace: Path, task_id: str, *, by: str = "") -> Dict[str, Any]:
-    """Expert entry (PRD §2.4): explicitly unsupported in A-02."""
-    raise _expert_refusal("review", task_id, by=by)
-
-
 def delta(workspace: Path, task_id: str, *, since: str = "") -> Dict[str, Any]:
-    """Expert entry (PRD §2.4): explicitly unsupported in A-02."""
-    raise _expert_refusal("delta", task_id, since=since)
+    """Incremental delta for one decide task (PRD §2.4 / §10.2, A-05).
+
+    ``--since latest-accepted`` compares the latest evidence snapshot with the
+    last approved DecisionSnapshot. It never rewrites the approved record; a new
+    counter-evidence only raises ``needs_re_review``.
+    """
+    workspace = Path(workspace).resolve()
+    task = load_task(workspace, task_id)
+    study_dir = _study_dir_of(workspace, task)
+    if not (study_dir / "study.json").is_file():
+        raise DecideError("bound study is missing study.json", "INPUT_REQUIRED",
+                          "run `askovo decide start` with a valid --study first")
+    try:
+        document = research_delta.show(study_dir)
+    except research_delta.DeltaError as exc:
+        raise DecideError(str(exc), exc.reason_code, exc.suggestion)
+    document = dict(document)
+    document["since"] = str(since or "latest-accepted").strip() or "latest-accepted"
+    document["task_id"] = task_id
+    document["decision_type"] = (task.get("input") or {}).get("decision_type")
+    return document
 
 
 def task_from_flags(*, question: str = "", repo: str = "", decision_type: str = "",

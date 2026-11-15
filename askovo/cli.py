@@ -55,6 +55,7 @@ research:
   decide <action>      one-question decide executor: start/status/result/brief/cancel
   issues <action>      issue -> user task/demand: import/extract/list/edit/accept/reject
   brief <study>        Decision Brief: nine-section read-only projection + PRD acceptance
+  delta <action>       incremental research delta: sync/show/status/approve (append-only)
   plan <study>         supporting platform/feasibility plan
   demo                 run the bundled offline sample
   doctor               check runtime, catalog, packs and version

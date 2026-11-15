@@ -160,6 +160,30 @@ def _chains(reasoning: Any) -> List[Dict[str, Any]]:
     return [item for item in reasoning.get("chains") or [] if isinstance(item, dict)]
 
 
+def review_signal(chain: Dict[str, Any], *,
+                  extra_counter_ids: Tuple[str, ...] = ()) -> Dict[str, Any]:
+    """The single "does this decision need re-review?" predicate.
+
+    ``decision_brief`` and ``research_delta`` both call this, so the brief and the
+    delta can never disagree about whether new material challenges the decision.
+    A counter record only counts once it is registered on the chain (or, for an
+    incremental delta, once it is new and registered as contradicting).
+    """
+    registered = [str(value) for value in chain.get("counter_evidence_ids") or []]
+    counter = list(dict.fromkeys(registered + [str(value) for value in extra_counter_ids]))
+    extra = [value for value in counter if value not in registered]
+    reasons: List[str] = []
+    if registered:
+        reasons.append(f"主链已登记 {len(registered)} 条反证：{', '.join(registered)}")
+    if extra:
+        reasons.append(f"增量同步带入新的反证记录：{', '.join(extra)}")
+    return {
+        "needs_re_review": bool(counter),
+        "counter_evidence_ids": counter,
+        "reasons": reasons,
+    }
+
+
 def _chain_evidence_ids(chain: Dict[str, Any]) -> List[str]:
     nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
     ids: List[str] = []
@@ -589,8 +613,9 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
     supported = sum(1 for claim in claims if claim.get("verdict") == "supported")
 
     stale_reasons = _stale_reasons(study_dir, chains, judgments, set(record_by_id))
-    counter_ids = [str(value) for value in chain.get("counter_evidence_ids") or []]
-    needs_re_review = bool(counter_ids)
+    signal = review_signal(chain)
+    counter_ids = signal["counter_evidence_ids"]
+    needs_re_review = signal["needs_re_review"]
 
     # A19: a decision with no evidence behind it (nothing cited, or no audited
     # support) can only hold. It must never be rendered as a validated recommendation.

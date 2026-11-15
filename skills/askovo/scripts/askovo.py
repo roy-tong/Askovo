@@ -35,6 +35,7 @@ import research_loop  # noqa: E402
 import decision_review  # noqa: E402
 import decide  # noqa: E402
 import decision_brief  # noqa: E402
+import research_delta  # noqa: E402
 import issue_structuring  # noqa: E402
 import role_catalog  # noqa: E402
 
@@ -2732,6 +2733,7 @@ def command_decide(args: argparse.Namespace) -> int:
             "reason_code": exc.reason_code,
             "reason": str(exc),
             "suggestion": exc.suggestion or None,
+            "next_required_action": exc.suggestion or None,
         }, ensure_ascii=False, indent=2))
         return 2
     except (OSError, ValueError, json.JSONDecodeError, RuntimeError) as exc:
@@ -2743,6 +2745,61 @@ def command_decide(args: argparse.Namespace) -> int:
     else:
         print(json.dumps(document, ensure_ascii=False, indent=2))
     return 0
+
+
+def command_delta(args: argparse.Namespace) -> int:
+    """A-05 incremental research delta (PRD §3 A-05 / §10.2).
+
+    ``sync`` compares an authorized export with the latest snapshot by source id
+    and ``updated_at`` and appends a version only when something changed. History
+    is never overwritten and an approved DecisionRecord is never mutated.
+    """
+    action = str(getattr(args, "action", "") or "")
+    study_dir = Path(str(getattr(args, "study_dir", "") or "")).resolve()
+    try:
+        if action == "sync":
+            document = research_delta.sync(
+                study_dir, str(getattr(args, "file", "") or ""),
+                authorized_by=str(getattr(args, "authorized_by", "") or ""),
+                since=str(getattr(args, "since", "") or ""),
+                label=str(getattr(args, "label", "") or ""),
+                question=str(getattr(args, "question", "") or ""),
+            )
+        elif action == "show":
+            document = research_delta.show(
+                study_dir, version=str(getattr(args, "version", "") or ""))
+        elif action == "status":
+            document = research_delta.status(study_dir)
+        elif action == "approve":
+            document = research_delta.approve(
+                study_dir,
+                by=str(getattr(args, "by", "") or ""),
+                approval_ref=str(getattr(args, "approval_ref", "") or ""),
+                option=str(getattr(args, "option", "") or ""),
+                decision_id=str(getattr(args, "decision_id", "") or ""),
+            )
+        else:
+            raise research_delta.DeltaError(
+                f"unknown delta action {action!r}", "UNSUPPORTED_SCOPE")
+    except research_delta.DeltaError as exc:
+        print(json.dumps({
+            "status": "refused",
+            "reason_code": exc.reason_code,
+            "reason": str(exc),
+            "suggestion": exc.suggestion or None,
+            "next_required_action": exc.suggestion or None,
+        }, ensure_ascii=False, indent=2))
+        return 4 if exc.reason_code == "AUTH_REQUIRED" else 2
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(json.dumps({"status": "error", "reason": "%s: %s" % (type(exc).__name__, exc)},
+                         ensure_ascii=False, indent=2))
+        return 2
+    if str(getattr(args, "format", "") or "json") == "md":
+        print(document.get("markdown") or research_delta.render_markdown(document))
+    else:
+        print(json.dumps({key: value for key, value in document.items() if key != "markdown"},
+                         ensure_ascii=False, indent=2))
+    return 1 if document.get("stale") else 0
 
 
 def command_brief(args: argparse.Namespace) -> int:
@@ -5260,6 +5317,34 @@ def build_parser() -> argparse.ArgumentParser:
     decide_parser.add_argument("--since", default="", help="delta: baseline, e.g. latest-accepted")
     decide_parser.set_defaults(func=command_decide)
 
+    delta_parser = subparsers.add_parser(
+        "delta",
+        help="incremental research delta: append-only evidence snapshots, "
+             "added/changed/deleted sources, affected nodes, counter-evidence impact "
+             "and needs_re_review (never rewrites an approved decision)",
+    )
+    delta_parser.add_argument("action", choices=("sync", "show", "status", "approve"),
+                              help="sync = compare + append a version; show = one delta; "
+                                   "status = versions + freshness; approve = human "
+                                   "DecisionSnapshot")
+    delta_parser.add_argument("study_dir")
+    delta_parser.add_argument("--file", default="",
+                              help="sync: local authorized issue export (.jsonl/.json); no network")
+    delta_parser.add_argument("--authorized-by", default="",
+                              help="sync: named human confirming the export's access and data rights")
+    delta_parser.add_argument("--since", default="", help="sync: created_at lower bound (YYYY-MM-DD)")
+    delta_parser.add_argument("--label", default="", help="sync: keep only issues carrying this label")
+    delta_parser.add_argument("--question", default="", help="sync: the decision question")
+    delta_parser.add_argument("--version", default="", help="show: delta version (default latest)")
+    delta_parser.add_argument("--format", default="json", choices=("json", "md"),
+                              help="output format (default json)")
+    delta_parser.add_argument("--by", default="", help="approve: named human recorder")
+    delta_parser.add_argument("--approval-ref", default="",
+                              help="approve: sign-off reference (a declaration, not a proof)")
+    delta_parser.add_argument("--option", default="", help="approve: chosen option id, e.g. option-A")
+    delta_parser.add_argument("--decision-id", default="", help="approve: decision id (default DS-<nnn>)")
+    delta_parser.set_defaults(func=command_delta)
+
     brief_parser = subparsers.add_parser(
         "brief",
         help="decision brief: the nine-section PRD §2.3 projection of the canonical chain, "
@@ -5583,7 +5668,7 @@ CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "explore",
     "external-research", "do", "domains",
     "methods", "catalog", "platforms", "collect", "research", "loop", "analyze", "instruments", "import", "queue",
-    "codebook", "chain", "economics", "psm", "decision", "decide", "issues", "brief", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
+    "codebook", "chain", "economics", "psm", "decision", "decide", "issues", "brief", "delta", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }
 
