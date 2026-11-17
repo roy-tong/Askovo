@@ -38,6 +38,7 @@ import decide  # noqa: E402
 import decision_brief  # noqa: E402
 import research_delta  # noqa: E402
 import issue_structuring  # noqa: E402
+import capture_review  # noqa: E402
 import role_catalog  # noqa: E402
 
 research_loop.bind_cli(sys.modules[__name__])
@@ -3016,26 +3017,54 @@ def command_deliver(args: argparse.Namespace) -> int:
 
 
 def command_capture(args: argparse.Namespace) -> int:
-    # P0.4 unified governance: capture goes through the same design gate as
-    # collect; a second, laxer collection entrance is not allowed.
-    failure = _design_gate_failure(Path(args.study_dir).resolve())
-    if failure is not None:
-        print(json.dumps(failure, ensure_ascii=False, indent=2))
+    action = str(getattr(args, "capture_action", "") or "page")
+    if action == "page":
+        # P0.4 unified governance: capture goes through the same design gate as
+        # collect; a second, laxer collection entrance is not allowed.
+        failure = _design_gate_failure(Path(args.study_dir).resolve())
+        if failure is not None:
+            print(json.dumps(failure, ensure_ascii=False, indent=2))
+            return 1
+        cdp_base = (args.cdp_url or os.environ.get("MKT_CDP_URL")
+                    or "http://127.0.0.1:9222")
+        try:
+            result = sure_engine.capture_page(
+                Path(args.study_dir), args.url, cdp_base, bool(args.ack_terms),
+                ocr=bool(args.ocr), wait_seconds=float(args.wait))
+        except (OSError, ValueError, RuntimeError, ConnectionError) as exc:
+            result = {"status": "error", "reason": str(exc)[:500]}
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if result.get("status") == "captured":
+            return 0
+        if result.get("status") == "ocr_failed":
+            return 2
         return 1
-    cdp_base = (args.cdp_url or os.environ.get("MKT_CDP_URL")
-                or "http://127.0.0.1:9222")
+    # review actions: the only bridge from capture candidates into evidence
     try:
-        result = sure_engine.capture_page(
-            Path(args.study_dir), args.url, cdp_base, bool(args.ack_terms),
-            ocr=bool(args.ocr), wait_seconds=float(args.wait))
-    except (OSError, ValueError, RuntimeError, ConnectionError) as exc:
-        result = {"status": "error", "reason": str(exc)[:500]}
+        if action == "list":
+            result = capture_review.list_candidates(Path(args.study_dir))
+        elif action == "accept":
+            result = capture_review.accept(
+                Path(args.study_dir), args.capture, by=args.by,
+                evidence_level=args.evidence_level, corpus_role=args.corpus_role,
+                context_key=args.context_key, from_text=args.from_text)
+        elif action == "reject":
+            result = capture_review.reject(
+                Path(args.study_dir), args.capture, by=args.by, reason=args.reason)
+        else:
+            result = {"status": "error", "reason": f"unknown capture action {action!r}"}
+    except capture_review.CaptureReviewError as exc:
+        print(json.dumps({"status": "error", "reason": str(exc),
+                          "reason_code": exc.reason_code,
+                          "suggestion": exc.suggestion}, ensure_ascii=False, indent=2))
+        return 1
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(json.dumps({"status": "error",
+                          "reason": f"{type(exc).__name__}: {exc}"[:500]},
+                         ensure_ascii=False, indent=2))
+        return 1
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    if result.get("status") == "captured":
-        return 0
-    if result.get("status") == "ocr_failed":
-        return 2
-    return 1
+    return 0
 
 
 def command_collect(args: argparse.Namespace) -> int:
@@ -5284,13 +5313,36 @@ def build_parser() -> argparse.ArgumentParser:
     collect_parser.set_defaults(func=command_collect)
 
     capture_parser = subparsers.add_parser(
-        "capture", help="capture an authorized visible page via CDP (text + screenshot + optional OCR)")
-    capture_parser.add_argument("study_dir")
-    capture_parser.add_argument("--url", required=True, help="authorized visible page URL")
-    capture_parser.add_argument("--cdp-url", default="", help="Chrome DevTools endpoint (default http://127.0.0.1:9222)")
-    capture_parser.add_argument("--ack-terms", action="store_true", help="acknowledge platform terms and your authorization to view this page")
-    capture_parser.add_argument("--ocr", action="store_true", help="run local macOS Vision OCR on the screenshot")
-    capture_parser.add_argument("--wait", type=float, default=2.0, help="seconds to wait before capture")
+        "capture", help="capture an authorized visible page via CDP, then review the "
+                        "candidate: only `accept --by NAME` registers evidence")
+    capture_sub = capture_parser.add_subparsers(dest="capture_action", required=True)
+    capture_page_parser = capture_sub.add_parser(
+        "page", help="capture an authorized visible page (text + screenshot + optional OCR)")
+    capture_page_parser.add_argument("study_dir")
+    capture_page_parser.add_argument("--url", required=True, help="authorized visible page URL")
+    capture_page_parser.add_argument("--cdp-url", default="", help="Chrome DevTools endpoint (default http://127.0.0.1:9222)")
+    capture_page_parser.add_argument("--ack-terms", action="store_true", help="acknowledge platform terms and your authorization to view this page")
+    capture_page_parser.add_argument("--ocr", action="store_true", help="run local macOS Vision OCR on the screenshot")
+    capture_page_parser.add_argument("--wait", type=float, default=2.0, help="seconds to wait before capture")
+    capture_list_parser = capture_sub.add_parser("list", help="list capture candidates and their review status")
+    capture_list_parser.add_argument("study_dir")
+    capture_accept_parser = capture_sub.add_parser(
+        "accept", help="register one reviewed capture into the evidence store (named human required)")
+    capture_accept_parser.add_argument("study_dir")
+    capture_accept_parser.add_argument("--capture", required=True, help="capture id from `capture list`")
+    capture_accept_parser.add_argument("--by", default="", help="named human reviewer")
+    capture_accept_parser.add_argument("--evidence-level", default="E1",
+                                       help="E0/E1/E2 — a visible page cannot prove acceptance or payment")
+    capture_accept_parser.add_argument("--corpus-role", default="open_scene")
+    capture_accept_parser.add_argument("--context-key", default="")
+    capture_accept_parser.add_argument("--from", dest="from_text", default="page", choices=("page", "ocr"),
+                                       help="register the page text or the OCR text")
+    capture_reject_parser = capture_sub.add_parser(
+        "reject", help="mark a candidate rejected; the evidence store is never touched")
+    capture_reject_parser.add_argument("study_dir")
+    capture_reject_parser.add_argument("--capture", required=True)
+    capture_reject_parser.add_argument("--by", default="", help="named human reviewer")
+    capture_reject_parser.add_argument("--reason", default="", help="why this page is not evidence")
     capture_parser.set_defaults(func=command_capture)
 
     research_parser = subparsers.add_parser(
@@ -5509,6 +5561,10 @@ def build_parser() -> argparse.ArgumentParser:
     import_parser.add_argument("--evidence-form", default="self_report")
     import_parser.add_argument("--claim-type", default="need", choices=sure_engine.CLAIM_TYPES)
     import_parser.add_argument("--method-id", default="imported")
+    import_parser.add_argument("--evidence-level", default="E1",
+                               help="reviewed level for the imported material (capped by --evidence-form)")
+    import_parser.add_argument("--corpus-role", default="open_scene")
+    import_parser.add_argument("--context-key", default="")
     import_parser.set_defaults(func=sure_engine.cli_import)
 
     codebook_parser = subparsers.add_parser("codebook", help="scaffold a claim-type codebook")

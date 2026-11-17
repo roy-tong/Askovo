@@ -15,6 +15,24 @@ absent: labels fall back to the domain pack via `_study_labels`.
 `deliver --strict` returns 1 on `audit_failed` while still writing the draft,
 so automation can gate on it.
 
+### P1 golden chain, step 1: reviewed capture/paste registration into evidence
+
+`askovo capture` becomes `page|list|accept|reject`. Acceptance is the only
+bridge from a candidate into the canonical evidence store: a named human
+(`--by`, `AUTH_REQUIRED` otherwise) appends exactly one record to
+`02-data/evidence.jsonl` with full back-links (capture id, capture JSON,
+URL, screenshot/OCR hashes). A visible page can only support E0/E1/E2 —
+requesting E3+ is `POLICY_DENIED` because a page cannot prove acceptance or
+payment. Acceptance registers **no demand judgment and no chain node**
+(judgments stay human-authored), is idempotent, verifies the accepted join
+(A-07 lesson), and writes the capture document + review trail as one
+journalled `write_integrity` transaction; the `capture` source family is
+declared in the source plan idempotently. `askovo import` gains the same
+review semantics for pasted text: `--evidence-level` capped by evidence form
+(self-report/behavior log ≤ E2, transactions ≤ E5), `--corpus-role`,
+`--context-key`, idempotent source-family declaration, so the paste path no
+longer produces audit-failing `unclassified` records.
+
 ### P0.4 unified capture governance + CDP page capture (candidate only)
 
 `askovo capture` captures one user-authorized visible page through the local

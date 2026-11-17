@@ -34,7 +34,8 @@ askovo roles recommend "<goal>" --stage concept --task design  # task-sized team
 askovo roles scaffold <study> --task define    # only this task's roles, outputs and templates
 askovo platforms "<request>" --domain …        # where supporting data lives
 askovo collect <study> --platform …            # collect/import against a chain gap
-askovo capture <study> --url … --ack-terms --ocr  # visible-page candidate: text + screenshot + OCR
+askovo capture page <study> --url … --ack-terms --ocr  # visible-page candidate (collect-grade gates)
+askovo capture accept <study> --capture ID --by NAME  # reviewed candidate -> evidence (E0-E2 cap)
 askovo analyze <study> --question …            # normalize/describe
 askovo deliver <study> --kind plan            # Business Plan (conclusions + data basis + user voices)
 askovo deliver <study> --kind analysis        # corpus analysis (funnel, sources, coverage, counter-evidence)

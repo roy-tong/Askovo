@@ -99,8 +99,8 @@ class CaptureTests(unittest.TestCase):
             document["decision"]["question"] = ""  # break the design contract
             (study / "study.json").write_text(
                 json.dumps(document, ensure_ascii=False), encoding="utf-8")
-            completed = run_cli("capture", str(study), "--url", "https://example.com/page",
-                                "--ack-terms")
+            completed = run_cli("capture", "page", str(study), "--url",
+                                "https://example.com/page", "--ack-terms")
             self.assertEqual(1, completed.returncode, completed.stdout + completed.stderr)
             payload = json.loads(completed.stdout)
             self.assertEqual("design_gate_failed", payload["status"])

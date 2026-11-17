@@ -2057,16 +2057,16 @@ def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str])
     record_id = str(raw.get("record_id") or raw.get("id") or f"{defaults['source_family']}-{index:04d}")
     record = {
         "record_id": record_id,
-        "context_key": str(raw.get("context_key") or ""),
+        "context_key": str(raw.get("context_key") or defaults.get("context_key") or ""),
         "user_role": str(raw.get("user_role") or raw.get("角色") or "unknown"),
         "scene_trigger": str(raw.get("scene_trigger") or raw.get("scene") or "unknown"),
         "task_outcome": str(raw.get("task_outcome") or raw.get("task") or "unknown"),
         "current_substitute": str(raw.get("current_substitute") or "unknown"),
         "friction_cost": str(raw.get("friction_cost") or raw.get("friction") or "unknown"),
         "consequence": str(raw.get("consequence") or "unknown"),
-        "evidence_level": str(raw.get("evidence_level") or "unclassified"),
+        "evidence_level": str(raw.get("evidence_level") or defaults.get("evidence_level") or "unclassified"),
         "evidence_basis": str(raw.get("evidence_basis") or "imported; grade before use"),
-        "corpus_role": str(raw.get("corpus_role") or "open_scene"),
+        "corpus_role": str(raw.get("corpus_role") or defaults.get("corpus_role") or "open_scene"),
         "source_family": str(raw.get("source_family") or defaults["source_family"]),
         "source_ref": str(raw.get("source_ref") or defaults["source_ref"]),
         "normalized_text_hash": str(raw.get("normalized_text_hash") or ""),
@@ -2085,6 +2085,62 @@ def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str])
     return record
 
 
+class ImportReviewError(ValueError):
+    """An import review rule was violated; carries a C-01 reason code."""
+
+    def __init__(self, message: str, reason_code: str = "INPUT_REQUIRED",
+                 suggestion: str = "") -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+        self.suggestion = suggestion
+
+
+# What an imported file can honestly support, by evidence form. A pasted
+# self-report states a need (E1) and can document current practice (E2); it
+# can never prove acceptance (E3) or payment (E4+/E5). Transaction exports
+# are system records and may carry commercial levels.
+IMPORT_LEVEL_ORDER = {"E0": 0, "E1": 1, "E2": 2, "E3": 3, "E4-": 4, "E4+": 4, "E5": 5}
+IMPORT_LEVEL_CAPS = {
+    "self_report": "E2",
+    "behavior_log": "E2",
+    "transaction": "E5",
+    "purchase": "E5",
+}
+
+
+def _ensure_imported_source_plan(study_dir: Path, family: str, record_count: int) -> None:
+    """Declare an imported source family before its records become evidence.
+
+    The audit refuses evidence from a source family the plan never named; the
+    import command is the human act that declares it (idempotent).
+    """
+    path = study_dir / "01-sources" / "source-plan.csv"
+    rows: list[dict[str, str]] = []
+    if path.is_file():
+        with path.open(encoding="utf-8-sig", newline="") as handle:
+            rows = [dict(row) for row in csv.DictReader(handle)
+                    if str(row.get("source_family") or "").strip()]
+    if any(str(row.get("source_family")) == family for row in rows):
+        return
+    fields = ("corpus_role", "source_family", "route_or_query", "target_records",
+              "cap_share", "access_status", "known_bias")
+    rows.append({
+        "corpus_role": "open_scene",
+        "source_family": family,
+        "route_or_query": "local import reviewed by the operator",
+        "target_records": str(record_count),
+        "cap_share": "0.50",
+        "access_status": "operator-provided local file",
+        "known_bias": "operator-selected material; selection bias is explicit, not corrected",
+    })
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(fields), extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({key: row.get(key, "") for key in fields})
+
+
 def import_material(
     study_dir: Path,
     file_path: Path,
@@ -2092,9 +2148,24 @@ def import_material(
     evidence_form: str = "self_report",
     claim_type: str = "need",
     method_id: str = "imported",
+    evidence_level: str = "E1",
+    corpus_role: str = "open_scene",
+    context_key: str = "",
 ) -> dict[str, Any]:
     study_dir = study_dir.resolve()
     study = load_json(study_dir / "study.json")
+    level = str(evidence_level or "E1").strip().upper()
+    if level not in IMPORT_LEVEL_ORDER:
+        raise ImportReviewError(
+            f"unknown evidence_level {level!r}", "INPUT_REQUIRED",
+            "E0, E1, E2, E3, E4-, E4+, E5")
+    cap = IMPORT_LEVEL_CAPS.get(str(evidence_form or "self_report"), "E2")
+    if IMPORT_LEVEL_ORDER[level] > IMPORT_LEVEL_ORDER[cap]:
+        raise ImportReviewError(
+            f"an imported {evidence_form} cannot support evidence_level {level} "
+            f"(cap {cap})", "POLICY_DENIED",
+            "acceptance (E3) needs concept tests; payment (E4+/E5) needs transaction "
+            "records, not a pasted self-report")
     raw_dir = study_dir / "02-data" / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -2107,6 +2178,9 @@ def import_material(
         "evidence_form": evidence_form,
         "method_id": method_id,
         "product_domain": str(study.get("product_domain") or "unknown"),
+        "evidence_level": level,
+        "corpus_role": corpus_role,
+        "context_key": context_key,
     }
     records: list[dict[str, Any]] = []
     suffix = file_path.suffix.lower()
@@ -2143,6 +2217,7 @@ def import_material(
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
             existing_ids.add(record["record_id"])
             added += 1
+    _ensure_imported_source_plan(study_dir, source_family, added or len(records))
     return {
         "status": "imported",
         "file": str(file_path),
@@ -2151,6 +2226,14 @@ def import_material(
         "added": added,
         "skipped_duplicates": len(records) - added,
         "evidence_file": str(evidence_path),
+        "review": {
+            "evidence_level": level,
+            "evidence_form": evidence_form,
+            "corpus_role": corpus_role,
+            "level_cap": cap,
+            "note": "operator-reviewed import; the level is capped by the evidence form",
+        },
+        "source_plan": str(study_dir / "01-sources" / "source-plan.csv"),
     }
 
 
@@ -7024,7 +7107,15 @@ def cli_import(args: Any) -> int:
             evidence_form=args.evidence_form,
             claim_type=args.claim_type,
             method_id=args.method_id,
+            evidence_level=getattr(args, "evidence_level", "E1"),
+            corpus_role=getattr(args, "corpus_role", "open_scene"),
+            context_key=getattr(args, "context_key", ""),
         )
+    except ImportReviewError as exc:
+        print(json.dumps({"status": "error", "reason": str(exc),
+                          "reason_code": exc.reason_code,
+                          "suggestion": exc.suggestion}, ensure_ascii=False, indent=2))
+        return 1
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
