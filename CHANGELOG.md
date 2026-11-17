@@ -15,6 +15,25 @@ absent: labels fall back to the domain pack via `_study_labels`.
 `deliver --strict` returns 1 on `audit_failed` while still writing the draft,
 so automation can gate on it.
 
+### P1 golden chain, step 2: `askovo answer` — evidence-following research answer
+
+The golden chain's terminal projection (`04-findings/research-answer.json` +
+`.md`). It reads `study.decision.question/options` and the reviewed evidence
+store, tallies support per option using distinctive CJK-bigram/latin match
+keys (bigrams shared by two options cannot distinguish anything and are
+dropped), and emits `answer_status` (supported / supported_low_n / contested
+/ inconclusive / unanswerable) plus a decision (`go` / `no_go` — the
+status-quo option winning — / `continue_research` / `unanswerable`). Counter
+records (claim_type=counter, control/substitute_rejector roles, E4-) are
+tallied separately and are never outvoted by support count; `go` needs at
+least three supporting records and zero counters. Every cited record keeps
+its collection back-link (record id, source family, source_ref, capture id
+and URL for captures). With no evidence — or evidence silent on every
+option — the answer is `unanswerable` with a gap list (empty-store next
+actions, unmet `decision.minimum_evidence`, missing required corpus roles),
+never an invented conclusion. The command is a read-only projection: the
+evidence store and `product-reasoning.json` stay the only truth.
+
 ### P1 golden chain, step 1: reviewed capture/paste registration into evidence
 
 `askovo capture` becomes `page|list|accept|reject`. Acceptance is the only

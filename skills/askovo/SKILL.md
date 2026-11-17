@@ -37,6 +37,7 @@ askovo collect <study> --platform …            # collect/import against a chai
 askovo capture page <study> --url … --ack-terms --ocr  # visible-page candidate (collect-grade gates)
 askovo capture accept <study> --capture ID --by NAME  # reviewed candidate -> evidence (E0-E2 cap)
 askovo analyze <study> --question …            # normalize/describe
+askovo answer <study>                          # conclusion + decision from reviewed evidence, or unanswerable + gaps
 askovo deliver <study> --kind plan            # Business Plan (conclusions + data basis + user voices)
 askovo deliver <study> --kind analysis        # corpus analysis (funnel, sources, coverage, counter-evidence)
 askovo deliver <study> --kind decision         # Decision Package (chain-led, five decision views)

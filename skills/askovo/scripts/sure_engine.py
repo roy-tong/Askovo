@@ -6428,6 +6428,305 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
     return {"status": "analyzed", "analysis": str(out_dir / "analysis.json"), "markdown": str(out_dir / "analysis.md"), "records": len(unique)}
 
 
+# --------------------------------------------------------------------------- #
+# Research answer: the terminal projection of the golden chain
+# (capture/paste -> human review -> evidence -> analyze -> answer).
+# It is a deterministic read over evidence.jsonl + study.decision: the
+# conclusion changes when the evidence changes, every cited record keeps its
+# collection back-link, and no evidence means unanswerable + gap list —
+# never an invented conclusion. It writes no canonical truth.
+# --------------------------------------------------------------------------- #
+
+ANSWER_SCHEMA = "askovo.research-answer/1"
+ANSWER_MIN_SUPPORT = 3  # n<3 is low_n everywhere else in the engine; go needs it met
+ANSWER_STOPWORDS = set(
+    "the and for with that this from are was were you your our not but have has had will "
+    "can could should about into over under more most some such than then them they their "
+    "there here what when where which who whom why how all any both each few other own same "
+    "so too very just also a an of to in on at or be is it as by we do does did".split())
+_STATUS_QUO_MARKERS = ("不做", "维持现状", "保持现状", "停止", "放弃", "暂缓",
+                       "do nothing", "status quo", "stop the", "cancel the", "postpone")
+
+
+def _answer_terms(text: str) -> list[str]:
+    return [token for token in
+            re.findall(r"[A-Za-z]{3,}|[\u4e00-\u9fff]{2,4}", str(text or "").lower())
+            if token not in ANSWER_STOPWORDS]
+
+
+def _cjk_bigrams(text: str) -> set[str]:
+    chars = re.findall(r"[\u4e00-\u9fff]", str(text or ""))
+    return {chars[i] + chars[i + 1] for i in range(len(chars) - 1)}
+
+
+def _option_match_keys(options: list[str]) -> list[set[str]]:
+    """Distinctive match keys per option: CJK bigrams + latin tokens.
+
+    Bigrams shared by two options (e.g. 「摄像头」in every alternative) cannot
+    distinguish anything, so they are dropped; an option whose keys are all
+    shared falls back to its full key set instead of matching nothing.
+    """
+    raw = []
+    for option in options:
+        keys = set(_answer_terms(option))
+        keys |= {bigram.lower() for bigram in _cjk_bigrams(option)}
+        raw.append(keys)
+    distinctive = []
+    for index, keys in enumerate(raw):
+        shared = set().union(*(raw[other] for other in range(len(raw)) if other != index)) \
+            if len(raw) > 1 else set()
+        distinctive.append(keys - shared or keys)
+    return distinctive
+
+
+def _is_counter_record(record: dict[str, Any]) -> bool:
+    return (str(record.get("claim_type")) == "counter"
+            or str(record.get("corpus_role")) in ("control", "substitute_rejector")
+            or str(record.get("evidence_level")) == "E4-")
+
+
+def _answer_ref(record: dict[str, Any]) -> dict[str, Any]:
+    ref = {
+        "record_id": str(record.get("record_id") or ""),
+        "source_family": str(record.get("source_family") or ""),
+        "source_ref": str(record.get("source_ref") or ""),
+        "evidence_level": str(record.get("evidence_level") or ""),
+        "excerpt": _evidence_text(record)[:120],
+    }
+    if record.get("capture_id"):
+        ref["capture_id"] = str(record.get("capture_id"))
+    if record.get("capture_url"):
+        ref["url"] = str(record.get("capture_url"))
+    return ref
+
+
+def _chain_node_states(study_dir: Path) -> dict[str, Any]:
+    path = study_dir / "04-findings" / "product-reasoning.json"
+    try:
+        reasoning = load_json(path)
+    except (OSError, json.JSONDecodeError):
+        return {"available": False, "note": "no readable product-reasoning.json"}
+    chains = reasoning.get("chains") if isinstance(reasoning, dict) else None
+    if not isinstance(chains, list) or not chains:
+        return {"available": False, "note": "no chains written yet; nodes stay hypotheses"}
+    states: dict[str, Any] = {}
+    for chain in chains:
+        if not isinstance(chain, dict):
+            continue
+        chain_id = str(chain.get("id") or "")
+        nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
+        states[chain_id] = {
+            str(node): str((node_data or {}).get("status") or "hypothesis")
+            for node, node_data in nodes.items()
+        }
+    return {"available": True, "chains": states}
+
+
+def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]:
+    """Answer the study's decision question from the evidence store, or refuse.
+
+    Deterministic tally: each option's supporting records are the reviewed
+    evidence records whose text mentions the option's terms; counter records
+    (claim_type=counter / control / substitute_rejector / E4-) are tallied
+    separately and are never outvoted by support count. ``go`` additionally
+    needs ANSWER_MIN_SUPPORT supporting records and zero counters for the
+    leading option; the status-quo option winning maps to ``no_go``.
+    """
+    study_dir = Path(study_dir).resolve()
+    study = load_json(study_dir / "study.json")
+    if not isinstance(study, dict):
+        study = {}
+    decision = study.get("decision") if isinstance(study.get("decision"), dict) else {}
+    question = str(question or decision.get("question") or "").strip()
+    options = [str(item).strip() for item in (decision.get("options") or [])
+               if str(item).strip()]
+    records: list[dict[str, Any]] = []
+    for name in ("02-data/evidence.jsonl", "02-data/normalized.jsonl"):
+        path = study_dir / name
+        if not path.is_file():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict):
+                records.append(item)
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for record in records:
+        key = str(record.get("record_id") or "")
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        unique.append(record)
+
+    match_keys = _option_match_keys(options)
+    support = [{
+        "option": option,
+        "match_keys": sorted(keys)[:12],
+        "supporting_refs": [],
+        "counter_refs": [],
+    } for option, keys in zip(options, match_keys)]
+    for record in unique:
+        text = _evidence_text(record).lower()
+        counter = _is_counter_record(record)
+        for entry in support:
+            if any(key in text for key in entry["match_keys"]):
+                (entry["counter_refs"] if counter else entry["supporting_refs"]).append(
+                    _answer_ref(record))
+
+    level_counts: dict[str, int] = {}
+    family_counts: dict[str, int] = {}
+    for record in unique:
+        level = str(record.get("evidence_level") or "unregistered")
+        level_counts[level] = level_counts.get(level, 0) + 1
+        family = str(record.get("source_family") or "unknown")
+        family_counts[family] = family_counts.get(family, 0) + 1
+
+    minimum_evidence = [str(item) for item in (decision.get("minimum_evidence") or [])]
+    answer_status = "unanswerable"
+    decision_value = "unanswerable"
+    leading_option: str | None = None
+    gaps: list[dict[str, Any]] = []
+
+    if not unique:
+        gaps.append({"gap": "证据库为空：还没有任何经审核登记的证据",
+                     "next_actions": [
+                         "粘贴文本：askovo import <study> <file> --source-family paste --evidence-level E1",
+                         "可见页面：askovo capture page <study> --url … --ack-terms，再 capture accept --by NAME",
+                         "截图 OCR：capture page --ocr 后用 capture accept --from ocr"]})
+        for item in minimum_evidence:
+            gaps.append({"gap": f"决策最低证据要求未满足：{item}", "next_actions": []})
+        gates = study.get("quality_gates") if isinstance(study.get("quality_gates"), dict) else {}
+        if gates.get("required_corpus_roles"):
+            gaps.append({"gap": "必需语料角色尚无记录："
+                         + ", ".join(map(str, gates["required_corpus_roles"])),
+                         "next_actions": []})
+    elif not options:
+        gaps.append({"gap": "study.decision.options 为空：没有可比较的选项",
+                     "next_actions": ["在 study.json 的 decision.options 里写出至少两个选项"]})
+    elif not any(entry["supporting_refs"] or entry["counter_refs"] for entry in support):
+        answer_status = "unanswerable"
+        gaps.append({"gap": f"证据库有 {len(unique)} 条记录，但没有一条提到任何选项的内容",
+                     "next_actions": ["检查选项措辞是否与语料同词，或补充针对性语料"]})
+        for item in minimum_evidence:
+            gaps.append({"gap": f"决策最低证据要求未满足：{item}", "next_actions": []})
+    else:
+        ranked = sorted(support, key=lambda entry: (-len(entry["supporting_refs"]),
+                                                    entry["option"]))
+        top = ranked[0]
+        tied = [entry["option"] for entry in ranked
+                if len(entry["supporting_refs"]) == len(top["supporting_refs"])]
+        leading_option = top["option"]
+        if len(tied) > 1:
+            answer_status = "inconclusive"
+            decision_value = "continue_research"
+            gaps.append({"gap": f"选项并列领先（各 {len(top['supporting_refs'])} 条支持）："
+                         + "、".join(tied),
+                         "next_actions": ["补充能区分并列选项的证据"]})
+        elif top["counter_refs"]:
+            answer_status = "contested"
+            decision_value = "continue_research"
+            gaps.append({
+                "gap": f"领先选项「{leading_option}」存在 {len(top['counter_refs'])} 条反证；"
+                       "支持数不能淹没反证，需人工裁决",
+                "next_actions": ["人工审核反证记录，或收集能回应反证的新证据"]})
+        elif len(top["supporting_refs"]) < ANSWER_MIN_SUPPORT:
+            answer_status = "supported_low_n"
+            decision_value = "continue_research"
+            gaps.append({
+                "gap": f"领先选项「{leading_option}」仅 {len(top['supporting_refs'])} 条支持"
+                       f"（低于 {ANSWER_MIN_SUPPORT}）",
+                "next_actions": ["继续采集，或接受低样本并人工签注"]})
+        else:
+            answer_status = "supported"
+            lowered = leading_option.lower()
+            status_quo = any(marker in lowered or marker in leading_option
+                             for marker in _STATUS_QUO_MARKERS)
+            decision_value = "no_go" if status_quo else "go"
+
+    supporting_levels = sorted({
+        ref["evidence_level"]
+        for entry in support for ref in entry["supporting_refs"]})
+    result = {
+        "schema": ANSWER_SCHEMA,
+        "generated_at": now(),
+        "question": question,
+        "options": options,
+        "answer_status": answer_status,
+        "decision": decision_value,
+        "leading_option": leading_option,
+        "support": support,
+        "evidence_summary": {
+            "records": len(unique),
+            "by_evidence_level": dict(sorted(level_counts.items())),
+            "by_source_family": dict(sorted(family_counts.items())),
+            "min_support_for_go": ANSWER_MIN_SUPPORT,
+        },
+        "supporting_evidence_levels": supporting_levels,
+        "gaps": gaps,
+        "chain_context": _chain_node_states(study_dir),
+        "boundary": (
+            "确定性计数投影：支持/反证按选项词命中计数，不证明总体比例、因果或付费意愿；"
+            "反证不被支持数淹没；所有引用可回链 02-data/evidence.jsonl 的采集来源。"
+            if unique else
+            "无证据时本答案只声明不可回答与缺口，不产生任何结论。"),
+        "evidence_file": str(study_dir / "02-data/evidence.jsonl"),
+    }
+    out_dir = study_dir / "04-findings"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "research-answer.json").write_text(
+        json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    lines = [f"# 研究答案：{question or '（未设置决策问题）'}", ""]
+    if answer_status == "unanswerable":
+        lines.append("> 结论：**不可回答**——证据不足以支持任何选项，缺口如下（不是编造的结论）。")
+    else:
+        label = {"supported": "证据支持", "supported_low_n": "低样本支持",
+                 "contested": "存在反证", "inconclusive": "并列未决"}[answer_status]
+        lines.append(f"> 结论状态：**{label}**；决策建议：`{decision_value}`；"
+                     f"领先选项：{leading_option or '—'}。")
+    lines += ["", "## 各选项证据（回链采集来源）", ""]
+    for entry in support:
+        lines.append(f"### {entry['option']}")
+        lines.append(f"- 支持 {len(entry['supporting_refs'])} 条 / 反证 {len(entry['counter_refs'])} 条")
+        for ref in entry["supporting_refs"]:
+            back = f"（回链 {ref['record_id']} · {ref['source_family']}"
+            back += f" · {ref.get('capture_id')})" if ref.get("capture_id") else "）"
+            lines.append(f"- 支持{back}：{ref['excerpt']}")
+        for ref in entry["counter_refs"]:
+            lines.append(f"- 反证（回链 {ref['record_id']}）：{ref['excerpt']}")
+        lines.append("")
+    if gaps:
+        lines += ["## 缺口与下一步", ""]
+        for item in gaps:
+            lines.append(f"- {item['gap']}")
+            for action in item.get("next_actions") or []:
+                lines.append(f"  - {action}")
+        lines.append("")
+    lines += ["## 边界", "", result["boundary"], "",
+              f"- 证据等级分布：{json.dumps(result['evidence_summary']['by_evidence_level'], ensure_ascii=False)}",
+              f"- 机器真值：`02-data/evidence.jsonl` 与 `04-findings/product-reasoning.json`；本文件是投影。"]
+    (out_dir / "research-answer.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return result
+
+
+def cli_answer(args: Any) -> int:
+    try:
+        result = answer_study(Path(args.study_dir),
+                              question=str(getattr(args, "question", "") or "").strip() or None)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(json.dumps({"status": "error", "reason": f"{type(exc).__name__}: {exc}"},
+                         ensure_ascii=False, indent=2))
+        return 1
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def cli_platforms(args: Any) -> int:
     domain = args.domain
     inferred = None

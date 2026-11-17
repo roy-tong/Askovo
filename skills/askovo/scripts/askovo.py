@@ -5546,6 +5546,16 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_parser.add_argument("--question", help="optional question to match quotes against")
     analyze_parser.set_defaults(func=sure_engine.cli_analyze)
 
+    answer_parser = subparsers.add_parser(
+        "answer",
+        help="answer the decision question from reviewed evidence: conclusion + "
+             "decision + back-links, or unanswerable + gap list (never invented)",
+    )
+    answer_parser.add_argument("study_dir")
+    answer_parser.add_argument("--question", default="",
+                               help="override the decision question (default: study.decision.question)")
+    answer_parser.set_defaults(func=sure_engine.cli_answer)
+
     instruments_parser = subparsers.add_parser(
         "instruments", help="generate interview/observation/test instruments for a study"
     )
@@ -5809,7 +5819,7 @@ DECIDE_ACTIONS = ("start", "status", "result", "brief", "review", "delta", "canc
 CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "explore",
     "external-research", "do", "domains",
-    "methods", "catalog", "platforms", "capture", "collect", "research", "loop", "analyze", "instruments", "import", "queue",
+    "methods", "catalog", "platforms", "capture", "collect", "research", "loop", "analyze", "answer", "instruments", "import", "queue",
     "codebook", "chain", "economics", "psm", "decision", "decide", "issues", "brief", "delta", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }
