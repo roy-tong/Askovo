@@ -2154,6 +2154,28 @@ def import_material(
 ) -> dict[str, Any]:
     study_dir = study_dir.resolve()
     study = load_json(study_dir / "study.json")
+    # A page-capture/OCR candidate has exactly one admission route. Generic
+    # import must not relabel it as paste or bypass the named-review join.
+    candidate_path = file_path.resolve()
+    capture_root = (study_dir / "01-sources" / "captures").resolve()
+    is_capture_file = False
+    try:
+        candidate_path.relative_to(capture_root)
+        is_capture_file = True
+    except ValueError:
+        pass
+    if not is_capture_file and file_path.suffix.lower() == ".json":
+        try:
+            candidate_document = json.loads(file_path.read_text(encoding="utf-8"))
+            is_capture_file = isinstance(candidate_document, dict) and (
+                candidate_document.get("schema") == "askovo.page-capture/1")
+        except (OSError, json.JSONDecodeError):
+            is_capture_file = False
+    if str(source_family).strip() == "capture" or is_capture_file:
+        raise ImportReviewError(
+            "page-capture/OCR candidates require `askovo capture accept --by NAME "
+            "--evidence-level ...`; generic import cannot admit them",
+            "POLICY_DENIED")
     level = str(evidence_level or "E1").strip().upper()
     if level not in IMPORT_LEVEL_ORDER:
         raise ImportReviewError(
@@ -3926,6 +3948,43 @@ PLAN_ROLE_LABELS = {
 }
 
 
+def _capture_provenance_lines(records: list[dict[str, Any]], heading: str = "###") -> list[str]:
+    """Project reviewed capture back-links without rendering OCR as a conclusion."""
+    captures = [record for record in records
+                if str(record.get("source_family") or "") == "capture"]
+    if not captures:
+        return []
+
+    def cell(value: Any) -> str:
+        return str(value or "").replace("|", "\\|").replace("\n", " ").strip()
+
+    lines = [
+        f"{heading} 审核导入材料：来源回链", "",
+        "| 证据 | 人工审核 | 来源 URL | Capture / 截图 | 来源哈希 |",
+        "|---|---|---|---|---|",
+    ]
+    for record in captures:
+        capture_ref = str(record.get("source_ref") or "")
+        screenshot_ref = str(record.get("capture_screenshot_ref") or "")
+        hashes = (
+            f"page={record.get('capture_text_sha256') or '未记录'}; "
+            f"OCR={record.get('capture_ocr_text_sha256') or '未记录'}; "
+            f"screenshot={record.get('capture_screenshot_sha256') or '未记录'}"
+        )
+        review = f"{record.get('reviewed_by') or '未记录'} / {record.get('reviewed_at') or '未记录'}"
+        source_links = f"capture: `{capture_ref}`; screenshot: `{screenshot_ref}`"
+        lines.append(
+            f"| `{cell(record.get('record_id'))}` | {cell(review)} | {cell(record.get('source_url'))} "
+            f"| {cell(source_links)} | {cell(hashes)} |"
+        )
+    lines.extend([
+        "",
+        "这些回链只证明哪份候选经谁审核进入证据；OCR 文本不自动成为需求、七节点或做/缓做/不做结论。",
+        "",
+    ])
+    return lines
+
+
 def _plan_corpus_profile(records: list[dict[str, Any]]) -> list[str]:
     """语料画像：来源、年份、用途三类分布，只描述“看了多少”，不推人群比例。"""
     if not records:
@@ -4241,6 +4300,7 @@ def _plan_lines(
         for item in prohibited:
             lines.append(f"  - {item}")
     lines.append("")
+    lines.extend(_capture_provenance_lines(records))
 
     lines.extend([
         "## 边界",
@@ -4476,6 +4536,9 @@ def _analysis_lines(study: dict[str, Any], reasoning: dict[str, Any] | None, evi
         "- 能回答：谁在什么场景遇到什么问题、他们现在怎么做、哪些做法被反复判无效、这些说法出现在哪个平台。",
         "- 不能回答：这类人占多大比例、市场规模多大、他们愿意为本品付多少钱；最后一条只能靠真实报价与成交来验。",
         "",
+    ])
+    lines.extend(_capture_provenance_lines(records, heading="## 8."))
+    lines.extend([
         "## 边界",
         "",
         "本报告是语料的描述性统计，不证明总体比例、市场规模或因果；样本来自公开社区，说话的人不等于目标人群，条数不等于需求强度。",
@@ -5780,20 +5843,19 @@ CDP_PAGE_EXTRACTOR = r"""
 
 def _validate_capture_url(url: str) -> str:
     parsed = urllib.parse.urlparse(str(url or "").strip())
+    default_port = 443 if parsed.scheme == "https" else 80
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise ValueError("capture --url must be an http(s) URL")
     if parsed.username or parsed.password:
         raise ValueError("capture --url must not contain credentials")
+    if parsed.port not in (None, default_port):
+        raise ValueError("capture --url must use the default HTTP(S) port")
     return parsed.geturl()
 
 
-# P0.4 unified governance: `capture` shares the collection scope semantics.
-# A page whose host maps to a known platform may only be captured when that
-# platform is in study.scope.allowed_sources; the reserved generic markers
-# ("web"/"visible_web"/"capture") declare that any authorized visible page is
-# in scope. An empty allowed_sources list imposes no platform restriction (the
-# design gate still requires the field to exist).
-CAPTURE_GENERIC_WEB_SOURCES = {"web", "visible_web", "capture"}
+# Capture is a narrow CDP exception, not a generic browser-scraping route.
+# Only the four approved platforms may use it, and each page follows the same
+# explicit scope + enabled-adapter + registry-review checks as collect --cdp.
 CAPTURE_HOST_PLATFORMS: dict[str, tuple[str, ...]] = {
     platform: hosts for platform, hosts in CDP_TARGET_HOSTS.items()
 }
@@ -5826,28 +5888,58 @@ def _platform_for_capture_host(hostname: str) -> str | None:
 
 
 def _capture_scope_failure(study: dict[str, Any], url: str) -> dict[str, Any] | None:
-    """Apply the same allowed_sources rule as `collect` to a capture URL."""
+    """Apply collect's explicit allowed_sources rule to a capture URL."""
     scope = study.get("scope") if isinstance(study.get("scope"), dict) else {}
     allowed = scope.get("allowed_sources") if isinstance(scope.get("allowed_sources"), list) else []
     allowed_ids = {str(item).strip() for item in allowed if str(item).strip()}
-    if not allowed_ids or allowed_ids & CAPTURE_GENERIC_WEB_SOURCES:
-        return None
     parsed = urllib.parse.urlparse(str(url))
     platform = _platform_for_capture_host(parsed.hostname or "")
-    if platform is not None and platform in allowed_ids:
-        return None
     host = str(parsed.hostname or "")
-    reason = (
-        f"page host {host} maps to platform {platform!r}, which is not listed in "
-        "study.scope.allowed_sources" if platform is not None else
-        f"page host {host} is not a declared source; add the platform id or a generic "
-        "'web' marker to study.scope.allowed_sources")
+    if platform in CDP_TARGET_HOSTS and platform in allowed_ids:
+        return None
+    if platform not in CDP_TARGET_HOSTS:
+        return {
+            "status": "cdp_not_allowed",
+            "platform": platform,
+            "reason": (
+                f"page host {host} is outside amazon/instagram/bilibili/weibo; "
+                "capture is not a generic browser route and X/YouTube/blocked platforms "
+                "never use CDP"),
+            "allowed_sources": sorted(allowed_ids),
+        }
     return {
         "status": "scope_blocked",
-        "reason": reason,
+        "platform": platform,
+        "reason": (
+            f"page host {host} maps to {platform!r}, which is not listed in "
+            "study.scope.allowed_sources"),
         "allowed_sources": sorted(allowed_ids),
         "note": "capture reuses the collect scope rule: one entrance, one rule set",
     }
+
+
+def _capture_adapter_failure(study: dict[str, Any], platform: str) -> dict[str, Any] | None:
+    """Match collect's registry, review and enabled-adapter checks before CDP I/O."""
+    entry = platform_index().get(platform)
+    if not entry or not entry.get("cdp") or entry.get("decision") == "blocked":
+        return {
+            "status": "cdp_not_allowed", "platform": platform,
+            "reason": "CDP is only enabled for authorized visible pages on "
+                      "amazon/instagram/bilibili/weibo",
+        }
+    if platform_review_expired(platform):
+        return {
+            "status": "review_expired", "platform": platform,
+            "reason": "connector policy review is expired; re-review the registry before capture",
+        }
+    adapters = study.get("source_adapters") if isinstance(study.get("source_adapters"), dict) else {}
+    adapter = adapters.get(platform) if isinstance(adapters, dict) else None
+    if not isinstance(adapter, dict) or not adapter.get("enabled", False):
+        return {
+            "status": "adapter_disabled", "platform": platform,
+            "reason": "capture requires an enabled platform adapter in study.json, same as collect",
+        }
+    return None
 
 
 def _ocr_with_vision(image_path: Path) -> dict[str, Any]:
@@ -5905,6 +5997,16 @@ def capture_page(
     scope_failure = _capture_scope_failure(study, url)
     if scope_failure is not None:
         return scope_failure
+    platform = _platform_for_capture_host(urllib.parse.urlparse(url).hostname or "")
+    if platform is None:  # defensive: scope validation normally returns first
+        return {"status": "cdp_not_allowed", "reason": "capture host is not approved"}
+    try:
+        _validate_cdp_target(platform, url)
+    except ValueError as exc:
+        return {"status": "error", "platform": platform, "reason": str(exc)}
+    adapter_failure = _capture_adapter_failure(study, platform)
+    if adapter_failure is not None:
+        return adapter_failure
     capture_id = (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
                   + "-" + hashlib.sha256(url.encode()).hexdigest()[:8])
     out_dir = study_dir / "01-sources" / "captures"
@@ -5917,6 +6019,19 @@ def capture_page(
         value = client.evaluate(CDP_PAGE_EXTRACTOR)
         if not isinstance(value, dict):
             return {"status": "error", "reason": "CDP did not return page content"}
+        final_url = str(value.get("url") or url)
+        final_platform = _platform_for_capture_host(
+            urllib.parse.urlparse(final_url).hostname or "")
+        if final_platform != platform:
+            return {
+                "status": "scope_blocked", "platform": platform,
+                "reason": "final page URL left the approved platform; capture stopped",
+                "final_url": final_url,
+            }
+        try:
+            _validate_cdp_target(platform, final_url)
+        except ValueError as exc:
+            return {"status": "error", "platform": platform, "reason": str(exc)}
         text = str(value.get("text") or "")
         if re.search(r"Robot Check|Enter the characters|验证码|异常流量|not a robot", text, re.I):
             return {"status": "challenge", "reason": "page shows a challenge; capture stopped"}
@@ -5933,8 +6048,11 @@ def capture_page(
             "schema": "askovo.page-capture/1",
             "capture_id": capture_id,
             "captured_at": now(),
+            "collected_at": now(),
             "url": url,
-            "final_url": str(value.get("url") or url),
+            "final_url": final_url,
+            "source_url": final_url,
+            "capture_platform": platform,
             "title": str(value.get("title") or ""),
             "text": text,
             "text_length": len(text),
@@ -5951,8 +6069,16 @@ def capture_page(
             },
             "cdp_endpoint": cdp_base,
             "ack_terms": True,
+            "governance": {
+                "transport": "cdp",
+                "scope": "allowed_sources_matched",
+                "adapter": "enabled",
+                "registry_review": "current",
+                "challenge_check": "passed",
+                "cdp_loopback": True,
+            },
             "evidence_status": "candidate",
-            "note": "candidate capture only; human review is required before it becomes evidence",
+            "note": "candidate capture only; named-human accept with an explicit evidence level is required", 
         }
         json_path = out_dir / f"{capture_id}.json"
         json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
@@ -5968,9 +6094,10 @@ def capture_page(
         status = "captured"
         if ocr and payload["ocr"]["error"]:
             status = "ocr_failed"
-        return {"status": status, "capture": str(json_path),
+        return {"status": status, "capture_id": capture_id, "capture": str(json_path),
                 "screenshot": str(image_path), "ocr": payload["ocr"],
-                "text_length": len(text)}
+                "platform": platform, "source_url": final_url,
+                "evidence_status": "candidate", "text_length": len(text)}
     finally:
         client.close()
 
@@ -6081,6 +6208,57 @@ def collect_cdp(
     return {"status": "collected", "platform": platform, "transport": "cdp", "records": len(normalized), **written}
 
 
+def _procurement_preflight(study_dir: Path, platform: str,
+                           entry: dict[str, Any]) -> dict[str, Any] | None:
+    """Stop routes whose live access requires the user to buy/license a service.
+
+    An authorized local fixture bypasses this preflight because no provider is
+    selected. Askovo never purchases a tier, provider, credits, or subscription.
+    """
+    access_modes = {str(item) for item in entry.get("access_modes", [])}
+    paid_api = str(entry.get("auth") or "") == "oauth_paid"
+    licensed_provider = "licensed_provider" in access_modes
+    if not paid_api and not licensed_provider:
+        return None
+    import_command = (
+        f"askovo import {study_dir} <authorized-export.jsonl> "
+        f"--source-family {platform} --evidence-level E1"
+    )
+    alternatives = [
+        {"route": "authorized_export_or_paste", "command": import_command,
+         "requires_procurement": False},
+        {"route": "local_screenshot_transcription",
+         "action": "transcribe a screenshot you are authorized to use, import the text, "
+                   "and have a named human assign its evidence level; OCR itself assigns none",
+         "requires_procurement": False},
+    ]
+    if entry.get("cdp") and platform in CDP_TARGET_HOSTS:
+        alternatives.insert(0, {
+            "route": "authorized_visible_page_cdp",
+            "command": f"askovo capture page {study_dir} --url <approved-visible-url> --ack-terms --ocr",
+            "then": "askovo capture accept ... --by NAME --evidence-level E0|E1|E2",
+            "requires_procurement": False,
+        })
+    service = "the official paid API tier" if paid_api else "a licensed data provider"
+    return {
+        "status": "blocked",
+        # C-01 §3 registry vocabulary for the machine-readable reason; the
+        # delivery-contract terminal state (BLOCKED_USER_INPUT) travels in its
+        # own field so the frozen ten-code registry stays intact.
+        "reason_code": "INPUT_REQUIRED",
+        "blocked_reason_code": "INPUT_REQUIRED",
+        "terminal_state": "BLOCKED_USER_INPUT",
+        "platform": platform,
+        "reason": f"live {platform} collection selects {service}; user input/procurement is required",
+        "requires_procurement": True,
+        "user_action": (
+            f"Use an authorized export/local paste, or arrange access to {service} yourself. "
+            "Askovo cannot buy it or confirm eligibility for you."),
+        "transaction_executed": False,
+        "alternative_routes": alternatives,
+    }
+
+
 def collect_platform(
     study_dir: Path,
     platform: str,
@@ -6110,6 +6288,10 @@ def collect_platform(
             "reason": entry.get("notes", "blocked by platform policy"),
             "alternatives": [item["id"] for item in platform_index().values() if item.get("decision") == "supported"][:5],
         }
+    if fixture is None:
+        procurement_block = _procurement_preflight(study_dir, platform, entry)
+        if procurement_block is not None:
+            return procurement_block
     run_id = run_id or _run_id(platform)
     plan = {
         "platform": platform,

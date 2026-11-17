@@ -151,7 +151,8 @@ class CapturePathTests(AnswerCase):
         import capture_review  # noqa: E402
 
         document = json.loads((self.study / "study.json").read_text(encoding="utf-8"))
-        document["scope"]["allowed_sources"] = ["web"]
+        document["scope"]["allowed_sources"] = ["amazon"]
+        document["source_adapters"] = {"amazon": {"enabled": True}}
         (self.study / "study.json").write_text(json.dumps(document, ensure_ascii=False),
                                                encoding="utf-8")
 
@@ -165,7 +166,7 @@ class CapturePathTests(AnswerCase):
                 return {}
 
             def evaluate(self, expression):
-                return {"title": "论坛页", "url": "https://example.com/thread",
+                return {"title": "论坛页", "url": "https://www.amazon.com/product-reviews/B0",
                         "text": "\n".join(CORPUS_A[:1])}
 
             def close(self):
@@ -177,12 +178,12 @@ class CapturePathTests(AnswerCase):
         sure_engine.CDPClient = _FakeClient
         try:
             captured = sure_engine.capture_page(
-                self.study, "https://example.com/thread", "http://127.0.0.1:9222", True)
+                self.study, "https://www.amazon.com/product-reviews/B0", "http://127.0.0.1:9222", True)
         finally:
             sure_engine.cdp_new_page, sure_engine._WebSocket, sure_engine.CDPClient = saved
         self.assertEqual("captured", captured["status"])
         capture_id = Path(captured["capture"]).stem
-        accepted = capture_review.accept(self.study, capture_id, by="验收员")
+        accepted = capture_review.accept(self.study, capture_id, by="验收员", evidence_level="E1")
         self.assertEqual("accepted", accepted["status"])
 
         self._import_corpus(CORPUS_A[1:], "paste_a")

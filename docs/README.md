@@ -26,6 +26,8 @@ askovo 用同一主链服务五域产品经理、用户研究、用户运营及�
 20. [故障排查](troubleshooting.md) —— 安装、断链、门禁、采集与 MCP。
 21. [十二项证据检查](plan-evidence-check.md) —— 评审前过一遍：目标、因果链、判据、反证、成本、单点假设。
 22. [开源集成清单](open-source-integrations.md) —— 三个产品对 Docling/Playwright/Stagehand 等组件的实际接入状态与取舍。
+23. [CDP/OCR 候选审核](capture.md) —— 候选抓取、具名审核入证据、分析与业务交付来源回链。
+24. [机器可读交付合同](delivery-contract.json) —— 定量/定性研究到做/缓做/不做业务结论、采购门与独立业务结果边界。
 
 | 你想做什么 | 去哪 |
 | --- | --- |

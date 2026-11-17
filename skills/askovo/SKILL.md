@@ -35,7 +35,7 @@ askovo roles scaffold <study> --task define    # only this task's roles, outputs
 askovo platforms "<request>" --domain …        # where supporting data lives
 askovo collect <study> --platform …            # collect/import against a chain gap
 askovo capture page <study> --url … --ack-terms --ocr  # visible-page candidate (collect-grade gates)
-askovo capture accept <study> --capture ID --by NAME  # reviewed candidate -> evidence (E0-E2 cap)
+askovo capture accept <study> --capture ID --by NAME --evidence-level E2  # named review -> evidence; no auto chain/conclusion
 askovo analyze <study> --question …            # normalize/describe
 askovo answer <study>                          # conclusion + decision from reviewed evidence, or unanswerable + gaps
 askovo deliver <study> --kind plan            # Business Plan (conclusions + data basis + user voices)

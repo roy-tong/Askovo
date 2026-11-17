@@ -1696,6 +1696,10 @@ def _check_evidence(
         role = str(record["corpus_role"])
         if role not in CORPUS_ROLES:
             errors.append(f"{record_id} has invalid corpus_role {role}")
+        if str(record.get("source_family") or "") == "capture":
+            # Candidate/OCR text cannot be hand-appended as evidence: the source
+            # capture, reviewer, timestamp, hashes and accepted join must agree.
+            errors.extend(capture_review.validate_evidence_record(audit.study_dir, record))
         normalized_hashes.append(str(record["normalized_text_hash"]))
         role_counts[role] += 1
         source_counts[str(record["source_family"])] += 1
@@ -3835,10 +3839,7 @@ def _write_plan_proposal(
         "planned_at": datetime.now(timezone.utc).isoformat(),
         "platform_quotas": platform_quotas,
         "feasible_platforms": [item["platform"] for item in enabled],
-        "unavailable_platforms": [
-            {"platform": item["platform"], "status": item["status"], "reason": item["reason"]}
-            for item in unavailable
-        ],
+        "unavailable_platforms": [_unavailable_route_summary(item) for item in unavailable],
         "notes": [
             "proposal only: existing study.json and source-plan.csv were not modified",
             "region and market are sampling context, not verified residence",
@@ -3903,6 +3904,18 @@ def _write_plan_proposal(
         "tasks": str(tasks_path),
         "note": "existing study.json, source-plan.csv and route templates were not modified",
     }
+
+
+def _unavailable_route_summary(item: dict[str, Any]) -> dict[str, Any]:
+    """Keep procurement/user-action fields visible in every plan projection."""
+    result = {"platform": item["platform"], "status": item["status"],
+              "reason": item.get("reason", "")}
+    for key in ("reason_code", "blocked_reason_code", "terminal_state",
+                "requires_procurement", "user_action", "transaction_executed",
+                "alternative_routes"):
+        if key in item:
+            result[key] = item[key]
+    return result
 
 
 def command_plan(args: argparse.Namespace) -> int:
@@ -3978,7 +3991,14 @@ def command_plan(args: argparse.Namespace) -> int:
         entry["connector_revision"] = str(connector.get("reviewed_revision", ""))
         entry["connector_license"] = str(connector.get("license", ""))
         entry["registry_decision"] = decision
-        if decision in {"supported", "historical_only"} and sure_engine.connector_review_expired(connector):
+        procurement_block = sure_engine._procurement_preflight(
+            target, platform, sure_engine.platform_index().get(platform, {}))
+        if decision in {"supported", "historical_only"} and procurement_block is not None:
+            # A reviewed client library is not proof that the user already owns
+            # the paid API/provider access. Keep it out of the feasible plan.
+            entry.update(procurement_block)
+            entry["status"] = "blocked"
+        elif decision in {"supported", "historical_only"} and sure_engine.connector_review_expired(connector):
             entry["status"] = "review_expired"
             entry["reason"] = str(connector.get("policy_watch", {}).get("recheck_by") or "policy review expired")
         elif decision in {"supported", "historical_only"}:
@@ -4113,10 +4133,7 @@ def command_plan(args: argparse.Namespace) -> int:
         "planned_at": datetime.now(timezone.utc).isoformat(),
         "platform_quotas": platform_quotas,
         "feasible_platforms": [item["platform"] for item in enabled],
-        "unavailable_platforms": [
-            {"platform": item["platform"], "status": item["status"], "reason": item["reason"]}
-            for item in unavailable
-        ],
+        "unavailable_platforms": [_unavailable_route_summary(item) for item in unavailable],
         "notes": [
             "region and market are sampling context, not verified residence",
             "sample target is a collection ceiling, not a claim of independent users",
@@ -4253,9 +4270,7 @@ def command_plan(args: argparse.Namespace) -> int:
         "sample_target": args.sample_size,
         "feasible_platforms": [item["platform"] for item in enabled],
         "platform_quotas": platform_quotas,
-        "unavailable_platforms": [
-            {"platform": item["platform"], "status": item["status"]} for item in unavailable
-        ],
+        "unavailable_platforms": [_unavailable_route_summary(item) for item in unavailable],
         "warnings": feasibility["warnings"],
         "next_step": "fill the design contract, then run: askovo.py check STUDY --stage design --write-report",
         "feasibility_report": str(target / "01-sources" / "feasibility.json"),
@@ -5331,8 +5346,8 @@ def build_parser() -> argparse.ArgumentParser:
     capture_accept_parser.add_argument("study_dir")
     capture_accept_parser.add_argument("--capture", required=True, help="capture id from `capture list`")
     capture_accept_parser.add_argument("--by", default="", help="named human reviewer")
-    capture_accept_parser.add_argument("--evidence-level", default="E1",
-                                       help="E0/E1/E2 — a visible page cannot prove acceptance or payment")
+    capture_accept_parser.add_argument("--evidence-level", required=True,
+                                       help="explicit reviewer choice: E0/E1/E2; OCR never assigns a level")
     capture_accept_parser.add_argument("--corpus-role", default="open_scene")
     capture_accept_parser.add_argument("--context-key", default="")
     capture_accept_parser.add_argument("--from", dest="from_text", default="page", choices=("page", "ocr"),
@@ -5825,8 +5840,35 @@ CLI_COMMANDS = {
 }
 
 
+FIRST_INTERACTION_BANNER = """Askovo 交付合同（首次交互摘要；机器可读全文见 docs/delivery-contract.json）
+
+支持的用户意图：
+- 回答一个研究问题并给出结论与决策 —— capture page / import → 具名审核 accept → analyze → answer
+- 单问题决策任务 —— askovo decide start --question …
+- 结构化公开 issue 语料 —— askovo issues import --authorized-by NAME
+- 采集授权可见页候选 —— askovo capture page --url … --ack-terms（design gate + scope 与 collect 同一套规则）
+
+可交付终态：DELIVERED（动作完成且证据已核验）· DELIVERED_WITH_GAP（完成但差距与下一步明确，
+如不可回答+缺口清单）· BLOCKED_USER_INPUT（需登录/授权/补证据/确认/采购）· UNSUPPORTED（超出
+产品定义，开始前说明并路由）· FAILED_UNRESOLVED（已尝试未确认，保留现场，禁止盲目重试）。
+
+明确排除：替用户发布/投放/销售/收款；物理/人体/道路测试；无证据的市场规模与付费结论；
+绕过登录墙或验证码；候选自动成为证据。付费数据源等采购需求走 requires_procurement 分支
+（BLOCKED_USER_INPUT，给出替代路径，不代购、不执行交易）。
+
+证据规则：capture/OCR/粘贴候选必须经具名人工审核登记进证据库，等级按证据形式封顶
+（可见页 ≤E2）；结论随证据改变、反证不被淹没、关键判断回链采集来源；无证据 = 不可回答+缺口清单。
+
+用法：askovo --help 查看全部命令；askovo do "你的研究问题" 开始一条研究。"""
+
+
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
+    if not raw:
+        # First interaction: the delivery contract leads, before any capability
+        # list or plan can read like an execution promise (review §2.3).
+        print(FIRST_INTERACTION_BANNER)
+        return 2
     if (raw and raw[0] == "decide" and len(raw) > 1 and not raw[1].startswith("-")
             and raw[1] not in DECIDE_ACTIONS):
         # PRD §2.4: `askovo decide "question" --repo owner/repo` is the start form.

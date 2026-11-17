@@ -500,16 +500,21 @@ class PlanSignalsReportTests(unittest.TestCase):
             )
             self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
             payload = json.loads(completed.stdout)
-            self.assertEqual(["reddit", "x", "youtube"], payload["feasible_platforms"])
+            self.assertEqual(["reddit", "youtube"], payload["feasible_platforms"])
             self.assertEqual(100000, sum(payload["platform_quotas"].values()))
+            blocked_x = next(item for item in payload["unavailable_platforms"]
+                             if item["platform"] == "x")
+            self.assertEqual("BLOCKED_USER_INPUT", blocked_x["terminal_state"])
+            self.assertTrue(blocked_x["requires_procurement"])
+            self.assertFalse(blocked_x["transaction_executed"])
 
             study = json.loads((target / "study.json").read_text(encoding="utf-8"))
             self.assertEqual(1000, study["quality_gates"]["min_evidence_records"])
             self.assertEqual(["overseas", "us"], study["scope"]["markets"])
-            self.assertEqual(["reddit", "x", "youtube"], study["scope"]["allowed_sources"])
+            self.assertEqual(["reddit", "youtube"], study["scope"]["allowed_sources"])
             self.assertEqual(100000, study["plan"]["sample_target"])
             self.assertTrue(study["source_adapters"]["reddit"]["enabled"])
-            self.assertTrue(study["source_adapters"]["x"]["enabled"])
+            self.assertFalse(study["source_adapters"]["x"]["enabled"])
             self.assertTrue(study["source_adapters"]["youtube"]["enabled"])
 
             with (target / "01-sources/reddit-routes.csv").open(encoding="utf-8-sig", newline="") as handle:
@@ -520,20 +525,20 @@ class PlanSignalsReportTests(unittest.TestCase):
             )
             with (target / "01-sources/source-plan.csv").open(encoding="utf-8-sig", newline="") as handle:
                 plan_rows = list(csv_module.DictReader(handle))
-            self.assertEqual(15, len(plan_rows))
+            self.assertEqual(10, len(plan_rows))
             self.assertEqual(
-                payload["platform_quotas"]["x"],
+                payload["platform_quotas"]["youtube"],
                 sum(
                     int(row["target_records"])
                     for row in plan_rows
-                    if row["source_family"] == "x"
+                    if row["source_family"] == "youtube"
                 ),
             )
 
             feasibility = json.loads(
                 (target / "01-sources/feasibility.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(3, len([p for p in feasibility["platforms"] if p["status"] == "enabled"]))
+            self.assertEqual(2, len([p for p in feasibility["platforms"] if p["status"] == "enabled"]))
             tasks = (target / "01-sources/tasks.md").read_text(encoding="utf-8")
             self.assertIn("reddit-praw", tasks)
             self.assertIn("2026-09-30", tasks)
@@ -562,7 +567,17 @@ class PlanSignalsReportTests(unittest.TestCase):
             self.assertEqual(2, invalid.returncode)
             self.assertFalse(target.exists())
             valid = run_cli(*base_args, "--time-window", "2025-01-01:2026-08-31")
-            self.assertEqual(0, valid.returncode, valid.stdout + valid.stderr)
+            # social/overseas resolves to x only; its live route needs the paid
+            # API tier, so the plan completes with zero feasible platforms and
+            # an explicit requires_procurement block (never a silent success).
+            self.assertEqual(3, valid.returncode, valid.stdout + valid.stderr)
+            payload = json.loads(valid.stdout)
+            self.assertEqual("planned_without_feasible_platforms", payload["status"])
+            blocked_x = next(item for item in payload["unavailable_platforms"]
+                             if item["platform"] == "x")
+            self.assertEqual("BLOCKED_USER_INPUT", blocked_x["terminal_state"])
+            self.assertTrue(blocked_x["requires_procurement"])
+            self.assertFalse(blocked_x["transaction_executed"])
 
     def test_plan_cn_ecommerce_fails_visibly_without_workaround(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -664,7 +679,9 @@ class PlanSignalsReportTests(unittest.TestCase):
                 "--platform-types",
                 "social",
             )
-            self.assertEqual(0, planned.returncode, planned.stdout + planned.stderr)
+            # social/overseas resolves to the paid x route only: the workspace is
+            # still created (report must describe it honestly), with exit 3.
+            self.assertEqual(3, planned.returncode, planned.stdout + planned.stderr)
             completed = run_cli("report", str(target))
             self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
             payload = json.loads(completed.stdout)

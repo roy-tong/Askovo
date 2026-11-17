@@ -203,6 +203,22 @@ askovo analyze ./study --question "night false alerts"
 
 `analyze` only normalizes, deduplicates, computes distributions, frequent candidate terms, and question-matched snippets; it never auto-generates scene, need, feature, or product conclusions.
 
+Authorized CDP page text, screenshots, and OCR follow one reviewed vertical chain into that same analyzer and the business projections:
+
+```bash
+askovo capture page ./study --url "https://www.amazon.com/product-reviews/B0..." --ack-terms --ocr
+askovo capture list ./study
+askovo capture accept ./study --capture <capture_id> --by "researcher" \
+  --evidence-level E2 --from page --context-key <context>
+askovo analyze ./study --question "night false alerts"
+askovo deliver ./study --kind analysis
+askovo deliver ./study --kind plan
+```
+
+Capture requires the Design gate, explicit platform scope, an enabled adapter, a current registry review, a loopback debugger, and an authorized default-port page on amazon / instagram / bilibili / weibo; other hosts, X / YouTube, blocked routes, redirects away from the approved platform, and challenge pages are refused. Capture and OCR always produce `candidate` material. Only `capture accept` with a named reviewer and an explicit E0/E1/E2 level appends one normalized record to `evidence.jsonl`, retaining URL, capture JSON, screenshot, page/OCR/screenshot hashes, reviewer, and review time. The evidence audit rejects hand-appended unreviewed capture rows.
+
+Acceptance does **not** write a demand judgment, a seven-node chain, a decision record, or a do / defer / do-not-do conclusion. A human must still register the evidence in the linked judgment and appropriate chain nodes; `analysis` and `plan` then render the same chain with a `record → source URL/capture/screenshot/hash → reviewer/time` back-link table. See [CDP capture and review](docs/capture.md) and the machine-readable [delivery contract](docs/delivery-contract.json). Paid API/provider routes stop at plan/collect preflight with `terminal_state=BLOCKED_USER_INPUT`, `requires_procurement=true`, a user action, and `transaction_executed=false`; Askovo never procures access automatically.
+
 When the weakest node is not obvious, `askovo loop` derives the gap from the audit, plans one query per gap and eligible source, runs rounds inside an authorized envelope, and re-audits after each round. Collected records stay review candidates — the loop never assigns an evidence level or edits a judgment.
 
 ```bash

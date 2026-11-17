@@ -15,6 +15,48 @@ absent: labels fall back to the domain pack via `_study_labels`.
 `deliver --strict` returns 1 on `audit_failed` while still writing the draft,
 so automation can gate on it.
 
+### Governance hardening: capture = collect rule set, audit-checked review join, procurement preflight
+
+- `capture page` is not a generic browser route: the CDP exception stays on
+  the four approved platforms (amazon/instagram/bilibili/weibo) with
+  default-port http(s), no credentials, an enabled per-study adapter, a
+  current connector registry review, and a redirect that leaves the platform
+  stops the capture. X/YouTube/arbitrary hosts are refused before any CDP
+  I/O (`cdp_not_allowed`), and a challenge page stops before the screenshot.
+- `capture accept` now requires an explicit `--evidence-level`, verifies the
+  reviewed bytes are the captured bytes (schema/ack/platform/page+OCR+
+  screenshot hashes), refuses accepted→reject flips, and writes the source
+  plan inside the same journalled transaction. The CLI evidence audit calls
+  `capture_review.validate_evidence_record` for every capture row, so a
+  hand-appended OCR line can no longer bypass review. `deliver --kind plan`
+  and `analyze` render the reviewed-capture back-link table (reviewer, URL,
+  capture/screenshot refs, hashes).
+- Paid live routes (x official API, app_store/google_play licensed
+  providers) are stopped at planning and collection by a
+  `requires_procurement` preflight: `terminal_state: BLOCKED_USER_INPUT`,
+  registered `reason_code: INPUT_REQUIRED`, alternatives listed, and no
+  transaction is ever executed.
+- `docs/delivery-contract.json` (askovo.delivery-contract/1) now carries both
+  vocabularies: the five delivery terminal states and the decision-outcome
+  semantics (do/defer/do_not_do/decision_adopted), plus supported intents,
+  candidate-input governance, review/delivery commands, exclusions, evidence
+  requirements and the procurement branch.
+
+### P0.1 delivery contract: machine-readable and shown at first interaction
+
+`docs/delivery-contract.json` freezes the Askovo delivery contract
+(askovo.delivery-contract/1): supported intents with entry commands, common
+inputs, the five terminal states (DELIVERED / DELIVERED_WITH_GAP /
+BLOCKED_USER_INPUT / UNSUPPORTED / FAILED_UNRESOLVED) with their meanings,
+explicit exclusions (no publishing/ads/sales/collection, no physical/human/
+road tests, no evidence-free market or payment conclusions, no challenge
+bypass, no auto-promotion of candidates), the `requires_procurement` branch
+(BLOCKED_USER_INPUT, alternatives listed, transaction never executed) and
+the evidence requirements. Bare `askovo` now prints this contract summary
+first (exit 2) instead of a bare usage error, and a test asserts the first
+interaction mentions every terminal state, every supported intent and the
+contract path — the boundary is seen before any capability list.
+
 ### P1 golden chain, step 2: `askovo answer` — evidence-following research answer
 
 The golden chain's terminal projection (`04-findings/research-answer.json` +
@@ -52,6 +94,16 @@ review semantics for pasted text: `--evidence-level` capped by evidence form
 `--context-key`, idempotent source-family declaration, so the paste path no
 longer produces audit-failing `unclassified` records.
 
+Capture review now requires an explicit E0/E1/E2 choice, preserves page/OCR/
+screenshot content and hashes plus reviewer/time, reuses import normalization,
+and verifies the accepted source join in the evidence audit; generic `import`
+cannot relabel a capture candidate as paste. `analyze`, `deliver --kind
+analysis`, and `deliver --kind plan` carry the source back-links without
+authoring judgments or business conclusions. Paid API/licensed-provider plan
+and collect preflights stop with `terminal_state=BLOCKED_USER_INPUT`,
+`requires_procurement=true`, user alternatives, and
+`transaction_executed=false` (the frozen C-01 reason remains INPUT_REQUIRED).
+
 ### P0.4 unified capture governance + CDP page capture (candidate only)
 
 `askovo capture` captures one user-authorized visible page through the local
@@ -59,11 +111,13 @@ CDP endpoint (page text + screenshot + optional macOS Vision OCR via
 `scripts/ocr_image.swift`) into `01-sources/captures/` as a **candidate** — it
 never registers evidence or touches the seven-node chain by itself. Governance
 is unified with `collect` instead of opening a second, laxer collection
-entrance: the Design gate must pass before capture starts, a page host that
-maps to a known platform must be listed in `study.scope.allowed_sources`
-(generic visible-web capture needs an explicit `web`/`visible_web`/`capture`
-marker), challenge pages stop the capture, and the CDP endpoint stays
-loopback-only. See `docs/capture.md` for the full rule set.
+entrance: the Design gate must pass before capture starts, only the approved
+amazon/instagram/bilibili/weibo hosts are eligible, the exact platform must be
+listed in `study.scope.allowed_sources` with an enabled adapter and current
+registry review, default-port/final-URL rules apply, challenge pages stop the
+capture before screenshot or candidate writes, and the CDP endpoint stays
+loopback-only. There is no generic-web, Reddit, X, or YouTube capture bypass.
+See `docs/capture.md` for the full rule set.
 
 ### C-01-Lite minimal delegation projection
 

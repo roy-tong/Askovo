@@ -1,0 +1,249 @@
+{
+  "schema": "askovo.delivery-contract/1",
+  "product": "Askovo",
+  "updated_at": "2026-11-17",
+  "source_review": "ai输出/ovo三产品-端到端业务交付测试-20261116/后续优化评审-20261117.md (§2.3, §3.1, §4.1, §5)",
+  "promise": "在用户授权可见的数据范围内，回答约定研究问题，形成可追溯的 go / no-go / continue-research 决策与七节点判断；没有证据时明确不可回答及缺口。",
+  "core": {
+    "inputs": [
+      "quantitative_research",
+      "qualitative_research"
+    ],
+    "primary_output": "business_decision_with_evidence_pack",
+    "decision_options": [
+      "do",
+      "defer",
+      "do_not_do"
+    ],
+    "report_only": false,
+    "canonical_semantics": "04-findings/product-reasoning.json",
+    "reasoning_chain": [
+      "scene",
+      "user",
+      "pain",
+      "need",
+      "feature",
+      "product",
+      "business"
+    ],
+    "evidence_pack_role": "argument_and_provenance_for_the_decision_not_a_business_outcome"
+  },
+  "supported_intents": [
+    {
+      "intent": "回答一个研究问题并给出结论与决策：可见页面/粘贴文本/截图经人工审核进入证据后，analyze + answer 产出随证据变化的结论、反证与缺口，关键判断回链采集来源",
+      "entry": "askovo do \"问题\" --study <dir>  →  capture page / import  →  capture accept --by NAME --evidence-level E0|E1|E2  →  analyze  →  answer",
+      "inputs": "study 合同（decision.question/options/scope）、用户授权的可见页面或本地粘贴文本/截图、具名人工审核",
+      "terminal_states_used": [
+        "DELIVERED",
+        "DELIVERED_WITH_GAP"
+      ]
+    },
+    {
+      "intent": "单问题决策任务：把一个 decision task 跟踪到 brief 或明确的等待状态",
+      "entry": "askovo decide start --question … --study <dir>",
+      "inputs": "askovo.decision-task/1（问题、上限、允许来源）；执行读取需人工 loop authorize",
+      "terminal_states_used": [
+        "DELIVERED_WITH_GAP",
+        "BLOCKED_USER_INPUT"
+      ]
+    },
+    {
+      "intent": "结构化公开 issue 语料：导入本地导出、抽取候选、人工 accept 进证据与判断",
+      "entry": "askovo issues import <study> --file export.jsonl --authorized-by NAME",
+      "inputs": "授权导出的本地 issue 文件；具名审核人",
+      "terminal_states_used": [
+        "DELIVERED_WITH_GAP"
+      ]
+    },
+    {
+      "intent": "采集授权可见页候选：CDP 文本 + 截图 + 可选 OCR，仅限已批准 CDP 平台（amazon/instagram/bilibili/weibo），候选永不自动成为证据",
+      "entry": "askovo capture page <study> --url … --ack-terms [--ocr]",
+      "inputs": "本机回环 CDP 浏览器、批准平台上用户有权查看的默认端口 http(s) 页面、--ack-terms 声明；design gate + scope + 已启用 adapter + 注册表复审与 collect 同一套规则",
+      "terminal_states_used": [
+        "DELIVERED_WITH_GAP",
+        "BLOCKED_USER_INPUT"
+      ]
+    }
+  ],
+  "inputs_common": [
+    "study 工作区（study.json 合同：decision/scope/quality_gates）",
+    "用户可见、有权使用的数据：本机浏览器会话、本地文件、粘贴文本、截图",
+    "关键状态迁移（证据登记、判断、gap 结单）都需要具名人工动作"
+  ],
+  "terminal_states": {
+    "DELIVERED": "约定范围内的动作完成且证据已核验：answer/analyze/brief 等交付物生成，关键判断可回链证据 id",
+    "DELIVERED_WITH_GAP": "动作完成但目标读数未达成：如 answer=unanswerable + 缺口清单、低样本支持、并列未决——差距和下一步明确，不是失败",
+    "BLOCKED_USER_INPUT": "需要用户动作才能继续：登录/授权/补证据/确认规则/采购（requires_procurement）；给出唯一明确行动",
+    "UNSUPPORTED": "超出产品定义（见 excluded）：开始前说明并路由，不假装执行",
+    "FAILED_UNRESOLVED": "已尝试但未确认结果：保留现场与日志，禁止盲目重试（如中断的写事务会阻塞后续读写直到恢复）"
+  },
+  "decision_outcomes": [
+    {
+      "id": "do",
+      "kind": "business_choice_or_recommendation",
+      "meaning": "Proceed under the recorded assumptions, evidence limits, owner and revisit trigger.",
+      "proves_commercial_success": false,
+      "proves_decision_adoption": false
+    },
+    {
+      "id": "defer",
+      "kind": "business_choice_or_recommendation",
+      "meaning": "Do not proceed yet; name the decision-changing evidence and restart condition.",
+      "proves_no_demand": false,
+      "proves_decision_adoption": false
+    },
+    {
+      "id": "do_not_do",
+      "kind": "business_choice_or_recommendation",
+      "meaning": "Reject this bounded option under the recorded scope and falsification rationale.",
+      "proves_no_market": false,
+      "proves_decision_adoption": false
+    },
+    {
+      "id": "decision_adopted",
+      "kind": "business_result",
+      "meaning": "An accountable owner actually adopted the choice.",
+      "requires_separate_evidence": true,
+      "required_evidence": "A separate adoption record with owner, timestamp, scope and decision reference.",
+      "implied_by_delivery": false,
+      "implied_by_decided_status": false,
+      "implied_by_evidence_volume": false
+    }
+  ],
+  "decision_outcomes_note": "业务选择词表（do/defer/do_not_do/decision_adopted）是结论层的决策选项语义，与上面的交付终态（DELIVERED…）是两条轴，不互相覆盖。",
+  "candidate_inputs": {
+    "cdp_page": {
+      "command": "askovo capture page STUDY --url URL --ack-terms [--ocr]",
+      "status": "candidate",
+      "approved_platforms": [
+        "amazon",
+        "instagram",
+        "bilibili",
+        "weibo"
+      ],
+      "requires": [
+        "design_gate_pass",
+        "explicit_scope_allowed_sources",
+        "enabled_adapter",
+        "current_registry_review",
+        "authorized_visible_default_port_https_or_http_page",
+        "loopback_cdp",
+        "explicit_ack_terms",
+        "challenge_page_stop"
+      ],
+      "challenge_or_authorization_bypass_allowed": false,
+      "automatic_evidence_promotion": false
+    },
+    "ocr": {
+      "status": "untrusted_candidate_text",
+      "source_screenshot_and_hash_required": true,
+      "automatic_evidence_level_assignment": false,
+      "automatic_demand_judgment": false,
+      "automatic_product_or_business_conclusion": false
+    }
+  },
+  "review": {
+    "command": "askovo capture accept STUDY --capture ID --by REVIEWER --evidence-level E0|E1|E2 [--from page|ocr]",
+    "named_human_required": true,
+    "explicit_confirmation": "The accept action plus --by and --evidence-level is the review confirmation.",
+    "unreviewed_candidate_may_enter_evidence": false,
+    "preserved_provenance": [
+      "source_url",
+      "capture_json",
+      "screenshot",
+      "page_text_and_hash",
+      "ocr_text_and_hash",
+      "screenshot_hash",
+      "reviewer",
+      "reviewed_at"
+    ],
+    "acceptance_writes_demand_judgment": false,
+    "acceptance_writes_product_reasoning": false,
+    "acceptance_writes_decision_record": false,
+    "next_human_step": "Register evidence in a demand judgment and chain before using it in a business conclusion."
+  },
+  "delivery": {
+    "analysis_command": "askovo analyze STUDY --question QUESTION",
+    "business_plan_command": "askovo deliver STUDY --kind plan",
+    "decision_record_command": "askovo decision record STUDY --chain CHAIN --by OWNER",
+    "source_backlinks_required": true,
+    "business_conclusion_source": "04-findings/product-reasoning.json plus its linked demand judgment and decision record",
+    "descriptive_analysis_is_not_a_conclusion": true,
+    "artifact_is_not_release_readiness_causality_or_commercial_proof": true
+  },
+  "procurement": {
+    "when_paid_api_licensed_provider_or_purchase_is_required": {
+      "status": "blocked",
+      "terminal_state": "BLOCKED_USER_INPUT",
+      "reason_code": "INPUT_REQUIRED",
+      "blocked_reason_code": "INPUT_REQUIRED",
+      "requires_procurement": true,
+      "user_action": "Choose an authorized export/local alternative or arrange the paid access yourself.",
+      "transaction_executed": false
+    },
+    "automatic_purchase_allowed": false,
+    "preferred_alternatives": [
+      "authorized_export",
+      "local_paste_with_human_review",
+      "authorized_visible_page_cdp_only_on_approved_platforms",
+      "local_screenshot_transcription_with_human_review"
+    ]
+  },
+  "requires_procurement": {
+    "status": "blocked",
+    "terminal_state": "BLOCKED_USER_INPUT",
+    "reason_code": "INPUT_REQUIRED",
+    "blocked_reason_code": "INPUT_REQUIRED",
+    "requires_procurement": true,
+    "user_action": "Choose an authorized export/local alternative or arrange the paid access yourself.",
+    "transaction_executed": false
+  },
+  "excluded": [
+    {
+      "what": "替用户发布内容、投放广告、销售或收款",
+      "instead": "Askovo 只产出研究结论与决策材料"
+    },
+    {
+      "what": "物理/人体/道路测试",
+      "instead": "工程性能与安全走验收条件，不由用户研究代理认证"
+    },
+    {
+      "what": "无证据的市场规模、付费与留存结论",
+      "instead": "商业判断在证据到位前保持 hypothesis/缺口"
+    },
+    {
+      "what": "采购、付款或代用户开通付费服务",
+      "instead": "requires_procurement 分支：提示用户行动，不执行交易"
+    },
+    {
+      "what": "绕过登录墙、验证码/挑战页或平台反爬限制",
+      "instead": "challenge/越权页面直接拒绝（design gate + scope + adapter 与 collect 同一套规则）"
+    },
+    {
+      "what": "把候选（capture/OCR/外部桥）自动当作已验证证据",
+      "instead": "候选必须经具名人工审核登记，等级按证据形式封顶；audit 会校验 capture 证据行与其候选的哈希/审核联接"
+    }
+  ],
+  "evidence_requirements": [
+    "capture/OCR/外部桥产物永远是 candidate；进入 02-data/evidence.jsonl 只有具名人工 accept/import 一条路",
+    "可见页证据等级上限 E2（E3 方案接受、E4+/E5 交易需要概念测试与交易记录）；粘贴自述/行为日志 ≤E2，交易记录 ≤E5",
+    "accept 只登记证据，不生成 demand judgment、不改七节点；判断仍由人工经既有流程给出",
+    "每条登记记录保留采集回链（record_id/source_family/source_ref，capture 另有 capture_id/URL/截图哈希），audit 校验候选与证据行的哈希一致",
+    "结论必须随证据改变：answer 按选项证据计数，反证不被支持数淹没；无证据 = unanswerable + 缺口清单",
+    "descriptive only：不做总体推断、显著性或因果声明；边界随交付物输出"
+  ],
+  "first_interaction": {
+    "command": "askovo",
+    "exit_code": 2,
+    "must_mention": [
+      "DELIVERED",
+      "DELIVERED_WITH_GAP",
+      "BLOCKED_USER_INPUT",
+      "UNSUPPORTED",
+      "FAILED_UNRESOLVED",
+      "requires_procurement",
+      "docs/delivery-contract.json",
+      "证据"
+    ]
+  }
+}
