@@ -90,6 +90,28 @@ ASSETS = SKILL_ROOT / "assets"
 CATALOG_PATH = ASSETS / "method-catalog.json"
 PACKS_DIR = ASSETS / "domain-packs"
 
+_cdp_strategy_module: Any = None
+
+
+def _cdp_strategy() -> Any:
+    """Load the connectors' CDP strategy module (policy, triage, session guard).
+
+    Loaded by path so the engine does not depend on the connectors directory
+    being importable; the module itself resolves its registry and `common.py`
+    fallbacks. Cached after the first call.
+    """
+    global _cdp_strategy_module
+    if _cdp_strategy_module is None:
+        path = HERE / "connectors" / "cdp_strategy.py"
+        spec = importlib.util.spec_from_file_location("askovo_cdp_strategy", path)
+        if spec is None or spec.loader is None:  # pragma: no cover
+            raise RuntimeError(f"cannot load {path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules.setdefault("askovo_cdp_strategy", module)
+        spec.loader.exec_module(module)
+        _cdp_strategy_module = module
+    return _cdp_strategy_module
+
 STAGES = (
     "discovery",
     "concept",
@@ -5088,6 +5110,16 @@ def doctor() -> int:
         ))
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         checks.append(("collection-strategies", False, str(exc)))
+    try:
+        policy_issues = runtime_policy_problems()
+        cdp_count = sum(1 for item in platform_index().values() if item.get("cdp"))
+        checks.append((
+            "cdp-runtime-policies",
+            not policy_issues,
+            f"{cdp_count} CDP platforms" if not policy_issues else "; ".join(policy_issues[:3]),
+        ))
+    except (OSError, json.JSONDecodeError, ValueError, RuntimeError) as exc:
+        checks.append(("cdp-runtime-policies", False, str(exc)))
     ids = {str(item.get("id")) for item in catalog.get("methods", []) if isinstance(item, dict)}
     missing: list[str] = []
     for name, pack in packs.items():
@@ -5141,6 +5173,28 @@ FIELD_NOTE_REQUIRED = (
     "id", "platform", "channel", "restriction", "symptom", "solution",
     "artifact", "verification", "cdp",
 )
+
+
+def _registry_artifact_path(artifact: Any) -> Path:
+    """Resolve a registry artifact path in both checkout and installed runtime.
+
+    Registry entries use repo-relative paths (`skills/askovo/...`) because the
+    skill folder is what ships. A wheel installs that folder as
+    `askovo/runtime/`, so `REPO_ROOT / artifact` does not exist there; the
+    prefix maps onto ``SKILL_ROOT`` instead of failing the doctor.
+    """
+    raw = Path(str(artifact))
+    if raw.is_absolute():
+        return raw
+    candidate = REPO_ROOT / raw
+    if candidate.exists():
+        return candidate
+    parts = raw.parts
+    if len(parts) >= 3 and parts[0] == "skills" and parts[1] == "askovo":
+        mapped = SKILL_ROOT.joinpath(*parts[2:])
+        if mapped.exists():
+            return mapped
+    return candidate
 
 
 def field_notes_catalog() -> dict[str, Any]:
@@ -5197,7 +5251,7 @@ def field_note_problems() -> list[str]:
                 problems.append(f"{note_id}: verification status {status!r} not in the legend")
             if not verification.get("date"):
                 problems.append(f"{note_id}: verification.date is required")
-        artifact = REPO_ROOT / str(note["artifact"])
+        artifact = _registry_artifact_path(note["artifact"])
         if not artifact.is_file():
             problems.append(f"{note_id}: artifact not found: {note['artifact']}")
         helper_problem = _resolve_helper_problem(note_id, note.get("helper"))
@@ -5280,7 +5334,7 @@ def field_notes_markdown(notes: list[dict[str, Any]] | None = None,
 
 STRATEGY_REQUIRED = (
     "id", "name", "when", "invariant", "mechanism", "platforms", "artifacts",
-    "verification",
+    "verification", "enforcement",
 )
 
 
@@ -5346,7 +5400,7 @@ def strategy_problems() -> list[str]:
             problems.append(f"{strategy_id}: artifacts must be a non-empty list")
         else:
             for artifact in artifacts:
-                if not (REPO_ROOT / str(artifact)).is_file():
+                if not _registry_artifact_path(artifact).is_file():
                     problems.append(f"{strategy_id}: artifact not found: {artifact}")
         helper_problem = _resolve_helper_problem(strategy_id, strategy.get("helper"))
         if helper_problem:
@@ -5365,6 +5419,72 @@ def strategy_problems() -> list[str]:
 
 def strategy_index() -> dict[str, dict[str, Any]]:
     return {str(item["id"]): item for item in strategy_catalog() if item.get("id")}
+
+
+def runtime_policy_problems() -> list[str]:
+    """Policy layer ↔ runtime code consistency (empty means consistent).
+
+    The registry declares which invariants the runtime enforces
+    (``enforcement: runtime``), the helper that enforces each one and the
+    per-platform budgets. This gate fails when a declared guard does not
+    resolve, when a runtime strategy has no guard, when an operator strategy
+    falsely claims one, or when a CDP platform cannot build a policy.
+    """
+    problems: list[str] = []
+    try:
+        data = field_notes_catalog()
+        strategy = _cdp_strategy()
+        strategies = strategy_index()
+    except (OSError, json.JSONDecodeError, ValueError, RuntimeError) as exc:
+        return [str(exc)]
+    section = data.get("runtime_policies")
+    if not isinstance(section, dict):
+        return ["runtime_policies section is required (see cdp_strategy.policy_problems)"]
+    known = sorted(set(platform_index()) | set((data.get("source_types") or {}).keys()))
+    problems.extend(strategy.policy_problems(section, known_platforms=known))
+    guards = section.get("guards") if isinstance(section.get("guards"), dict) else {}
+    for strategy_id, helper in guards.items():
+        record = strategies.get(str(strategy_id))
+        if record is None:
+            problems.append(f"runtime guard {strategy_id!r} is not a declared strategy")
+        elif record.get("enforcement") != "runtime":
+            problems.append(
+                f"{strategy_id}: guarded but enforcement is {record.get('enforcement')!r}"
+            )
+        helper_problem = _resolve_helper_problem(f"runtime guard {strategy_id}", helper)
+        if helper_problem:
+            problems.append(helper_problem)
+    for strategy_id, record in strategies.items():
+        enforcement = record.get("enforcement")
+        if enforcement not in ("runtime", "operator"):
+            problems.append(f"{strategy_id}: enforcement must be 'runtime' or 'operator'")
+        elif enforcement == "runtime" and strategy_id not in guards:
+            problems.append(f"{strategy_id}: runtime strategy has no guard in runtime_policies.guards")
+        elif enforcement == "operator" and strategy_id in guards:
+            problems.append(f"{strategy_id}: operator strategy must not claim a runtime guard")
+    for platform, entry in platform_index().items():
+        if not entry.get("cdp"):
+            continue
+        try:
+            policy = strategy.policy_for(platform)
+        except (ValueError, RuntimeError) as exc:
+            problems.append(f"{platform}: cannot build a runtime policy ({exc})")
+            continue
+        if policy.platform != platform:
+            problems.append(f"{platform}: policy platform mismatch ({policy.platform})")
+    for name in ("collect_cdp_discord.py", "collect_cdp_kickstarter.py"):
+        path = HERE / "connectors" / name
+        if not path.is_file():
+            problems.append(f"CDP collector missing: {name}")
+            continue
+        try:
+            source = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            problems.append(f"{name}: cannot read ({exc})")
+            continue
+        if "cdp_strategy" not in source or "SessionGuard" not in source:
+            problems.append(f"{name}: CDP runtime policy is not applied (no cdp_strategy.SessionGuard)")
+    return problems
 
 
 def strategies_for(platforms: list[str] | tuple[str, ...] | None = None) -> list[dict[str, Any]]:
@@ -5406,7 +5526,63 @@ def strategies_markdown(strategies: list[dict[str, Any]] | None = None,
         "- 调度时：`connectors/rotation.py` 的 `RotationScheduler` 强制每站点最小间隔、"
         "429/422 冷却、日配额与会话冷却（掉线等人工重登）；",
         "- 收尾时：策略与不变量补进 `skills/askovo/assets/platform-field-notes.json` 的 "
-        "`strategies` 段（`askovo doctor` 校验必填字段、产物与 helper 引用）。",
+        "`strategies` 段并声明 `enforcement`（`askovo doctor` 校验必填字段、产物、helper 与 "
+        "runtime guard 引用）。",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+def runtime_policies_markdown(platforms: list[str] | None = None) -> str:
+    """Render the enforced per-platform CDP runtime budgets."""
+    strategy = _cdp_strategy()
+    catalog = platform_index()
+    registry = field_notes_catalog()
+    declared = set((registry.get("source_types") or {}).keys())
+    if platforms:
+        selected = [str(item) for item in platforms if str(item).strip()]
+    else:
+        selected = [str(item) for item, entry in catalog.items() if entry.get("cdp")]
+        selected += [item for item in declared if item in (registry.get("runtime_policies") or {}).get("platforms", {})]
+    if not selected:
+        return (
+            "# Askovo CDP 运行时策略\n\n"
+            "> 本次选择里没有 CDP 平台；运行时策略只约束 CDP 可见页通道"
+            "（`cdp: true` 的平台或已声明的 source type）。\n"
+        )
+    lines = [
+        "# Askovo CDP 运行时策略",
+        "",
+        "> 这些是**运行时预算**，不是访问许可：平台目录、study scope、Design gate、"
+        "人工 ack 与获批 URL 才决定能否采集；策略只约束「怎么碰」，不绕过任何限制。",
+        "",
+        "| 平台 | 站点最小间隔 | 会话上限 | 超时熔断 | 单 cell goto | 预算系数 | 需登录 | 模式互斥 |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for platform in dict.fromkeys(selected):
+        policy = strategy.policy_for(platform)
+        lines.append(
+            f"| `{platform}` | {policy.cadence_seconds:g}s | {policy.session_minutes:g} min | "
+            f"{policy.timeout_cooldown_minutes:g} min | {policy.max_gotos_per_cell} | "
+            f"{policy.budget_fraction:.0%} | {'是' if policy.requires_session else '否'} | "
+            f"{'、'.join(policy.exclusive_modes)} |"
+        )
+    lines.extend([
+        "",
+        "## 执行口径",
+        "",
+        "- **超时=熔断**：任何 timeout/abort 后停止接触该平台至少「超时熔断」时长；"
+        "不诊断、不截图、不重试——撕裂的输入流本身就是自动化签名；",
+        "- **一个 cell 一次 goto**：导航→校验→采集在同一 cell 内完成；`reload()` 默认禁止；",
+        "- **会话限时**：登录态采集到「会话上限」即停，人工登出后再开新一段；掉线只由人工重登；",
+        "- **预算留头**：cell 预算按「预算系数」打折（Discord 60%，其余 70%），宁可少采；",
+        "- **模式互斥**：同一段会话里不混用「模式互斥」列出的模式（如邀请加入与频道抓取）；",
+        "- **空渲染=不支持的栈**：200 + 空标题 + 空正文不是挑战页、也不是空语料，换同垂类信源；",
+        "- **挑战页只被动等待或人工完成**，不求解、不伪造、不换身份。",
+        "",
+        "机器可读：`askovo platforms \"<需求>\" --json` 的每个 CDP 平台带 `runtime_policy`；"
+        "实现见 `connectors/cdp_strategy.py`（`SessionGuard`），"
+        "`python3 connectors/cdp_strategy.py --selftest` 离线自检。",
         "",
     ])
     return "\n".join(lines)
@@ -5526,6 +5702,10 @@ def platform_fit(
         if decision == "blocked":
             blocked.append(entry)
         else:
+            if entry["cdp"]:
+                # The plan carries the enforced runtime budget, not just prose:
+                # one goto per cell, timeout cooldown, session time-box, headroom.
+                entry["runtime_policy"] = _cdp_strategy().policy_for(platform_id).to_dict()
             ranked.append(entry)
     ranked.sort(key=lambda item: (-item["score"], item["name"]))
     if not ranked:
@@ -5538,6 +5718,11 @@ def platform_fit(
         "recommended": ranked[:8],
         "blocked": blocked,
         "strategies": strategies_for([item["id"] for item in ranked[:8]]),
+        "runtime_policies": {
+            item["id"]: item["runtime_policy"]
+            for item in ranked[:8]
+            if item.get("runtime_policy")
+        },
         "access_steps": [
             "优先官方 API / 授权导出 / 合规历史数据集；不做未授权抓取",
             "为每个平台记录访问依据、账号/应用、速率限制、保留与删除规则",
@@ -5923,21 +6108,34 @@ CDP_TARGET_HOSTS = {
 MAX_CDP_HANDSHAKE_BYTES = 64 * 1024
 MAX_CDP_MESSAGE_BYTES = 16 * 1024 * 1024
 CAPTURE_CHALLENGE_WAIT_SECONDS = 5.0
-# Soft error pages: the site itself reports the destination does not exist.
-# Titles only — never guess from body text, where products legitimately
-# mention "not found" in reviews.
-CAPTURE_NOT_FOUND_TITLE_MARKERS = (
-    "not found", "doesn't exist", "does not exist",
-    "页面不存在", "页面未找到", "未找到页面", "找不到",
-)
-_CAPTURE_NOT_FOUND_404 = re.compile(r"(?<![0-9a-z])404(?![0-9a-z])", re.I)
+CDP_CALL_TIMEOUT_SECONDS = 30.0
+
+
+class CDPTimeout(TimeoutError):
+    """A CDP call exceeded its budget; the websocket stream is now torn.
+
+    A torn stream is a stop signal, not a retry signal: the next call would
+    resume reading in the middle of the previous frame, and on a session
+    platform the timeout itself is the anti-automation signature (field:
+    Discord drops the login after timeout-then-continue). Reconnect with a
+    fresh page instead.
+    """
+
+    def __init__(self, method: str, timeout_seconds: float) -> None:
+        self.method = method
+        self.timeout_seconds = float(timeout_seconds)
+        super().__init__(
+            f"CDP {method} timed out after {self.timeout_seconds:.0f}s; "
+            "the stream is torn — stop touching the platform and reconnect with a fresh page"
+        )
+
+
+class CDPTransportError(RuntimeError):
+    """The CDP connection is unusable (torn by an earlier timeout or closed)."""
 
 
 def _capture_title_reports_not_found(title: str) -> bool:
-    lowered = str(title or "").lower()
-    if any(marker in lowered for marker in CAPTURE_NOT_FOUND_TITLE_MARKERS):
-        return True
-    return bool(_CAPTURE_NOT_FOUND_404.search(str(title or "")))
+    return bool(_cdp_strategy().title_reports_not_found(title))
 
 
 def _validate_cdp_base(cdp_base: str) -> tuple[str, int]:
@@ -6096,26 +6294,58 @@ class _WebSocket:
 
 
 class CDPClient:
-    def __init__(self, ws: _WebSocket):
+    def __init__(self, ws: _WebSocket, *, timeout: float = CDP_CALL_TIMEOUT_SECONDS):
         self.ws = ws
+        self.timeout = float(timeout)
         self.next_id = 0
+        self._broken = ""
 
-    def call(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    @property
+    def broken(self) -> str:
+        """Why this client can no longer be used (empty means healthy)."""
+        return self._broken
+
+    def _arm_timeout(self, seconds: float) -> None:
+        sock = getattr(self.ws, "sock", None)
+        if sock is not None:
+            try:
+                sock.settimeout(seconds)
+            except OSError:  # pragma: no cover - socket already closed
+                pass
+
+    def call(self, method: str, params: dict[str, Any] | None = None,
+             *, timeout: float | None = None) -> dict[str, Any]:
+        if self._broken:
+            raise CDPTransportError(
+                f"CDP connection is unusable ({self._broken}); open a fresh page "
+                "instead of retrying on a torn stream"
+            )
+        budget = self.timeout if timeout is None else float(timeout)
+        self._arm_timeout(budget)
         self.next_id += 1
         message_id = self.next_id
-        self.ws.send_text(json.dumps({"id": message_id, "method": method, "params": params or {}}))
-        while True:
-            message = json.loads(self.ws.recv_text())
-            if message.get("id") != message_id:
-                continue
-            if "error" in message:
-                raise RuntimeError(f"CDP {method} failed: {message['error']}")
-            return message.get("result") or {}
+        try:
+            self.ws.send_text(json.dumps({"id": message_id, "method": method, "params": params or {}}))
+            while True:
+                message = json.loads(self.ws.recv_text())
+                if message.get("id") != message_id:
+                    continue
+                if "error" in message:
+                    raise RuntimeError(f"CDP {method} failed: {message['error']}")
+                return message.get("result") or {}
+        except (socket.timeout, TimeoutError) as exc:
+            # The frame boundary is unknown after a timeout: never read on.
+            self._broken = f"{method} timed out after {budget:.0f}s"
+            raise CDPTimeout(method, budget) from exc
+        except ConnectionError:
+            self._broken = "connection closed"
+            raise
 
-    def evaluate(self, expression: str) -> Any:
+    def evaluate(self, expression: str, *, timeout: float | None = None) -> Any:
         result = self.call(
             "Runtime.evaluate",
             {"expression": expression, "returnByValue": True, "awaitPromise": True},
+            timeout=timeout,
         )
         return (result.get("result") or {}).get("value")
 
@@ -6379,13 +6609,16 @@ def capture_page(
     adapter_failure = _capture_adapter_failure(study, platform)
     if adapter_failure is not None:
         return adapter_failure
+    strategy = _cdp_strategy()
+    policy = strategy.policy_for(platform)
     capture_id = (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
                   + "-" + hashlib.sha256(url.encode()).hexdigest()[:8])
     out_dir = study_dir / "01-sources" / "captures"
     out_dir.mkdir(parents=True, exist_ok=True)
-    ws_url = cdp_new_page(cdp_base, url)
-    client = CDPClient(_WebSocket(ws_url))
+    client: CDPClient | None = None
     try:
+        ws_url = cdp_new_page(cdp_base, url)
+        client = CDPClient(_WebSocket(ws_url))
         client.call("Runtime.enable")
         time.sleep(max(0.5, wait_seconds))
         value = client.evaluate(CDP_PAGE_EXTRACTOR)
@@ -6406,7 +6639,7 @@ def capture_page(
             return {"status": "error", "platform": platform, "reason": str(exc)}
         text = str(value.get("text") or "")
         challenge_waited = False
-        if re.search(r"Robot Check|Enter the characters|验证码|异常流量|not a robot", text, re.I):
+        if strategy.classify_page("", text) == "challenge":
             # Passive wait only: a human may complete the challenge in the same
             # browser. Never solve it, reload through a bypass, or alter the page.
             deadline = time.monotonic() + max(0.0, CAPTURE_CHALLENGE_WAIT_SECONDS)
@@ -6416,8 +6649,7 @@ def capture_page(
                 if not isinstance(refreshed, dict):
                     continue
                 refreshed_text = str(refreshed.get("text") or "")
-                if not re.search(r"Robot Check|Enter the characters|验证码|异常流量|not a robot",
-                                 refreshed_text, re.I):
+                if strategy.classify_page("", refreshed_text) != "challenge":
                     value = refreshed
                     text = refreshed_text
                     challenge_waited = True
@@ -6427,7 +6659,14 @@ def capture_page(
                         "reason": ("page shows a challenge; passive wait expired and "
                                    "human completion was not observed — capture stopped")}
         title = str(value.get("title") or "")
-        if _capture_title_reports_not_found(title):
+        verdict = strategy.classify_page(title, text)
+        if verdict == "challenge":
+            # The title can still report the interstitial after the body
+            # cleared; never mint a candidate out of a challenge page.
+            return {"status": "challenge",
+                    "reason": ("page still reports a challenge after the passive wait; "
+                               "capture stopped without a candidate")}
+        if verdict == "page_not_found":
             # An error page is not research evidence: stop before the
             # screenshot and persist no candidate for it.
             return {
@@ -6437,6 +6676,32 @@ def capture_page(
                            "no candidate was written"),
                 "final_url": final_url,
                 "title": title,
+            }
+        if verdict == "blank_render":
+            # 200 + empty title + empty body is an unsupported rendering stack,
+            # not a challenge and not an empty corpus: no candidate, no retry.
+            return {
+                "status": "blank_render",
+                "platform": platform,
+                "reason": ("the page returned an empty title and body; this rendering "
+                           "stack is unsupported on the CDP channel — pivot to another "
+                           "source in the same vertical instead of retrying"),
+                "final_url": final_url,
+                "title": title,
+                "runtime_policy": policy.to_dict(),
+            }
+        if platform == "discord" and len(text.strip()) < 1500 and strategy.detect_membership_gate(text):
+            # Join is not access: a short page that announces a membership gate
+            # is a coverage gap, not evidence. Never capture it as a candidate.
+            return {
+                "status": "membership_gated",
+                "platform": platform,
+                "reason": ("the page announces a membership verification gate; joining "
+                           "a server is not permission to read its history — record the "
+                           "gap; no candidate was written"),
+                "final_url": final_url,
+                "title": title,
+                "runtime_policy": policy.to_dict(),
             }
         shot = client.call("Page.captureScreenshot", {"format": "png"})
         raw = shot.get("data") if isinstance(shot, dict) else None
@@ -6479,6 +6744,7 @@ def capture_page(
                 "registry_review": "current",
                 "challenge_check": ("waited_then_passed" if challenge_waited else "passed"),
                 "cdp_loopback": True,
+                "runtime_policy": policy.to_dict(),
             },
             "evidence_status": "candidate",
             "note": "candidate capture only; named-human accept with an explicit evidence level is required", 
@@ -6501,8 +6767,21 @@ def capture_page(
                 "screenshot": str(image_path), "ocr": payload["ocr"],
                 "platform": platform, "source_url": final_url,
                 "evidence_status": "candidate", "text_length": len(text)}
+    except (TimeoutError, socket.timeout) as exc:
+        # A timeout tears the CDP stream and, on a session platform, is the
+        # anti-automation signature itself: stop instead of retrying.
+        decision = strategy.classify_failure(exc, platform=platform, policy=policy)
+        return {
+            "status": "cdp_timeout",
+            "platform": platform,
+            "reason": str(exc),
+            "action": decision["message"],
+            "retry_after_seconds": int(policy.timeout_cooldown_minutes * 60),
+            "runtime_policy": policy.to_dict(),
+        }
     finally:
-        client.close()
+        if client is not None:
+            client.close()
 
 
 def collect_cdp(
@@ -6536,21 +6815,47 @@ def collect_cdp(
     _validate_cdp_target(platform, url)
     if lease_valid is not None and not lease_valid():
         return {"status": "lease_lost", "platform": platform, "reason": "queue lease is no longer owned by this worker"}
-    ws_url = cdp_new_page(cdp_base, url)
-    client = CDPClient(_WebSocket(ws_url))
+    strategy = _cdp_strategy()
+    policy = strategy.policy_for(platform)
+    guard = strategy.SessionGuard(platform, policy=policy)
+    guard.begin_cell("collect")
+    guard.navigate()  # one goto per cell: the page is opened exactly once
+    client: CDPClient | None = None
     rows: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
     try:
+        ws_url = cdp_new_page(cdp_base, url)
+        client = CDPClient(_WebSocket(ws_url))
         client.call("Runtime.enable")
         time.sleep(max(0.5, wait_seconds))
+        stale_rounds = 0
         for _ in range(max(0, scrolls) + 1):
+            guard.check_session()
             value = client.evaluate(CDP_EXTRACTOR)
             if isinstance(value, dict) and value.get("error") == "challenge_page":
+                guard.record_stop("challenge_page")
                 return {
                     "status": "challenge",
                     "platform": platform,
                     "reason": "page shows a challenge/robot check; stop and use an authorized export instead",
                 }
+            if (
+                not rows
+                and isinstance(value, dict)
+                and not value.get("rows")
+                and not str(value.get("page_title") or "").strip()
+            ):
+                # 200 + empty title + empty body is an unsupported stack, not
+                # an empty corpus: stop before writing an empty run.
+                guard.record_stop("blank_render")
+                return {
+                    "status": "blank_render",
+                    "platform": platform,
+                    "reason": ("page returned an empty title and body; unsupported rendering "
+                               "stack — pivot to another source in the same vertical"),
+                    "runtime_policy": policy.to_dict(),
+                }
+            before = len(rows)
             if isinstance(value, dict) and isinstance(value.get("rows"), list):
                 for row in value["rows"]:
                     key = hashlib.sha256(
@@ -6564,10 +6869,29 @@ def collect_cdp(
                         break
             if len(rows) >= limit:
                 break
+            stale_rounds = stale_rounds + 1 if len(rows) == before else 0
+            if stale_rounds >= 2:
+                # The list stopped growing: stop instead of metronome-scrolling
+                # a page that is not producing (silent extractor failure triage).
+                break
             client.evaluate("window.scrollBy(0, Math.max(700, Math.floor(window.innerHeight * 0.85)))")
             time.sleep(max(0.4, wait_seconds / 2))
+    except (TimeoutError, socket.timeout, strategy.SessionExpired, strategy.CircuitOpen) as exc:
+        decision = guard.record_failure(exc, str(exc))
+        status = "cdp_timeout" if isinstance(exc, (TimeoutError, socket.timeout)) else (
+            "session_expired" if isinstance(exc, strategy.SessionExpired) else "cooldown")
+        return {
+            "status": status,
+            "platform": platform,
+            "reason": str(exc),
+            "action": decision["message"],
+            "retry_after_seconds": int(policy.timeout_cooldown_minutes * 60),
+            "runtime_policy": policy.to_dict(),
+        }
     finally:
-        client.close()
+        guard.end_cell("circuit_open" if guard.circuit()["open"] else "ok")
+        if client is not None:
+            client.close()
     raw_records = [
         {
             "id": f"{platform}:{hashlib.sha256((row.get('source_url','') + row.get('text','')[:500]).encode()).hexdigest()[:16]}",
@@ -6603,6 +6927,7 @@ def collect_cdp(
         "requested": limit,
         "source_url": url,
         "cdp_base": cdp_base,
+        "runtime_policy": policy.to_dict(),
         "limits": entry.get("limits", []),
         "bias": entry.get("bias", []),
         "terms_note": "visible page text only; no challenge bypass; platform terms may still restrict collection",
@@ -6870,6 +7195,48 @@ def _analysis_time_coverage(records: list[dict[str, Any]], study: dict[str, Any]
     }
 
 
+ANALYSIS_FIELD_CONCEPTS = {
+    "record_id": ("record_id", "id"),
+    "text": ("text", "body", "normalized_text", "content", "selftext"),
+    "source_url": ("source_url", "url", "source_ref"),
+    "created_at": ("created_at", "source_time"),
+}
+ANALYSIS_REQUIRED_FIELDS = ("record_id",)
+
+
+def _analysis_field_completeness(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Non-empty rates for the fields a downstream join depends on.
+
+    A 0% rate on record_id is a normalization bug. text/source_url/created_at
+    can legitimately be absent for first-party or structured material, so they
+    are reported but only flagged for review, not declared a bug.
+    """
+    total = len(records)
+    fields: dict[str, dict[str, Any]] = {}
+    for concept, keys in ANALYSIS_FIELD_CONCEPTS.items():
+        if concept == "text":
+            non_empty = sum(1 for record in records if str(_evidence_text(record) or "").strip())
+        else:
+            non_empty = sum(
+                1 for record in records
+                if any(str(record.get(key) or "").strip() for key in keys)
+            )
+        fields[concept] = {
+            "non_empty": non_empty,
+            "ratio": round(non_empty / total, 3) if total else 0.0,
+        }
+    zero = [concept for concept, item in fields.items() if total and item["non_empty"] == 0]
+    return {
+        "fields": fields,
+        "zero_rate_fields": zero,
+        "required_zero_rate": [concept for concept in zero if concept in ANALYSIS_REQUIRED_FIELDS],
+        "note": (
+            "0% 的 record_id 是清洗/转换 bug；正文、source_url、created_at 对第一方或结构化材料"
+            "可能本来为空，按来源复核后再判断。先修管线，不要改派生结论。"
+        ),
+    }
+
+
 def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any]:
     study_dir = study_dir.resolve()
     records: list[dict[str, Any]] = []
@@ -6953,6 +7320,7 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
     for record in unique:
         level = str(record.get("evidence_level") or "unregistered")
         level_counts[level] = level_counts.get(level, 0) + 1
+    field_completeness = _analysis_field_completeness(unique)
     analysis = {
         "generated_at": now(),
         "question": question,
@@ -6964,6 +7332,7 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
         "segments": _analysis_segments(unique),
         "segments_note": "描述性计数，n<3 的分段标记 low_n；不做显著性、因果或总体推断。",
         "time_coverage": _analysis_time_coverage(unique, study),
+        "field_completeness": field_completeness,
         "by_evidence_form": by_form,
         "by_month": dict(sorted(by_month.items())),
         "avg_text_length": round(sum(lengths) / len(lengths), 1) if lengths else 0,
@@ -6983,9 +7352,39 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
         f"- 证据形式：{json.dumps(by_form, ensure_ascii=False)}",
         f"- 平均文本长度：{analysis['avg_text_length']}",
         "",
-        "## 高频词（候选主题，不是结论）",
+        "## 字段完整性（管线体检）",
         "",
     ]
+    field_labels = {
+        "record_id": "记录 id",
+        "text": "正文",
+        "source_url": "来源 URL",
+        "created_at": "发生时间",
+    }
+    for concept, item in field_completeness["fields"].items():
+        lines.append(
+            f"- {field_labels.get(concept, concept)}：{item['non_empty']}/{analysis['records']}"
+            f"（{item['ratio']:.0%}）"
+        )
+    if field_completeness["required_zero_rate"]:
+        lines.append(
+            "- **0% 必填字段：" + "、".join(
+                field_labels.get(item, item) for item in field_completeness["required_zero_rate"])
+            + "**——先查清洗/转换是否丢字段，不要把 0% 当来源缺口。"
+        )
+    elif field_completeness["zero_rate_fields"]:
+        lines.append(
+            "- 0% 字段：" + "、".join(
+                field_labels.get(item, item) for item in field_completeness["zero_rate_fields"])
+            + "（第一方或结构化材料可能本来为空，按来源复核）。"
+        )
+    lines.extend([
+        "",
+        "> " + field_completeness["note"],
+        "",
+        "## 高频词（候选主题，不是结论）",
+        "",
+    ])
     lines.extend(f"- {item['term']}：{item['count']}" for item in analysis["top_terms"][:20])
     if question:
         lines.extend(["", "## 与问题的匹配片段", ""])
@@ -7434,25 +7833,42 @@ def cli_platforms(args: Any) -> int:
         plan["recommended"] = [item for item in plan["recommended"] if item["id"] == platform_filter]
         plan["blocked"] = [item for item in plan["blocked"] if item["id"] == platform_filter]
         plan["platform_filter"] = platform_filter
-        if not plan["recommended"] and not plan["blocked"]:
-            known = sorted(set(platform_index()) | set(field_notes_index()))
+        known = sorted(set(platform_index()) | set(field_notes_index()))
+        if platform_filter not in known:
             print(
                 f"unknown platform: {platform_filter} (known: {', '.join(known)})",
                 file=sys.stderr,
             )
             return 2
+        if not plan["recommended"] and not plan["blocked"]:
+            # A known source can sit outside the top-ranked set; --field-notes,
+            # --policies and --json still have a truthful answer for it.
+            plan["platform_filter_note"] = (
+                f"{platform_filter} is a known source but is not in the current ranked set; "
+                "showing its notes/policies only."
+            )
         notes = field_notes_for([platform_filter])
     else:
         notes = field_notes_for([item["id"] for item in plan["recommended"]])
     plan["field_notes"] = notes
     strategy_platforms = [platform_filter] if platform_filter else [item["id"] for item in plan["recommended"]]
     plan["strategies"] = strategies_for(strategy_platforms)
+    if getattr(args, "policies", False):
+        catalog = platform_index()
+        declared = set((field_notes_catalog().get("source_types") or {}).keys())
+        plan["runtime_policies"] = {
+            platform: _cdp_strategy().policy_for(platform).to_dict()
+            for platform in strategy_platforms
+            if platform in declared or catalog.get(platform, {}).get("cdp")
+        }
     if getattr(args, "json", False):
         print(json.dumps(plan, ensure_ascii=False, indent=2))
     elif getattr(args, "field_notes", False):
         print(field_notes_markdown(notes=notes, platform=platform_filter))
     elif getattr(args, "strategies", False):
         print(strategies_markdown(plan["strategies"]))
+    elif getattr(args, "policies", False):
+        print(runtime_policies_markdown(list(plan["runtime_policies"])))
     else:
         print(platform_markdown(plan))
     return 0

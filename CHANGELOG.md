@@ -2,6 +2,151 @@
 
 ## Unreleased
 
+### Engine integration for the postmortem: field completeness, membership gates, App Store route
+
+Reviewed the 35 notes / 14 strategies for what belongs in the engine rather
+than docs. Three rules earned engine surface; the rest stayed operator-level
+because encoding them as fake runtime budgets would overclaim.
+
+- `askovo analyze` now publishes `field_completeness` and `zero_rate_fields`
+  for the join fields (`record_id`, `text`, `source_url`, `created_at`) and
+  renders a "字段完整性（管线体检）" section. A 0% `record_id` is flagged as a
+  pipeline bug; text/url/time can legitimately be absent for first-party or
+  structured material and are reported for source-level review. This gives
+  `field-preservation` a product surface instead of leaving it in the
+  postmortem.
+- The Discord collector gains `--list-channels`: one cell, one goto, a sidebar
+  snapshot printed as JSON and no empty snapshot written. The
+  "name the channels before scanning" rule is now a product command, not a
+  prose suggestion.
+- `capture page` refuses a Discord membership gate too (`membership_gated`, no
+  candidate): the gate is a coverage gap, not evidence, and never something to
+  work around.
+- `connectors.cdp_strategy.detect_membership_gate` recognises the membership
+  wall (Discord and generic community pages); the Discord collector stops with
+  `membership_gated`, writes no empty snapshot and records the gap. The
+  `join-is-not-access` strategy is now `enforcement: runtime`, bound to that
+  helper in `runtime_policies.guards`, so `askovo doctor` fails if the guard
+  disappears.
+- `app_store` in `platform-catalog.json` now states that the customer-reviews
+  RSS endpoint is retired, so platform planning stops recommending it; the
+  browser-visible route remains unverified and is labelled as such.
+- Left operator-level on purpose: classification coverage (a campaign counter,
+  not an engine concept), single-writer for derived outputs (a local job
+  concern), Instagram keyword/profile routing, Discord channel naming and vB5
+  cross-link dedupe (each needs a specific collector that does not exist yet).
+  The registry keeps them visible; no runtime field pretends to enforce them.
+- `askovo platforms --platform <known-but-unranked>` now returns that source's
+  notes/JSON instead of "unknown platform"; the App Store RSS retirement is
+  reachable from the CLI even when app_store is outside the top-ranked set.
+- Tests: `analyze` field-completeness rates and required-field flags, gate
+  detection, the runtime guard binding and the known-unranked filter. Full
+  suite: 645 tests green.
+
+### Campaign postmortem becomes strategy: join is not access, buckets reconcile, fields survive
+
+A full read of the 2026-11-17 golf-device campaign session (≈1,150 messages,
+≈323k cleaned records) collected the lessons that were still prose after the
+first registry pass. The pattern is consistent: the expensive failures were
+access assumptions, silent data loss and multi-process collisions — not
+selectors.
+
+- Six new field notes (35 total): **Discord membership-gated history** (SGT,
+  40,967 members: join succeeded, history stayed behind member verification —
+  a coverage gap, never a gate to work around); **Discord channel-name
+  targeting** (snapshot the sidebar once, rank by name, stop burning cells on
+  rules/welcome/empty rooms); **Instagram keyword search over profile
+  crawling** (`/explore/search/keyword/?q=` yields 3–8 posts/query while
+  two-post profile cells timed out); **App Store RSS retired** (0 entries
+  across variants; browser-visible comments API is the remaining route);
+  **vB5 sidebar cross-links** (dedupe section threads by canonical href); and
+  **silent normalized-field loss** (`author_hash` dropped by a positional
+  mismatch; 0/16,226 Amazon dates were a parser field issue).
+- Three new operator strategies (14 total): `join-is-not-access`,
+  `classification-coverage` (every raw file maps into a bucket; Rapsodo/
+  FlightScope 5,863 records had fallen outside every bucket and the "gap" was
+  partly a classifier bug) and `field-preservation` (named-field conversion,
+  golden record, 0% non-empty rate is a bug).
+- Existing strategies refined from the same postmortem: single-writer now
+  covers derived outputs and managed jobs (clean4 still writing when clean5
+  started, then nohup residue); multilingual routing records that word choice
+  dominates language (generic Japanese ≈3 posts vs `ゴルフスイング` 42);
+  cell budget covers slow surfaces and one page per cell; goal counting
+  reconciles raw → deduped → cleaned → classified; session health covers
+  idle-open sessions and Instagram's account-level 24–72 h block risk.
+- Note corrections: `vertical-forum-cloudflare` moves from channel_verified to
+  verified (GolfWRX vB5 Equipment section reached 4,601 floors; MyGolfSpy blank);
+  `discord-invite-rot` now distinguishes a bounced invite from a membership
+  wall; `x-search-infinite-scroll-stall` keeps one search page per cell;
+  `instagram-locale-keyword-grid` separates term yield from locale yield.
+- Playbook: new platform quirks (membership walls, channel naming, IG keyword
+  surface, App Store RSS, vB5 cross-links), a data-pipeline hygiene section
+  (join keys, bucket reconciliation, nominal/deduped/cleaned counts), and
+  run-hygiene rules (verify a background launch with `ps` and absolute paths;
+  a browser lane stops when the agent turn ends).
+- Docs: the English/Chinese field-note strategy tables and the platform index
+  are regenerated from the registry; the new
+  `docs/campaign-postmortem-20261117.md` indexes each incident to its note or
+  strategy id (linked from the docs index); feature-status counts updated.
+  Full suite: 637 tests green.
+
+### CDP strategies become runtime policy: one guard, timeouts as circuit breakers
+
+The campaign's CDP strategies used to live in three disconnected places — prose
+in the registry, helper modules nothing called, and hand-rolled loops in each
+collector. The 2026-11-17 close made the cost concrete: four Discord session
+drops, and every one shared the same precursor — a timed-out/aborted operation
+followed by continued driving. Equally fast but timeout-free navigation never
+dropped; one drop arrived 40 minutes after the last operation with zero browser
+contact. That is now one runtime layer instead of prose plus per-script logic:
+
+- `assets/platform-field-notes.json` gains `runtime_policies`: per-platform
+  budgets (`cadence_seconds`, `session_minutes`, `session_cooldown_minutes`,
+  `timeout_cooldown_minutes`, `max_gotos_per_cell`, `budget_fraction`,
+  `allow_reload`, `exclusive_modes`, `requires_session`, `challenge_policy`,
+  `blank_render_status`) plus `guards`, which bind every runtime-enforced
+  strategy to the helper that enforces it. Each strategy now declares
+  `enforcement: runtime | operator`; `askovo doctor` fails when a runtime
+  strategy has no guard, an operator strategy claims one, or a CDP platform
+  cannot build a policy.
+- `connectors/cdp_strategy.py` compiles the section into `RuntimePolicy` and
+  `SessionGuard`: one goto per cell (`reload()` refused), timeout → circuit open
+  for the cooldown (15 min), session time-box (Discord 40 min), mode exclusivity
+  (messages/forum/invite; comments/posts), cell-budget headroom (Discord 60%,
+  others 70%), page triage (challenge / not-found / blank render / content) and
+  a persisted `askovo.cdp-session/1` journal. `--selftest` and `--policy
+  <platform>` run offline.
+- `sure_engine.CDPClient` gains a per-call timeout and marks the websocket torn
+  after one: no read-on, no retry (`CDPTimeout` / `CDPTransportError`). A torn
+  stream is a stop signal, not a transient error.
+- `capture page` and `collect --cdp` share the triage: a blank 200 returns
+  `blank_render` and writes no candidate/run, a timeout returns `cdp_timeout`
+  with the cooldown, and both record the applied policy in
+  `governance.runtime_policy` / the run manifest. `collect --cdp` also stops
+  scrolling after two stale rounds instead of metronome-scrolling a page that
+  is not producing.
+- The Discord and Kickstarter collectors run under the guard: persisting the
+  best harvest before stopping, writing `<out>.session.json`, and exiting 2 on
+  timeout/circuit/session drop/blank render instead of retrying.
+- `connectors/rotation.py` now takes cadence and the session requirement from
+  the same registry for every platform the policy layer declares (explicit
+  call arguments still win); archive-only routes (Reddit/YouTube) keep their
+  field table. The scheduler and the collectors can no longer disagree about
+  how fast a site may be hit.
+- Engine surface: `platform_fit` attaches `runtime_policy` to every CDP
+  platform (plan-level `runtime_policies` map), `askovo platforms "<need>"
+  --policies` renders the enforced-budget table, `--json` carries the same
+  data, and MCP `askovo_platforms` gains the matching `policies` flag.
+- `askovo doctor` resolves registry artifact paths in an installed runtime too
+  (`skills/askovo/...` maps onto the bundled `runtime/`), so a wheel doctor run
+  no longer fails on field-note or strategy artifact paths.
+- Docs: the playbook's anti-automation post-mortem is rewritten to the
+  four-drop protocol (timeout circuit breaker, one goto per cell, no reload,
+  mode exclusivity, 30–40 minute session box, deliberate logout); the
+  field-note references (EN/ZH), capture/CLI/feature-status docs, connectors
+  README, llms.txt, SKILL.md and both READMEs are in sync. Full suite: 635
+  tests green.
+
 ### CDP studies become designable; error pages stop pretending to be evidence
 
 Live-chain finding (2026-11-17): the catalog opened eight CDP platforms, but

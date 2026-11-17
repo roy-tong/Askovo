@@ -30,6 +30,14 @@ askovo capture reject ./cam-study \
 
 - 错误页不产生候选：标题报告 not found/404（含中文"页面不存在"）的页面在截图与落盘前
   直接 `page_not_found` 停止，不进入候选与审核队列；
+- 空渲染同样不产生候选：HTTP 200 但标题与正文均为空（如 Invision/MyGolfSpy 在 IAB 内）
+  返回 `blank_render`——这是不支持的渲染栈，不是挑战页、也不是空语料；换同垂类信源，
+  不重试、不改自动化方式；
+- 超时是熔断而不是重试：CDP 调用超时返回 `cdp_timeout` 并带上该平台策略的冷却时间
+  （默认 15 分钟）；`CDPClient` 在超时后拒绝继续读同一个流（撕裂的帧边界不可恢复），
+  期间不要再碰该平台；
+- 会员墙不产生候选：Discord 等会员验证页面返回 `membership_gated`——**加入 ≠ 可读**，
+  记为覆盖缺口，不尝试验证角色/机器人/冒充，也不把门禁页写成候选；
 - CDP 平台的研究设计声明（study.json `source_adapters.<platform>`）有第一方传输通道：
   `connector_id=cdp-authorized-visible-page` + `access_basis=cdp_authorized_visible_page` +
   `collection_mode=authorized_visible_page` + 引擎版本号，资格来自平台目录 `cdp: true`，

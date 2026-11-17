@@ -320,6 +320,7 @@
       "adapter": "none",
       "limits": [
         "No general bulk review API",
+        "Customer-reviews RSS endpoint retired (returns empty); do not plan it",
         "Third-party providers need license",
         "Storefront/locale differences"
       ],
@@ -328,7 +329,7 @@
         "Rating prompt bias",
         "Version mix"
       ],
-      "notes": "使用授权导出/合规数据商；记录 storefront、版本与抓取时点。"
+      "notes": "使用授权导出/合规数据商；客户评论 RSS 已下线，不要规划；记录 storefront、版本与抓取时点。"
     },
     {
       "id": "google_play",

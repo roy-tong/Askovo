@@ -177,11 +177,14 @@ askovo platforms "SaaS 用户在 GitHub 和论坛上的抱怨" --domain software
 askovo platforms "Kickstarter 众筹评论" --field-notes            # 平台实战笔记（限制/解法/验证等级）
 askovo platforms "Discord 社区抱怨" --platform discord --field-notes  # 单平台完整表
 askovo platforms "Discord 和 Kickstarter 的多平台采集" --strategies   # 多平台轮转策略（不变量/机制/验证）
+askovo platforms "Discord 社区抱怨" --policies                        # CDP 运行时预算（goto/熔断/会话上限）
 ```
 
 输出推荐平台、适配分、访问方式、批量能力、限制、偏差，以及不可直接采集的平台与原因。`--bulk` 优先支持批量的来源。
 
-`--field-notes` 渲染 `skills/askovo/assets/platform-field-notes.json` 里的实战限制与解法（含跨平台实践）；`--platform <id>` 收窄到单个目录平台或 source type（如 `vertical_forum`），未知 id 退出码 2；`--json` 的每个推荐条目带 `field_notes`，顶层另有 `field_notes`。笔记**不是许可**：能否采集仍由平台目录、study scope 与 Design gate 决定。
+`--field-notes` 渲染 `skills/askovo/assets/platform-field-notes.json` 里的实战限制与解法（含跨平台实践）；`--platform <id>` 收窄到单个目录平台或 source type（如 `vertical_forum`），未知 id 退出码 2，已知但不在当前推荐集的平台（如 `app_store`）仍返回其笔记/策略而不是报未知；`--json` 的每个推荐条目带 `field_notes`，顶层另有 `field_notes`。笔记**不是许可**：能否采集仍由平台目录、study scope 与 Design gate 决定。
+
+`--policies` 渲染注册表 `runtime_policies` 编译出的 CDP 运行时预算：每站点最小间隔、会话上限、超时熔断、单 cell goto 数、预算留头系数与模式互斥。`--json` 的每个 CDP 推荐条目带 `runtime_policy`，`--policies` 时顶层另有 `runtime_policies`。预算是**执行约束**（`connectors/cdp_strategy.py` 的 `SessionGuard`），不是访问许可。
 
 ## collect
 

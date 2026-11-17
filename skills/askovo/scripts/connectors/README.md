@@ -12,6 +12,7 @@
 | `common.py` | Tiiny 用户研究 + 高尔夫调研（运行时守卫） | 共享助手：schema 规范化、质量分、匿名化哈希、JSONL IO；运行时守卫 `classify_backoff` / `single_writer_state` / `parse_relative_time` / `atomic_write_json` |
 | `cdp_runtime.py` | 高尔夫智能设备调研（CDP 方法，2026-11） | CDP 操作助手：被动挑战等待、真实滚轮事件、tab 重绑、有界 load-more、并行通道（含 `--selftest` 离线自检） |
 | `rotation.py` | 高尔夫智能设备调研（多平台轮转，2026-11） | 多平台轮转调度器：每站点最小间隔、429/422 分类冷却、会话门（人工重登）、日配额、断点续跑；`--plan`/`--selftest` |
+| `cdp_strategy.py` | 高尔夫智能设备调研（2026-11-17 四次 Discord 掉线复盘） | CDP 运行时策略：注册表 `runtime_policies` → `RuntimePolicy`/`SessionGuard`；一 cell 一次 goto、`reload()` 禁止、超时熔断、会话限时、模式互斥、页面四态判定、会话日志（`--selftest`/`--policy`） |
 | `collect_arctic_reddit.py` | Tiiny 用户研究 | 同一归档端点的游标分页采集器（按时间窗倒序翻页到穷尽） |
 | `collect_arctic_windows.py` | 高尔夫智能设备调研（deep_pull.py，2026-11） | Arctic Shift 显式窗口回填：窗口内 `after` 游标深翻页 + 每窗 cap + state 断点（≈3,900 窗实战验证） |
 | `collect_youtube_innertube.py` | 高尔夫智能设备调研（expand-2026-11/youtube_pull.py） | YouTube innertube 免登录评论采集：search→next→continuation，兼容 2024+ commentEntityPayload；`created_at` 为相对时间近似（`date_precision=approximate`） |
@@ -268,7 +269,9 @@ python3 collect_arctic_windows.py --config windows.json \
 
 - **不做挑战绕过**：Kickstarter 的 Cloudflare 只等待被动自动清除（`--challenge-wait` 超时即硬停，提示人工完成后重跑）；永不解题、不伪造指纹。
 - **登录会话仅用户手工操作**：Discord 由用户自己登录浏览器，采集器只开授权可见频道；不代输凭据、不读存储凭据、不导 cookie。
-- **有界 + 慢速**：`--max-clicks`/`--max-rounds` 封顶；Discord 默认 2.5s/轮滚动 + 滚前模拟鼠标移动——高频导航与非人类匀速滚动会触发风控断会话（实战教训，详见 playbook 的修正协议）。
+- **策略在运行时执行**：两个采集器都 import `cdp_strategy.py`，预算来自注册表 `runtime_policies`（不在脚本里各写一份）：一 cell 一次 goto、`reload()` 禁止、会话限时（Discord 40 分钟）、超时熔断（15 分钟）、模式互斥（messages/forum/invite、comments/posts）。**任何超时/中断都按熔断处理**（2026-11-17 四次 Discord 掉线：三次都在 timeout/abort 后继续驱动；同样快但无超时的导航从未掉线）。
+- **先落盘再停**：超时/掉线/空渲染/404 时先持久化已采到的最好结果，再以退出码 2 停止；会话日志写到 `<out>.session.json`（`askovo.cdp-session/1`），下一次运行能看见上次试过什么。空渲染（200 + 空标题 + 空正文）不是挑战页、也不是空语料，直接换同垂类信源。
+- **有界 + 慢速**：`--max-clicks`/`--max-rounds` 封顶；Discord 默认 2.5s/轮滚动 + 滚前模拟鼠标移动——高频导航与非人类匀速滚动会累积风险（实战教训，详见 playbook 的修正协议）。
 - **每轮持久化**：展开/滚动每轮原子写盘（实战教训：未落盘的一轮就是丢掉的一轮）。
 - **原始 JSON 落盘**：产物是平台保真快照（Kickstarter `{project,n,comments}`、Discord `{guild,server,channels,forums}`），转语料信封走 `clean_screen_corpus.py`（Kickstarter：`--text-fields text --id-fields 无，用派生`；Discord：`--text-fields text --id-fields id`）。
 - **收编 ≠ 放行**（见第 6 节）：能否对某平台使用该通道由 `assets/platform-catalog.json` 的 `cdp: true` 与 study 的 scope/adapter 审查决定，工具存在不构成路线批准。
@@ -280,6 +283,9 @@ python3 collect_cdp_kickstarter.py --cdp-url http://127.0.0.1:9222 \
   --out 02-data/raw/ks-<slug>.json
 # Kickstarter 更新帖（逐帖慢速导航 8s）
 python3 collect_cdp_kickstarter.py ... --mode posts --url ".../projects/<creator>/<slug>/posts"
+# 先列频道名（不采集、不写空快照），再点名采高价值频道
+python3 collect_cdp_discord.py --list-channels \
+  --url "https://discord.com/channels/<guild>/<channel>"
 # Discord 文字频道（用户已登录；一次一个频道，多频道慢速轮转）
 python3 collect_cdp_discord.py --cdp-url http://127.0.0.1:9222 \
   --url "https://discord.com/channels/<guild>/<channel>" --server "Server Name" \
@@ -305,10 +311,16 @@ python3 collect_cdp_discord.py ... --mode forum --url "https://discord.com/chann
 | `cdp_runtime.rebind_tab(list_tabs, pattern)` | 每次重新列 tab、按稳定 id 重绑；URL 模式会腐烂 | 重连后的 tab 失效 |
 | `cdp_runtime.bounded_load_more(click, count)` | 有界 burst 点击，直到行数不再增长/按钮消失，封顶总点击 | Kickstarter「load more」 |
 | `cdp_runtime.run_lanes(lanes, site_of=…)` | 并行通道、失败隔离、单站点单 tab 守卫（同一站点两个 tab = 双倍频率） | 双标签流水线 |
+| `cdp_strategy.policy_for(platform)` | 从注册表 `runtime_policies` 取该平台的运行时预算（间隔、会话上限、冷却、goto 上限、留头系数、互斥模式） | 四次 Discord 掉线复盘 |
+| `cdp_strategy.SessionGuard` | 一 cell 一次 goto、`reload()` 禁止、超时熔断、会话限时、模式互斥、持久化会话日志 | Discord：timeout-then-continue 是掉线签名 |
+| `cdp_strategy.classify_page` | 挑战页 / 404 / 空渲染 / 正常内容四态判定，capture、collect 与采集器共用 | MyGolfSpy 空渲染、Kickstarter 404 |
+| `cdp_strategy.classify_failure` | 超时→熔断冷却、挑战/掉线→人工、其余→停止（保留已采结果） | 采集器停止协议 |
 
 ```bash
 # 离线自检（无浏览器、无网络）
 python3 cdp_runtime.py --selftest
+python3 cdp_strategy.py --selftest
+python3 cdp_strategy.py --policy discord   # 打印该平台实际执行的预算
 ```
 
 边界与采集器一致：不绕过挑战页、不代输凭据、所有循环有界、每轮落盘。这些助手只编码**机制**；能否对某平台使用某通道仍由平台目录 + study scope 决定（见第 6 节）。平台限制与解法的机器可读版本见 [`../../references/platform-field-notes.md`](../../references/platform-field-notes.md)。
@@ -335,7 +347,9 @@ python3 rotation.py --plan discord,reddit,youtube   # 一轮的公平顺序
 python3 rotation.py --selftest                      # 离线自检
 ```
 
-边界：轮转只降低每站点频率，不绕过平台限制、挑战页或登录墙；身份/代理永不轮换。策略与验证状态的机器可读版本见 [`../../references/platform-field-notes.md`](../../references/platform-field-notes.md#cross-platform-strategies)。
+CDP 平台的间隔与会话要求直接读注册表 `runtime_policies`（调用参数显式覆盖仍优先），红迪/YouTube 等纯归档路线保留下面这份现场表——调度器和采集器不会再对「同一个站点能多快碰」各说一套。
+
+边界：轮转只降低每站点频率，不绕过平台限制、挑战页或登录墙；身份/代理永不轮换。策略与验证状态的机器可读版本见 [`../../references/platform-field-notes.md`](../../references/platform-field-notes.md#cross-platform-strategies)；每平台执行预算见 `cdp_strategy.py` 与 `askovo platforms "<需求>" --policies`。
 
 ---
 

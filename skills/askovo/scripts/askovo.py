@@ -5373,6 +5373,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--strategies", action="store_true",
         help="show the cross-platform collection strategies (rotation, lanes, quota, cooldowns)",
     )
+    platforms_parser.add_argument(
+        "--policies", action="store_true",
+        help="show the enforced CDP runtime budgets (cell goto, timeout cooldown, session time-box)",
+    )
     platforms_parser.add_argument("--json", action="store_true")
     platforms_parser.set_defaults(func=sure_engine.cli_platforms)
 

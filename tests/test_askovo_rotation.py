@@ -226,6 +226,19 @@ class StrategyRegistryTests(unittest.TestCase):
                 self.assertRegex(strategy["verification"]["date"], r"^\d{4}-\d{2}-\d{2}$")
                 self.assertTrue(strategy["verification"]["evidence"])
 
+    def test_late_campaign_strategies_are_registered(self) -> None:
+        by_id = {strategy["id"]: strategy for strategy in self.strategies()}
+        guards = self.registry["runtime_policies"]["guards"]
+        for strategy_id in ("classification-coverage", "field-preservation"):
+            with self.subTest(strategy=strategy_id):
+                self.assertIn(strategy_id, by_id)
+                self.assertEqual("operator", by_id[strategy_id]["enforcement"])
+                self.assertNotIn(strategy_id, guards)
+        self.assertEqual("runtime", by_id["join-is-not-access"]["enforcement"])
+        self.assertIn("join-is-not-access", guards)
+        self.assertIn("derived output", by_id["single-writer-quota"]["invariant"])
+        self.assertIn("word choice", by_id["multilingual-routing"]["invariant"].lower())
+
     def test_rotation_invariants_are_explicit(self) -> None:
         by_id = {strategy["id"]: strategy for strategy in self.strategies()}
         for required in ("platform-rotation", "per-site-frequency-invariant", "single-writer-quota"):

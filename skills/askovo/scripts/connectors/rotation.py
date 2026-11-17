@@ -49,8 +49,10 @@ if str(HERE) not in sys.path:
 
 import common
 
-# Field cadences (seconds) per platform family. Session platforms are slower
-# because their risk control keys on navigation cadence, not only on request rate.
+# Field cadences (seconds) per route family that has no CDP runtime policy
+# (Reddit/YouTube archives). CDP platforms read their cadence from the
+# field-notes registry's runtime_policies, so the scheduler and the collectors
+# cannot drift apart on the same site.
 PLATFORM_CADENCE_DEFAULTS: Dict[str, float] = {
     "reddit": 3.0,
     "youtube": 2.5,
@@ -61,6 +63,23 @@ PLATFORM_CADENCE_DEFAULTS: Dict[str, float] = {
     "vertical_forum": 5.0,
 }
 SESSION_PLATFORMS = frozenset({"discord", "x", "instagram", "tiktok"})
+
+
+def _runtime_policy(platform: str):
+    """The registry's policy for a CDP platform, or None for non-CDP routes.
+
+    Imported lazily so `rotation.py` stays usable when the registry is absent
+    during a standalone copy; the registry is authoritative for any platform it
+    declares an override for.
+    """
+    try:
+        import cdp_strategy  # local import: no hard dependency for archive-only users
+        section = cdp_strategy.load_runtime_policies()
+        if platform not in (section.get("platforms") or {}):
+            return None
+        return cdp_strategy.policy_for(platform, section)
+    except Exception:  # pragma: no cover - registry missing during a copied script
+        return None
 
 
 class PlatformCooling(RuntimeError):
@@ -96,16 +115,36 @@ class _PlatformState:
 
 
 def build_cadences(platforms: Iterable[str], **overrides: Any) -> List[Cadence]:
-    """Default cadences for the given platforms (field numbers, overridable)."""
+    """Cadences for the given platforms (registry policy, field table, overridable).
+
+    A platform with a `runtime_policies` override takes its cadence and session
+    requirement from the registry — the same numbers `cdp_strategy.py` enforces
+    for collectors. Platforms without an override (Reddit/YouTube archives) keep
+    the field table below. Explicit keyword overrides still win.
+    """
     cadences: List[Cadence] = []
     for platform in platforms:
+        name = str(platform)
+        policy = _runtime_policy(name)
+        if "min_interval" in overrides:
+            min_interval = float(overrides["min_interval"])
+        elif policy is not None:
+            min_interval = float(policy.cadence_seconds)
+        else:
+            min_interval = float(PLATFORM_CADENCE_DEFAULTS.get(name, 3.0))
+        if "requires_session" in overrides:
+            requires_session = bool(overrides["requires_session"])
+        elif policy is not None:
+            requires_session = bool(policy.requires_session)
+        else:
+            requires_session = name in SESSION_PLATFORMS
         cadences.append(
             Cadence(
-                platform=str(platform),
-                min_interval=float(overrides.get("min_interval", PLATFORM_CADENCE_DEFAULTS.get(str(platform), 3.0))),
+                platform=name,
+                min_interval=min_interval,
                 daily_cap=overrides.get("daily_cap"),
-                risk_tier=str(overrides.get("risk_tier", "elevated" if platform in SESSION_PLATFORMS else "normal")),
-                requires_session=bool(overrides.get("requires_session", platform in SESSION_PLATFORMS)),
+                risk_tier=str(overrides.get("risk_tier", "elevated" if requires_session else "normal")),
+                requires_session=requires_session,
                 channel=str(overrides.get("channel", "")),
             )
         )

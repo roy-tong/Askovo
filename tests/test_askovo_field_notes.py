@@ -74,6 +74,20 @@ class FieldNotesRegistryTests(unittest.TestCase):
                     f"{note['id']} disagrees with platform-catalog cdp flag",
                 )
 
+    def test_late_campaign_lessons_are_registered(self) -> None:
+        """The session's postmortem findings must not fall back into prose."""
+        ids = {note["id"] for note in self.registry["notes"]}
+        for note_id in (
+            "discord-membership-gated-history",
+            "discord-channel-name-targeting",
+            "instagram-keyword-page-over-profile",
+            "app-store-rss-retired",
+            "vertical-forum-sidebar-crosslinks",
+            "generic-normalized-field-loss",
+        ):
+            with self.subTest(note=note_id):
+                self.assertIn(note_id, ids)
+
     def test_every_campaign_platform_has_at_least_one_note(self) -> None:
         """The campaign's own channels must not lose their experience."""
         noted = {note["platform"] for note in self.registry["notes"]}
@@ -134,6 +148,14 @@ class FieldNotesEngineTests(unittest.TestCase):
         self.assertEqual(["discord"], [item["id"] for item in data["recommended"]])
         self.assertEqual("discord", data["platform_filter"])
         self.assertTrue(all(note["platform"] in {"discord", "*"} for note in data["field_notes"]))
+
+    def test_known_platform_outside_the_ranked_set_still_has_notes(self) -> None:
+        completed = run_cli("platforms", "App Store 评论", "--platform", "app_store", "--json")
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertEqual([], payload["recommended"])
+        note_ids = {note["id"] for note in payload["field_notes"]}
+        self.assertIn("app-store-rss-retired", note_ids)
 
     def test_unknown_platform_filter_exits_2(self) -> None:
         completed = run_cli("platforms", "Discord 社区抱怨", "--platform", "no-such-platform")

@@ -350,7 +350,7 @@ askovo platforms "家用摄像头夜间告警的用户抱怨" --domain hardware 
 - 每次采集保存 raw envelope、normalized 和 manifest，记录访问依据、权利、条数、丢弃原因、限制和偏差。
 - SQLite 队列支持多 worker、租约回收、失败退避、限速和断点续跑。
 - CDP 仅限平台目录标记 `cdp: true` 的授权可见页面（当前 amazon / instagram / bilibili / weibo / kickstarter / discord / x / tiktok）；YouTube 和 blocked 平台不使用它，不绕过验证码，登录会话仅由用户手工完成，不代输凭据、不导 Cookie。
-- 实战经验是数据而不是散文：[`assets/platform-field-notes.json`](skills/askovo/assets/platform-field-notes.json) 逐条记录平台限制、症状、现场验证过的解法、验证等级以及编码该机制的运行时助手。`askovo platforms "<需求>" --field-notes` 直接看推荐平台的坑；产物路径、helper 引用或 `cdp` 标记腐烂时 `askovo doctor` 会失败。
+- 实战经验是数据而不是散文：[`assets/platform-field-notes.json`](skills/askovo/assets/platform-field-notes.json) 逐条记录平台限制、症状、现场验证过的解法、验证等级以及编码该机制的运行时助手。`askovo platforms "<需求>" --field-notes` 直接看推荐平台的坑；产物路径、helper 引用或 `cdp` 标记腐烂时 `askovo doctor` 会失败。其中可执行的部分是 `runtime_policies`，由 `connectors/cdp_strategy.py` 在运行时执行（一 cell 一次 goto、超时熔断、会话限时、预算留头）；`askovo platforms "<需求>" --policies` 直接看每个站点实际承受的预算。
 
 详见 [平台与连接器](docs/connectors.md) 和 [CLI 参考](docs/cli.md)。
 

@@ -133,7 +133,7 @@ Reddit 的 2026 公共 Data API 过渡会改变研究访问方式：现有应用
 | `collect_arctic_windows.py` | Arctic Shift 归档（免登录） | 显式窗口计划回填：窗内游标深翻页 + 每窗 cap + state 断点 |
 | `collect_youtube_innertube.py` | YouTube innertube（免登录） | search→next→continuation 评论采集，兼容 2024+ 新结构，时间标 `date_precision=approximate` |
 | `collect_cdp_kickstarter.py` | CDP 可见页（免登录） | Cloudflare 被动等待 + load-more 展开 + DOM 提取，评论/更新帖两模式 |
-| `collect_cdp_discord.py` | CDP 用户会话（需手工登录） | 真实滚轮事件触发懒加载 + 慢速节奏 + 每轮持久化，文字/论坛频道 |
+| `collect_cdp_discord.py` | CDP 用户会话（需手工登录） | 先 `--list-channels` 列频道名再点名采；真实滚轮事件触发懒加载 + 慢速节奏 + 每轮持久化，文字/论坛频道 |
 
 收编工具 ≠ 路线放行：能否使用仍由平台目录与四门审查决定（见工具箱 README 第 6 节）。
 
@@ -167,7 +167,7 @@ askovo collect ./study --platform amazon --query "night alert" \
 - 不伪造指纹、不用代理池、不做无限翻页；
 - `--ack-terms` 必须由人确认平台条款、账号授权、数据用途与保留；
 - 当前开放（平台目录 `cdp: true` 的集合）：amazon、instagram、bilibili、weibo、kickstarter、discord、x、tiktok。YouTube 保持只走官方 API（免登录评论语料有 innertube 连接器，无需浏览器）；其余 blocked 平台（小红书/知乎/京东/淘宝）仍不开放；
-- 登录态平台（discord/x/tiktok/instagram）的会话**仅由用户在浏览器里手工登录**，agent 不代输凭据；多平台轮转作业、慢速节奏等反自动化纪律见 `skills/askovo/references/cdp-collection-playbook.md`；
+- 登录态平台（discord/x/tiktok/instagram）的会话**仅由用户在浏览器里手工登录**，agent 不代输凭据；多平台轮转作业、慢速节奏等反自动化纪律见 `skills/askovo/references/cdp-collection-playbook.md`；每平台的执行预算（一 cell 一次 goto、超时熔断、会话限时、预算留头）见 `connectors/cdp_strategy.py` 与 `askovo platforms "<需求>" --policies`；
 - 仅允许回环 CDP 端点、默认端口 HTTP(S) 平台 URL，返回 WebSocket 也必须留在同一回环端口；
 - 平台条款可能仍然禁止自动化采集；Askovo 只提供技术通道和留痕，不替用户承担合规判断。
 
