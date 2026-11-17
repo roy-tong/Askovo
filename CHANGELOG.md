@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.18.0 — 2026-11-15
+## 2.18.0 — 2026-11-18
 
 This release publishes the decision surface and the write path underneath it:
 `askovo decide` (one decision question tracked as a task, including
@@ -9,8 +9,19 @@ with PRD development acceptance, **incremental research** (`askovo delta`,
 append-only `source id + updated_at` comparison), **A-07** canonical decision
 write integrity (journalled accept, `askovo issues recover`, cross-process
 lock), and the **C-01-Lite** minimal delegation projection on
-`askovo decide status`. The site also ships an English mirror of its six pages
-under `website/en/`, with reciprocal `hreflang` and a sitemap entry for each.
+`askovo decide status`.
+
+It also ships the multi-platform collection line grown out of the golf-device
+campaign: `askovo capture page` (CDP capture as a reviewed candidate, governed
+by the same collect rule set), `askovo answer` (conclusions follow the reviewed
+evidence), four new connectors (YouTube innertube, Kickstarter/Discord CDP,
+arctic window) with a rotation scheduler, and the campaign experience compiled
+into product surface — platform field notes (35) and strategies (14) as a
+registry, runtime policies enforced by `cdp_strategy` guards, `analyze` field
+completeness, and the 2026-11-17 postmortem as the campaign-level index.
+
+The site also ships an English mirror of its six pages under `website/en/`,
+with reciprocal `hreflang` and a sitemap entry for each.
 
 ### Engine integration for the postmortem: field completeness, membership gates, App Store route
 
