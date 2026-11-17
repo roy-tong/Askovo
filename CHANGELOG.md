@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### CDP studies become designable; error pages stop pretending to be evidence
+
+Live-chain finding (2026-11-17): the catalog opened eight CDP platforms, but
+six of them (kickstarter/bilibili/weibo blocked-only in the registry,
+discord/instagram/tiktok absent) could never pass the study design gate —
+`capture` accepted URLs no study was allowed to declare. Two fixes:
+
+- First-party CDP transport declaration in `source_adapters.<platform>`:
+  `connector_id=cdp-authorized-visible-page`,
+  `access_basis=cdp_authorized_visible_page`,
+  `collection_mode=authorized_visible_page`. Eligibility comes from the
+  platform catalog (`cdp: true`, review current); the open-source connector
+  registry still governs scripted collection exactly as before. A kickstarter
+  study is now designable and its captures can enter evidence legally.
+- `capture page` returns `page_not_found` and writes no candidate when the
+  final page title reports a not-found/error state (404, "not found",
+  "页面不存在"); it stops before the screenshot instead of minting a
+  reviewable candidate out of an error page.
+- Scaffolded canonical stores (`evidence.jsonl`, `gold-set.jsonl`) ship empty:
+  the old two-line comment headers made a freshly scaffolded study fail its
+  first `capture accept` with `INTERNAL_ERROR`, because canonical JSONL has no
+  comments. A regression test now parses every template store through the
+  strict reader.
+
 ### CDP platform contract alignment: catalog `cdp: true`, passive challenge wait
 
 - The CDP capture allowlist is now explicitly tied to the platform catalog's

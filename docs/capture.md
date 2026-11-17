@@ -28,6 +28,14 @@ askovo capture reject ./cam-study \
   --capture <capture_id> --by "评审人" --reason "营销文案，不是用户声音"
 ```
 
+- 错误页不产生候选：标题报告 not found/404（含中文"页面不存在"）的页面在截图与落盘前
+  直接 `page_not_found` 停止，不进入候选与审核队列；
+- CDP 平台的研究设计声明（study.json `source_adapters.<platform>`）有第一方传输通道：
+  `connector_id=cdp-authorized-visible-page` + `access_basis=cdp_authorized_visible_page` +
+  `collection_mode=authorized_visible_page` + 引擎版本号，资格来自平台目录 `cdp: true`，
+  不要求开源连接器注册表——注册表只治理第三方采集代码；kickstarter/bilibili/weibo 等
+  目录开放 CDP 但无可用开源连接器的平台由此才能合法设计研究。脚本化采集仍走注册表与既有枚举。
+
 - `accept` 必须有具名审核人（`--by`）和**显式** `--evidence-level`（OCR/候选永不自动定级），向 `02-data/evidence.jsonl` 追加**恰好一条**记录（`record_id = cap-<capture_id>`），并回链 `capture_id`、capture JSON 与截图路径、URL、页面/OCR/截图哈希——后续 analyze/结论可回溯到采集来源；
 - 等级上限：可见页只允许 `E0/E1/E2`（背景/陈述/页面记录的现状与摩擦）；`E3`（方案接受）及以上直接拒绝（`POLICY_DENIED`）——页面证明不了接受、付费或留存；
 - 审核即校验：accept 会核对候选的 schema、ack、平台归属、挑战检查与页面/OCR/截图哈希；候选字节被改动过就拒绝（`INTERNAL_ERROR`）；

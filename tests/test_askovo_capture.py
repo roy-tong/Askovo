@@ -99,6 +99,40 @@ class CaptureTests(unittest.TestCase):
     # become a second, laxer collection entrance than `collect`.
     # ------------------------------------------------------------------ #
 
+    def test_capture_writes_no_candidate_for_not_found_page(self):
+        document = json.loads((self.study / "study.json").read_text(encoding="utf-8"))
+        document["scope"]["allowed_sources"] = ["kickstarter"]
+        document["source_adapters"] = {"kickstarter": {"enabled": True}}
+        (self.study / "study.json").write_text(
+            json.dumps(document, ensure_ascii=False), encoding="utf-8")
+
+        class _NotFoundClient(_FakeClient):
+            def evaluate(self, expression):
+                return {"title": "The page you were looking for doesn't exist (404)",
+                        "url": "https://www.kickstarter.com/projects/gone/missing",
+                        "text": "We can't find this page, but we can show you a new project."}
+
+        old_new, old_ws, old_client = (
+            engine.cdp_new_page, engine._WebSocket, engine.CDPClient)
+        engine.cdp_new_page = lambda base, url: "ws://127.0.0.1:9222/devtools/page/1"
+        engine._WebSocket = lambda url: object()
+        engine.CDPClient = _NotFoundClient
+        try:
+            result = engine.capture_page(
+                self.study, "https://www.kickstarter.com/projects/gone/missing",
+                "http://127.0.0.1:9222", True)
+        finally:
+            engine.cdp_new_page, engine._WebSocket, engine.CDPClient = (
+                old_new, old_ws, old_client)
+        self.assertEqual("page_not_found", result["status"])
+        self.assertIn("no candidate was written", result["reason"])
+        self.assertEqual([], list((self.study / "01-sources/captures").glob("*.json")))
+        # 404 detection must not fire on ordinary titles that merely contain digits.
+        self.assertFalse(engine._capture_title_reports_not_found("B014045 车充 2 合 1"))
+        self.assertTrue(engine._capture_title_reports_not_found("Page not found"))
+        self.assertTrue(engine._capture_title_reports_not_found("页面不存在"))
+
+
     def _sample_study(self, target: Path) -> Path:
         shutil.copytree(SAMPLE, target)
         return target

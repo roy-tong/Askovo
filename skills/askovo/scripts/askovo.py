@@ -219,6 +219,14 @@ REDDIT_CONFIG_REQUIRED = {
 } | CONNECTOR_CONFIG_REQUIRED
 REDDIT_COLLECTION_MODES = {"historical_search", "live_monitoring", "mixed"}
 REDDIT_ACCESS_BASES = {"official_api"}
+# First-party CDP transport contract (must mirror the run manifest stamped by
+# sure_engine.cdp_collect): authorized visible pages on catalog cdp:true
+# platforms. Governed by the platform catalog, not the open-source connector
+# registry, because no third-party collection code is involved.
+CDP_TRANSPORT_CONNECTOR_ID = "cdp-authorized-visible-page"
+CDP_TRANSPORT_ACCESS_BASIS = "cdp_authorized_visible_page"
+CDP_TRANSPORT_LICENSE = "MIT"
+CDP_COLLECTION_MODE = "authorized_visible_page"
 X_REQUIRED = {
     "source_platform",
     "source_url",
@@ -704,6 +712,41 @@ def _validate_connector_selection(
     return errors
 
 
+def _validate_cdp_transport_config(adapter_name: str, config: dict[str, Any]) -> list[str]:
+    """Validate the first-party CDP transport declaration for one platform.
+
+    Eligibility comes from the platform catalog (cdp: true, not blocked, review
+    current); the open-source connector registry is not consulted because the
+    CDP transport runs no third-party collection code.
+    """
+    errors: list[str] = []
+    entry = sure_engine.platform_index().get(adapter_name)
+    if not entry or not entry.get("cdp") or entry.get("decision") == "blocked":
+        errors.append(
+            f"{adapter_name} access_basis {CDP_TRANSPORT_ACCESS_BASIS} is not enabled "
+            "by the platform catalog (cdp: true required)"
+        )
+        return errors
+    if sure_engine.platform_review_expired(adapter_name):
+        errors.append(
+            f"{adapter_name} connector policy review is expired; re-review before capture"
+        )
+    if config.get("collection_mode") != CDP_COLLECTION_MODE:
+        errors.append(
+            f"{adapter_name} CDP transport requires collection_mode={CDP_COLLECTION_MODE}"
+        )
+    if config.get("connector_revision") != sure_engine.VERSION:
+        errors.append(
+            f"{adapter_name} connector_revision must be the engine version "
+            f"{sure_engine.VERSION} that stamps CDP run manifests"
+        )
+    if config.get("connector_license") != CDP_TRANSPORT_LICENSE:
+        errors.append(f"{adapter_name} connector_license must be {CDP_TRANSPORT_LICENSE}")
+    if config.get("policy_status") != "approved_for_study":
+        errors.append(f"{adapter_name} policy_status must be approved_for_study")
+    return errors
+
+
 def _validate_source_adapter_config(
     study: dict[str, Any] | None,
     adapter_name: str,
@@ -722,15 +765,25 @@ def _validate_source_adapter_config(
         errors.append(f"source_adapters.{adapter_name}.enabled must be true")
     if config.get("researcher_role") != "external_third_party":
         errors.append(f"{adapter_name} researcher_role must be external_third_party")
-    if config.get("collection_mode") not in REDDIT_COLLECTION_MODES:
-        errors.append(
-            f"{adapter_name} collection_mode must be one of: "
-            + ", ".join(sorted(REDDIT_COLLECTION_MODES))
-        )
-    if config.get("access_basis") not in access_bases:
-        errors.append(
-            f"{adapter_name} access_basis must be one of: " + ", ".join(sorted(access_bases))
-        )
+    is_cdp_transport = (
+        config.get("access_basis") == CDP_TRANSPORT_ACCESS_BASIS
+        and config.get("connector_id") == CDP_TRANSPORT_CONNECTOR_ID
+    )
+    if is_cdp_transport:
+        # First-party CDP transport: catalog eligibility instead of the
+        # scripted-connector enums and registry.
+        errors.extend(_validate_cdp_transport_config(adapter_name, config))
+    else:
+        if config.get("collection_mode") not in REDDIT_COLLECTION_MODES:
+            errors.append(
+                f"{adapter_name} collection_mode must be one of: "
+                + ", ".join(sorted(REDDIT_COLLECTION_MODES))
+            )
+        if config.get("access_basis") not in access_bases:
+            errors.append(
+                f"{adapter_name} access_basis must be one of: " + ", ".join(sorted(access_bases))
+            )
+        errors.extend(_validate_connector_selection(adapter_name, config))
     if config.get("require_original_source") is not True:
         errors.append(f"{adapter_name} require_original_source must be true")
     if config.get("treat_ai_summaries_as_discovery_only") is not True:
@@ -739,7 +792,6 @@ def _validate_source_adapter_config(
         datetime.fromisoformat(str(config.get("terms_reviewed_at", ""))[:10])
     except ValueError:
         errors.append(f"{adapter_name} terms_reviewed_at must be an ISO date")
-    errors.extend(_validate_connector_selection(adapter_name, config))
     return errors
 
 

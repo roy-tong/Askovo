@@ -5923,6 +5923,21 @@ CDP_TARGET_HOSTS = {
 MAX_CDP_HANDSHAKE_BYTES = 64 * 1024
 MAX_CDP_MESSAGE_BYTES = 16 * 1024 * 1024
 CAPTURE_CHALLENGE_WAIT_SECONDS = 5.0
+# Soft error pages: the site itself reports the destination does not exist.
+# Titles only — never guess from body text, where products legitimately
+# mention "not found" in reviews.
+CAPTURE_NOT_FOUND_TITLE_MARKERS = (
+    "not found", "doesn't exist", "does not exist",
+    "页面不存在", "页面未找到", "未找到页面", "找不到",
+)
+_CAPTURE_NOT_FOUND_404 = re.compile(r"(?<![0-9a-z])404(?![0-9a-z])", re.I)
+
+
+def _capture_title_reports_not_found(title: str) -> bool:
+    lowered = str(title or "").lower()
+    if any(marker in lowered for marker in CAPTURE_NOT_FOUND_TITLE_MARKERS):
+        return True
+    return bool(_CAPTURE_NOT_FOUND_404.search(str(title or "")))
 
 
 def _validate_cdp_base(cdp_base: str) -> tuple[str, int]:
@@ -6411,6 +6426,18 @@ def capture_page(
                 return {"status": "challenge",
                         "reason": ("page shows a challenge; passive wait expired and "
                                    "human completion was not observed — capture stopped")}
+        title = str(value.get("title") or "")
+        if _capture_title_reports_not_found(title):
+            # An error page is not research evidence: stop before the
+            # screenshot and persist no candidate for it.
+            return {
+                "status": "page_not_found",
+                "platform": platform,
+                "reason": ("final page reports a not-found/error state; "
+                           "no candidate was written"),
+                "final_url": final_url,
+                "title": title,
+            }
         shot = client.call("Page.captureScreenshot", {"format": "png"})
         raw = shot.get("data") if isinstance(shot, dict) else None
         if not raw:
@@ -6429,7 +6456,7 @@ def capture_page(
             "final_url": final_url,
             "source_url": final_url,
             "capture_platform": platform,
-            "title": str(value.get("title") or ""),
+            "title": title,
             "text": text,
             "text_length": len(text),
             "text_sha256": hashlib.sha256(text.encode()).hexdigest(),
