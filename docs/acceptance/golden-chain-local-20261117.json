@@ -1,0 +1,235 @@
+{
+  "schema": "askovo.golden-chain-acceptance/1",
+  "generated_at": "2026-11-17T02:14:18Z",
+  "environment": {
+    "offline": true,
+    "network": "loopback fixtures only (127.0.0.1); no external page, no browser profile, no real Chrome CDP instance",
+    "cdp_fixture": "local loopback fake-CDP server speaking the real RFC6455 handshake with the production client",
+    "ocr": "real macOS Vision run (swift ocr_image.swift) over a locally rendered PNG",
+    "corpora": "synthetic fixtures driven through the production pipeline",
+    "platform": {
+      "os": "Darwin",
+      "release": "27.2.0"
+    },
+    "png_render": {
+      "ok": true,
+      "stderr": ""
+    },
+    "ocr_direct_check": {
+      "available": true,
+      "engine": "macos_vision",
+      "recognized_chars": 114,
+      "corpus_lines_hit": 4,
+      "of_lines": 4,
+      "sample": "用户说：转动东西容易坏，我就是要固定摄像头全天盯看门口。\n物业反馈：固定摄像头装一次就不动，维护成本低，省心。\n店主：固定摄像头已经覆盖全部通道，够用了，不加钱。\n邻居：转动的镜头让人不安，固定摄像头明确不拍别人家，我才放心。"
+    }
+  },
+  "scenarios": [
+    {
+      "id": "paste_to_answer",
+      "user_intent": "把粘贴的 4 条用户原话变成研究答案：谁支持哪个选项、依据是什么",
+      "expected_terminal_state": "DELIVERED（answer=go，领先选项=上线移动巡检试点，支持>=3 且无反证）",
+      "real_side_effect": "import 登记 4 条证据；analyze/answer 写入 04-findings",
+      "receipt": {
+        "import": {
+          "status": "imported",
+          "added": 4,
+          "review": {
+            "evidence_level": "E1",
+            "evidence_form": "self_report",
+            "corpus_role": "open_scene",
+            "level_cap": "E2",
+            "note": "operator-reviewed import; the level is capped by the evidence form"
+          }
+        },
+        "analyze_status": "analyzed",
+        "records": 4,
+        "answer_decision": "go",
+        "leading_option": "上线移动巡检试点",
+        "support_counts": {
+          "上线移动巡检试点": 4,
+          "保持固定摄像头方案": 1,
+          "停止该概念": 0
+        }
+      },
+      "observed_outcome": "结论随语料 A 指向「上线移动巡检试点」；每条支持引用都能回链 evidence.jsonl 的 record_id/source_ref",
+      "user_visible_terminal": "# 研究答案：家庭安防摄像头下一步做移动巡检还是保持固定摄像头？\n\n> 结论状态：**证据支持**；决策建议：`go`；领先选项：上线移动巡检试点。\n\n## 各选项证据（回链采集来源）\n\n### 上线移动巡检试点\n- 支持 4 条 / 反证 0 条\n- 支持（回链 paste_a-0001 · paste_a）：用户说：夜间误报太多，移动巡检能先判断再叫我起床，我愿意试用。\n- 支持（回链 paste_a-0002 · paste_a）：租客反馈：固定视角拍不到门口，移动巡检覆盖盲区，正合我意。\n- 支持（回链 paste_a-0003 · paste_a）：宠物主人：出门时最担心盲区，移动巡检主动看一圈让我安心不少。\n- 支持（回链 paste_a-0004 · paste_a）：老人家属：误报一响全家紧张，能移动查看再报警的产品才是我要的。\n\n### 保持固定摄像头方案\n- 支持 1 ",
+      "evidence_paths": [
+        "/var/folders/3c/d_p9mv9510z4wvbzlbcptj140000gn/T/askovo-golden-ubssr1c8/paste/02-data/evidence.jsonl",
+        "/var/folders/3c/d_p9mv9510z4wvbzlbcptj140000gn/T/askovo-golden-ubssr1c8/paste/04-findings/research-answer.json",
+        "/var/folders/3c/d_p9mv9510z4wvbzlbcptj140000gn/T/askovo-golden-ubssr1c8/paste/04-findings/analysis.json"
+      ],
+      "evidence_grade": "synthetic corpus through the production paste pipeline",
+      "passed": true
+    },
+    {
+      "id": "capture_ocr_review_to_answer",
+      "user_intent": "把一个授权可见页（amazon 评论页 fixture）经 CDP 文本+截图+OCR 变成经审核的研究答案",
+      "expected_terminal_state": "DELIVERED_WITH_GAP（单页 1 条证据=低样本支持：answer=continue_research，领先选项=保持固定摄像头方案，证据行回链 capture_id/URL/哈希，audit 通过）",
+      "real_side_effect": "capture page 经真实 RFC6455 回环握手抓取受控页文本+截图，Vision OCR 真实识别截图文字；capture accept 由具名审核人登记 cap-* 证据；audit evidence 阶段通过",
+      "receipt": {
+        "capture_status": "captured",
+        "capture_id": "20261117T021420Z-a6df2d61",
+        "page_text_chars": 114,
+        "ocr_engine": "macos_vision",
+        "ocr_chars": 113,
+        "ocr_error": "",
+        "candidate_evidence_status_initial": "candidate",
+        "list_status": "listed",
+        "accept_status": "accepted",
+        "accept_record": "cap-20261117T021420Z-a6df2d61",
+        "audit_status": "pass",
+        "answer_decision": "continue_research",
+        "leading_option": "保持固定摄像头方案"
+      },
+      "observed_outcome": "候选→具名审核→证据→answer 指向「保持固定摄像头方案」；单页 1 条证据诚实地停在低样本支持（continue_research），capture 证据行带 capture_id/URL/截图哈希并回链；OCR 识别 113 字符",
+      "user_visible_terminal": "# 研究答案：家庭安防摄像头下一步做移动巡检还是保持固定摄像头？\n\n> 结论状态：**低样本支持**；决策建议：`continue_research`；领先选项：保持固定摄像头方案。\n\n## 各选项证据（回链采集来源）\n\n### 上线移动巡检试点\n- 支持 0 条 / 反证 0 条\n\n### 保持固定摄像头方案\n- 支持 1 条 / 反证 0 条\n- 支持（回链 cap-20261117T021420Z-a6df2d61 · capture · 20261117T021420Z-a6df2d61)：用户说：转动的东西容易坏，我就是要固定摄像头全天盯着门口。\n物业反馈：固定摄像头装一次就不动，维护成本低，省心。\n店主：固定摄像头已经覆盖全部通道，够用了，不加钱。\n邻居：转动的镜头让人不安，固定摄像头明确不拍别人家，我才放心。\n\n### 停止该概念\n- 支持 0 条 / 反证 0 条\n\n## ",
+      "evidence_paths": [
+        "/var/folders/3c/d_p9mv9510z4wvbzlbcptj140000gn/T/askovo-golden-ubssr1c8/capture/01-sources/captures/20261117T021420Z-a6df2d61.json",
+        "/var/folders/3c/d_p9mv9510z4wvbzlbcptj140000gn/T/askovo-golden-ubssr1c8/capture/01-sources/captures/20261117T021420Z-a6df2d61.png",
+        "/var/folders/3c/d_p9mv9510z4wvbzlbcptj140000gn/T/askovo-golden-ubssr1c8/capture/01-sources/captures/review-trail.jsonl",
+        "/var/folders/3c/d_p9mv9510z4wvbzlbcptj140000gn/T/askovo-golden-ubssr1c8/capture/02-data/evidence.jsonl",
+        "/var/folders/3c/d_p9mv9510z4wvbzlbcptj140000gn/T/askovo-golden-ubssr1c8/capture/04-findings/research-answer.json"
+      ],
+      "evidence_grade": "local_loopback_fixture CDP transport + real local macOS Vision OCR + synthetic corpus",
+      "passed": true,
+      "notes": {
+        "ocr_direct_check": {
+          "available": true,
+          "engine": "macos_vision",
+          "recognized_chars": 114,
+          "corpus_lines_hit": 4,
+          "of_lines": 4,
+          "sample": "用户说：转动东西容易坏，我就是要固定摄像头全天盯看门口。\n物业反馈：固定摄像头装一次就不动，维护成本低，省心。\n店主：固定摄像头已经覆盖全部通道，够用了，不加钱。\n邻居：转动的镜头让人不安，固定摄像头明确不拍别人家，我才放心。"
+        },
+        "governance_in_candidate": {
+          "transport": "cdp",
+          "scope": "allowed_sources_matched",
+          "adapter": "enabled",
+          "registry_review": "current",
+          "challenge_check": "passed",
+          "cdp_loopback": true
+        },
+        "capture_backlink_fields": [
+          "capture_final_url",
+          "capture_id",
+          "capture_ocr_engine",
+          "capture_ocr_text",
+          "capture_ocr_text_sha256",
+          "capture_platform",
+          "capture_screenshot",
+          "capture_screenshot_ref",
+          "capture_screenshot_sha256",
+          "capture_text_sha256",
+          "capture_text_source",
+          "capture_url"
+        ]
+      }
+    },
+    {
+      "id": "opposite_corpora_flip",
+      "user_intent": "同一研究问题，两组相反语料，结论必须随证据改变",
+      "expected_terminal_state": "A→移动巡检试点；B→保持固定摄像头方案（同 question/options）",
+      "real_side_effect": "两次独立全链（paste A、capture B）各自 answer",
+      "receipt": {
+        "corpus_a": {
+          "leading": "上线移动巡检试点",
+          "decision": "go"
+        },
+        "corpus_b": {
+          "leading": "保持固定摄像头方案",
+          "decision": "continue_research"
+        }
+      },
+      "observed_outcome": "结论随证据翻转",
+      "evidence_paths": [
+        "/var/folders/3c/d_p9mv9510z4wvbzlbcptj140000gn/T/askovo-golden-ubssr1c8/paste/04-findings/research-answer.json",
+        "/var/folders/3c/d_p9mv9510z4wvbzlbcptj140000gn/T/askovo-golden-ubssr1c8/capture/04-findings/research-answer.json"
+      ],
+      "evidence_grade": "deterministic projection over two synthetic corpora",
+      "passed": true
+    },
+    {
+      "id": "no_evidence_unanswerable",
+      "user_intent": "证据库为空时，答案是「不可回答+缺口清单」，不是编造",
+      "expected_terminal_state": "DELIVERED_WITH_GAP（answer_status=unanswerable，decision=unanswerable，gaps>=3）",
+      "real_side_effect": "answer 读取空 evidence.jsonl，写出 research-answer.json/.md",
+      "receipt": {
+        "returncode": 0,
+        "answer_status": "unanswerable",
+        "decision": "unanswerable",
+        "gap_count": 6
+      },
+      "observed_outcome": "不可回答+缺口清单，含最低证据要求与下一步采集命令",
+      "user_visible_terminal": "# 研究答案：家庭安防摄像头下一步做移动巡检还是保持固定摄像头？\n\n> 结论：**不可回答**——证据不足以支持任何选项，缺口如下（不是编造的结论）。\n\n## 各选项证据（回链采集来源）\n\n### 上线移动巡检试点\n- 支持 0 条 / 反证 0 条\n\n### 保持固定摄像头方案\n- 支持 0 条 / 反证 0 条\n\n### 停止该概念\n- 支持 0 条 / 反证 0 条\n\n## 缺口与下一步\n\n- 证据库为空：还没有任何经审核登记的证据\n  - 粘贴文本：askovo import <study> <file> --source-family paste --evidence-level E",
+      "evidence_paths": [
+        "/var/folders/3c/d_p9mv9510z4wvbzlbcptj140000gn/T/askovo-golden-ubssr1c8/empty/04-findings/research-answer.json"
+      ],
+      "evidence_grade": "empty-store deterministic check",
+      "passed": true
+    },
+    {
+      "id": "governance_rejections",
+      "user_intent": "越权页面在 capture 入口必须与 collect 同口径拒绝",
+      "expected_terminal_state": "scope_blocked（amazon 未列入 allowed_sources）/ design_gate_failed / cdp_not_allowed（非批准平台 host）/ challenge（挑战页，截图前停止）",
+      "real_side_effect": "四次 capture 尝试，均未产生候选或证据",
+      "receipt": {
+        "scope_blocked": {
+          "code": "scope_blocked",
+          "rc": 1
+        },
+        "design_gate_failed": {
+          "code": "design_gate_failed",
+          "rc": 1
+        },
+        "generic_host": {
+          "code": "cdp_not_allowed",
+          "rc": 1
+        },
+        "challenge_page": {
+          "code": "challenge",
+          "rc": 1
+        }
+      },
+      "observed_outcome": "全部按治理口径拒绝",
+      "evidence_paths": [
+        "/var/folders/3c/d_p9mv9510z4wvbzlbcptj140000gn/T/askovo-golden-ubssr1c8/scope/study.json"
+      ],
+      "evidence_grade": "local governance checks",
+      "passed": true
+    },
+    {
+      "id": "hand_appended_capture_row_fails_audit",
+      "user_intent": "绕过 capture accept 手工追加的 capture/OCR 证据行必须被审计拒绝",
+      "expected_terminal_state": "FAILED_UNRESOLVED 不适用；审计为 fail 且指出 cap-forged0001 的审核联接无效",
+      "real_side_effect": "追加伪造行后运行 askovo check --stage evidence",
+      "receipt": {
+        "audit_status": "fail",
+        "returncode": 1
+      },
+      "observed_outcome": "审计拒绝伪造行",
+      "evidence_paths": [
+        "/var/folders/3c/d_p9mv9510z4wvbzlbcptj140000gn/T/askovo-golden-ubssr1c8/handappend/02-data/evidence.jsonl"
+      ],
+      "evidence_grade": "local audit check",
+      "passed": true
+    }
+  ],
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "supported": [
+      "粘贴文本 → 审核 import → analyze → answer",
+      "授权可见页（批准 CDP 平台）→ capture 文本+截图+OCR → 具名审核 accept → analyze → answer",
+      "结论随证据改变、反证不被淹没、无证据=不可回答+缺口清单",
+      "capture 治理与 collect 同口径（design gate/scope/adapter/挑战页/批准平台）"
+    ],
+    "unsupported_or_unverified": [
+      "真实外部页面读取（live_external_read）本轮未验证：CDP 端是本地回环 fixture，不是真实浏览器实例",
+      "OCR 质量依赖 macOS Vision 与本地渲染截图；复杂版式/低分辨率未覆盖",
+      "批量采集、滚动/分页、去重策略属 P2，未在本链验收"
+    ],
+    "rollback_note": "本分支 feat/a-capture-golden-chain 全部提交可回滚；main 未受影响"
+  },
+  "finished_at": "2026-11-17T02:14:23Z"
+}

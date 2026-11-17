@@ -30,7 +30,7 @@
   },
   "supported_intents": [
     {
-      "intent": "回答一个研究问题并给出结论与决策：可见页面/粘贴文本/截图经人工审核进入证据后，analyze + answer 产出随证据变化的结论、反证与缺口，关键判断回链采集来源",
+      "intent": "回答一个研究问题并给出结论与决策：可见页面/粘贴文本/截图经人工审核进入证据后，analyze 描述语料，answer 仅作选项词汇匹配辅助；做/缓做/不做必须由七节点证据门与负责人决策记录给出，关键判断回链采集来源",
       "entry": "askovo do \"问题\" --study <dir>  →  capture page / import  →  capture accept --by NAME --evidence-level E0|E1|E2  →  analyze  →  answer",
       "inputs": "study 合同（decision.question/options/scope）、用户授权的可见页面或本地粘贴文本/截图、具名人工审核",
       "terminal_states_used": [
@@ -229,7 +229,7 @@
     "可见页证据等级上限 E2（E3 方案接受、E4+/E5 交易需要概念测试与交易记录）；粘贴自述/行为日志 ≤E2，交易记录 ≤E5",
     "accept 只登记证据，不生成 demand judgment、不改七节点；判断仍由人工经既有流程给出",
     "每条登记记录保留采集回链（record_id/source_family/source_ref，capture 另有 capture_id/URL/截图哈希），audit 校验候选与证据行的哈希一致",
-    "结论必须随证据改变：answer 按选项证据计数，反证不被支持数淹没；无证据 = unanswerable + 缺口清单",
+    "answer 的选项关键词命中/支持反证计数只是词汇辅助，不是七节点科学推演、因果或商业真相；无证据 = unanswerable + 缺口清单，做/缓做/不做必须由同一 context 的 judgment/chain 证据门和负责人决策记录支撑，decision_adopted 仍需另证",
     "descriptive only：不做总体推断、显著性或因果声明；边界随交付物输出"
   ],
   "first_interaction": {

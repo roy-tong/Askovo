@@ -6704,15 +6704,86 @@ def _chain_node_states(study_dir: Path) -> dict[str, Any]:
     return {"available": True, "chains": states}
 
 
+def _canonical_business_decision(study_dir: Path, question: str) -> dict[str, Any]:
+    """Project a formal business recommendation from the canonical seven-node chain.
+
+    Lexical evidence matches never enter this projection. A formal recommendation
+    requires a named DecisionRecord, a decided chain and audited support; the
+    existing DecisionBrief builder owns the actual recommendation semantics.
+    """
+    reasoning_path = study_dir / "04-findings" / "product-reasoning.json"
+    try:
+        reasoning = load_json(reasoning_path)
+    except (OSError, json.JSONDecodeError):
+        reasoning = {}
+    chains = reasoning.get("chains") if isinstance(reasoning, dict) else []
+    records = reasoning.get("decision_records") if isinstance(reasoning, dict) else []
+    chains = [item for item in (chains or []) if isinstance(item, dict)]
+    records = [item for item in (records or []) if isinstance(item, dict)
+               and str(item.get("decision_maker") or "").strip()]
+    base = {
+        "kind": "not_ready",
+        "status": "needs_decision_record",
+        "statement": None,
+        "recommended_option_id": None,
+        "approved": False,
+        "canonical_ref": "04-findings/product-reasoning.json",
+        "next_action": "人工完成七节点挂接与审计后：askovo decision record STUDY --chain CHAIN --by OWNER",
+    }
+    if not chains:
+        base["status"] = "needs_canonical_chain"
+        base["next_action"] = "先挂接 demand judgment 与七节点链，再记录负责人 DecisionRecord"
+        return base
+    chain = chains[0]
+    chain_id = str(chain.get("id") or "")
+    matching = [item for item in records if str(item.get("chain_id") or "") == chain_id]
+    if not matching:
+        base["next_action"] = (
+            "词汇匹配只作研究辅助；正式业务决定先执行："
+            "askovo decision record %s --chain %s --by OWNER" % (study_dir, chain_id))
+        return base
+    matching.sort(key=lambda item: int(item.get("version") or 0))
+    decision_record = matching[-1]
+    try:
+        import decision_brief
+        brief = decision_brief.build(study_dir, question=question)
+    except Exception as exc:  # noqa: BLE001 正式投影失败时不能退回词汇 go
+        base.update(status="projection_failed", reason="%s: %s" % (type(exc).__name__, exc))
+        return base
+    recommendation = brief.get("recommendation") or {}
+    return {
+        "kind": str(recommendation.get("kind") or "hold"),
+        "status": str(brief.get("decision_status") or "hold"),
+        "statement": recommendation.get("statement"),
+        "recommended_option_id": brief.get("recommended_option_id"),
+        "approved": False,
+        "not_approved": True,
+        "stale": brief.get("artifact_status") == "stale",
+        "source_fingerprint": brief.get("source_fingerprint"),
+        "canonical_ref": "04-findings/product-reasoning.json",
+        "decision_record": {
+            "record_id": decision_record.get("record_id"),
+            "version": decision_record.get("version"),
+            "decision_maker": decision_record.get("decision_maker"),
+        },
+        "audit": {
+            "supported_chain": bool(recommendation.get("kind") == "recommend"),
+            "basis": recommendation.get("ranking_basis"),
+        },
+        "next_action": brief.get("next_required_action"),
+    }
+
+
 def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]:
     """Answer the study's decision question from the evidence store, or refuse.
 
-    Deterministic tally: each option's supporting records are the reviewed
-    evidence records whose text mentions the option's terms; counter records
-    (claim_type=counter / control / substitute_rejector / E4-) are tallied
-    separately and are never outvoted by support count. ``go`` additionally
-    needs ANSWER_MIN_SUPPORT supporting records and zero counters for the
-    leading option; the status-quo option winning maps to ``no_go``.
+    Two separate projections share one output:
+    - lexical support/counter matches are research assistance only and can at
+      most recommend ``continue_research``;
+    - a formal go/no-go comes only from the canonical seven-node chain,
+      audited support and a named DecisionRecord via ``business_decision``.
+    normalized.jsonl is deliberately excluded: only the canonical evidence
+    store participates in either projection.
     """
     study_dir = Path(study_dir).resolve()
     study = load_json(study_dir / "study.json")
@@ -6723,7 +6794,7 @@ def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]
     options = [str(item).strip() for item in (decision.get("options") or [])
                if str(item).strip()]
     records: list[dict[str, Any]] = []
-    for name in ("02-data/evidence.jsonl", "02-data/normalized.jsonl"):
+    for name in ("02-data/evidence.jsonl",):
         path = study_dir / name
         if not path.is_file():
             continue
@@ -6772,6 +6843,7 @@ def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]
     minimum_evidence = [str(item) for item in (decision.get("minimum_evidence") or [])]
     answer_status = "unanswerable"
     decision_value = "unanswerable"
+    lexical_decision = "unanswerable"
     leading_option: str | None = None
     gaps: list[dict[str, Any]] = []
 
@@ -6806,20 +6878,20 @@ def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]
         leading_option = top["option"]
         if len(tied) > 1:
             answer_status = "inconclusive"
-            decision_value = "continue_research"
+            decision_value = lexical_decision = "continue_research"
             gaps.append({"gap": f"选项并列领先（各 {len(top['supporting_refs'])} 条支持）："
                          + "、".join(tied),
                          "next_actions": ["补充能区分并列选项的证据"]})
         elif top["counter_refs"]:
             answer_status = "contested"
-            decision_value = "continue_research"
+            decision_value = lexical_decision = "continue_research"
             gaps.append({
                 "gap": f"领先选项「{leading_option}」存在 {len(top['counter_refs'])} 条反证；"
                        "支持数不能淹没反证，需人工裁决",
                 "next_actions": ["人工审核反证记录，或收集能回应反证的新证据"]})
         elif len(top["supporting_refs"]) < ANSWER_MIN_SUPPORT:
             answer_status = "supported_low_n"
-            decision_value = "continue_research"
+            decision_value = lexical_decision = "continue_research"
             gaps.append({
                 "gap": f"领先选项「{leading_option}」仅 {len(top['supporting_refs'])} 条支持"
                        f"（低于 {ANSWER_MIN_SUPPORT}）",
@@ -6829,7 +6901,28 @@ def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]
             lowered = leading_option.lower()
             status_quo = any(marker in lowered or marker in leading_option
                              for marker in _STATUS_QUO_MARKERS)
-            decision_value = "no_go" if status_quo else "go"
+            decision_value = lexical_decision = "no_go" if status_quo else "go"
+
+    business_decision = _canonical_business_decision(study_dir, question)
+    if lexical_decision in ("go", "no_go"):
+        # Lexical matches can guide the next research step, never authorize a
+        # business go. Without a canonical recommendation the terminal advice
+        # is deliberately continue_research, even with 3+ same-source E1 hits.
+        decision_value = "continue_research"
+        if business_decision.get("kind") != "recommend":
+            gaps.append({
+                "gap": "词汇命中只是研究辅助，不能直接形成做/不做的业务决定",
+                "next_actions": [business_decision.get("next_action")
+                                 or "完成七节点、审计与负责人 DecisionRecord"],
+            })
+    if business_decision.get("kind") == "recommend" \
+            and business_decision.get("status") == "ready" \
+            and not business_decision.get("stale"):
+        statement = str(business_decision.get("statement") or "")
+        lowered_statement = statement.lower()
+        no_go = any(marker in lowered_statement or marker in statement
+                    for marker in _STATUS_QUO_MARKERS)
+        decision_value = "no_go" if no_go else "go"
 
     supporting_levels = sorted({
         ref["evidence_level"]
@@ -6842,6 +6935,14 @@ def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]
         "answer_status": answer_status,
         "decision": decision_value,
         "leading_option": leading_option,
+        "lexical_projection": {
+            "answer_status": answer_status,
+            "candidate_decision": lexical_decision,
+            "leading_option": leading_option,
+            "business_decision_allowed": False,
+            "note": "选项词命中只用于研究辅助；同源E1、关键词数量或normalized-only记录均不能产生正式go",
+        },
+        "business_decision": business_decision,
         "support": support,
         "evidence_summary": {
             "records": len(unique),
@@ -6853,8 +6954,9 @@ def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]
         "gaps": gaps,
         "chain_context": _chain_node_states(study_dir),
         "boundary": (
-            "确定性计数投影：支持/反证按选项词命中计数，不证明总体比例、因果或付费意愿；"
-            "反证不被支持数淹没；所有引用可回链 02-data/evidence.jsonl 的采集来源。"
+            "词汇计数只作研究辅助，最多建议继续研究；不证明总体比例、因果或付费意愿。"
+            "正式go/no-go只来自七节点+审计支持+负责人DecisionRecord；"
+            "反证不被支持数淹没；引用只回链02-data/evidence.jsonl，normalized-only不参与。"
             if unique else
             "无证据时本答案只声明不可回答与缺口，不产生任何结论。"),
         "evidence_file": str(study_dir / "02-data/evidence.jsonl"),
@@ -6865,13 +6967,17 @@ def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]
         json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     lines = [f"# 研究答案：{question or '（未设置决策问题）'}", ""]
+    lines.append(
+        f"> 正式业务决策：`{business_decision.get('kind')}` / `{business_decision.get('status')}`；"
+        f"当前建议：`{decision_value}`；批准：**否**。"
+        f"依据：{business_decision.get('canonical_ref')}。")
     if answer_status == "unanswerable":
-        lines.append("> 结论：**不可回答**——证据不足以支持任何选项，缺口如下（不是编造的结论）。")
+        lines.append("> 词汇辅助：**不可回答**——证据库没有可用匹配，缺口如下；不会编造结论。")
     else:
         label = {"supported": "证据支持", "supported_low_n": "低样本支持",
                  "contested": "存在反证", "inconclusive": "并列未决"}[answer_status]
-        lines.append(f"> 结论状态：**{label}**；决策建议：`{decision_value}`；"
-                     f"领先选项：{leading_option or '—'}。")
+        lines.append(f"> 词汇辅助：**{label}**；候选：`{lexical_decision}`；"
+                     f"领先选项：{leading_option or '—'}（不直接构成业务决定）。")
     lines += ["", "## 各选项证据（回链采集来源）", ""]
     for entry in support:
         lines.append(f"### {entry['option']}")

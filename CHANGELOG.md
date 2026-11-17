@@ -15,6 +15,20 @@ absent: labels fall back to the domain pack via `_study_labels`.
 `deliver --strict` returns 1 on `audit_failed` while still writing the draft,
 so automation can gate on it.
 
+### Local golden-chain acceptance run (offline, 6/6 scenarios)
+
+`tests/acceptance/golden_chain_local.py` drives the real pipeline end to end
+and writes `docs/acceptance/golden-chain-local-20261117.{json,md}` with the
+review §2.1 fields (user_intent / expected_terminal_state / real_side_effect /
+receipt / observed_outcome / evidence_paths): paste → import → analyze →
+answer; loopback fake-CDP fixture page + real macOS Vision OCR → `capture
+accept` → answer (honest low-n continue_research with capture back-links);
+opposite corpora flip the leading option; empty store → unanswerable + gap
+list; scope/design/host/challenge rejections at the capture entrance; a
+hand-appended capture row fails the evidence audit. The log grades evidence
+honestly: synthetic corpora, local loopback fixture transport (not a real
+browser), real local OCR; live external reads remain unverified.
+
 ### Governance hardening: capture = collect rule set, audit-checked review join, procurement preflight
 
 - `capture page` is not a generic browser route: the CDP exception stays on

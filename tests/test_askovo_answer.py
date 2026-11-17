@@ -87,7 +87,9 @@ class OppositeCorporaTests(AnswerCase):
         answer_a = self._answer()
         self.assertEqual("supported", answer_a["answer_status"])
         self.assertEqual(OPTIONS[0], answer_a["leading_option"])
-        self.assertEqual("go", answer_a["decision"])
+        self.assertEqual("continue_research", answer_a["decision"])
+        self.assertEqual("go", answer_a["lexical_projection"]["candidate_decision"])
+        self.assertEqual("not_ready", answer_a["business_decision"]["kind"])
         ids_a = {ref["record_id"] for ref in answer_a["support"][0]["supporting_refs"]}
         self.assertGreaterEqual(len(ids_a), 3)
 
@@ -109,7 +111,8 @@ class OppositeCorporaTests(AnswerCase):
         self.assertEqual("supported", answer_b["answer_status"])
         self.assertEqual(OPTIONS[1], answer_b["leading_option"],
                          "opposite corpus must flip the conclusion")
-        self.assertEqual("go", answer_b["decision"])
+        self.assertEqual("continue_research", answer_b["decision"])
+        self.assertEqual("go", answer_b["lexical_projection"]["candidate_decision"])
 
         # back-links: every cited record exists in the evidence store
         for answer, study in ((answer_a, self.study), (answer_b, fresh)):
@@ -200,7 +203,9 @@ class AnswerCliTests(AnswerCase):
         completed = run_cli("answer", str(self.study))
         self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
         payload = json.loads(completed.stdout)
-        self.assertEqual("go", payload["decision"])
+        self.assertEqual("continue_research", payload["decision"])
+        self.assertEqual("go", payload["lexical_projection"]["candidate_decision"])
+        self.assertEqual("needs_decision_record", payload["business_decision"]["status"])
         self.assertTrue((self.study / "04-findings/research-answer.json").is_file())
         markdown = (self.study / "04-findings/research-answer.md").read_text(encoding="utf-8")
         self.assertIn(OPTIONS[0], markdown)
@@ -212,6 +217,52 @@ class AnswerCliTests(AnswerCase):
         payload = json.loads(completed.stdout)
         self.assertEqual("unanswerable", payload["decision"])
         self.assertTrue(payload["gaps"])
+
+
+class DecisionSeparationTests(AnswerCase):
+    def test_normalized_only_records_cannot_create_an_answer(self) -> None:
+        normalized = self.study / "02-data/normalized.jsonl"
+        normalized.write_text(
+            json.dumps({"record_id": "N01", "text": CORPUS_A[0],
+                        "source_ref": "normalized-only"},
+                       ensure_ascii=False) + "\n", encoding="utf-8")
+        answer = self._answer()
+        self.assertEqual("unanswerable", answer["decision"])
+        self.assertEqual(0, answer["evidence_summary"]["records"])
+
+    def test_same_source_e1_hits_cannot_authorize_go(self) -> None:
+        self._import_corpus(CORPUS_A, "one_source")
+        answer = self._answer()
+        self.assertEqual("go", answer["lexical_projection"]["candidate_decision"])
+        self.assertEqual("continue_research", answer["decision"])
+        self.assertNotEqual("recommend", answer["business_decision"]["kind"])
+
+
+class CanonicalBusinessDecisionTests(unittest.TestCase):
+    def test_formal_recommendation_requires_chain_audit_and_named_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            study = Path(tmp) / "study"
+            shutil.copytree(SAMPLE, study)
+            reasoning_path = study / "04-findings/product-reasoning.json"
+            reasoning = json.loads(reasoning_path.read_text(encoding="utf-8"))
+            for chain in reasoning.get("chains") or []:
+                chain["counter_evidence_ids"] = []
+            reasoning_path.write_text(json.dumps(reasoning, ensure_ascii=False),
+                                      encoding="utf-8")
+            completed = run_cli("decision", "record", str(study),
+                                "--chain", "PR01", "--by", "Owner",
+                                "--revision", "Formal business review")
+            self.assertEqual(0, completed.returncode,
+                             completed.stdout + completed.stderr)
+            answer = sure_engine.answer_study(study)
+            business = answer["business_decision"]
+            self.assertEqual("recommend", business["kind"],
+                             json.dumps(business, ensure_ascii=False))
+            self.assertEqual("ready", business["status"])
+            self.assertFalse(business["approved"])
+            self.assertEqual("Owner", business["decision_record"]["decision_maker"])
+            self.assertIn(answer["decision"], ("go", "no_go"))
+            self.assertFalse(answer["lexical_projection"]["business_decision_allowed"])
 
 
 if __name__ == "__main__":
