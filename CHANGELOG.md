@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Study onboarding: fill checklist, terminal-friendly check output, label fallback
+
+`askovo do` now scaffolds `01-sources/fill-checklist.md` — an ordered,
+hypothesis-only task list for `study.json` and the seven-node
+`product-reasoning.json` (it invents no content and is not a second truth;
+`product-reasoning.json` stays the machine source). `askovo check --format`
+gains `text` (auto: text in a terminal, JSON when piped) so humans get the
+failed checks plus the next step instead of a JSON wall. Delivered plans and
+decision packages no longer read "产品类型：；阶段：" when `route.json` is
+absent: labels fall back to the domain pack via `_study_labels`.
+`deliver --strict` returns 1 on `audit_failed` while still writing the draft,
+so automation can gate on it.
+
 ### P0.4 unified capture governance + CDP page capture (candidate only)
 
 `askovo capture` captures one user-authorized visible page through the local

@@ -98,5 +98,7 @@
   ],
   "restart_rules": [
     "Restart only to test a changed privacy-control design"
-  ]
+  ],
+  "product_domain": "mobile",
+  "lifecycle_stage": "validation"
 }

@@ -1131,7 +1131,8 @@ def route_request(
         "next_commands": next_commands,
         "catalog_version": method_catalog().get("schema_version", "1.0"),
         "platform_preview": platform_fit(
-            text, str(domain_info["domain"]), intent_name == "collect"
+            text, str(domain_info["domain"]),
+            require_bulk=intent_name == "collect",
         )["recommended"][:5],
     }
 
@@ -1284,6 +1285,78 @@ def product_reasoning_template(title: str = "") -> dict[str, Any]:
             }
         ],
     }
+
+
+FILL_CHECKLIST = {
+    "scene": ["statement", "rationale", "trigger", "environment", "task_context"],
+    "user": ["statement", "rationale", "role", "state", "decision_role"],
+    "pain": ["statement", "rationale", "current_substitute", "friction_cost", "consequence"],
+    "need": ["statement", "rationale", "desired_outcome", "constraints", "measure"],
+    "feature": ["statement", "rationale", "capability", "capabilities",
+                "acceptance_conditions", "alternatives_considered"],
+    "product": ["statement", "rationale", "form", "scope", "non_goals",
+                "acceptance_criteria"],
+    "business": ["statement", "rationale", "market_definition", "target_segment",
+                 "payer", "positioning", "revenue_model", "pricing_hypothesis",
+                 "channels", "cost_drivers", "market_estimates",
+                 "unit_economics_inputs", "success_metrics", "gate"],
+}
+
+
+def fill_checklist_markdown(study: dict[str, Any] | None = None) -> str:
+    """The first-version fill guide for a new study.
+
+    The scaffold is intentionally hypothesis-only; this checklist turns the
+    JSON wall into an ordered task list. It does not invent any content.
+    """
+    study = study or {}
+    title = str(study.get("title") or "当前研究")
+    lines = [
+        f"# 填写清单：{title}",
+        "",
+        "目标：先写出第一版可审主链，不追求“填满”。每个节点先写 `statement`（一句话判断）",
+        "和 `rationale`（为什么由上一步推出），再补右侧字段；不知道的保留 `hypothesis`。",
+        "",
+        "## 1. study.json（先过合同门）",
+        "",
+        "- `decision.question`：这次到底要决定什么（一句话）",
+        "- `decision.options`：至少两个选项，其中一个是“不做/维持现状”",
+        "- `decision.owner` / `deadline` / `minimum_evidence`：谁拍板、何时、看到什么证据才敢拍",
+        "- `scope.target_users` / `markets` / `languages` / `source_time_window`：研究边界",
+        "- `scope.allowed_sources`：允许的来源（没有就留空，但设计门会提示）",
+        "- `hypotheses[].statement` / `falsified_if`：至少一条可证伪假设",
+        "- `stopping_rules` / `restart_rules`：什么时候停、什么条件下重启",
+        "",
+        "## 2. product-reasoning.json（七节点，按顺序填）",
+        "",
+        "| 节点 | 必须填的字段 | 一句话写法 |",
+        "|---|---|---|",
+        "| 场景 | statement / rationale / trigger / environment / task_context | 当 X 触发时，Y 环境里的 Z 角色要完成 T |",
+        "| 用户 | statement / rationale / role / state / decision_role | 是这个角色/状态，而不是泛人口画像；谁做决定 |",
+        "| 痛点 | statement / rationale / current_substitute / friction_cost / consequence | 现在用 A 替代，卡在 B，导致 C |",
+        "| 需求 | statement / rationale / desired_outcome / constraints / measure | 要的是结果 R，受约束 C，用 M 衡量 |",
+        "| 特性 | statement / rationale / capability / capabilities / acceptance_conditions / alternatives_considered | 能力 A 通过机制 M 改变结果 R；替代方案是什么 |",
+        "| 产品 | statement / rationale / form / scope / non_goals / acceptance_criteria | 这些特性为什么组合成这个形态；不做什么 |",
+        "| 商业 | statement / rationale / market_definition / target_segment / payer / positioning / revenue_model / pricing_hypothesis / channels / cost_drivers / market_estimates / unit_economics_inputs / success_metrics / gate | 市场边界、谁付钱、怎么收钱、成本与 Gate |",
+        "",
+        "## 3. 最小可审顺序",
+        "",
+        "1. 先填 `scene → user → pain → need` 四段，跑 `askovo check . --stage design`；",
+        "2. 再补 `feature → product → business`，每补一段重跑一次；",
+        "3. 商业数字没有总体、时间窗、单位、公式和来源时，保持 `hypothesis`，不要编。",
+        "",
+        "## 4. 命令",
+        "",
+        "```bash",
+        "askovo check . --stage design",
+        "askovo chain .",
+        "askovo deliver . --kind plan   # 审计通过后再作为正式交付",
+        "```",
+        "",
+        "字段的机器真值仍是 `04-findings/product-reasoning.json`；本清单只做填写顺序，不产生第二套结论。",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def scaffold_product_reasoning(study_dir: Path) -> dict[str, Any]:
@@ -1594,6 +1667,8 @@ def create_study(
     for sub in ("01-sources/instruments", "01-sources/manifests", "02-data/raw", "03-codebook", "04-findings", "05-audit", "06-report"):
         (study_dir / sub).mkdir(parents=True, exist_ok=True)
     reasoning_scaffold = scaffold_product_reasoning(study_dir)
+    (study_dir / "01-sources" / "fill-checklist.md").write_text(
+        fill_checklist_markdown(study), encoding="utf-8")
     if (study.get("research_mode") or {}).get("mode") == "discover":
         opportunity = opportunity_map_contract(study)
         (study_dir / "04-findings" / "opportunity-map.json").write_text(
@@ -1655,7 +1730,7 @@ def create_study(
 
 场景 → 用户 → 痛点 → 需求 → 特性 → 产品 → 商业
 
-先填写 `04-findings/product-reasoning.json`：每个节点都要有判断、推导理由、状态和假设；再针对最薄弱的节点设计采集与分析。
+先填写 `04-findings/product-reasoning.json`：每个节点都要有判断、推导理由、状态和假设；再针对最薄弱的节点设计采集与分析。字段顺序与最小可审顺序见 [`01-sources/fill-checklist.md`](01-sources/fill-checklist.md)。
 
 ## 岗位执行包
 
@@ -2713,8 +2788,8 @@ def _decision_package_lines(
     lines: list[str] = [
         f"# 决策包 Decision Package：{study.get('title', '')}",
         "",
-        f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label', study.get('product_domain', ''))}；"
-        f"阶段：{route.get('stage_label', study.get('lifecycle_stage', ''))}。",
+        f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label') or _study_labels(study)[0]}；"
+        f"阶段：{route.get('stage_label') or _study_labels(study)[1]}。",
         "",
         f"- 决策问题：{decision.get('question') or study.get('decision_question') or study.get('title', '待确认')}",
         f"- 决策负责人：{decision.get('owner') or '待确认'}；截止：{decision.get('deadline') or '未设置'}",
@@ -3320,6 +3395,27 @@ def _plan_strength(records: list[dict[str, Any]], node_name: str | None = None) 
     return "○", "假设（待验证）", "尚无采集到的直接记录"
 
 
+def _study_labels(study: dict[str, Any]) -> tuple[str, str]:
+    """Best-effort human labels for a study without route.json.
+
+    The bundled sample and imported studies may only carry raw domain/stage
+    codes. Prefer the domain pack labels so the first line of a delivered plan
+    never reads "产品类型：；阶段：".
+    """
+    domain = str(study.get("product_domain") or "")
+    stage = str(study.get("lifecycle_stage") or "")
+    domain_label, stage_label = domain, stage
+    if domain:
+        try:
+            pack = load_pack(domain)
+            domain_label = str(pack.get("label") or domain)
+            stage_data = (pack.get("stages") or {}).get(stage) or {}
+            stage_label = str(stage_data.get("label") or stage)
+        except (OSError, ValueError, KeyError):
+            pass
+    return domain_label, stage_label
+
+
 def _plan_time_span(records: list[dict[str, Any]]) -> str:
     stamps: list[str] = []
     for record in records:
@@ -3826,8 +3922,8 @@ def _plan_lines(
     lines: list[str] = [
         f"# 业务方案 Business Plan：{study.get('title', '')}",
         "",
-        f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label', study.get('product_domain', ''))}；"
-        f"阶段：{route.get('stage_label', study.get('lifecycle_stage', ''))}。",
+        f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label') or _study_labels(study)[0]}；"
+        f"阶段：{route.get('stage_label') or _study_labels(study)[1]}。",
         "",
         "> 读法：每个判断都标注**依据强度**——● 已观察到（多个来源族观察；相关性未证明独立）· ◐ 有线索（单案例或口头线索）· ○ 假设（尚无采集记录，待验证）——"
         "以及**数据基础**（来源、语料量、时间窗）与**来自语料的声音**（用户原话或典型情况）。"
@@ -4598,8 +4694,8 @@ def _deliver_artifact(
     lines = [
         f"# {title}：{study.get('title', '')}",
         "",
-        f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label', study.get('product_domain', ''))}；"
-        f"阶段：{route.get('stage_label', study.get('lifecycle_stage', ''))}。",
+        f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label') or _study_labels(study)[0]}；"
+        f"阶段：{route.get('stage_label') or _study_labels(study)[1]}。",
         f"> 审计状态：`{audit_status}`（生成时间：{audit_info.get('generated_at') or '未运行'}）。",
         "",
     ]

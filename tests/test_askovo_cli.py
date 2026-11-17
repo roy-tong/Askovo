@@ -239,6 +239,21 @@ def configure_amazon_historical_sample(target: Path) -> None:
 
 
 class AskvoCliTests(unittest.TestCase):
+    def test_do_scaffold_writes_fill_checklist_and_text_check(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "study"
+            created = run_cli("do", "面向独立开发者的 AI 客服知识库，判断谁愿意付费",
+                              "--study", str(target), "--domain", "software")
+            self.assertEqual(0, created.returncode, created.stdout + created.stderr)
+            checklist = target / "01-sources/fill-checklist.md"
+            self.assertTrue(checklist.is_file())
+            self.assertIn("七节点", checklist.read_text(encoding="utf-8"))
+            checked = run_cli("check", str(target), "--stage", "design", "--format", "text")
+            self.assertEqual(1, checked.returncode)
+            self.assertIn("Askovo 研究门", checked.stdout)
+            self.assertIn("fill-checklist.md", checked.stdout)
+            self.assertNotIn("Traceback", checked.stdout + checked.stderr)
+
     def test_sample_study_passes_full_check_and_writes_reports(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "sample"

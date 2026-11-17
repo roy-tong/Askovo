@@ -3008,6 +3008,10 @@ def command_deliver(args: argparse.Namespace) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    if getattr(args, "strict", False) and (
+            result.get("audit_status") not in (None, "pass")
+            or result.get("status") in ("blocked", "audit_failed", "no_artifact")):
+        return 1
     return 1 if result.get("status") == "blocked" else 0
 
 
@@ -3573,6 +3577,21 @@ def command_check(args: argparse.Namespace) -> int:
     if args.write_report:
         json_path, md_path = _write_report(audit)
         payload["report_files"] = [str(json_path), str(md_path)]
+    fmt = getattr(args, "format", "auto")
+    if fmt == "auto":
+        fmt = "text" if sys.stdout.isatty() else "json"
+    if fmt == "text":
+        print(f"Askovo 研究门（{args.stage}）：{audit.status}")
+        for check in payload.get("checks", []):
+            if check.get("status") == "pass":
+                continue
+            print(f"- [{str(check.get('status', '')).upper()}] {check.get('id')}")
+            for part in str(check.get("detail") or "").split("; "):
+                if part:
+                    print(f"    - {part}")
+        print("- 下一步：按 `01-sources/fill-checklist.md` 的顺序补主链，再重跑 check")
+        print("- 机器可读：加 `--format json`")
+        return 0 if audit.status == "pass" else 1
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0 if audit.status == "pass" else 1
 
@@ -5558,6 +5577,8 @@ def build_parser() -> argparse.ArgumentParser:
     deliver_parser.add_argument("--deliverable", help="kind=role: deliverable id/name; defaults to the role's first")
     deliver_parser.add_argument("--industry", help="kind=role: override the study industry context")
     deliver_parser.add_argument("--chain", help="kind=role: canonical chain id when no bound workplan exists or to select its target")
+    deliver_parser.add_argument("--strict", action="store_true",
+                                help="audit_failed 时不返回 0（草稿仍写出，便于自动化拦截）")
     deliver_parser.set_defaults(func=command_deliver)
 
     boundary_parser = subparsers.add_parser(
@@ -5677,6 +5698,8 @@ def build_parser() -> argparse.ArgumentParser:
     check_parser.add_argument("study_dir")
     check_parser.add_argument("--stage", choices=STAGES, default="full")
     check_parser.add_argument("--write-report", action="store_true")
+    check_parser.add_argument("--format", choices=("auto", "json", "text"), default="auto",
+                              help="auto=终端用 text、管道用 json（默认 auto）")
     check_parser.set_defaults(func=command_check)
 
     connector_parser = subparsers.add_parser(
