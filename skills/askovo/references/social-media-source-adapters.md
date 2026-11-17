@@ -133,4 +133,6 @@ Collected from the golf-device research campaign; the cross-platform method (cha
 ### TikTok / Instagram (user session; login verified, extraction partial)
 
 - Instagram comments lazy-load on scroll; the comment row is an unclassed `DIV` five levels above the `time` element (handle | text | time) — climb the ancestor chain, class selectors will not find it. Reels follow the same modal pattern.
+- Caption/author selectors that work on a post page return empty on a reel: fall back to the `og:description` meta tag (`"<handle> on Instagram: <caption>"`), stripping the trailing like-count fragment.
+- Keyword grids are locale-dependent — the same query yields dozens of posts in Korean but a handful in English/Japanese. Queue per (term × locale); do not assume paraphrase parity across languages.
 - Dedicated connectors land when extraction paths are verified end-to-end; until then the playbook documents the method.

@@ -38,6 +38,16 @@ notes; catalog limits/bias updated accordingly (yt-dlp PO-token blocks,
 Cloudflare on direct fetches, Discord sandbox/storage constraints, invite
 rot).
 
+The playbook also records the last methods the campaign proved after the first
+connector pass: **parallel lanes** (background archive processes plus a
+two-tab browser pipeline for logged-in sites — per-site cadence stays flat
+while render waits overlap, ≈55 s per cell for two sites), the **one-writer
+per state file** rule (a stale duplicate collector doubles request rate and
+corrupts resume state; verify by `ps` before restart), and two Instagram
+quirks (reels break caption selectors — fall back to `og:description`; keyword
+grids are locale-dependent, so queue per term × locale instead of assuming
+paraphrase parity).
+
 ### Decision integrity: lexical research assistance is not a business go
 
 `askovo answer` now reads only `02-data/evidence.jsonl` and separates

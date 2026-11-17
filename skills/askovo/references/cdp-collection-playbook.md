@@ -99,6 +99,40 @@ websocket behaviour with no typing/movement, abnormal disconnects.
    switch. Per-platform cadence drops, total throughput does not.
 4. No `reload()`, no rapid hops. Persist after every round regardless.
 
+### Parallel lanes: overlap waits, never per-site rate
+
+Collection time is mostly waiting for pages to render, so the throughput lever
+is **overlapping waits, not raising per-site frequency**. Three lanes ran at
+once in the field:
+
+- **Lane A — background processes** for no-login channels (Arctic Shift
+  windows, YouTube innertube waves). Archives are happy to run unattended;
+  start them, then forget them.
+- **Lane B + C — two tabs in one browser** for logged-in sites (Instagram and
+  GolfWRX in the field run). A CDP `goto` resolves once navigation commits;
+  the page keeps rendering in its own renderer process afterwards. Fire both
+  navigations without awaiting the first, then harvest while the other page
+  finishes painting.
+
+The invariant that makes this safe: **each site only ever sees its own tab's
+sequential requests**, so per-site cadence is unchanged — the waits of
+different sites simply overlap. Two tabs on the *same* site would double its
+rate and is not a lane.
+
+Per-cell protocol (one cell = two rounds, ~55 s in the field run):
+
+1. Pick the next target per lane from its queue (unharvested posts/threads).
+2. Fire both `goto` calls concurrently; await both renders.
+3. Harvest alternately — extract lane B, extract lane C, each with its own
+   extractor and its own persisted store.
+4. Persist both stores per cell; a cell that times out must not tear the input
+   event stream or lose the other lane's harvest.
+
+Field result: one cell = 2 Instagram posts (28 comments) + 2 GolfWRX threads
+(87 posts) in 55 s — about double the single-tab rate with no extra
+per-site risk. Keep tab bindings by stable tab id (URL patterns rot); one tab
+per site per run.
+
 ### Platform quirks worth remembering
 
 - **X search**: `since:/until:` operators make Reddit-style time-window
@@ -109,6 +143,14 @@ websocket behaviour with no typing/movement, abnormal disconnects.
 - **Instagram comments**: lazy-loaded; the comment row is an unclassed `DIV`
   five levels above the `time` element (handle | text | time). Crawl up the
   ancestor chain from `time` — class selectors will not find it.
+- **Instagram captions break on reels and modals**: the caption/author
+  selectors that work on a post page return empty on a reel. Fall back to the
+  `og:description` meta tag — it carries `"<handle> on Instagram: <caption>"`,
+  and the trailing `"<n> likes"` fragment has to be stripped from the caption.
+- **Instagram keyword grids are locale-dependent**: the same query returns
+  dozens of posts in Korean but only a handful in English/Japanese. Run one
+  queue per (term × locale), do not assume paraphrase parity across languages,
+  and switch to hashtag/tag URLs when a keyword grid comes back thin.
 - **Discord forum channels** (feature-requests / bug-reports): thread cards
   already carry title + author + body (in `div[class*="messageContent"]`), so
   the card list is the corpus — no need to open threads. Exclude the
@@ -137,6 +179,8 @@ websocket behaviour with no typing/movement, abnormal disconnects.
 | Relative timestamps ("10 months ago") → approximate dates, always marked `date_precision=approximate` | YouTube innertube |
 | Two-layer output: platform-faithful raw JSON first, corpus envelope via `clean_screen_corpus.py` second | Kickstarter/Discord runs |
 | Persist after every round — an un-persisted round is a lost round | Discord session drop |
+| One writer per state file: before restarting a collector, confirm the old process is actually dead (`ps` + `kill`); two processes on one state file double the request rate, corrupt resume state and starve each other | golf-main restart (two live processes from one morning) |
+| Overlap waits, not rates: no-login archives run in background processes while two logged-in tabs on different sites render in parallel; per-site cadence stays flat | dual-tab pipeline, ≈55 s/cell |
 | Rotate platforms to keep per-platform cadence low without losing throughput | post-rate-limit protocol |
 | Run no-login channels (APIs, archives) in background processes; the logged-in browser is the scarce resource — spend it on what needs it | YouTube wave 3 alongside browser work |
 
@@ -149,3 +193,8 @@ websocket behaviour with no typing/movement, abnormal disconnects.
 - `scripts/connectors/README.md` §4b — CDP collector usage, boundaries, envelope conversion
 - X / Instagram / TikTok methods above are documented here only; connectors
   land when their extraction paths are verified end-to-end.
+- The parallel-lane pattern (background archives + dual-tab pipeline) is an
+  operating method, not a script: it composes whatever collectors a study
+  already has, and each lane keeps its own extractor and its own persisted
+  store. A generic `cdp_parallel_pipeline.py` only earns its place once two
+  extractors can be driven from one config without forking them.
