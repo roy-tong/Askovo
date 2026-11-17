@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "generated_at": "2026-10-30",
+  "generated_at": "2026-11-17",
   "platforms": [
     {
       "id": "github",
@@ -75,14 +75,15 @@
       "limits": [
         "Data API requires approved app and user agent",
         "Historical archives are third-party and may lag",
-        "Subreddit moderation/deletion changes samples"
+        "Subreddit moderation/deletion changes samples",
+        "Archive coverage has empty windows for small communities before their growth phase; verify emptiness before burning windows"
       ],
       "bias": [
         "Subreddit self-selection",
         "Upvote/ranking bias",
         "Deleted/removed content missing"
       ],
-      "notes": "Official Reddit Data API 需审批应用；历史归档（PullPush/Arctic Shift）只作补充并记录来源与时点。"
+      "notes": "Official Reddit Data API 需审批应用；历史归档（PullPush/Arctic Shift）只作补充并记录来源与时点。窗口回填采集器 collect_arctic_windows.py：显式窗口列表 + 窗内 after 游标深翻页 + 429/403/422 分类退避 + state 断点，适合多社区×多月的历史回填。"
     },
     {
       "id": "x",
@@ -104,7 +105,8 @@
         "commercial"
       ],
       "access_modes": [
-        "official_api"
+        "official_api",
+        "cdp_visible_page"
       ],
       "auth": "oauth_paid",
       "bulk": "limited",
@@ -113,15 +115,16 @@
       "adapter": "none",
       "limits": [
         "API tiers are paid and rate-limited",
-        "No scraping",
-        "Historical access depends on tier"
+        "Historical access depends on tier",
+        "Live-search pages render mentions but infinite scroll often stalls; per-post comment pages are the fallback"
       ],
       "bias": [
         "Public-post reach bias",
         "Reposts are distribution, not demand",
         "Bot/spam contamination"
       ],
-      "notes": "只走官方 API 与付费层级；不得用浏览器自动化或内部接口。"
+      "notes": "官方 API 与付费层级为主；授权可见页面可走用户登录会话的 CDP 通道（用户手工登录，不代输凭据、不读凭据、不导 cookie）。滚动加载不动时改逐帖打开评论页。",
+      "cdp": true
     },
     {
       "id": "youtube",
@@ -155,14 +158,17 @@
       "limits": [
         "Data API quota",
         "Comments require video IDs and pagination",
-        "Transcripts need authorization/rights"
+        "Transcripts need authorization/rights",
+        "yt-dlp default clients trip PO-token detection ('page needs to be reloaded')",
+        "Comment section is lazy-loaded; continuation tokens moved under itemSectionRenderer",
+        "2024+ comment payloads use commentEntityPayload keyed by commentKey, not flat commentRenderer"
       ],
       "bias": [
         "Creator/commenter self-selection",
         "Comment ranking bias",
         "Video performance confounds"
       ],
-      "notes": "Official YouTube Data API；评论/元数据按配额采集，字幕与转写需权利确认；不使用浏览器自动化。"
+      "notes": "Official YouTube Data API 为准；评论/元数据按配额采集，字幕与转写需权利确认；不使用浏览器自动化。免登录评论通道走 innertube 连接器 collect_youtube_innertube.py（search/next/continuation 直连，绕开 yt-dlp 的 PO token 拦截；发布时间为相对文本，created_at 为近似值并标注 date_precision=approximate）。"
     },
     {
       "id": "instagram",
@@ -223,7 +229,8 @@
       ],
       "access_modes": [
         "research_api",
-        "authorized_export"
+        "authorized_export",
+        "cdp_visible_page"
       ],
       "auth": "oauth_research",
       "bulk": "limited",
@@ -240,7 +247,8 @@
         "Creator skew",
         "Comment ranking"
       ],
-      "notes": "TikTok Research API 或授权导出；不保证一般商业项目可用。"
+      "notes": "TikTok Research API 或授权导出为主；授权可见页面可走用户登录会话的 CDP 通道（用户手工登录；不代输凭据、不导 cookie）。方法半验证：登录态采集流程已走通，专用采集器未收编，见 cdp-collection-playbook.md。",
+      "cdp": true
     },
     {
       "id": "amazon",
@@ -626,22 +634,26 @@
       ],
       "access_modes": [
         "historical_dataset",
-        "authorized_export"
+        "authorized_export",
+        "cdp_visible_page"
       ],
       "auth": "none",
       "bulk": "limited",
       "freshness": "low",
-      "decision": "blocked",
-      "adapter": "none",
+      "decision": "limited",
+      "adapter": "cdp",
       "limits": [
-        "No approved live connector",
-        "Crawler-generated dataset stale"
+        "Direct fetch of comment pages returns 403 behind Cloudflare",
+        "Comment section is JS-rendered; data only exists after browser rendering",
+        "GraphQL search API is 403 to plain clients",
+        "Deep replies under 'load previous replies' are not expanded by the connector"
       ],
       "bias": [
         "Successful campaigns over-represented",
         "Backer intent ≠ market"
       ],
-      "notes": "历史冻结数据只作背景；不能证明当前需求。"
+      "notes": "公开项目页/评论区/更新帖的授权可见页面采集（CDP 真浏览器过 Cloudflare，等待被动自动清除，不主动绕过挑战）；采集器 collect_cdp_kickstarter.py。历史冻结数据集只作背景，不能证明当前需求。",
+      "cdp": true
     },
     {
       "id": "interviews",
@@ -875,6 +887,49 @@
         "Entertainment skew"
       ],
       "notes": "仅授权可见页面或导出；不做挑战页/验证码绕过。"
+    },
+    {
+      "id": "discord",
+      "name": "Discord",
+      "domains": [
+        "software",
+        "hardware",
+        "consumer",
+        "automotive",
+        "mobile"
+      ],
+      "data_types": [
+        "messages",
+        "threads",
+        "channel_metadata"
+      ],
+      "claim_fit": [
+        "need",
+        "acceptance",
+        "usability"
+      ],
+      "access_modes": [
+        "cdp_visible_page",
+        "authorized_export"
+      ],
+      "auth": "user_browser_session",
+      "bulk": "limited",
+      "freshness": "high",
+      "decision": "limited",
+      "adapter": "cdp",
+      "cdp": true,
+      "limits": [
+        "No public content API; internal APIs are unusable in automation sandboxes (localStorage blocked)",
+        "Lazy loading only reacts to real wheel events, not programmatic scrollTop",
+        "High-frequency navigation can drop the session; keep a slow cadence",
+        "Invite links expire; community discovery coverage is partial"
+      ],
+      "bias": [
+        "Server self-selection; vendor-run servers over-represent engaged owners",
+        "Brand channels skew toward power users and early adopters",
+        "Servers without public invites are missing"
+      ],
+      "notes": "仅用户登录会话内的授权可见频道（用户手工登录；不代输凭据、不导 cookie；不做挑战绕过）。采集器 collect_cdp_discord.py；基建结论与节奏约束见 cdp-collection-playbook.md。"
     }
   ]
 }

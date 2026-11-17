@@ -332,7 +332,12 @@ class ProcurementPreflightTests(ReviewCase):
                 routes = {item["route"] for item in payload["alternative_routes"]}
                 self.assertIn("authorized_export_or_paste", routes)
                 self.assertIn("local_screenshot_transcription", routes)
-                self.assertNotIn("authorized_visible_page_cdp", routes)
+                if platform == "x":
+                    # x is CDP-enabled: the user-session visible-page route is a
+                    # legitimate alternative to its paid API.
+                    self.assertIn("authorized_visible_page_cdp", routes)
+                else:
+                    self.assertNotIn("authorized_visible_page_cdp", routes)
 
     def test_delivery_contract_keeps_business_outcome_separate(self) -> None:
         contract = json.loads((ROOT / "docs/delivery-contract.json").read_text(encoding="utf-8"))

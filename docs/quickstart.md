@@ -232,7 +232,7 @@ askovo collect ./cam-study --platform amazon --query "night alert" \
   --ack-terms
 ```
 
-仅限 amazon/instagram/bilibili/weibo；X/YouTube 不用浏览器自动化。命中验证码或挑战页立即停止。
+仅限平台目录标记 `cdp: true` 的集合（当前 amazon/instagram/bilibili/weibo/kickstarter/discord/x/tiktok）；YouTube 不用浏览器自动化。挑战页只等待被动清除或人工完成，需要交互立即停止。
 
 **队列**
 

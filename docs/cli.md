@@ -209,7 +209,7 @@ askovo collect ./study --platform amazon --query "night alert" \
 - 需要 Chrome 以 `--remote-debugging-port=9222` 启动，且使用你本人已登录的 profile；
 - 只抓当前页面可见文本；命中验证码/机器人检查立即停止；
 - `--ack-terms` 是人工确认平台条款、账号授权、用途与保留；没有它返回 `4`；
-- 仅 amazon/instagram/bilibili/weibo 开放；X/YouTube 只走官方 API，blocked 平台不开放；
+- 仅平台目录 `cdp: true` 集合开放（当前 amazon/instagram/bilibili/weibo/kickstarter/discord/x/tiktok）；YouTube 只走官方 API，其余 blocked 平台不开放；
 - CDP 仅允许回环端点与默认端口 HTTP(S) 平台 URL，WebSocket 不得跳到其他主机或端口；
 - 不伪造指纹、不绕验证码、不做无限翻页。
 

@@ -121,7 +121,21 @@ Reddit 的 2026 公共 Data API 过渡会改变研究访问方式：现有应用
 
 - [开源连接器审查](../skills/askovo/references/open-source-connectors.md)
 - [连接器输出合同](../skills/askovo/references/connector-contract.md)
-- 平台细则：[Reddit](../skills/askovo/references/reddit-research.md) · [X](../skills/askovo/references/x-research.md) · [YouTube](../skills/askovo/references/youtube-research.md) · [Amazon](../skills/askovo/references/amazon-research.md) · [京东](../skills/askovo/references/jd-research.md) · [淘宝](../skills/askovo/references/taobao-research.md) · [Kickstarter](../skills/askovo/references/kickstarter-research.md)
+- [多平台采集手册](../skills/askovo/references/cdp-collection-playbook.md)（通道决策树、CDP 操作模式、反自动化纪律、爬虫工程规则）
+- 平台细则：[Reddit](../skills/askovo/references/reddit-research.md) · [X](../skills/askovo/references/x-research.md) · [YouTube](../skills/askovo/references/youtube-research.md) · [Amazon](../skills/askovo/references/amazon-research.md) · [京东](../skills/askovo/references/jd-research.md) · [淘宝](../skills/askovo/references/taobao-research.md) · [Kickstarter](../skills/askovo/references/kickstarter-research.md) · [Discord/社媒共享](../skills/askovo/references/social-media-source-adapters.md)
+
+## 采集工具箱（connectors/）
+
+`skills/askovo/scripts/connectors/` 是第一方采集/清洗工具箱（研究项目实战收编，标准库实现，含信封、质量分、断点与审计）。2026-11 新收编四个（来源：高尔夫智能设备调研，方法细节见[采集手册](../skills/askovo/references/cdp-collection-playbook.md)）：
+
+| 工具 | 通道 | 一句话 |
+| --- | --- | --- |
+| `collect_arctic_windows.py` | Arctic Shift 归档（免登录） | 显式窗口计划回填：窗内游标深翻页 + 每窗 cap + state 断点 |
+| `collect_youtube_innertube.py` | YouTube innertube（免登录） | search→next→continuation 评论采集，兼容 2024+ 新结构，时间标 `date_precision=approximate` |
+| `collect_cdp_kickstarter.py` | CDP 可见页（免登录） | Cloudflare 被动等待 + load-more 展开 + DOM 提取，评论/更新帖两模式 |
+| `collect_cdp_discord.py` | CDP 用户会话（需手工登录） | 真实滚轮事件触发懒加载 + 慢速节奏 + 每轮持久化，文字/论坛频道 |
+
+收编工具 ≠ 路线放行：能否使用仍由平台目录与四门审查决定（见工具箱 README 第 6 节）。
 
 ## 规模化采集
 
@@ -149,10 +163,11 @@ askovo collect ./study --platform amazon --query "night alert" \
 边界：
 
 - 只抓当前页面**可见文本**，不读取登录凭据、不导出 Cookie；
-- 命中验证码/机器人检查立即 `challenge` 停止，不绕过；
+- 命中验证码/机器人检查：等待被动自动清除，或人工完成后重跑；需要交互的挑战立即 `challenge` 停止，不绕过；
 - 不伪造指纹、不用代理池、不做无限翻页；
 - `--ack-terms` 必须由人确认平台条款、账号授权、数据用途与保留；
-- 当前开放：amazon、instagram、bilibili、weibo；X/YouTube 只走官方 API，blocked 平台（小红书/知乎/京东/淘宝/Kickstarter）仍不开放；
+- 当前开放（平台目录 `cdp: true` 的集合）：amazon、instagram、bilibili、weibo、kickstarter、discord、x、tiktok。YouTube 保持只走官方 API（免登录评论语料有 innertube 连接器，无需浏览器）；其余 blocked 平台（小红书/知乎/京东/淘宝）仍不开放；
+- 登录态平台（discord/x/tiktok/instagram）的会话**仅由用户在浏览器里手工登录**，agent 不代输凭据；多平台轮转作业、慢速节奏等反自动化纪律见 `skills/askovo/references/cdp-collection-playbook.md`；
 - 仅允许回环 CDP 端点、默认端口 HTTP(S) 平台 URL，返回 WebSocket 也必须留在同一回环端口；
 - 平台条款可能仍然禁止自动化采集；Askovo 只提供技术通道和留痕，不替用户承担合规判断。
 

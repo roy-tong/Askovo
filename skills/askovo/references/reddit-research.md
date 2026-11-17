@@ -132,3 +132,11 @@ Historical search and prospective monitoring answer different questions. Keep `s
 
 Repeated Reddit patterns can justify `hypothesis` or `needs-validation`. A `validated` judgment still needs linked problem, solution, commercial/behavioral, and counter-evidence for the same role, scene, and task.
 
+
+## Field-verified collection notes (2026-11): windowed archive backfill
+
+Collected from the golf-device research campaign (≈3,900 windows, 11 subreddits); full method context in [cdp-collection-playbook.md](cdp-collection-playbook.md).
+
+- **Windowed backfill collector**: [../scripts/connectors/collect_arctic_windows.py](../scripts/connectors/collect_arctic_windows.py) — explicit `(subreddit × window)` JSON plan, per-window caps, `after=oldest-1` cursor paging inside each window (exceeds the 100/request cap), `fields` trimming, 429/403 reset-header backoff and 422 "slow down" retries, state-file resume with `seen` rebuilt from the output. Complements `collect_arctic_reddit.py` (exhaust one window) and `collect_legacy_reddit.py` (route CSV × month sub-windows).
+- **Empty-window honesty**: a zero-row historical window is usually a real gap (community too small in that era) — verified live for r/GolfEquipment 2021–23. Probe one window interactively before burning a long plan, and record verified-empty ranges in the run manifest so later runs skip them.
+- **Archive sampling bias**: newest-first within a window plus caps leaves a window-tail bias — keep `screening_note`/honesty labels as the collector writes them and report the sampling frame in the study.

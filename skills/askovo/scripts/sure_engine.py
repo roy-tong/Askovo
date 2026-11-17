@@ -5567,6 +5567,10 @@ CDP_TARGET_HOSTS = {
     "instagram": ("instagram.com",),
     "bilibili": ("bilibili.com",),
     "weibo": ("weibo.com", "weibo.cn"),
+    "kickstarter": ("kickstarter.com",),
+    "discord": ("discord.com",),
+    "x": ("x.com", "twitter.com"),
+    "tiktok": ("tiktok.com",),
 }
 MAX_CDP_HANDSHAKE_BYTES = 64 * 1024
 MAX_CDP_MESSAGE_BYTES = 16 * 1024 * 1024
@@ -5854,8 +5858,10 @@ def _validate_capture_url(url: str) -> str:
 
 
 # Capture is a narrow CDP exception, not a generic browser-scraping route.
-# Only the four approved platforms may use it, and each page follows the same
-# explicit scope + enabled-adapter + registry-review checks as collect --cdp.
+# Only platforms whose catalog entry sets cdp: true (mirrored in CDP_TARGET_HOSTS)
+# may use it, and each page follows the same explicit scope + enabled-adapter +
+# registry-review checks as collect --cdp. Login-protected platforms are
+# user-session-only: the user logs in by hand; challenges are never bypassed.
 CAPTURE_HOST_PLATFORMS: dict[str, tuple[str, ...]] = {
     platform: hosts for platform, hosts in CDP_TARGET_HOSTS.items()
 }
@@ -5902,8 +5908,9 @@ def _capture_scope_failure(study: dict[str, Any], url: str) -> dict[str, Any] | 
             "status": "cdp_not_allowed",
             "platform": platform,
             "reason": (
-                f"page host {host} is outside amazon/instagram/bilibili/weibo; "
-                "capture is not a generic browser route and X/YouTube/blocked platforms "
+                f"page host {host} is outside the CDP-enabled platforms "
+                "(amazon/instagram/bilibili/weibo/kickstarter/discord/x/tiktok); "
+                "capture is not a generic browser route and YouTube/blocked platforms "
                 "never use CDP"),
             "allowed_sources": sorted(allowed_ids),
         }
@@ -5924,8 +5931,9 @@ def _capture_adapter_failure(study: dict[str, Any], platform: str) -> dict[str, 
     if not entry or not entry.get("cdp") or entry.get("decision") == "blocked":
         return {
             "status": "cdp_not_allowed", "platform": platform,
-            "reason": "CDP is only enabled for authorized visible pages on "
-                      "amazon/instagram/bilibili/weibo",
+            "reason": "CDP is only enabled for authorized visible pages on the "
+                      "catalog platforms with cdp: true "
+                      "(amazon/instagram/bilibili/weibo/kickstarter/discord/x/tiktok)",
         }
     if platform_review_expired(platform):
         return {
@@ -6126,7 +6134,7 @@ def collect_cdp(
         return {
             "status": "cdp_not_allowed",
             "platform": platform,
-            "reason": "CDP is only enabled for authorized visible pages on amazon/instagram/bilibili/weibo",
+            "reason": "CDP is only enabled for authorized visible pages on the catalog platforms with cdp: true",
         }
     if not url:
         return {"status": "error", "platform": platform, "reason": "CDP requires --url"}

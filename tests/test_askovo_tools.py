@@ -35,6 +35,7 @@ sys.path.insert(0, str(CONNECTORS))
 connector_common = load_module("askovo_connector_common_test", CONNECTORS / "common.py")
 sys.modules["common"] = connector_common
 amazon = load_module("askovo_amazon_test", CONNECTORS / "collect_amazon_reviews_2023.py")
+yt_innertube = load_module("askovo_youtube_innertube_test", CONNECTORS / "collect_youtube_innertube.py")
 legacy_reddit = load_module("askovo_legacy_reddit_test", CONNECTORS / "collect_legacy_reddit.py")
 sure_engine = load_module("askovo_tools_engine_test", ROOT / "skills/askovo/scripts/sure_engine.py")
 
@@ -75,6 +76,86 @@ class AuxiliaryScriptTests(unittest.TestCase):
         second = amazon.normalize_review(dict(row), "test", "query", "salt")
         self.assertEqual(first["record_id"], second["record_id"])
         self.assertRegex(first["record_id"], r"[0-9a-f]{24}$")
+
+
+class YouTubeInnertubeParserTests(unittest.TestCase):
+    """No-network parser tests for the collected innertube comment collector."""
+
+    @staticmethod
+    def _entity_payload_page() -> dict:
+        # Minimal 2024+ shape: thread view models keyed by commentKey,
+        # payloads delivered through frameworkUpdates.entityBatchUpdate.
+        return {
+            "frameworkUpdates": {"entityBatchUpdate": {"mutations": [
+                {"payload": {"commentEntityPayload": {
+                    "key": "ck1",
+                    "author": {"displayName": "Golfer A"},
+                    "properties": {"commentId": "UgComment1", "content": {"content": "Tracking works great at the range"},
+                                   "publishedTime": "3 months ago"},
+                    "toolbar": {"likeCountNotliked": "12"},
+                }}},
+            ]}},
+            "onResponseReceivedEndpoints": [{"contents": {"itemSectionRenderer": {"contents": [
+                {"commentThreadRenderer": {"commentViewModel": {"commentViewModel": {
+                    "commentKey": "ck1", "commentId": "UgComment1",
+                }}}}
+            ]}}}],
+        }
+
+    def test_parses_comment_entity_payload_shape(self) -> None:
+        rows = yt_innertube.parse_comments(self._entity_payload_page())
+        self.assertEqual(1, len(rows))
+        self.assertEqual("UgComment1", rows[0]["id"])
+        self.assertEqual("Golfer A", rows[0]["author"])
+        self.assertIn("Tracking works", rows[0]["text"])
+        self.assertEqual("3 months ago", rows[0]["time_text"])
+
+    def test_parses_legacy_comment_renderer_shape(self) -> None:
+        page = {"onResponseReceivedEndpoints": [{"contents": {"itemSectionRenderer": {"contents": [
+            {"commentRenderer": {
+                "commentId": "UgLegacy1",
+                "authorText": {"simpleText": "Golfer B"},
+                "contentText": {"runs": [{"text": "Battery dies in the cold"}, {"text": " after an hour"}]},
+                "publishedTimeText": {"simpleText": "1 year ago"},
+                "voteCount": {"simpleText": "4"},
+            }}
+        ]}}}]}
+        rows = yt_innertube.parse_comments(page)
+        self.assertEqual(1, len(rows))
+        self.assertEqual("UgLegacy1", rows[0]["id"])
+        self.assertEqual("Battery dies in the cold after an hour", rows[0]["text"])
+
+    def test_relative_time_becomes_approximate_date(self) -> None:
+        import time as _time
+        now = _time.time()
+        iso = yt_innertube.approx_time("10 months ago", now)
+        self.assertIsNotNone(iso)
+        delta_days = abs((date.fromisoformat(iso) - date.fromtimestamp(now)).days)
+        self.assertTrue(280 <= delta_days <= 340, iso)
+        self.assertIsNone(yt_innertube.approx_time("edited", now))
+
+    def test_comment_continuation_token_is_found_under_item_section(self) -> None:
+        page = {"contents": {"a": {"itemSectionRenderer": {"contents": [
+            {"continuationItemRenderer": {"continuationEndpoint": {
+                "continuationCommand": {"token": "tok-1"}}}}
+        ]}}}}
+        self.assertEqual("tok-1", yt_innertube.comment_token(page))
+        self.assertIsNone(yt_innertube.comment_token({"contents": {}}))
+
+    def test_record_envelope_marks_approximate_dates_and_quality(self) -> None:
+        comment = {"id": "UgComment1", "author": "Golfer A",
+                   "text": "Tracking works great at the range and the app is stable.",
+                   "time_text": "3 months ago", "likes": "12"}
+        record = yt_innertube.build_record(
+            comment, {"channel": "Chan", "title": "T"}, "vid1",
+            {"q": "golf cam", "route": "yt-comp"}, None)
+        self.assertEqual("youtube:UgComment1", record["record_id"])
+        self.assertEqual("approximate", record["date_precision"])
+        self.assertEqual("public_page_uncoded", record["source_tier"])
+        self.assertIn("quality_flags", record)
+        self.assertIn("quality_score", record)
+        self.assertEqual("yt-comp", record["route_id"])
+        self.assertEqual("vid1", record["thread_id"])
 
 
 class AnalysisCorrectnessTests(unittest.TestCase):

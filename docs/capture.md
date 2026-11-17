@@ -73,7 +73,7 @@ askovo deliver ./cam-study --kind plan
 capture 是**正式采集通道的一个入口**，不是通用浏览器抓取路由，更不是绕过既有采集边界的旁路。它与 `askovo collect --cdp` 完全同口径：
 
 1. **Design gate**：study 未通过 `askovo check --stage design` 时，capture 入口直接拒绝（`design_gate_failed`），与 collect/queue 相同；
-2. **批准平台集合**：CDP 例外只对 amazon / instagram / bilibili / weibo 开放（与 collect 的 CDP 目标白名单一致）；其它任意站点（reddit、X、YouTube、内网 wiki……）一律 `cdp_not_allowed`——capture 不开放通用 web 采集；
+2. **批准平台集合**：CDP 例外只对平台目录标记 `cdp: true` 的集合开放（当前 amazon / instagram / bilibili / weibo / kickstarter / discord / x / tiktok，与 collect 的 CDP 目标白名单一致）；其它任意站点（reddit、YouTube、内网 wiki……）一律 `cdp_not_allowed`——capture 不开放通用 web 采集；
 3. **scope.allowed_sources**：批准平台的页面还必须出现在 `study.scope.allowed_sources` 中，否则 `scope_blocked`；
 4. **启用 adapter + 注册表复审**：`study.source_adapters.<platform>.enabled=true` 且连接器政策复审未过期，否则 `adapter_disabled` / `review_expired`（与 collect 相同）；
 5. **授权页面语义**：默认端口 http(s)、无凭据 URL；跳转离开批准平台即停止；出现验证码/挑战页在截图与落盘之前停止（`challenge`），不绕过；
@@ -83,7 +83,7 @@ capture 是**正式采集通道的一个入口**，不是通用浏览器抓取�
 
 ## 付费数据与采购门
 
-plan/collect 预检若选中付费 API 层级或商业数据 provider，会返回 `status=blocked`、`terminal_state=BLOCKED_USER_INPUT`、`requires_procurement=true`、`user_action` 与 `transaction_executed=false`；C-01 的机器原因码保持 `reason_code=INPUT_REQUIRED`。Askovo 不自动采购。可改选授权导出/本地粘贴、授权截图的人工转写，或仅在上述四个批准平台使用 CDP/OCR 候选链。机器可读交付边界见 [delivery-contract.json](delivery-contract.json)。
+plan/collect 预检若选中付费 API 层级或商业数据 provider，会返回 `status=blocked`、`terminal_state=BLOCKED_USER_INPUT`、`requires_procurement=true`、`user_action` 与 `transaction_executed=false`；C-01 的机器原因码保持 `reason_code=INPUT_REQUIRED`。Askovo 不自动采购。可改选授权导出/本地粘贴、授权截图的人工转写，或仅在上述批准平台（目录 `cdp: true` 集合）使用 CDP/OCR 候选链。机器可读交付边界见 [delivery-contract.json](delivery-contract.json)。
 
 ## 边界
 

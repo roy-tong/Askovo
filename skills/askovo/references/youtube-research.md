@@ -103,3 +103,12 @@ Report unique channels/videos, dominant channel/video share, top-level/reply mix
 
 The CLI fails expired `refresh_due_at`, missing comment hierarchy, connector mismatch, and configured concentration violations. A pass does not imply complete comments, representative viewers, verified identities, or population demand.
 
+
+## Field-verified collection notes (2026-11)
+
+Collected from the golf-device research campaign; full method context in [cdp-collection-playbook.md](cdp-collection-playbook.md).
+
+- **Login-free comment channel**: yt-dlp default clients trip PO-token detection ("page needs to be reloaded"); the innertube `search` → `next(videoId)` → `next(continuation)` chain still works without login or a browser. Collector: [../scripts/connectors/collect_youtube_innertube.py](../scripts/connectors/collect_youtube_innertube.py).
+- **Comment payload shapes**: the comment-section continuation token sits under `itemSectionRenderer` whose first content is a `continuationItemRenderer`; 2024+ responses deliver threads as `commentThreadRenderer.commentViewModel.commentViewModel` with payloads in `frameworkUpdates.entityBatchUpdate.mutations[].payload.commentEntityPayload` keyed by `commentKey` (legacy `commentRenderer` still appears — the parser handles both).
+- **Timestamp honesty**: YouTube exposes relative text ("10 months ago") on this channel; `created_at` is an approximation and every record carries `date_precision=approximate`. Do not use these dates for event-window diffs finer than a month.
+- **Catalog decision unchanged**: official Data API remains the planned route; the innertube collector is a toolbox script, not a policy change (collecting a tool ≠ approving a route).

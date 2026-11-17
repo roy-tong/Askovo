@@ -215,7 +215,7 @@ askovo deliver ./study --kind analysis
 askovo deliver ./study --kind plan
 ```
 
-Capture requires the Design gate, explicit platform scope, an enabled adapter, a current registry review, a loopback debugger, and an authorized default-port page on amazon / instagram / bilibili / weibo; other hosts, X / YouTube, blocked routes, redirects away from the approved platform, and challenge pages are refused. Capture and OCR always produce `candidate` material. Only `capture accept` with a named reviewer and an explicit E0/E1/E2 level appends one normalized record to `evidence.jsonl`, retaining URL, capture JSON, screenshot, page/OCR/screenshot hashes, reviewer, and review time. The evidence audit rejects hand-appended unreviewed capture rows.
+Capture requires the Design gate, explicit platform scope, an enabled adapter, a current registry review, a loopback debugger, and an authorized default-port page on a catalog platform with `cdp: true` (currently amazon / instagram / bilibili / weibo / kickstarter / discord / x / tiktok); other hosts, YouTube, blocked routes, redirects away from the approved platform, and challenge pages are refused. Capture and OCR always produce `candidate` material. Only `capture accept` with a named reviewer and an explicit E0/E1/E2 level appends one normalized record to `evidence.jsonl`, retaining URL, capture JSON, screenshot, page/OCR/screenshot hashes, reviewer, and review time. The evidence audit rejects hand-appended unreviewed capture rows.
 
 Acceptance does **not** write a demand judgment, a seven-node chain, a decision record, or a do / defer / do-not-do conclusion. A human must still register the evidence in the linked judgment and appropriate chain nodes; `analysis` and `plan` then render the same chain with a `record → source URL/capture/screenshot/hash → reviewer/time` back-link table. See [CDP capture and review](docs/capture.md) and the machine-readable [delivery contract](docs/delivery-contract.json). Paid API/provider routes stop at plan/collect preflight with `terminal_state=BLOCKED_USER_INPUT`, `requires_procurement=true`, a user action, and `transaction_executed=false`; Askovo never procures access automatically.
 
@@ -356,7 +356,7 @@ Answers "where is the data, can it be obtained compliantly, which reasoning node
 - GitHub goes through the official Search API; Reddit through the official Data API; everything else uses authorized exports, historical datasets, or local fixtures.
 - Every collection run stores raw envelopes, normalized records, and a manifest recording access basis, rights, counts, discard reasons, restrictions, and bias.
 - A SQLite queue supports multiple workers, lease recovery, failure backoff, rate limits, and resumable runs.
-- CDP is limited to authorized visible pages on amazon / instagram / bilibili / weibo; X / YouTube and blocked platforms never use it, and captchas, login walls, and platform controls are never bypassed.
+- CDP is limited to authorized visible pages on catalog platforms with `cdp: true` (currently amazon / instagram / bilibili / weibo / kickstarter / discord / x / tiktok); YouTube and blocked platforms never use it, captchas and platform controls are never actively bypassed, and login sessions are user-operated only — the agent never enters credentials or exports cookies.
 
 See [Platforms & connectors](docs/connectors.md) and the [CLI reference](docs/cli.md) (Chinese).
 

@@ -91,8 +91,10 @@ The Business Plan (`askovo deliver --kind plan` → `06-report/plan.md`) is the 
 
 When a supported platform is in scope, read [references/open-source-connectors.md](references/open-source-connectors.md) and [references/connector-contract.md](references/connector-contract.md) before choosing acquisition code. Then read the shared adapter and matching platform reference:
 
-- social: [shared](references/social-media-source-adapters.md), [Reddit](references/reddit-research.md), [X](references/x-research.md), [YouTube](references/youtube-research.md);
+- social: [shared](references/social-media-source-adapters.md), [Reddit](references/reddit-research.md), [X](references/x-research.md), [YouTube](references/youtube-research.md), [Discord](references/social-media-source-adapters.md);
 - commerce/crowdfunding: [shared](references/commerce-and-crowdfunding-source-adapters.md), [Amazon](references/amazon-research.md), [JD](references/jd-research.md), [Taobao/Tmall](references/taobao-research.md), [Kickstarter](references/kickstarter-research.md).
+
+When a plain HTTP collector is blocked (Cloudflare, JS-rendered lists, login-only communities) and the platform's catalog entry sets `cdp: true`, read [references/cdp-collection-playbook.md](references/cdp-collection-playbook.md) for the field-verified channel decision tree, CDP operation patterns (passive challenge waits, real wheel events, anti-automation cadence) and the collector toolbox under `scripts/connectors/`.
 
 Use the bundled route template and enable the matching `study.json.source_adapters` config before collection. These routes remain separate source families and must pass their own hierarchy/concentration audit.
 
@@ -375,7 +377,7 @@ A `warn` is a question to answer in the delivery, never something to hide; a `fa
 - Respect login walls, CAPTCHAs, paywalls, robots restrictions, 403/429 responses, explicit platform challenges, privacy, and copyright boundaries.
 - For platform automation, select a pinned, non-blocked open-source connector from the bundled registry and write a run manifest. Do not substitute a commercial provider, seller/merchant API, saved login session, internal endpoint, or browser scraper.
 - A repository license covers code only. Review platform access and dataset/content rights separately.
-- The separate CDP transport is permitted only for an authorized visible page on amazon/instagram/bilibili/weibo after the Design gate, with an enabled adapter, explicit human `--ack-terms`, a loopback debugger, and an approved default-port HTTP(S) platform URL. It is never a bypass for a blocked registry route, challenge page, or missing access rights.
+- The separate CDP transport is permitted only for an authorized visible page on a catalog platform with `cdp: true` (currently amazon/instagram/bilibili/weibo/kickstarter/discord/x/tiktok) after the Design gate, with an enabled adapter, explicit human `--ack-terms`, a loopback debugger, and an approved default-port HTTP(S) platform URL. Challenges are only waited out passively or completed by hand, login sessions are user-operated, and it is never a bypass for a blocked registry route, challenge page, or missing access rights. Field-verified channel selection and CDP operation patterns: [references/cdp-collection-playbook.md](references/cdp-collection-playbook.md).
 - Do not scrape or browser-automate X or YouTube. Do not run the reviewed JD, Taobao, or Kickstarter crawler candidates; their registry decisions are blocked.
 
 ## Enforce claim discipline

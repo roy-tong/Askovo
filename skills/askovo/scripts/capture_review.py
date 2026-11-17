@@ -182,7 +182,7 @@ def _validate_capture_material(study_dir: Path, payload: Dict[str, Any]) -> str:
         raise CaptureReviewError(
             "capture source is outside the approved CDP platform set or changed platform",
             "POLICY_DENIED",
-            "X/YouTube, blocked platforms and arbitrary hosts never use the CDP exception")
+            "YouTube, blocked platforms and arbitrary hosts never use the CDP exception")
     try:
         sure_engine._validate_cdp_target(platform, original_url)
         sure_engine._validate_cdp_target(platform, source_url)

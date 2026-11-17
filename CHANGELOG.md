@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+### Multi-platform CDP collection + crawler methods from the golf-device campaign
+
+The CDP exception now follows the platform catalog's `cdp: true` set
+(currently amazon / instagram / bilibili / weibo / kickstarter / discord /
+x / tiktok, up from the fixed four). Kickstarter moves blocked → limited via
+authorized visible public pages; Discord joins the catalog; X and TikTok gain
+the `cdp_visible_page` route alongside their APIs; YouTube stays API-only.
+Semantics made explicit: challenges are only waited out passively or completed
+by hand (never bypassed), login sessions are user-operated (no credentials
+entered, read, or cookies exported), and a consistency test now locks the
+runtime whitelist to the catalog set.
+
+Four field-verified connectors collected into `scripts/connectors/` (from the
+golf-device research campaign, 2026-11): `collect_arctic_windows.py` (windowed
+Arctic Shift backfill with in-window cursor paging and resume),
+`collect_youtube_innertube.py` (login-free innertube comments incl. the 2024+
+`commentEntityPayload` shape, approximate dates flagged via
+`date_precision`), `collect_cdp_kickstarter.py` (CDP visible pages, passive
+Cloudflare wait, bounded load-more expansion, comments + creator updates) and
+`collect_cdp_discord.py` (user-session CDP with real wheel events, slow
+anti-automation cadence, per-round persistence, text + forum channels). The
+CDP collectors reuse the engine's CDP client via importlib instead of forking
+the transport.
+
+New reference `references/cdp-collection-playbook.md` records the method:
+channel decision tree (no-login API → CDP → paste → OCR), the Nov-2026 field
+matrix, CDP operation patterns (login collaboration, passive challenge waits,
+lazy-loading via real input events, the Discord anti-automation post-mortem
+and corrected protocol, platform rotation), and crawler engineering rules
+(classified backoff, resume state, bounded collection, empty-window honesty,
+two-layer raw-JSON-then-envelope output). Platform references for YouTube,
+Kickstarter, Reddit, X and the shared social adapters gained field-verified
+notes; catalog limits/bias updated accordingly (yt-dlp PO-token blocks,
+Cloudflare on direct fetches, Discord sandbox/storage constraints, invite
+rot).
+
 ### Decision integrity: lexical research assistance is not a business go
 
 `askovo answer` now reads only `02-data/evidence.jsonl` and separates
