@@ -133,6 +133,33 @@ Field result: one cell = 2 Instagram posts (28 comments) + 2 GolfWRX threads
 per-site risk. Keep tab bindings by stable tab id (URL patterns rot); one tab
 per site per run.
 
+### Multi-platform rotation: stay under every site's radar
+
+The rotation strategy is a *frequency* argument, not a parallelism trick: a site
+can only measure its own request stream, so alternating between sites lowers
+every site's observed cadence while total throughput stays flat (or rises, when
+render waits overlap).
+
+Rules that make it safe to automate:
+
+1. **Per-site minimum interval** — never hit the same site again before its
+   cadence elapses; spend the wait on a different site.
+2. **One tab per site** — two tabs on one host double that host's rate; that is
+   risk-control pressure, not parallelism (`run_lanes` rejects duplicate sites).
+3. **One writer per provider** — a duplicate archive client multiplies 422
+   storms and starves both; hand the quota to the higher-yield lane.
+4. **Classified cooldown** — 429/403 wait for the reset header, 422 backs off,
+   permanent statuses stop the platform; rotate while it cools.
+5. **Session health** — a dropped login session is a human re-login, never an
+   agent re-auth; cooldown the platform (default 30 min) and keep rotating.
+6. **Daily quota + resume** — a capped platform returns tomorrow; the rotation
+   state is JSON so a restarted run does not re-hit hot platforms.
+
+`connectors/rotation.py` (`RotationScheduler`) implements the rules; the
+machine-readable strategy table — with invariants and verification status — is
+in [platform-field-notes.md](platform-field-notes.md#cross-platform-strategies)
+(`askovo platforms "<need>" --strategies`).
+
 ### Platform quirks worth remembering
 
 - **X search**: `since:/until:` operators make Reddit-style time-window

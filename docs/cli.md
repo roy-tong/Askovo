@@ -176,6 +176,7 @@ askovo platforms "家用摄像头夜间告警的用户抱怨" --domain hardware 
 askovo platforms "SaaS 用户在 GitHub 和论坛上的抱怨" --domain software --claim-type need
 askovo platforms "Kickstarter 众筹评论" --field-notes            # 平台实战笔记（限制/解法/验证等级）
 askovo platforms "Discord 社区抱怨" --platform discord --field-notes  # 单平台完整表
+askovo platforms "Discord 和 Kickstarter 的多平台采集" --strategies   # 多平台轮转策略（不变量/机制/验证）
 ```
 
 输出推荐平台、适配分、访问方式、批量能力、限制、偏差，以及不可直接采集的平台与原因。`--bulk` 优先支持批量的来源。

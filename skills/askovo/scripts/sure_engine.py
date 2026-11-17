@@ -5078,6 +5078,16 @@ def doctor() -> int:
         ))
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         checks.append(("platform-field-notes", False, str(exc)))
+    try:
+        strategies = strategy_catalog()
+        strategy_issues = strategy_problems()
+        checks.append((
+            "collection-strategies",
+            not strategy_issues,
+            f"{len(strategies)} strategies" if not strategy_issues else "; ".join(strategy_issues[:3]),
+        ))
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        checks.append(("collection-strategies", False, str(exc)))
     ids = {str(item.get("id")) for item in catalog.get("methods", []) if isinstance(item, dict)}
     missing: list[str] = []
     for name, pack in packs.items():
@@ -5190,16 +5200,9 @@ def field_note_problems() -> list[str]:
         artifact = REPO_ROOT / str(note["artifact"])
         if not artifact.is_file():
             problems.append(f"{note_id}: artifact not found: {note['artifact']}")
-        helper = note.get("helper")
-        if helper:
-            module_name, _, attr = str(helper).rpartition(".")
-            module_path = SKILL_ROOT / "scripts" / (module_name.replace(".", "/") + ".py")
-            if not module_name or not module_path.is_file():
-                problems.append(f"{note_id}: helper module not found: {helper}")
-            elif attr:
-                source = module_path.read_text(encoding="utf-8")
-                if f"def {attr}(" not in source and f"class {attr}(" not in source:
-                    problems.append(f"{note_id}: helper {attr!r} not defined in {module_name}")
+        helper_problem = _resolve_helper_problem(note_id, note.get("helper"))
+        if helper_problem:
+            problems.append(helper_problem)
         if platform in catalog_ids:
             entry = platform_index()[platform]
             if bool(note.get("cdp")) != bool(entry.get("cdp")):
@@ -5270,6 +5273,140 @@ def field_notes_markdown(notes: list[dict[str, Any]] | None = None,
         "- 采集时：限制命中先按「解法」走；挑战页只被动等待或人工完成，不绕过；",
         "- 收尾时：新的限制/解法补进 `skills/askovo/assets/platform-field-notes.json`"
         "（`askovo doctor` 会校验必填字段、产物路径与 cdp 一致性）。",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+STRATEGY_REQUIRED = (
+    "id", "name", "when", "invariant", "mechanism", "platforms", "artifacts",
+    "verification",
+)
+
+
+def _resolve_helper_problem(note_id: str, helper: Any) -> str | None:
+    """Validate a ``connectors.<module>.<attr>`` reference, or return None."""
+    if not helper:
+        return None
+    module_name, _, attr = str(helper).rpartition(".")
+    module_path = SKILL_ROOT / "scripts" / (module_name.replace(".", "/") + ".py")
+    if not module_name or not module_path.is_file():
+        return f"{note_id}: helper module not found: {helper}"
+    if attr:
+        source = module_path.read_text(encoding="utf-8")
+        if (
+            f"def {attr}(" not in source
+            and f"class {attr}(" not in source
+            and f"class {attr}:" not in source
+        ):
+            return f"{note_id}: helper {attr!r} not defined in {module_name}"
+    return None
+
+
+def strategy_catalog() -> list[dict[str, Any]]:
+    """Cross-platform operating strategies (rotation, lanes, quota, cooldowns)."""
+    data = field_notes_catalog()
+    strategies = data.get("strategies")
+    if strategies is None:
+        return []
+    if not isinstance(strategies, list):
+        raise ValueError(f"invalid strategy layer in {FIELD_NOTES_PATH}")
+    return [item for item in strategies if isinstance(item, dict)]
+
+
+def strategy_problems() -> list[str]:
+    """Structural problems in the strategy layer (empty means consistent)."""
+    problems: list[str] = []
+    try:
+        data = field_notes_catalog()
+        strategies = strategy_catalog()
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        return [str(exc)]
+    allowed = set(platform_index()) | set((data.get("source_types") or {}).keys()) | {"*"}
+    legend = set((data.get("verification_legend") or {}).keys())
+    seen: set[str] = set()
+    for index, strategy in enumerate(strategies):
+        missing = [key for key in STRATEGY_REQUIRED if strategy.get(key) in (None, "", [])]
+        if missing:
+            problems.append(f"strategy[{index}] missing {', '.join(missing)}")
+            continue
+        strategy_id = str(strategy["id"])
+        if strategy_id in seen:
+            problems.append(f"duplicate strategy id: {strategy_id}")
+        seen.add(strategy_id)
+        platforms = strategy.get("platforms")
+        if not isinstance(platforms, list) or not platforms:
+            problems.append(f"{strategy_id}: platforms must be a non-empty list")
+        else:
+            unknown = sorted({str(item) for item in platforms} - allowed)
+            if unknown:
+                problems.append(f"{strategy_id}: unknown platform(s) {', '.join(unknown)}")
+        artifacts = strategy.get("artifacts")
+        if not isinstance(artifacts, list) or not artifacts:
+            problems.append(f"{strategy_id}: artifacts must be a non-empty list")
+        else:
+            for artifact in artifacts:
+                if not (REPO_ROOT / str(artifact)).is_file():
+                    problems.append(f"{strategy_id}: artifact not found: {artifact}")
+        helper_problem = _resolve_helper_problem(strategy_id, strategy.get("helper"))
+        if helper_problem:
+            problems.append(helper_problem)
+        verification = strategy.get("verification")
+        if not isinstance(verification, dict):
+            problems.append(f"{strategy_id}: verification must be an object")
+        else:
+            status = str(verification.get("status") or "")
+            if legend and status not in legend:
+                problems.append(f"{strategy_id}: verification status {status!r} not in the legend")
+            if not verification.get("date"):
+                problems.append(f"{strategy_id}: verification.date is required")
+    return problems
+
+
+def strategy_index() -> dict[str, dict[str, Any]]:
+    return {str(item["id"]): item for item in strategy_catalog() if item.get("id")}
+
+
+def strategies_for(platforms: list[str] | tuple[str, ...] | None = None) -> list[dict[str, Any]]:
+    """Strategies that apply to the given platforms (``*`` always applies)."""
+    wanted = {str(item) for item in (platforms or [])}
+    selected: list[dict[str, Any]] = []
+    for strategy in strategy_catalog():
+        strategy_platforms = {str(item) for item in strategy.get("platforms", [])}
+        if not wanted or "*" in strategy_platforms or strategy_platforms & wanted:
+            selected.append(strategy)
+    return selected
+
+
+def strategies_markdown(strategies: list[dict[str, Any]] | None = None,
+                        platforms: list[str] | None = None) -> str:
+    """Render the cross-platform operating strategies as a method table."""
+    selected = strategies_for(platforms) if strategies is None else strategies
+    lines = [
+        "# Askovo 多平台采集策略",
+        "",
+        "> 策略是**经验**，不是许可：轮转降低的是每个站点感知到的频率，不绕过平台限制；"
+        "挑战页只被动等待或人工完成，登录会话仅由用户手工完成，身份/代理不轮换。",
+        "",
+        "| 策略 | 何时用 | 不变量（不能破的约束） | 机制 | 验证 |",
+        "|---|---|---|---|---|",
+    ]
+    for strategy in selected:
+        verification = strategy.get("verification") or {}
+        lines.append(
+            f"| **{strategy.get('name')}** (`{strategy.get('id')}`) | {strategy.get('when')} | "
+            f"{strategy.get('invariant')} | {strategy.get('mechanism')} | "
+            f"{verification.get('status', '')}（{verification.get('date', '')}） |"
+        )
+    lines.extend([
+        "",
+        "## 怎么用",
+        "",
+        "- 规划时：`askovo platforms \"<需求>\" --strategies` 按推荐平台取策略；",
+        "- 调度时：`connectors/rotation.py` 的 `RotationScheduler` 强制每站点最小间隔、"
+        "429/422 冷却、日配额与会话冷却（掉线等人工重登）；",
+        "- 收尾时：策略与不变量补进 `skills/askovo/assets/platform-field-notes.json` 的 "
+        "`strategies` 段（`askovo doctor` 校验必填字段、产物与 helper 引用）。",
         "",
     ])
     return "\n".join(lines)
@@ -5400,6 +5537,7 @@ def platform_fit(
         "require_bulk": require_bulk,
         "recommended": ranked[:8],
         "blocked": blocked,
+        "strategies": strategies_for([item["id"] for item in ranked[:8]]),
         "access_steps": [
             "优先官方 API / 授权导出 / 合规历史数据集；不做未授权抓取",
             "为每个平台记录访问依据、账号/应用、速率限制、保留与删除规则",
@@ -5450,6 +5588,16 @@ def platform_markdown(plan: dict[str, Any]) -> str:
         lines.append("")
         lines.append("> 记录的是实战限制与解法，不是访问许可；完整字段见 "
                      "`askovo platforms \"<需求>\" --field-notes`。")
+    strategies = plan.get("strategies") or []
+    if strategies:
+        lines.extend(["", "## 多平台轮转策略（不变量优先）", ""])
+        for strategy in strategies[:8]:
+            lines.append(
+                f"- **{strategy.get('name')}**（`{strategy.get('id')}`）："
+                f"{strategy.get('mechanism')} 不变量：{strategy.get('invariant')}"
+            )
+        lines.append("")
+        lines.append("> 完整策略表：`askovo platforms \"<需求>\" --strategies`。")
     lines.extend(["", "## 采集前", ""])
     lines.extend(f"- {item}" for item in plan.get("access_steps", []))
     lines.extend(["", "## 边界", "", plan.get("boundary", "")])
@@ -7250,10 +7398,14 @@ def cli_platforms(args: Any) -> int:
     else:
         notes = field_notes_for([item["id"] for item in plan["recommended"]])
     plan["field_notes"] = notes
+    strategy_platforms = [platform_filter] if platform_filter else [item["id"] for item in plan["recommended"]]
+    plan["strategies"] = strategies_for(strategy_platforms)
     if getattr(args, "json", False):
         print(json.dumps(plan, ensure_ascii=False, indent=2))
     elif getattr(args, "field_notes", False):
         print(field_notes_markdown(notes=notes, platform=platform_filter))
+    elif getattr(args, "strategies", False):
+        print(strategies_markdown(plan["strategies"]))
     else:
         print(platform_markdown(plan))
     return 0

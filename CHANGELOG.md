@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+### Multi-platform rotation strategy (stay under every site's frequency radar)
+
+The campaign's answer to per-platform rate control is now product capability:
+**alternate between platforms instead of raising any one site's frequency**.
+A site can only measure its own request stream, so rotation lowers every site's
+observed cadence while total throughput stays flat (or rises when render waits
+overlap). The strategy layer records the invariants that make this safe to
+automate, and `connectors/rotation.py` enforces them at runtime.
+
+Registry (`assets/platform-field-notes.json`): a `strategies` section with 11
+records — platform rotation, one tab per site, single-writer archive quota,
+channel pivot (not identity), windowed search, session health/cooldown,
+batch auto-relay, multilingual query routes, blank-render triage, cell budget
+headroom, nominal-vs-deduped goal counting. Each record carries `when`,
+`invariant`, `mechanism`, `platforms`, repo-relative artifacts, the runtime
+helper and an honest verification status; the registry also absorbs the five
+late field notes the campaign produced (X `since:/until:` windows, PullPush
+commercial wall, archive-client contention, IAB blank-render stacks, YouTube
+multilingual routes), now 29 notes with normalized repo-relative paths.
+
+Engine surface: `platform_fit` attaches the applicable strategies to the plan
+and to every recommended entry; `askovo platforms "<need>" --strategies`
+renders the invariant table, `--json` carries the same data, and
+`askovo doctor` gates the strategy layer (`collection-strategies`: required
+fields, platform ids, artifacts, helper references, verification legend).
+MCP `askovo_platforms` gains the matching `strategies` flag.
+
+Runtime: `connectors/rotation.py` — `RotationScheduler` with per-site minimum
+interval (`PlatformCooling`), classified cooldown through
+`common.classify_backoff`, session-drop gate plus human re-login, daily quota,
+fair round-robin (`plan_round`/`next_platform`), JSON resume (`save`/`load`)
+and offline `--selftest`/`--plan`. Rotation never rotates identities, proxies,
+keys or accounts, never bypasses a challenge, and records a blocked platform as
+a gap.
+
+Docs: reference `platform-field-notes.md` gains the strategy table; Chinese
+`docs/platform-field-notes.md`, the CDP playbook ("Multi-platform rotation"),
+connectors README §4d, CLI flags, `llms.txt` and the feature-status row are in
+sync. Full suite: 591 tests green.
+
 ### Platform field notes: campaign experience becomes a product capability
 
 Every platform limit the 2026-11 campaign hit now ships as data, not prose.

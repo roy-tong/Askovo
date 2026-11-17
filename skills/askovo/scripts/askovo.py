@@ -5317,6 +5317,10 @@ def build_parser() -> argparse.ArgumentParser:
     platforms_parser.add_argument(
         "--platform", help="filter to one platform id (catalog platform or a field-note source type)",
     )
+    platforms_parser.add_argument(
+        "--strategies", action="store_true",
+        help="show the cross-platform collection strategies (rotation, lanes, quota, cooldowns)",
+    )
     platforms_parser.add_argument("--json", action="store_true")
     platforms_parser.set_defaults(func=sure_engine.cli_platforms)
 

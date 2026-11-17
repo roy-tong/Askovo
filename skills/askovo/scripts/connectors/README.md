@@ -11,6 +11,7 @@
 | `collect_legacy_reddit.py` | 脑机接口调研（两代实现合并） | 社区×月×子窗口的 legacy 公开归档采集：分片、退避、断点续采 |
 | `common.py` | Tiiny 用户研究 + 高尔夫调研（运行时守卫） | 共享助手：schema 规范化、质量分、匿名化哈希、JSONL IO；运行时守卫 `classify_backoff` / `single_writer_state` / `parse_relative_time` / `atomic_write_json` |
 | `cdp_runtime.py` | 高尔夫智能设备调研（CDP 方法，2026-11） | CDP 操作助手：被动挑战等待、真实滚轮事件、tab 重绑、有界 load-more、并行通道（含 `--selftest` 离线自检） |
+| `rotation.py` | 高尔夫智能设备调研（多平台轮转，2026-11） | 多平台轮转调度器：每站点最小间隔、429/422 分类冷却、会话门（人工重登）、日配额、断点续跑；`--plan`/`--selftest` |
 | `collect_arctic_reddit.py` | Tiiny 用户研究 | 同一归档端点的游标分页采集器（按时间窗倒序翻页到穷尽） |
 | `collect_arctic_windows.py` | 高尔夫智能设备调研（deep_pull.py，2026-11） | Arctic Shift 显式窗口回填：窗口内 `after` 游标深翻页 + 每窗 cap + state 断点（≈3,900 窗实战验证） |
 | `collect_youtube_innertube.py` | 高尔夫智能设备调研（expand-2026-11/youtube_pull.py） | YouTube innertube 免登录评论采集：search→next→continuation，兼容 2024+ commentEntityPayload；`created_at` 为相对时间近似（`date_precision=approximate`） |
@@ -311,6 +312,30 @@ python3 cdp_runtime.py --selftest
 ```
 
 边界与采集器一致：不绕过挑战页、不代输凭据、所有循环有界、每轮落盘。这些助手只编码**机制**；能否对某平台使用某通道仍由平台目录 + study scope 决定（见第 6 节）。平台限制与解法的机器可读版本见 [`../../references/platform-field-notes.md`](../../references/platform-field-notes.md)。
+
+---
+
+## 4d. 多平台轮转策略（`rotation.py`）
+
+轮转不是并行技巧，而是**频率论证**：每个站点只能观测到自己的请求流，所以在站点之间交替会把每个站点观察到的频率压回来，而总吞吐不降（页面渲染等待重叠时反而上升）。
+
+`RotationScheduler` 把不变量写成代码，采集器/调度器直接复用：
+
+| 不变量 | 强制方式 |
+|---|---|
+| 每站点最小间隔 | `acquire()` 在 cadence 未到前抛 `PlatformCooling`；`wait=True` 才等待 |
+| 单站点单 tab | `RotationScheduler` 拒绝重复平台；`cdp_runtime.run_lanes` 拒绝重复站点 |
+| 分类冷却 | `record_error()` 走 `common.classify_backoff`：429/403 按重置头、422 指数退避、永久状态转人工 |
+| 会话健康 | `record_session_drop()` 门禁平台；`record_human_relogin()` 由人工重登后恢复 |
+| 日配额 | `daily_cap` 到顶后冷却到下一个 UTC 日 |
+| 断点续跑 | `save()`/`load()` 序列化轮转状态，重启不会重打热平台 |
+
+```bash
+python3 rotation.py --plan discord,reddit,youtube   # 一轮的公平顺序
+python3 rotation.py --selftest                      # 离线自检
+```
+
+边界：轮转只降低每站点频率，不绕过平台限制、挑战页或登录墙；身份/代理永不轮换。策略与验证状态的机器可读版本见 [`../../references/platform-field-notes.md`](../../references/platform-field-notes.md#cross-platform-strategies)。
 
 ---
 

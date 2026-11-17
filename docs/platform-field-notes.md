@@ -67,8 +67,38 @@ askovo doctor
 | `connectors.cdp_runtime.rebind_tab` | 每次重新列 tab、按稳定 id 重绑（URL 模式会腐烂） |
 | `connectors.cdp_runtime.bounded_load_more` | 有界批量点击展开，直到列表不再增长 |
 | `connectors.cdp_runtime.run_lanes` | 并行通道、失败隔离、单站点单 tab |
+| `connectors.rotation.RotationScheduler` | 多平台轮转：每站点最小间隔、分类冷却、会话门、日配额与断点续跑 |
 
 离线自检：`python3 skills/askovo/scripts/connectors/cdp_runtime.py --selftest`。
+
+## 多平台轮转策略
+
+限制是「单平台」的，而最值钱的经验往往是「怎么组合平台让**每个站点感知到的频率都不升高**」。这些策略放在同一注册表的 `strategies` 段，每条都带显式 `invariant`（不能破的约束）和强制它的运行时助手：
+
+| 策略 | 平台 | 不变量 | 机制 | 验证 |
+|---|---|---|---|---|
+| **Platform rotation (one round per platform, then switch)**（`platform-rotation`） | * | Per-site request cadence never rises. Total throughput comes from overlapping different sites, never from hammering one. | Run one round per platform, then switch. Each site only sees its own tab's sequential requests, so its observed interval stays flat while another site's render wait is overlapped (field: Instagram ×1 ∥ GolfWRX ×2 per cell). | verified（2026-11-17） |
+| **One tab per site (the frequency invariant)**（`per-site-frequency-invariant`） | * | A site must never see two tabs' worth of requests. Two tabs on one site double its rate — that is risk-control pressure, not parallelism. | Assign each lane a distinct site; the lane runner rejects duplicate site keys. Spend the scarce logged-in browser across different sites, not within one. | verified（2026-11-17） |
+| **One writer per archive provider, hand quota to the higher-yield lane**（`single-writer-quota`） | reddit | One client per provider per IP. A duplicate client multiplies 422 storms and starves both, so neither throttle diagnosis is trustworthy. | ps → kill duplicates → resume the survivor from its state file → then judge provider load. Pause the low-yield lane to hand the quota to the high-yield one (field: golf-main paused so equipment keywords got the whole archive quota). | verified（2026-11-17） |
+| **Pivot channels, never identities**（`backup-channel-pivot`） | reddit, vertical_forum | No account, proxy, key or identity rotation: a blocked channel is recorded as a gap and the run switches to another authorized channel. | PullPush commercial wall → stop planning it as a backup; keep a single arctic client with backoff, and move volume to a browser-visible forum channel in the same vertical (GolfWRX). | verified（2026-11-17） |
+| **Windowed search (time buckets instead of deep pagination)**（`windowed-search`） | x | No scroll past the stall and no request-rate ramp: history is rebuilt by time windows, deduped by post id across windows. | Drive the logged-in search page with since:/until: half-year windows; collect each window with real wheel events; dedupe by status id and keep the window tag for traceability (field: 7 windows back to 2023, ~25–30 mentions each). | verified（2026-11-17） |
+| **Session health, cooldown, human re-login**（`session-health-cooldown`） | discord, x, instagram, tiktok | A dropped session is re-authenticated by the human, never by the agent; the platform cools down before any retry, and other platforms keep working meanwhile. | Detect the drop → put the platform in cooldown (default 30 min) → human re-login → re-verify the session → resume. Rotate to another platform while one cools down; never rapid re-auth. | verified（2026-11-17） |
+| **Batch auto-relay (no idle quota gap)**（`batch-auto-relay`） | reddit, youtube | The next batch starts when the current process exits; state files checkpoint every batch; goal counting stays nominal + deduped so a relay never inflates the target. | Queue batches, chain them on process exit, keep one state file per route, and recompute the goal counter across files after each batch. | verified（2026-11-17） |
+| **Multilingual query routes (avoid an English-biased corpus)**（`multilingual-routing`） | youtube, x, instagram | Locale coverage is a sampling decision, recorded per route; it is never inferred from an English query's yield. | Issue the same scene/equipment queries in each target language, tag routes per locale (yt-equip-kr / yt-equip-jp), and report yield per locale so a thin locale is visible as a gap. | verified（2026-11-17） |
+| **Blank-render triage (200 + empty body is not a challenge)**（`blank-render-triage`） | vertical_forum | 200 + empty innerText = unsupported stack; never 'fix' it with more automation or a different identity. | Probe body innerText length and title; if both are empty after a render wait, mark the stack unsupported and pivot to another forum in the same vertical (GolfWRX vBulletin5 rendered; MyGolfSpy/Invision stayed blank). | channel_verified（2026-11-17） |
+| **Cell budget headroom**（`cell-budget-headroom`） | * | A timeout must never tear an input event stream mid-dispatch — that signature reads as automation. | Leave ~30% headroom on every cell budget, prefer collecting less, and persist after each round; a torn cell is a stop signal, not a retry signal. | verified（2026-11-17） |
+| **Nominal vs deduped goal counting**（`goal-counter-dedupe`） | * | Acceptance uses the deduped count; nominal counts stay visible only as a running estimate. | Recompute the counter across all output files after each batch: nominal per file, deduped total by record id, and per-route/locale breakdown so a thin route cannot hide behind a fat one. | verified（2026-11-17） |
+
+引擎面：
+
+```bash
+askovo platforms "<需求>" --strategies   # 推荐平台的轮转策略
+askovo platforms "<需求>" --json         # 计划和每个条目都带 strategies[]
+```
+
+`platform_fit` 把适用策略（含跨平台实践）挂到计划与每个推荐条目；`askovo doctor` 做策略段门禁（必填字段、平台 id、产物、helper 引用、验证等级）。调度器本身可 import：`connectors/rotation.py`（`RotationScheduler`、`--selftest`、`--plan`）。
+
+策略仍是**经验不是许可**：轮转降低的是每个站点观察到的频率，不绕过平台限制、挑战页或登录墙，身份/代理永不轮换。
 
 ## 平台索引
 

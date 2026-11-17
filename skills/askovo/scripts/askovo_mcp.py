@@ -239,6 +239,7 @@ def _build_platforms(arguments: dict[str, Any]) -> argparse.Namespace:
         claim_type=_string_list(arguments, "claim_type"),
         bulk=_boolean(arguments, "bulk"),
         field_notes=_boolean(arguments, "field_notes"),
+        strategies=_boolean(arguments, "strategies"),
         platform=_optional_string(arguments, "platform"),
         json=True,
     )
@@ -784,6 +785,11 @@ TOOLS: list[dict[str, Any]] = [
                     "type": "boolean",
                     "default": False,
                     "description": "Return the field-verified restriction/solution notes for the ranked platforms.",
+                },
+                "strategies": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Return the cross-platform collection strategies (rotation, lanes, quota, cooldowns).",
                 },
                 "platform": {
                     "type": "string",

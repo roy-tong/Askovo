@@ -17,7 +17,8 @@
       "tiktok",
       "vertical_forum"
     ],
-    "coverage_boundary": "Only channels this campaign exercised are recorded. The pre-existing CDP entries (amazon / bilibili / weibo) predate the campaign and carry no field note here; absence of a note is not evidence that the channel works or fails."
+    "coverage_boundary": "Only channels this campaign exercised are recorded. The pre-existing CDP entries (amazon / bilibili / weibo) predate the campaign and carry no field note here; absence of a note is not evidence that the channel works or fails.",
+    "strategy_note": "strategies/ records cross-platform operating strategy (rotation, lanes, quota sharing, channel pivots, cooldowns). Like a field note it is experience, not permission: it never authorizes a route, an identity rotation, or a challenge bypass."
   },
   "verification_legend": {
     "verified": "run end-to-end at scale in the field",
@@ -421,6 +422,302 @@
         "evidence": "golf-main duplicate-process incident"
       },
       "cdp": false
+    },
+    {
+      "id": "x-windowed-search-since-until",
+      "platform": "x",
+      "channel": "cdp_user_session",
+      "restriction": "X live search gives no native time-bucketed history pull, so a single query cannot build a time-series corpus.",
+      "symptom": "One live search only reaches the newest few screens; older mentions never arrive before the scroll stalls.",
+      "detector": "Compare collected tweet timestamps against the intended start date; a single query never crosses weeks of history.",
+      "solution": "Drive the logged-in search page per half-year window using since:/until: operators, scroll-collect each window with the dom_cua wheel, dedupe by status id across windows; ~25-30 mentions per half-year window for a niche brand term.",
+      "artifact": "skills/askovo/references/x-research.md",
+      "verification": {
+        "status": "verified",
+        "date": "2026-11-17",
+        "evidence": "7 windows 2023->2026, 161 unique mentions, X session stayed alive the whole run"
+      },
+      "cdp": true,
+      "helper": "connectors.cdp_runtime.wheel_scroll"
+    },
+    {
+      "id": "reddit-pullpush-commercial-wall",
+      "platform": "reddit",
+      "channel": "pullpush_archive_api",
+      "restriction": "PullPush.io now rate-limits programmatic agents to a paid scraping tier.",
+      "symptom": "API replies 200 with body {\"error\":\"Rate limit exceeded...paid scraping service\"} on the first burst of requests.",
+      "detector": "curl the search endpoint once; the error body names the paid tier explicitly.",
+      "solution": "Do not plan PullPush as an archive backup; keep a single arctic-shift client with backoff and accept its throttle windows instead of fanning out to a second archive provider.",
+      "artifact": "skills/askovo/references/reddit-research.md",
+      "verification": {
+        "status": "verified",
+        "date": "2026-11-17",
+        "evidence": "pullpush_keyword.py aborted after explicit commercial rate-limit body; curl reproduced it once"
+      },
+      "cdp": false
+    },
+    {
+      "id": "reddit-archive-client-contention",
+      "platform": "reddit",
+      "channel": "arctic_shift_archive_api",
+      "restriction": "Two archive clients from one IP (e.g. a stalled window puller plus a keyword puller) multiply 422 timeout storms for both.",
+      "symptom": "Both jobs log continuous '422 Timeout. Maybe slow down' backoffs; counters frozen for hours while each process is individually healthy.",
+      "detector": "ps shows more than one crawler against arctic-shift; state file mtimes stop advancing while logs keep backing off.",
+      "solution": "Enforce one writer per archive provider: kill duplicates before diagnosing server load, resume the survivor from its state file, and only then judge whether the provider itself is throttling.",
+      "artifact": "skills/askovo/references/reddit-research.md",
+      "verification": {
+        "status": "verified",
+        "date": "2026-11-17",
+        "evidence": "golf-main ran twice concurrently for 3h at zero throughput; after kill+single restart the channel recovered"
+      },
+      "cdp": false,
+      "helper": "connectors.common.single_writer_state"
+    },
+    {
+      "id": "vertical-forum-iab-blank-render",
+      "platform": "vertical_forum",
+      "channel": "cdp_visible_page",
+      "restriction": "Some forum stacks (MyGolfSpy/Invision) render a blank body inside the in-app browser while sibling stacks (GolfWRX/vBulletin5) render fully.",
+      "symptom": "HTTP 200, no Cloudflare challenge, document.body.innerText length 0 and title empty after 15s.",
+      "detector": "Probe body innerText length; 0 with 200 status means the stack is unsupported here, not blocked.",
+      "solution": "Treat blank-render forums as unsupported on this channel and pivot to another forum in the same vertical instead of fighting the renderer.",
+      "artifact": "skills/askovo/references/cdp-collection-playbook.md",
+      "verification": {
+        "status": "channel_verified",
+        "date": "2026-11-17",
+        "evidence": "forums.mygolfspy.com loaded blank twice in IAB; GolfWRX same-day full render and 3k+ posts collected"
+      },
+      "cdp": true
+    },
+    {
+      "id": "youtube-multilingual-query-routes",
+      "platform": "youtube",
+      "channel": "innertube_api",
+      "restriction": "Corpora biased to English unless queries are deliberately issued in target locales.",
+      "symptom": "All collected videos and comments are English even when the study needs JP/KR user voices.",
+      "detector": "Route breakdown shows zero non-Latin text while the market under study is bilingual.",
+      "solution": "Issue the same scene/equipment queries in target languages (골프채 추천, ゴルフ ドライバー おすすめ); innertube search returns localized results and comments per query with no extra channel cost. Tag routes like yt-equip-kr / yt-equip-jp for locale-balanced counting.",
+      "artifact": "skills/askovo/references/youtube-research.md",
+      "verification": {
+        "status": "verified",
+        "date": "2026-11-17",
+        "evidence": "wave7 KR/JP queries returned localized videos with Korean/Japanese comments on first run"
+      },
+      "cdp": false
+    }
+  ],
+  "strategies": [
+    {
+      "id": "platform-rotation",
+      "name": "Platform rotation (one round per platform, then switch)",
+      "when": "Several platforms are in scope and each one throttles or batches differently.",
+      "invariant": "Per-site request cadence never rises. Total throughput comes from overlapping different sites, never from hammering one.",
+      "mechanism": "Run one round per platform, then switch. Each site only sees its own tab's sequential requests, so its observed interval stays flat while another site's render wait is overlapped (field: Instagram ×1 ∥ GolfWRX ×2 per cell).",
+      "platforms": [
+        "*"
+      ],
+      "helper": "connectors.cdp_runtime.run_lanes",
+      "artifacts": [
+        "skills/askovo/references/cdp-collection-playbook.md"
+      ],
+      "verification": {
+        "status": "verified",
+        "date": "2026-11-17",
+        "evidence": "≈55 s per cell, per-site interval ~20 s after rotation"
+      }
+    },
+    {
+      "id": "per-site-frequency-invariant",
+      "name": "One tab per site (the frequency invariant)",
+      "when": "Two lanes or two workers could touch the same host.",
+      "invariant": "A site must never see two tabs' worth of requests. Two tabs on one site double its rate — that is risk-control pressure, not parallelism.",
+      "mechanism": "Assign each lane a distinct site; the lane runner rejects duplicate site keys. Spend the scarce logged-in browser across different sites, not within one.",
+      "platforms": [
+        "*"
+      ],
+      "helper": "connectors.cdp_runtime.run_lanes",
+      "artifacts": [
+        "skills/askovo/references/cdp-collection-playbook.md"
+      ],
+      "verification": {
+        "status": "verified",
+        "date": "2026-11-17",
+        "evidence": "dual-tab pipeline only ever bound to two different hosts"
+      }
+    },
+    {
+      "id": "single-writer-quota",
+      "name": "One writer per archive provider, hand quota to the higher-yield lane",
+      "when": "Multiple collectors target the same archive API (Arctic Shift) or the same borrowed session.",
+      "invariant": "One client per provider per IP. A duplicate client multiplies 422 storms and starves both, so neither throttle diagnosis is trustworthy.",
+      "mechanism": "ps → kill duplicates → resume the survivor from its state file → then judge provider load. Pause the low-yield lane to hand the quota to the high-yield one (field: golf-main paused so equipment keywords got the whole archive quota).",
+      "platforms": [
+        "reddit"
+      ],
+      "helper": "connectors.common.single_writer_state",
+      "artifacts": [
+        "skills/askovo/references/reddit-research.md"
+      ],
+      "verification": {
+        "status": "verified",
+        "date": "2026-11-17",
+        "evidence": "golf-main 3 h at zero throughput against a live second client; recovered after kill + single restart"
+      }
+    },
+    {
+      "id": "backup-channel-pivot",
+      "name": "Pivot channels, never identities",
+      "when": "The primary archive answers with a commercial-rate-limit wall or a hard block.",
+      "invariant": "No account, proxy, key or identity rotation: a blocked channel is recorded as a gap and the run switches to another authorized channel.",
+      "mechanism": "PullPush commercial wall → stop planning it as a backup; keep a single arctic client with backoff, and move volume to a browser-visible forum channel in the same vertical (GolfWRX).",
+      "platforms": [
+        "reddit",
+        "vertical_forum"
+      ],
+      "helper": "connectors.common.classify_backoff",
+      "artifacts": [
+        "skills/askovo/references/reddit-research.md",
+        "skills/askovo/references/cdp-collection-playbook.md"
+      ],
+      "verification": {
+        "status": "verified",
+        "date": "2026-11-17",
+        "evidence": "PullPush paid-tier body reproduced once with curl; volume shifted to the browser channel"
+      }
+    },
+    {
+      "id": "windowed-search",
+      "name": "Windowed search (time buckets instead of deep pagination)",
+      "when": "Live search has no time-bucketed history and infinite scroll stalls after a few screens.",
+      "invariant": "No scroll past the stall and no request-rate ramp: history is rebuilt by time windows, deduped by post id across windows.",
+      "mechanism": "Drive the logged-in search page with since:/until: half-year windows; collect each window with real wheel events; dedupe by status id and keep the window tag for traceability (field: 7 windows back to 2023, ~25–30 mentions each).",
+      "platforms": [
+        "x"
+      ],
+      "helper": "connectors.cdp_runtime.wheel_scroll",
+      "artifacts": [
+        "skills/askovo/references/x-research.md"
+      ],
+      "verification": {
+        "status": "verified",
+        "date": "2026-11-17",
+        "evidence": "7 windows, 161 unique mentions, session alive for the whole run"
+      }
+    },
+    {
+      "id": "session-health-cooldown",
+      "name": "Session health, cooldown, human re-login",
+      "when": "A logged-in platform (Discord / X / Instagram) starts dropping sessions or showing anti-automation signatures.",
+      "invariant": "A dropped session is re-authenticated by the human, never by the agent; the platform cools down before any retry, and other platforms keep working meanwhile.",
+      "mechanism": "Detect the drop → put the platform in cooldown (default 30 min) → human re-login → re-verify the session → resume. Rotate to another platform while one cools down; never rapid re-auth.",
+      "platforms": [
+        "discord",
+        "x",
+        "instagram",
+        "tiktok"
+      ],
+      "helper": "connectors.rotation.RotationScheduler",
+      "artifacts": [
+        "skills/askovo/references/social-media-source-adapters.md"
+      ],
+      "verification": {
+        "status": "verified",
+        "date": "2026-11-17",
+        "evidence": "three Discord drops in one day; corrected cadence held afterwards"
+      }
+    },
+    {
+      "id": "batch-auto-relay",
+      "name": "Batch auto-relay (no idle quota gap)",
+      "when": "A quota-limited route runs in batches (keyword waves, window backfill).",
+      "invariant": "The next batch starts when the current process exits; state files checkpoint every batch; goal counting stays nominal + deduped so a relay never inflates the target.",
+      "mechanism": "Queue batches, chain them on process exit, keep one state file per route, and recompute the goal counter across files after each batch.",
+      "platforms": [
+        "reddit",
+        "youtube"
+      ],
+      "artifacts": [
+        "skills/askovo/references/reddit-research.md"
+      ],
+      "verification": {
+        "status": "verified",
+        "date": "2026-11-17",
+        "evidence": "equipment keyword batch 1 → batch 2 relay ran unattended"
+      }
+    },
+    {
+      "id": "multilingual-routing",
+      "name": "Multilingual query routes (avoid an English-biased corpus)",
+      "when": "The study market is bilingual or non-English (JP / KR / CN).",
+      "invariant": "Locale coverage is a sampling decision, recorded per route; it is never inferred from an English query's yield.",
+      "mechanism": "Issue the same scene/equipment queries in each target language, tag routes per locale (yt-equip-kr / yt-equip-jp), and report yield per locale so a thin locale is visible as a gap.",
+      "platforms": [
+        "youtube",
+        "x",
+        "instagram"
+      ],
+      "artifacts": [
+        "skills/askovo/references/youtube-research.md"
+      ],
+      "verification": {
+        "status": "verified",
+        "date": "2026-11-17",
+        "evidence": "wave 7 KR/JP queries returned localized videos and comments"
+      }
+    },
+    {
+      "id": "blank-render-triage",
+      "name": "Blank-render triage (200 + empty body is not a challenge)",
+      "when": "A forum loads HTTP 200 with an empty body inside the in-app browser.",
+      "invariant": "200 + empty innerText = unsupported stack; never 'fix' it with more automation or a different identity.",
+      "mechanism": "Probe body innerText length and title; if both are empty after a render wait, mark the stack unsupported and pivot to another forum in the same vertical (GolfWRX vBulletin5 rendered; MyGolfSpy/Invision stayed blank).",
+      "platforms": [
+        "vertical_forum"
+      ],
+      "artifacts": [
+        "skills/askovo/references/cdp-collection-playbook.md"
+      ],
+      "verification": {
+        "status": "channel_verified",
+        "date": "2026-11-17",
+        "evidence": "MyGolfSpy blank twice; GolfWRX 3k+ posts the same day"
+      }
+    },
+    {
+      "id": "cell-budget-headroom",
+      "name": "Cell budget headroom",
+      "when": "Any scroll/click cell runs under a timeout.",
+      "invariant": "A timeout must never tear an input event stream mid-dispatch — that signature reads as automation.",
+      "mechanism": "Leave ~30% headroom on every cell budget, prefer collecting less, and persist after each round; a torn cell is a stop signal, not a retry signal.",
+      "platforms": [
+        "*"
+      ],
+      "artifacts": [
+        "skills/askovo/references/cdp-collection-playbook.md"
+      ],
+      "verification": {
+        "status": "verified",
+        "date": "2026-11-17",
+        "evidence": "Discord drop signature decompiled from two incidents"
+      }
+    },
+    {
+      "id": "goal-counter-dedupe",
+      "name": "Nominal vs deduped goal counting",
+      "when": "Several files, routes or platforms contribute to one collection goal.",
+      "invariant": "Acceptance uses the deduped count; nominal counts stay visible only as a running estimate.",
+      "mechanism": "Recompute the counter across all output files after each batch: nominal per file, deduped total by record id, and per-route/locale breakdown so a thin route cannot hide behind a fat one.",
+      "platforms": [
+        "*"
+      ],
+      "artifacts": [
+        "skills/askovo/references/cdp-collection-playbook.md"
+      ],
+      "verification": {
+        "status": "verified",
+        "date": "2026-11-17",
+        "evidence": "four-goal campaign board: nominal vs deduped gap ≈2–3%"
+      }
     }
   ]
 }
