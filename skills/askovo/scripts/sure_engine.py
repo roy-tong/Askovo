@@ -5922,6 +5922,7 @@ CDP_TARGET_HOSTS = {
 }
 MAX_CDP_HANDSHAKE_BYTES = 64 * 1024
 MAX_CDP_MESSAGE_BYTES = 16 * 1024 * 1024
+CAPTURE_CHALLENGE_WAIT_SECONDS = 5.0
 
 
 def _validate_cdp_base(cdp_base: str) -> tuple[str, int]:
@@ -6389,8 +6390,27 @@ def capture_page(
         except ValueError as exc:
             return {"status": "error", "platform": platform, "reason": str(exc)}
         text = str(value.get("text") or "")
+        challenge_waited = False
         if re.search(r"Robot Check|Enter the characters|验证码|异常流量|not a robot", text, re.I):
-            return {"status": "challenge", "reason": "page shows a challenge; capture stopped"}
+            # Passive wait only: a human may complete the challenge in the same
+            # browser. Never solve it, reload through a bypass, or alter the page.
+            deadline = time.monotonic() + max(0.0, CAPTURE_CHALLENGE_WAIT_SECONDS)
+            while time.monotonic() < deadline:
+                time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
+                refreshed = client.evaluate(CDP_PAGE_EXTRACTOR)
+                if not isinstance(refreshed, dict):
+                    continue
+                refreshed_text = str(refreshed.get("text") or "")
+                if not re.search(r"Robot Check|Enter the characters|验证码|异常流量|not a robot",
+                                 refreshed_text, re.I):
+                    value = refreshed
+                    text = refreshed_text
+                    challenge_waited = True
+                    break
+            else:
+                return {"status": "challenge",
+                        "reason": ("page shows a challenge; passive wait expired and "
+                                   "human completion was not observed — capture stopped")}
         shot = client.call("Page.captureScreenshot", {"format": "png"})
         raw = shot.get("data") if isinstance(shot, dict) else None
         if not raw:
@@ -6430,7 +6450,7 @@ def capture_page(
                 "scope": "allowed_sources_matched",
                 "adapter": "enabled",
                 "registry_review": "current",
-                "challenge_check": "passed",
+                "challenge_check": ("waited_then_passed" if challenge_waited else "passed"),
                 "cdp_loopback": True,
             },
             "evidence_status": "candidate",

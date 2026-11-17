@@ -76,7 +76,7 @@ capture 是**正式采集通道的一个入口**，不是通用浏览器抓取�
 2. **批准平台集合**：CDP 例外只对平台目录标记 `cdp: true` 的集合开放（当前 amazon / instagram / bilibili / weibo / kickstarter / discord / x / tiktok，与 collect 的 CDP 目标白名单一致）；其它任意站点（reddit、YouTube、内网 wiki……）一律 `cdp_not_allowed`——capture 不开放通用 web 采集；
 3. **scope.allowed_sources**：批准平台的页面还必须出现在 `study.scope.allowed_sources` 中，否则 `scope_blocked`；
 4. **启用 adapter + 注册表复审**：`study.source_adapters.<platform>.enabled=true` 且连接器政策复审未过期，否则 `adapter_disabled` / `review_expired`（与 collect 相同）；
-5. **授权页面语义**：默认端口 http(s)、无凭据 URL；跳转离开批准平台即停止；出现验证码/挑战页在截图与落盘之前停止（`challenge`），不绕过；
+5. **授权页面语义**：默认端口 http(s)、无凭据 URL；跳转离开批准平台即停止；出现验证码/挑战页时只做被动等待（用户在同一个浏览器里手工完成或页面自行清除），超时仍存在则在截图与落盘之前停止（`challenge`），不主动绕过；
 6. **CDP 端点**：只接受 `127.0.0.1`/`::1` 回环地址，不接受远程调试端点。
 
 粘贴文本走 `askovo import`，同一审核口径：`--evidence-level`（按证据形式封顶：自述/行为日志 ≤E2，交易记录 ≤E5）、`--corpus-role`、`--context-key`，来源族同样幂等声明进 source plan。一套规则、一个证据链：不存在"候选直通证据"或"粘贴免审"的第二口径。

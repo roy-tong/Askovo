@@ -129,6 +129,15 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual("scope_blocked", result["status"])
             self.assertIn("allowed_sources", result["reason"])
 
+    def test_cdp_host_allowlist_matches_catalog_cdp_true(self):
+        expected = {platform for platform, entry in engine.platform_index().items()
+                    if entry.get("cdp")}
+        self.assertEqual(expected, set(engine.CDP_TARGET_HOSTS))
+        self.assertEqual(
+            expected,
+            set(json.loads((ROOT / "docs/delivery-contract.json").read_text(
+                encoding="utf-8"))["candidate_inputs"]["cdp_page"]["approved_platforms"]))
+
     def test_capture_never_opens_generic_web_reddit_or_youtube(self):
         with tempfile.TemporaryDirectory() as directory:
             study = self._sample_study(Path(directory) / "study")
@@ -182,14 +191,47 @@ class CaptureTests(unittest.TestCase):
         engine.cdp_new_page = lambda base, url: "ws://127.0.0.1:9222/devtools/page/1"
         engine._WebSocket = lambda url: object()
         engine.CDPClient = ChallengeClient
+        old_wait = engine.CAPTURE_CHALLENGE_WAIT_SECONDS
+        engine.CAPTURE_CHALLENGE_WAIT_SECONDS = 0.0
         try:
             result = engine.capture_page(
                 self.study, "https://www.amazon.com/product-reviews/B0",
                 "http://127.0.0.1:9222", True)
         finally:
             engine.cdp_new_page, engine._WebSocket, engine.CDPClient = saved
+            engine.CAPTURE_CHALLENGE_WAIT_SECONDS = old_wait
         self.assertEqual("challenge", result["status"])
         self.assertFalse((self.study / "01-sources/captures/index.jsonl").exists())
+
+
+    def test_challenge_passively_cleared_within_wait_is_captured(self):
+        class EvolvingClient(_FakeClient):
+            calls = 0
+
+            def evaluate(self, expression):
+                EvolvingClient.calls += 1
+                if EvolvingClient.calls == 1:
+                    return {"title": "Robot Check",
+                            "url": "https://www.amazon.com/product-reviews/B0",
+                            "text": "Enter the characters shown below"}
+                return super().evaluate(expression)
+
+        saved = (engine.cdp_new_page, engine._WebSocket, engine.CDPClient)
+        old_wait = engine.CAPTURE_CHALLENGE_WAIT_SECONDS
+        engine.cdp_new_page = lambda base, url: "ws://127.0.0.1:9222/devtools/page/1"
+        engine._WebSocket = lambda url: object()
+        engine.CDPClient = EvolvingClient
+        engine.CAPTURE_CHALLENGE_WAIT_SECONDS = 2.0
+        try:
+            result = engine.capture_page(
+                self.study, "https://www.amazon.com/product-reviews/B0",
+                "http://127.0.0.1:9222", True)
+        finally:
+            engine.cdp_new_page, engine._WebSocket, engine.CDPClient = saved
+            engine.CAPTURE_CHALLENGE_WAIT_SECONDS = old_wait
+        self.assertEqual("captured", result["status"])
+        payload = json.loads(Path(result["capture"]).read_text(encoding="utf-8"))
+        self.assertEqual("waited_then_passed", payload["governance"]["challenge_check"])
 
 
 if __name__ == "__main__":

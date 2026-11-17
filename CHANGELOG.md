@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### CDP platform contract alignment: catalog `cdp: true`, passive challenge wait
+
+- The CDP capture allowlist is now explicitly tied to the platform catalog's
+  `cdp: true` set (currently amazon/instagram/bilibili/weibo/kickstarter/
+  discord/x/tiktok). The delivery contract lists the same eight; a test fails
+  if the code allowlist, catalog and contract drift.
+- A challenge page is no longer rejected at first sight: capture waits
+  passively for the same browser session to clear it or a human to complete
+  it, then proceeds; if the wait expires it stops before screenshot/write.
+  It never solves, bypasses or reloads around the challenge.
+
 ### Multi-platform rotation strategy (stay under every site's frequency radar)
 
 The campaign's answer to per-platform rate control is now product capability:
