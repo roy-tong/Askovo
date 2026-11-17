@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### P0.4 unified capture governance + CDP page capture (candidate only)
+
+`askovo capture` captures one user-authorized visible page through the local
+CDP endpoint (page text + screenshot + optional macOS Vision OCR via
+`scripts/ocr_image.swift`) into `01-sources/captures/` as a **candidate** — it
+never registers evidence or touches the seven-node chain by itself. Governance
+is unified with `collect` instead of opening a second, laxer collection
+entrance: the Design gate must pass before capture starts, a page host that
+maps to a known platform must be listed in `study.scope.allowed_sources`
+(generic visible-web capture needs an explicit `web`/`visible_web`/`capture`
+marker), challenge pages stop the capture, and the CDP endpoint stays
+loopback-only. See `docs/capture.md` for the full rule set.
+
 ### C-01-Lite minimal delegation projection
 
 `askovo decide status` now also returns a `delegation` block with the eight

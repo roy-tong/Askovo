@@ -5587,6 +5587,215 @@ CDP_EXTRACTOR = r"""
 """
 
 
+CDP_PAGE_EXTRACTOR = r"""
+(() => {
+  const clean = (s) => String(s || "");
+  return {
+    title: document.title || "",
+    url: location.href,
+    text: clean(document.body ? document.body.innerText : "").slice(0, 200000)
+  };
+})()
+"""
+
+
+def _validate_capture_url(url: str) -> str:
+    parsed = urllib.parse.urlparse(str(url or "").strip())
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError("capture --url must be an http(s) URL")
+    if parsed.username or parsed.password:
+        raise ValueError("capture --url must not contain credentials")
+    return parsed.geturl()
+
+
+# P0.4 unified governance: `capture` shares the collection scope semantics.
+# A page whose host maps to a known platform may only be captured when that
+# platform is in study.scope.allowed_sources; the reserved generic markers
+# ("web"/"visible_web"/"capture") declare that any authorized visible page is
+# in scope. An empty allowed_sources list imposes no platform restriction (the
+# design gate still requires the field to exist).
+CAPTURE_GENERIC_WEB_SOURCES = {"web", "visible_web", "capture"}
+CAPTURE_HOST_PLATFORMS: dict[str, tuple[str, ...]] = {
+    platform: hosts for platform, hosts in CDP_TARGET_HOSTS.items()
+}
+CAPTURE_HOST_PLATFORMS.update({
+    "github": ("github.com",),
+    "reddit": ("reddit.com", "old.reddit.com"),
+    "x": ("x.com", "twitter.com"),
+    "youtube": ("youtube.com", "youtu.be"),
+    "tiktok": ("tiktok.com",),
+    "app_store": ("apps.apple.com",),
+    "google_play": ("play.google.com",),
+    "hackernews": ("news.ycombinator.com",),
+    "stackoverflow": ("stackoverflow.com",),
+    "zhihu": ("zhihu.com",),
+    "xiaohongshu": ("xiaohongshu.com",),
+    "jd": ("jd.com",),
+    "taobao": ("taobao.com", "tmall.com"),
+    "kickstarter": ("kickstarter.com",),
+})
+
+
+def _platform_for_capture_host(hostname: str) -> str | None:
+    host = str(hostname or "").lower().rstrip(".")
+    if not host:
+        return None
+    for platform, domains in CAPTURE_HOST_PLATFORMS.items():
+        if any(host == domain or host.endswith("." + domain) for domain in domains):
+            return platform
+    return None
+
+
+def _capture_scope_failure(study: dict[str, Any], url: str) -> dict[str, Any] | None:
+    """Apply the same allowed_sources rule as `collect` to a capture URL."""
+    scope = study.get("scope") if isinstance(study.get("scope"), dict) else {}
+    allowed = scope.get("allowed_sources") if isinstance(scope.get("allowed_sources"), list) else []
+    allowed_ids = {str(item).strip() for item in allowed if str(item).strip()}
+    if not allowed_ids or allowed_ids & CAPTURE_GENERIC_WEB_SOURCES:
+        return None
+    parsed = urllib.parse.urlparse(str(url))
+    platform = _platform_for_capture_host(parsed.hostname or "")
+    if platform is not None and platform in allowed_ids:
+        return None
+    host = str(parsed.hostname or "")
+    reason = (
+        f"page host {host} maps to platform {platform!r}, which is not listed in "
+        "study.scope.allowed_sources" if platform is not None else
+        f"page host {host} is not a declared source; add the platform id or a generic "
+        "'web' marker to study.scope.allowed_sources")
+    return {
+        "status": "scope_blocked",
+        "reason": reason,
+        "allowed_sources": sorted(allowed_ids),
+        "note": "capture reuses the collect scope rule: one entrance, one rule set",
+    }
+
+
+def _ocr_with_vision(image_path: Path) -> dict[str, Any]:
+    """Optional macOS Vision OCR adapter. Returns text/engine/error."""
+    script = Path(__file__).with_name("ocr_image.swift")
+    if sys.platform != "darwin":
+        return {"engine": "macos_vision", "text": "", "error": "macOS Vision OCR only on darwin"}
+    if not script.is_file():
+        return {"engine": "macos_vision", "text": "", "error": f"missing {script.name}"}
+    try:
+        proc = subprocess.run(["swift", str(script), str(image_path)],
+                              capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"engine": "macos_vision", "text": "", "error": str(exc)[:300]}
+    if proc.returncode != 0:
+        return {"engine": "macos_vision", "text": "",
+                "error": (proc.stderr or proc.stdout or "ocr failed").strip()[:300]}
+    text = proc.stdout.strip()
+    return {"engine": "macos_vision", "text": text,
+            "error": "" if text else "no text recognized"}
+
+
+def capture_page(
+    study_dir: Path,
+    url: str,
+    cdp_base: str,
+    ack_terms: bool,
+    *,
+    ocr: bool = False,
+    wait_seconds: float = 2.0,
+) -> dict[str, Any]:
+    """Capture a user-authorized visible page through CDP.
+
+    This writes a *candidate capture* under 01-sources/captures/: page text,
+    screenshot, optional OCR text, hashes and source metadata. It does not
+    register evidence or change the chain; a human must review it first.
+    """
+    study_dir = Path(study_dir).resolve()
+    if not (study_dir / "study.json").is_file():
+        return {"status": "error", "reason": f"missing study.json under {study_dir}"}
+    if not ack_terms:
+        return {"status": "terms_required",
+                "reason": "capture needs --ack-terms and a browser session you are authorized to use"}
+    try:
+        url = _validate_capture_url(url)
+        _validate_cdp_base(cdp_base)
+    except ValueError as exc:
+        return {"status": "error", "reason": str(exc)}
+    try:
+        study = load_json(study_dir / "study.json")
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"status": "error", "reason": f"cannot read study.json: {exc}"}
+    if not isinstance(study, dict):
+        return {"status": "error", "reason": "study.json must be a JSON object"}
+    scope_failure = _capture_scope_failure(study, url)
+    if scope_failure is not None:
+        return scope_failure
+    capture_id = (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+                  + "-" + hashlib.sha256(url.encode()).hexdigest()[:8])
+    out_dir = study_dir / "01-sources" / "captures"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ws_url = cdp_new_page(cdp_base, url)
+    client = CDPClient(_WebSocket(ws_url))
+    try:
+        client.call("Runtime.enable")
+        time.sleep(max(0.5, wait_seconds))
+        value = client.evaluate(CDP_PAGE_EXTRACTOR)
+        if not isinstance(value, dict):
+            return {"status": "error", "reason": "CDP did not return page content"}
+        text = str(value.get("text") or "")
+        if re.search(r"Robot Check|Enter the characters|验证码|异常流量|not a robot", text, re.I):
+            return {"status": "challenge", "reason": "page shows a challenge; capture stopped"}
+        shot = client.call("Page.captureScreenshot", {"format": "png"})
+        raw = shot.get("data") if isinstance(shot, dict) else None
+        if not raw:
+            return {"status": "error", "reason": "CDP screenshot returned no data"}
+        image_path = out_dir / f"{capture_id}.png"
+        image_path.write_bytes(base64.b64decode(raw))
+        ocr_payload = {"engine": "not_requested", "text": "", "error": ""}
+        if ocr:
+            ocr_payload = _ocr_with_vision(image_path)
+        payload = {
+            "schema": "askovo.page-capture/1",
+            "capture_id": capture_id,
+            "captured_at": now(),
+            "url": url,
+            "final_url": str(value.get("url") or url),
+            "title": str(value.get("title") or ""),
+            "text": text,
+            "text_length": len(text),
+            "text_sha256": hashlib.sha256(text.encode()).hexdigest(),
+            "screenshot": str(image_path),
+            "screenshot_sha256": hashlib.sha256(image_path.read_bytes()).hexdigest(),
+            "ocr": {
+                "engine": ocr_payload.get("engine"),
+                "text": ocr_payload.get("text") or "",
+                "text_length": len(str(ocr_payload.get("text") or "")),
+                "text_sha256": hashlib.sha256(
+                    str(ocr_payload.get("text") or "").encode()).hexdigest(),
+                "error": ocr_payload.get("error") or "",
+            },
+            "cdp_endpoint": cdp_base,
+            "ack_terms": True,
+            "evidence_status": "candidate",
+            "note": "candidate capture only; human review is required before it becomes evidence",
+        }
+        json_path = out_dir / f"{capture_id}.json"
+        json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                             encoding="utf-8")
+        with (out_dir / "index.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({
+                "capture_id": capture_id, "captured_at": payload["captured_at"],
+                "url": url, "title": payload["title"],
+                "text_sha256": payload["text_sha256"],
+                "screenshot": str(image_path),
+                "ocr_error": payload["ocr"]["error"],
+            }, ensure_ascii=False) + "\n")
+        status = "captured"
+        if ocr and payload["ocr"]["error"]:
+            status = "ocr_failed"
+        return {"status": status, "capture": str(json_path),
+                "screenshot": str(image_path), "ocr": payload["ocr"],
+                "text_length": len(text)}
+    finally:
+        client.close()
+
+
 def collect_cdp(
     study_dir: Path,
     platform: str,

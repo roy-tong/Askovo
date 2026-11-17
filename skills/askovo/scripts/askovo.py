@@ -15,6 +15,7 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -3010,6 +3011,29 @@ def command_deliver(args: argparse.Namespace) -> int:
     return 1 if result.get("status") == "blocked" else 0
 
 
+def command_capture(args: argparse.Namespace) -> int:
+    # P0.4 unified governance: capture goes through the same design gate as
+    # collect; a second, laxer collection entrance is not allowed.
+    failure = _design_gate_failure(Path(args.study_dir).resolve())
+    if failure is not None:
+        print(json.dumps(failure, ensure_ascii=False, indent=2))
+        return 1
+    cdp_base = (args.cdp_url or os.environ.get("MKT_CDP_URL")
+                or "http://127.0.0.1:9222")
+    try:
+        result = sure_engine.capture_page(
+            Path(args.study_dir), args.url, cdp_base, bool(args.ack_terms),
+            ocr=bool(args.ocr), wait_seconds=float(args.wait))
+    except (OSError, ValueError, RuntimeError, ConnectionError) as exc:
+        result = {"status": "error", "reason": str(exc)[:500]}
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if result.get("status") == "captured":
+        return 0
+    if result.get("status") == "ocr_failed":
+        return 2
+    return 1
+
+
 def command_collect(args: argparse.Namespace) -> int:
     if not getattr(args, "dry_run", False):
         failure = _design_gate_failure(Path(args.study_dir).resolve())
@@ -5240,6 +5264,16 @@ def build_parser() -> argparse.ArgumentParser:
     collect_parser.add_argument("--ack-terms", action="store_true", help="acknowledge platform terms and authorized session")
     collect_parser.set_defaults(func=command_collect)
 
+    capture_parser = subparsers.add_parser(
+        "capture", help="capture an authorized visible page via CDP (text + screenshot + optional OCR)")
+    capture_parser.add_argument("study_dir")
+    capture_parser.add_argument("--url", required=True, help="authorized visible page URL")
+    capture_parser.add_argument("--cdp-url", default="", help="Chrome DevTools endpoint (default http://127.0.0.1:9222)")
+    capture_parser.add_argument("--ack-terms", action="store_true", help="acknowledge platform terms and your authorization to view this page")
+    capture_parser.add_argument("--ocr", action="store_true", help="run local macOS Vision OCR on the screenshot")
+    capture_parser.add_argument("--wait", type=float, default=2.0, help="seconds to wait before capture")
+    capture_parser.set_defaults(func=command_capture)
+
     research_parser = subparsers.add_parser(
         "research",
         help="plan, authorize and execute a bounded research action list; no source is "
@@ -5696,7 +5730,7 @@ DECIDE_ACTIONS = ("start", "status", "result", "brief", "review", "delta", "canc
 CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "explore",
     "external-research", "do", "domains",
-    "methods", "catalog", "platforms", "collect", "research", "loop", "analyze", "instruments", "import", "queue",
+    "methods", "catalog", "platforms", "capture", "collect", "research", "loop", "analyze", "instruments", "import", "queue",
     "codebook", "chain", "economics", "psm", "decision", "decide", "issues", "brief", "delta", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }

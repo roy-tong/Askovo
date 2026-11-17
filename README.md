@@ -30,7 +30,7 @@ Data collection, descriptive analysis, interviews, experiments, evidence grading
 
 Quality is enforced under the hood: every conclusion carries an internal evidence grade, and when a conclusion outruns its evidence, `askovo audit` says so outright (exit code 1 can gate CI). In business-facing deliverables those grades stay in the method archive — the narrative is the business logic itself, with "no collected data yet" flags where a judgment still waits for data.
 
-[Website](https://roy-tong.github.io/Askovo/) · [Quickstart](docs/quickstart.md) · [Product & business reasoning chain](docs/product-reasoning.md) · [Role methodology](docs/product-methodology.md) · [Platforms & connectors](docs/connectors.md)
+[Website](https://roy-tong.github.io/Askovo/) · [Quickstart](docs/quickstart.md) · [CDP capture](docs/capture.md) · [Product & business reasoning chain](docs/product-reasoning.md) · [Role methodology](docs/product-methodology.md) · [Platforms & connectors](docs/connectors.md)
 
 [![Agent Skill](https://img.shields.io/badge/Agent_Skill-Askovo-111111)](skills/askovo/SKILL.md)
 [![CI](https://github.com/roy-tong/askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/askovo/actions/workflows/tests.yml)
