@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 2.18.0 — 2026-11-15
+
+This release publishes the decision surface and the write path underneath it:
+`askovo decide` (one decision question tracked as a task, including
+`decide delta --since latest-accepted`), the **Decision Brief** (`askovo brief`)
+with PRD development acceptance, **incremental research** (`askovo delta`,
+append-only `source id + updated_at` comparison), **A-07** canonical decision
+write integrity (journalled accept, `askovo issues recover`, cross-process
+lock), and the **C-01-Lite** minimal delegation projection on
+`askovo decide status`. The site also ships an English mirror of its six pages
+under `website/en/`, with reciprocal `hreflang` and a sitemap entry for each.
 
 ### Engine integration for the postmortem: field completeness, membership gates, App Store route
 
