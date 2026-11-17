@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Decision integrity: lexical research assistance is not a business go
+
+`askovo answer` now reads only `02-data/evidence.jsonl` and separates
+`lexical_projection` from `business_decision`. Option-keyword support counts,
+including 3+ same-source E1 hits, can at most recommend `continue_research`.
+A formal go/no-go is projected only through the canonical seven-node chain,
+audited support and a named DecisionRecord; normalized-only records cannot
+create an answer. This prevents lexical matches from being misrepresented as
+seven-node scientific reasoning, causal evidence or commercial truth.
+
 ### Study onboarding: fill checklist, terminal-friendly check output, label fallback
 
 `askovo do` now scaffolds `01-sources/fill-checklist.md` — an ordered,

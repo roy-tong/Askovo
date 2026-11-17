@@ -5,7 +5,7 @@
 
 | 场景 | 终态 | 结果 |
 |---|---|---|
-| paste_to_answer | DELIVERED（answer=go，领先选项=上线移动巡检试点，支持>=3 且无反证） | PASS |
+| paste_to_answer | DELIVERED_WITH_GAP（lexical=go，正式业务决策=continue_research；待七节点+ | PASS |
 | capture_ocr_review_to_answer | DELIVERED_WITH_GAP（单页 1 条证据=低样本支持：answer=continue_research，领 | PASS |
 | opposite_corpora_flip | A→移动巡检试点；B→保持固定摄像头方案（同 question/options） | PASS |
 | no_evidence_unanswerable | DELIVERED_WITH_GAP（answer_status=unanswerable，decision=unans | PASS |

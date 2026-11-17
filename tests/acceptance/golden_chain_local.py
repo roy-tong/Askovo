@@ -45,7 +45,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "skills/askovo/scripts/askovo.py"
 SAMPLE = ROOT / "examples/sample-study"
-ACCEPTANCE = ROOT / "docs/acceptance"
+ACCEPTANCE = Path(os.environ.get(
+    "ASKOVO_ACCEPTANCE_OUT", str(ROOT / "docs/acceptance")))
 
 QUESTION = "家庭安防摄像头下一步做移动巡检还是保持固定摄像头？"
 OPTIONS = ["上线移动巡检试点", "保持固定摄像头方案", "停止该概念"]
@@ -330,22 +331,26 @@ def main() -> int:
         scenario(
             "paste_to_answer",
             user_intent="把粘贴的 4 条用户原话变成研究答案：谁支持哪个选项、依据是什么",
-            expected_terminal_state="DELIVERED（answer=go，领先选项=上线移动巡检试点，支持>=3 且无反证）",
+            expected_terminal_state="DELIVERED_WITH_GAP（lexical=go，正式业务决策=continue_research；待七节点+DecisionRecord）",
             real_side_effect=f"import 登记 {imported.get('added')} 条证据；analyze/answer 写入 04-findings",
             receipt={"import": {k: imported.get(k) for k in ("status", "added", "review")},
                      "analyze_status": analyzed.get("status"), "records": analyzed.get("records"),
                      "answer_decision": answer_json["decision"],
                      "leading_option": answer_json["leading_option"],
                      "support_counts": {o["option"]: len(o["supporting_refs"]) for o in answer_json["support"]}},
-            observed_outcome=("结论随语料 A 指向「上线移动巡检试点」；每条支持引用都能回链 evidence.jsonl 的 record_id/source_ref"
-                              if answer_json["decision"] == "go" and answer_json["leading_option"] == OPTIONS[0]
+            observed_outcome=("词汇辅助随语料 A 指向「上线移动巡检试点」，但正式决定仍为 continue_research；每条支持引用回链 evidence.jsonl"
+                              if answer_json["decision"] == "continue_research"
+                              and answer_json["lexical_projection"]["candidate_decision"] == "go"
+                              and answer_json["leading_option"] == OPTIONS[0]
                               else f"UNEXPECTED: {answer_json['answer_status']}/{answer_json['decision']}"),
             user_visible_terminal=(study_a / "04-findings/research-answer.md").read_text(encoding="utf-8")[:400],
             evidence_paths=[str(study_a / "02-data/evidence.jsonl"),
                             str(study_a / "04-findings/research-answer.json"),
                             str(study_a / "04-findings/analysis.json")],
             evidence_grade="synthetic corpus through the production paste pipeline",
-            passed=(answer_json["decision"] == "go" and answer_json["leading_option"] == OPTIONS[0]
+            passed=(answer_json["decision"] == "continue_research"
+                    and answer_json["lexical_projection"]["candidate_decision"] == "go"
+                    and answer_json["leading_option"] == OPTIONS[0]
                     and len(backlinks) >= 3),
         )
 
@@ -529,7 +534,7 @@ def main() -> int:
             "OCR 质量依赖 macOS Vision 与本地渲染截图；复杂版式/低分辨率未覆盖",
             "批量采集、滚动/分页、去重策略属 P2，未在本链验收",
         ],
-        "rollback_note": "本分支 feat/a-capture-golden-chain 全部提交可回滚；main 未受影响",
+        "rollback_note": "研究在临时目录执行；仅写验收日志，不执行真实外部写、采购或付款",
     }
     log["finished_at"] = now_iso()
 
