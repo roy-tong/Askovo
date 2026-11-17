@@ -85,6 +85,7 @@ except ImportError:  # pragma: no cover - Windows fallback
 
 HERE = Path(__file__).resolve().parent
 SKILL_ROOT = HERE.parent
+REPO_ROOT = SKILL_ROOT.parent.parent
 ASSETS = SKILL_ROOT / "assets"
 CATALOG_PATH = ASSETS / "method-catalog.json"
 PACKS_DIR = ASSETS / "domain-packs"
@@ -5067,6 +5068,16 @@ def doctor() -> int:
         )
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         checks.append(("platform-catalog", False, str(exc)))
+    try:
+        notes = field_notes_catalog()["notes"]
+        problems = field_note_problems()
+        checks.append((
+            "platform-field-notes",
+            not problems,
+            f"{len(notes)} notes" if not problems else "; ".join(problems[:3]),
+        ))
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        checks.append(("platform-field-notes", False, str(exc)))
     ids = {str(item.get("id")) for item in catalog.get("methods", []) if isinstance(item, dict)}
     missing: list[str] = []
     for name, pack in packs.items():
@@ -5106,6 +5117,164 @@ def platform_index() -> dict[str, dict[str, Any]]:
     return {str(item["id"]): item for item in platform_catalog()["platforms"] if isinstance(item, dict) and item.get("id")}
 
 
+# ---------------------------------------------------------------------------
+# Platform field notes: operational experience as data
+#
+# The campaign-tested restrictions and solutions live in one machine-readable
+# registry (assets/platform-field-notes.json) so planning, doctor and every
+# projection read the same experience instead of a prose document drifting
+# beside the catalog. Access permission stays in platform-catalog.json: a field
+# note records what happened in the field, never that a route is approved.
+
+FIELD_NOTES_PATH = ASSETS / "platform-field-notes.json"
+FIELD_NOTE_REQUIRED = (
+    "id", "platform", "channel", "restriction", "symptom", "solution",
+    "artifact", "verification", "cdp",
+)
+
+
+def field_notes_catalog() -> dict[str, Any]:
+    data = load_json(FIELD_NOTES_PATH)
+    if not isinstance(data, dict) or not isinstance(data.get("notes"), list):
+        raise ValueError(f"invalid platform field notes: {FIELD_NOTES_PATH}")
+    return data
+
+
+def field_note_problems() -> list[str]:
+    """Structural problems in the field-notes registry (empty means consistent).
+
+    Checks the parts that would silently rot: required fields, unique ids,
+    verification status from the legend, artifact paths that exist, helper
+    references that resolve, and — for catalog platforms — a ``cdp`` flag that
+    matches the platform catalog. A note may describe a source type that is not
+    a catalog platform (``source_types``) or cross-platform practice (``*``);
+    neither may claim a catalog route.
+    """
+    problems: list[str] = []
+    try:
+        data = field_notes_catalog()
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        return [str(exc)]
+    catalog_ids = set(platform_index())
+    source_types = data.get("source_types") or {}
+    legend = set((data.get("verification_legend") or {}).keys())
+    if not isinstance(source_types, dict):
+        problems.append("source_types must be an object")
+        source_types = {}
+    allowed = catalog_ids | set(source_types) | {"*"}
+    seen: set[str] = set()
+    for index, note in enumerate(data["notes"]):
+        if not isinstance(note, dict):
+            problems.append(f"note[{index}] is not an object")
+            continue
+        missing = [key for key in FIELD_NOTE_REQUIRED if note.get(key) in (None, "", [])]
+        if missing:
+            problems.append(f"note[{index}] missing {', '.join(missing)}")
+            continue
+        note_id = str(note["id"])
+        if note_id in seen:
+            problems.append(f"duplicate note id: {note_id}")
+        seen.add(note_id)
+        platform = str(note["platform"])
+        if platform not in allowed:
+            problems.append(f"{note_id}: platform {platform!r} is neither a catalog platform, a source type, nor '*'")
+        verification = note.get("verification")
+        if not isinstance(verification, dict):
+            problems.append(f"{note_id}: verification must be an object")
+        else:
+            status = str(verification.get("status") or "")
+            if legend and status not in legend:
+                problems.append(f"{note_id}: verification status {status!r} not in the legend")
+            if not verification.get("date"):
+                problems.append(f"{note_id}: verification.date is required")
+        artifact = REPO_ROOT / str(note["artifact"])
+        if not artifact.is_file():
+            problems.append(f"{note_id}: artifact not found: {note['artifact']}")
+        helper = note.get("helper")
+        if helper:
+            module_name, _, attr = str(helper).rpartition(".")
+            module_path = SKILL_ROOT / "scripts" / (module_name.replace(".", "/") + ".py")
+            if not module_name or not module_path.is_file():
+                problems.append(f"{note_id}: helper module not found: {helper}")
+            elif attr:
+                source = module_path.read_text(encoding="utf-8")
+                if f"def {attr}(" not in source and f"class {attr}(" not in source:
+                    problems.append(f"{note_id}: helper {attr!r} not defined in {module_name}")
+        if platform in catalog_ids:
+            entry = platform_index()[platform]
+            if bool(note.get("cdp")) != bool(entry.get("cdp")):
+                problems.append(
+                    f"{note_id}: cdp={bool(note.get('cdp'))} disagrees with the platform catalog "
+                    f"({platform} cdp={bool(entry.get('cdp'))})"
+                )
+    return problems
+
+
+def field_notes_index() -> dict[str, list[dict[str, Any]]]:
+    """Notes grouped by platform; ``*`` holds cross-platform practice."""
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for note in field_notes_catalog()["notes"]:
+        if not isinstance(note, dict):
+            continue
+        grouped.setdefault(str(note.get("platform") or "*"), []).append(note)
+    return grouped
+
+
+def field_notes_for(platforms: list[str] | tuple[str, ...] | None = None) -> list[dict[str, Any]]:
+    """Field notes for the given platforms plus the cross-platform practice.
+
+    ``None`` returns every note. Cross-platform notes lead: they apply to any
+    CDP run and are the ones a planner most often needs before a channel.
+    """
+    grouped = field_notes_index()
+    wanted = list(platforms or [])
+    if not wanted:
+        return [note for notes in grouped.values() for note in notes]
+    selected = list(grouped.get("*", []))
+    for platform in wanted:
+        for note in grouped.get(platform, []):
+            if note not in selected:
+                selected.append(note)
+    return selected
+
+
+def field_notes_markdown(notes: list[dict[str, Any]] | None = None,
+                         platform: str | None = None) -> str:
+    """Render field notes as the human-facing restriction/solution table."""
+    selected = field_notes_for([platform] if platform else None) if notes is None else notes
+    title = "# Askovo 平台实战笔记"
+    if platform:
+        title += f"：{platform}"
+    lines = [
+        title,
+        "",
+        "> 记录的是**实战限制与解法**，不是访问许可：能否采集仍由平台目录、study scope 与"
+        "Design gate 决定（见 `askovo platforms` / `docs/connectors.md`）。",
+        "",
+        "| 平台 | 通道 | 限制 | 解法 | 验证 | 产物 |",
+        "|---|---|---|---|---|---|",
+    ]
+    for note in selected:
+        verification = note.get("verification") or {}
+        lines.append(
+            f"| `{note.get('platform')}` | {note.get('channel')} | "
+            f"{note.get('restriction')} | {note.get('solution')} | "
+            f"{verification.get('status', '')}（{verification.get('date', '')}） | "
+            f"`{note.get('artifact')}` |"
+        )
+    lines.extend([
+        "",
+        "## 怎么用",
+        "",
+        "- 规划前：`askovo platforms \"<需求>\" --field-notes` 看推荐平台的已知坑；",
+        "- 采集时：限制命中先按「解法」走；挑战页只被动等待或人工完成，不绕过；",
+        "- 收尾时：新的限制/解法补进 `skills/askovo/assets/platform-field-notes.json`"
+        "（`askovo doctor` 会校验必填字段、产物路径与 cdp 一致性）。",
+        "",
+    ])
+    return "\n".join(lines)
+
+
 CLAIM_HINTS = {
     "need": ("需求", "痛点", "问题", "场景", "替代", "workaround", "为什么"),
     "acceptance": ("接受", "喜欢", "偏好", "概念", "方案", "包装", "外观"),
@@ -5129,6 +5298,7 @@ def platform_fit(
     require_bulk: bool = False,
 ) -> dict[str, Any]:
     claims = claim_types or infer_claim_types(text)
+    notes_by_platform = field_notes_index()
     ranked: list[dict[str, Any]] = []
     blocked: list[dict[str, Any]] = []
     for platform in platform_index().values():
@@ -5204,6 +5374,17 @@ def platform_fit(
             "adapter": platform.get("adapter", "none"),
             "cdp": bool(platform.get("cdp")),
             "notes": platform.get("notes", ""),
+            "field_notes": [
+                {
+                    "id": note.get("id"),
+                    "channel": note.get("channel"),
+                    "restriction": note.get("restriction"),
+                    "solution": note.get("solution"),
+                    "verification": (note.get("verification") or {}).get("status"),
+                    "helper": note.get("helper"),
+                }
+                for note in notes_by_platform.get(platform_id, []) + notes_by_platform.get("*", [])
+            ],
         }
         if decision == "blocked":
             blocked.append(entry)
@@ -5250,6 +5431,25 @@ def platform_markdown(plan: dict[str, Any]) -> str:
         lines.extend(["", "## 不可直接批量采集", ""])
         for item in plan["blocked"]:
             lines.append(f"- {item['name']}：{item['notes']}")
+    field_notes: list[dict[str, Any]] = []
+    seen_notes: set[str] = set()
+    for item in plan["recommended"]:
+        for note in item.get("field_notes", []):
+            note_id = str(note.get("id"))
+            if note_id in seen_notes:
+                continue
+            seen_notes.add(note_id)
+            field_notes.append(note)
+    if field_notes:
+        lines.extend(["", "## 已知平台限制与解法（实战）", ""])
+        for note in field_notes:
+            lines.append(
+                f"- `{note.get('id')}`（{note.get('verification') or '未标注'}）："
+                f"{note.get('restriction')} → {note.get('solution')}"
+            )
+        lines.append("")
+        lines.append("> 记录的是实战限制与解法，不是访问许可；完整字段见 "
+                     "`askovo platforms \"<需求>\" --field-notes`。")
     lines.extend(["", "## 采集前", ""])
     lines.extend(f"- {item}" for item in plan.get("access_steps", []))
     lines.extend(["", "## 边界", "", plan.get("boundary", "")])
@@ -7034,8 +7234,26 @@ def cli_platforms(args: Any) -> int:
     plan = platform_fit(args.need, domain, getattr(args, "claim_type", None), getattr(args, "bulk", False))
     if inferred:
         plan["inferred_domain"] = inferred
+    platform_filter = getattr(args, "platform", None)
+    if platform_filter:
+        plan["recommended"] = [item for item in plan["recommended"] if item["id"] == platform_filter]
+        plan["blocked"] = [item for item in plan["blocked"] if item["id"] == platform_filter]
+        plan["platform_filter"] = platform_filter
+        if not plan["recommended"] and not plan["blocked"]:
+            known = sorted(set(platform_index()) | set(field_notes_index()))
+            print(
+                f"unknown platform: {platform_filter} (known: {', '.join(known)})",
+                file=sys.stderr,
+            )
+            return 2
+        notes = field_notes_for([platform_filter])
+    else:
+        notes = field_notes_for([item["id"] for item in plan["recommended"]])
+    plan["field_notes"] = notes
     if getattr(args, "json", False):
         print(json.dumps(plan, ensure_ascii=False, indent=2))
+    elif getattr(args, "field_notes", False):
+        print(field_notes_markdown(notes=notes, platform=platform_filter))
     else:
         print(platform_markdown(plan))
     return 0

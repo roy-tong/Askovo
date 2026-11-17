@@ -198,3 +198,11 @@ per site per run.
   already has, and each lane keeps its own extractor and its own persisted
   store. A generic `cdp_parallel_pipeline.py` only earns its place once two
   extractors can be driven from one config without forking them.
+- The reusable mechanisms behind these methods are imported, not re-derived:
+  `scripts/connectors/common.py` (classified backoff, single-writer state lock,
+  relative-time parsing, atomic JSON persist) and `scripts/connectors/
+  cdp_runtime.py` (passive challenge wait, real wheel events, tab re-binding,
+  bounded load-more, parallel lanes). Restricted pages, the same methods in
+  machine-readable form and the verification legend: see
+  [platform-field-notes.md](platform-field-notes.md) and
+  `askovo platforms "<need>" --field-notes`.

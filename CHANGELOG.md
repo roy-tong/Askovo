@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+### Platform field notes: campaign experience becomes a product capability
+
+Every platform limit the 2026-11 campaign hit now ships as data, not prose.
+`skills/askovo/assets/platform-field-notes.json` records 24 field notes — one
+restriction per note, with symptom, detector, field-verified solution,
+verification status (`verified` / `partially_verified` / `login_verified` /
+`channel_verified`), the repo-relative artifact and the runtime helper that
+encodes the mechanism — for Reddit (Arctic Shift backoff, empty-window
+honesty), YouTube (PO-token block, `commentEntityPayload`, relative time),
+Kickstarter (Cloudflare, load-more expansion, reply threading), Discord
+(sandboxed internal APIs, real-wheel lazy loading, anti-automation session
+drops, forum cards, invite rot), X (infinite-scroll stall, reply density),
+Instagram (comment ancestor chain, reel caption fallback, locale keyword
+grids), TikTok (login verified), vertical forums (Cloudflare) and four
+cross-platform rules (tab-binding rot, silent extractor failure, parallel
+lanes, single-writer state). A note records the field and never an approval:
+access permission stays in the platform catalog plus the study's scope,
+adapter, Design gate and human ack.
+
+Engine surface: `platform_fit` attaches each ranked platform's notes (cross-
+platform practice included) to its entry, `askovo platforms "<need>"
+--field-notes` renders the restriction/solution table, `--platform <id>`
+filters to one catalog platform or source type, `--json` carries the same data,
+and `askovo doctor` gates the registry (required fields, unique ids, legend
+status, artifact paths, helper references, and a `cdp` flag that must match the
+platform catalog). A note may cover a declared source type (`vertical_forum`)
+or cross-platform practice (`*`); neither claims a catalog route, and the
+pre-existing CDP entries (amazon / bilibili / weibo) deliberately carry no
+field note.
+
+Runtime guards extracted from the same experience: `connectors/common.py` gains
+`classify_backoff` (429/403 reset waits, 422 slow-down retry, permanent stop),
+`single_writer_state` (exclusive pid lock, live-owner stop, stale reclaim),
+`parse_relative_time` (en/zh/ko/ja → approximate UTC with `date_precision`) and
+`atomic_write_json`; new `connectors/cdp_runtime.py` provides passive
+`wait_for_challenge_clear`, real `wheel_scroll`, `rebind_tab`,
+`bounded_load_more` and `run_lanes` (parallel lanes with isolated failures and
+a one-tab-per-site guard), plus an offline `--selftest`. The Kickstarter and
+Discord CDP collectors now import these helpers instead of forking the logic.
+
 ### Multi-platform CDP collection + crawler methods from the golf-device campaign
 
 The CDP exception now follows the platform catalog's `cdp: true` set

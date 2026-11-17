@@ -35,14 +35,17 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
-import json
 import sys
-import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 HERE = Path(__file__).resolve().parent
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+
+import cdp_runtime
+from common import atomic_write_json
 _spec = importlib.util.spec_from_file_location("sure_engine_cdp_ks", HERE.parent / "sure_engine.py")
 sure_engine = importlib.util.module_from_spec(_spec)
 assert _spec and _spec.loader
@@ -106,29 +109,22 @@ EXTRACT_POSTS = r"""
 
 def wait_for_page(client, challenge_wait: float, poll: float = 2.0) -> None:
     """Wait for render and passive Cloudflare auto-clear; hard stop otherwise."""
-    deadline = time.time() + challenge_wait
-    while time.time() < deadline:
-        value = client.evaluate(
+
+    def probe() -> str:
+        state = client.evaluate(
             '(() => {const t = String(document.body ? document.body.innerText : "");'
             'return /%s/.test(t) ? "challenge" : document.readyState;})()' % CHALLENGE_TEXT)
-        if value == "complete":
-            time.sleep(1.0)
-            return
-        time.sleep(poll)
-    raise RuntimeError(
+        return "clear" if state == "complete" else "challenge"
+
+    result = cdp_runtime.wait_for_challenge_clear(
+        probe, poll_seconds=poll, timeout_seconds=challenge_wait)
+    if result["status"] == "cleared":
+        time.sleep(1.0)
+        return
+    raise cdp_runtime.ChallengeStopped(
         "challenge_page: Cloudflare check did not clear passively within "
         f"{challenge_wait:.0f}s; the collector never bypasses challenges — "
         "finish the check by hand in the browser, then rerun")
-
-
-def atomic_write_json(path: Path, payload: Dict[str, Any]) -> None:
-    # lesson from the field: persist after every burst, never batch to the end
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
-    with Path(fd).open("w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=1)
-    tmp_path = Path(tmp)
-    tmp_path.replace(path)
 
 
 def expand_and_extract(client, max_clicks: int, click_burst: int,
@@ -136,22 +132,25 @@ def expand_and_extract(client, max_clicks: int, click_burst: int,
     """Click 'load more' until the comment count stops growing; re-extract
     after every burst and keep the largest snapshot."""
     best: List[Dict[str, Any]] = []
-    clicks = 0
-    while clicks < max_clicks:
-        for _ in range(click_burst):
-            if not client.evaluate(LOAD_MORE_CLICK):
-                break
-            clicks += 1
-            time.sleep(1.0)
+
+    def snapshot() -> List[Dict[str, Any]]:
+        nonlocal best
         value = client.evaluate(EXTRACT_COMMENTS)
         if not isinstance(value, dict) or value.get("error"):
-            break
+            return best
         comments = value.get("comments") or []
         if len(comments) > len(best):
             best = comments
-        elif not value.get("more"):
-            break
-        time.sleep(burst_pause)
+        return comments
+
+    snapshot()  # expand nothing first: a partial list must not look complete
+    cdp_runtime.bounded_load_more(
+        lambda: bool(client.evaluate(LOAD_MORE_CLICK)),
+        lambda: len(snapshot()),
+        max_clicks=max_clicks,
+        burst=click_burst,
+        pause_seconds=burst_pause,
+    )
     return best
 
 

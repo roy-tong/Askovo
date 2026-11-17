@@ -357,6 +357,7 @@ Answers "where is the data, can it be obtained compliantly, which reasoning node
 - Every collection run stores raw envelopes, normalized records, and a manifest recording access basis, rights, counts, discard reasons, restrictions, and bias.
 - A SQLite queue supports multiple workers, lease recovery, failure backoff, rate limits, and resumable runs.
 - CDP is limited to authorized visible pages on catalog platforms with `cdp: true` (currently amazon / instagram / bilibili / weibo / kickstarter / discord / x / tiktok); YouTube and blocked platforms never use it, captchas and platform controls are never actively bypassed, and login sessions are user-operated only — the agent never enters credentials or exports cookies.
+- Field experience is data, not prose: [`assets/platform-field-notes.json`](skills/askovo/assets/platform-field-notes.json) records every platform restriction with its symptom, field-verified solution, verification status and the runtime helper that encodes it. `askovo platforms "<need>" --field-notes` surfaces the traps for the recommended platforms, and `askovo doctor` fails when an artifact, helper reference or `cdp` flag rots.
 
 See [Platforms & connectors](docs/connectors.md) and the [CLI reference](docs/cli.md) (Chinese).
 

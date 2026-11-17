@@ -121,7 +121,7 @@ Reddit 的 2026 公共 Data API 过渡会改变研究访问方式：现有应用
 
 - [开源连接器审查](../skills/askovo/references/open-source-connectors.md)
 - [连接器输出合同](../skills/askovo/references/connector-contract.md)
-- [多平台采集手册](../skills/askovo/references/cdp-collection-playbook.md)（通道决策树、CDP 操作模式、反自动化纪律、爬虫工程规则）
+- [多平台采集手册](../skills/askovo/references/cdp-collection-playbook.md)（通道决策树、CDP 操作模式、反自动化纪律、爬虫工程规则）；限制/解法的机器可读注册表与运行时守卫见 [平台实战笔记](platform-field-notes.md)
 - 平台细则：[Reddit](../skills/askovo/references/reddit-research.md) · [X](../skills/askovo/references/x-research.md) · [YouTube](../skills/askovo/references/youtube-research.md) · [Amazon](../skills/askovo/references/amazon-research.md) · [京东](../skills/askovo/references/jd-research.md) · [淘宝](../skills/askovo/references/taobao-research.md) · [Kickstarter](../skills/askovo/references/kickstarter-research.md) · [Discord/社媒共享](../skills/askovo/references/social-media-source-adapters.md)
 
 ## 采集工具箱（connectors/）

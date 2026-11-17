@@ -174,9 +174,13 @@ askovo chain ./study
 ```bash
 askovo platforms "家用摄像头夜间告警的用户抱怨" --domain hardware --bulk
 askovo platforms "SaaS 用户在 GitHub 和论坛上的抱怨" --domain software --claim-type need
+askovo platforms "Kickstarter 众筹评论" --field-notes            # 平台实战笔记（限制/解法/验证等级）
+askovo platforms "Discord 社区抱怨" --platform discord --field-notes  # 单平台完整表
 ```
 
 输出推荐平台、适配分、访问方式、批量能力、限制、偏差，以及不可直接采集的平台与原因。`--bulk` 优先支持批量的来源。
+
+`--field-notes` 渲染 `skills/askovo/assets/platform-field-notes.json` 里的实战限制与解法（含跨平台实践）；`--platform <id>` 收窄到单个目录平台或 source type（如 `vertical_forum`），未知 id 退出码 2；`--json` 的每个推荐条目带 `field_notes`，顶层另有 `field_notes`。笔记**不是许可**：能否采集仍由平台目录、study scope 与 Design gate 决定。
 
 ## collect
 

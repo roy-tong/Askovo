@@ -238,6 +238,8 @@ def _build_platforms(arguments: dict[str, Any]) -> argparse.Namespace:
         domain=_optional_string(arguments, "domain"),
         claim_type=_string_list(arguments, "claim_type"),
         bulk=_boolean(arguments, "bulk"),
+        field_notes=_boolean(arguments, "field_notes"),
+        platform=_optional_string(arguments, "platform"),
         json=True,
     )
 
@@ -778,6 +780,15 @@ TOOLS: list[dict[str, Any]] = [
                 "domain": {"enum": ["software", "hardware", "consumer", "automotive", "mobile"]},
                 "claim_type": {"type": "array", "items": {"enum": ["need", "acceptance", "usability", "performance", "commercial", "safety"]}},
                 "bulk": {"type": "boolean", "default": False},
+                "field_notes": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Return the field-verified restriction/solution notes for the ranked platforms.",
+                },
+                "platform": {
+                    "type": "string",
+                    "description": "Filter to one platform id (catalog platform or a field-note source type).",
+                },
             },
             "required": ["need"],
         },

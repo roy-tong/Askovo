@@ -5310,6 +5310,13 @@ def build_parser() -> argparse.ArgumentParser:
     platforms_parser.add_argument("--domain", choices=tuple(sure_engine.domain_packs().keys()))
     platforms_parser.add_argument("--claim-type", action="append", choices=sure_engine.CLAIM_TYPES)
     platforms_parser.add_argument("--bulk", action="store_true", help="prefer platforms with bulk access")
+    platforms_parser.add_argument(
+        "--field-notes", action="store_true",
+        help="show the field-verified restriction/solution notes for the ranked platforms",
+    )
+    platforms_parser.add_argument(
+        "--platform", help="filter to one platform id (catalog platform or a field-note source type)",
+    )
     platforms_parser.add_argument("--json", action="store_true")
     platforms_parser.set_defaults(func=sure_engine.cli_platforms)
 

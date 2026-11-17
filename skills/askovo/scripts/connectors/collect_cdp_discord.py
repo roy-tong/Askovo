@@ -41,12 +41,17 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
-import tempfile
+import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 HERE = Path(__file__).resolve().parent
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+
+import cdp_runtime
+from common import atomic_write_json
 _spec = importlib.util.spec_from_file_location("sure_engine_cdp_dc", HERE.parent / "sure_engine.py")
 sure_engine = importlib.util.module_from_spec(_spec)
 assert _spec and _spec.loader
@@ -99,20 +104,8 @@ EXTRACT_FORUM = r"""
 
 def wheel_up(client, times: int = 3, delta: int = 1200) -> None:
     """Real wheel events upward; a mouse move first keeps the input stream human."""
-    client.call("Input.dispatchMouseEvent", {
-        "type": "mouseMoved", "x": 640, "y": 360, "button": "none", "pointerType": "mouse"})
-    for _ in range(times):
-        client.call("Input.dispatchMouseEvent", {
-            "type": "mouseWheel", "x": 640, "y": 360, "deltaX": 0, "deltaY": -delta,
-            "button": "none", "pointerType": "mouse"})
-
-
-def atomic_write_json(path: Path, payload: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
-    with Path(fd).open("w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=1)
-    Path(tmp).replace(path)
+    for index in range(max(1, times)):
+        cdp_runtime.wheel_scroll(client.call, delta_y=-delta, move=index == 0)
 
 
 def load_server_file(path: Path) -> Dict[str, Any]:
