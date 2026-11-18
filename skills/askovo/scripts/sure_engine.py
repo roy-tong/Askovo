@@ -2386,6 +2386,9 @@ def _evidence_summary(study_dir: Path) -> dict[str, Any]:
         "by_form": by_form,
         "by_claim": by_claim,
         "records": records,
+        # A-1: 采集库存单独披露（采集 ≠ 证据，不计入依据）
+        "collected_count": store.get("collected_count", 0),
+        "collected_records": store.get("collected_records", []),
         # A-01 正交资格投影：三属性 + needs_requalification 标记（不改写原值）
         "qualification": evidence_qualification(records),
     }
