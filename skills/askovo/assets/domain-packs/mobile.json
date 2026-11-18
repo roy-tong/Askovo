@@ -17,7 +17,17 @@
     "系统更新",
     "OS",
     "跑分",
-    "智能终端"
+    "智能终端",
+    "phone",
+    "wearable",
+    "tablet",
+    "earbuds",
+    "smartwatch",
+    "mobile",
+    "signal",
+    "charging",
+    "overheating",
+    "battery life"
   ],
   "roles": [
     "购买者",
