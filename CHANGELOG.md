@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.18.1 — 2026-11-18
+
+Review follow-ups from the 2026-11-17 golden-chain audit, rebased onto 2.18.0.
+
+### Fixed
+
+- **One validity rule for audit and delivery (A-1)**: `_evidence_summary` now
+  reads through `load_evidence_store` (single load path, `is_qualified_evidence`
+  semantics), so `check --stage decision` and `deliver --kind report` can no
+  longer disagree on what counts as decision evidence. Only records registered
+  in `evidence.jsonl` with a valid `evidence_level` are decision evidence;
+  collecting is not having evidence. The rewritten A-1 tripwire asserts
+  delivery basis ids are exactly the audit-accepted qualified set.
+- **Delivery no longer overstates its basis (A-1)**: chain-cited ids that
+  resolve to no qualified record are excluded from the basis line and surfaced
+  as explicit `unresolved_evidence_ids`（不计入依据，审计判 unknown evidence）;
+  the projection keeps the C-01-Lite qualification aggregation alongside.
+- **Loop map verifies quotes verbatim (A2-1)**: quoted evidence is checked
+  character-for-character against the collected record before it is trusted.
+- **`validate_study` loads the CLI directly (A-4)**: breaking the cross-tree
+  import cycle.
+
+### Performance
+
+- One `deliver` run loads the evidence store exactly once.
+- jsonl reads parse once per content digest (A-3): unchanged files are not
+  re-parsed within a process.
+
 ## 2.18.0 — 2026-11-18
 
 This release publishes the decision surface and the write path underneath it:

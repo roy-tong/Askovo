@@ -147,26 +147,29 @@ def _basis_projection(
     qualification_map: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     families = sorted({str(item.get("source_family")) for item in records if item.get("source_family")})
-    records_by_id = {str(item.get("record_id")): item for item in records if item.get("record_id")}
+    qualified_ids = {str(item.get("record_id")) for item in records}
     qualification_map = qualification_map or {}
     result: list[dict[str, Any]] = []
     for chain in _chains(reasoning):
         nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
         node_basis: list[dict[str, Any]] = []
-        cited_ids: list[str] = []
+        cited: list[str] = []
         for name in FLOW:
             node = nodes.get(name) if isinstance(nodes.get(name), dict) else {}
             if not node:
                 continue
+            ids = [str(value) for value in node.get("evidence_ids") or [] if str(value)]
+            cited.extend(ids)
             node_basis.append({
                 "node": name,
                 "status": node.get("status"),
                 "rationale": node.get("rationale"),
-                "evidence_ids": list(node.get("evidence_ids") or []),
+                "evidence_ids": ids,
             })
-            cited_ids.extend(str(value) for value in node.get("evidence_ids") or [])
-        cited_ids.extend(str(value) for value in chain.get("counter_evidence_ids") or [])
-        cited_ids = list(dict.fromkeys(cited_ids))
+        counter_ids = [str(value) for value in chain.get("counter_evidence_ids") or [] if str(value)]
+        cited.extend(counter_ids)
+        cited_ids = list(dict.fromkeys(cited))
+        unresolved = [value for value in cited_ids if value not in qualified_ids]
         # A-01：链级资格聚合——引用记录的资格计数 + 冲突清单（只标记，不改写）
         cited_qualification = [qualification_map[value] for value in cited_ids if value in qualification_map]
         eligibility_counts: dict[str, int] = {}
@@ -183,7 +186,9 @@ def _basis_projection(
             "chain_id": chain.get("id"),
             "demand_judgment_id": chain.get("demand_judgment_id"),
             "context_key": chain.get("context_key"),
-            "counter_evidence_ids": list(chain.get("counter_evidence_ids") or []),
+            "counter_evidence_ids": counter_ids,
+            "unresolved_evidence_ids": unresolved,
+            "unresolved_meaning": "引用未登记为合格证据（采集库或不存在），不得计入依据；审计同样判 unknown evidence",
             "prioritization_rationale": prioritization.get("rationale"),
             "nodes": node_basis,
             "evidence_records": len(records),
@@ -300,9 +305,19 @@ def _text_summary(payload: dict[str, Any]) -> str:
             evidence_ids: list[str] = []
             for node in item.get("nodes") or []:
                 evidence_ids.extend(str(value) for value in node.get("evidence_ids") or [])
+            unresolved = [str(value) for value in item.get("unresolved_evidence_ids") or []]
+            basis_ids = [value for value in dict.fromkeys(evidence_ids) if value not in unresolved]
+            counter_ids = [str(value) for value in item.get("counter_evidence_ids") or []]
+            counter_basis = [value for value in counter_ids if value not in unresolved]
+            unresolved_line = (
+                f"；未评级引用 {', '.join(unresolved)}（不计入依据，审计判 unknown evidence）"
+                if unresolved
+                else ""
+            )
             lines.append(
                 f"- {item.get('chain_id')}：需求判断 `{item.get('demand_judgment_id') or '未关联'}`；"
-                f"证据 {', '.join(dict.fromkeys(evidence_ids)) or '无'}；反证 {', '.join(item.get('counter_evidence_ids') or []) or '未记录'}"
+                f"证据 {', '.join(basis_ids) or '无'}；反证 {', '.join(counter_basis) or '未记录'}"
+                f"{unresolved_line}"
             )
             lines.append(f"  - 优先级依据：{item.get('prioritization_rationale') or '未记录'}；{item.get('source_independence')}")
     else:
