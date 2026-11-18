@@ -1,4 +1,22 @@
-# Changelog
+## 2.18.2 — 2026-11-18
+
+The 2026-11-09 end-to-end UX walkthrough (12 findings) rebased onto 2.18.1.
+
+### Fixed
+
+- **Chinese descriptive analysis is word-based**: `askovo analyze` segments
+  Chinese with a bundled lexicon (`assets/chinese-lexicon.txt`, greedy longest
+  match), so 高频词 are real words instead of character fragments; multi-word
+  questions match records (previously silently zero) with a 2-char bigram
+  fallback for out-of-lexicon query runs; `collected_at` dates on imported
+  records count toward month coverage.
+- **Join errors name the misplaced evidence class**; README adversarial
+  examples run out of the box; `decision record --contradiction` lists
+  full-gate follow-ups; design-contract errors show expected types and the
+  full checklist in one pass; a wrong study path is a path error; the business
+  plan narrative drops 待填写 placeholders; import honors per-record
+  provenance (`source` alias, `collected_at`); MCP accepts `query` as an
+  alias of `need`. Domain packs gained software/SaaS terms.
 
 ## 2.18.1 — 2026-11-18
 

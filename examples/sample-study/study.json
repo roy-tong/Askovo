@@ -1,7 +1,7 @@
 {
   "study_id": "synthetic-mobile-pet-check",
   "title": "Synthetic mobile pet-check study",
-  "method_version": "2.18.1",
+  "method_version": "2.18.2",
   "product_reasoning_version": "2.0",
   "product_reasoning": {
     "flow": [
@@ -43,7 +43,12 @@
       "Prototype acceptance",
       "Paid or retained behavior",
       "Privacy counter-evidence"
-    ]
+    ],
+    "option_directions": {
+      "option-A": "go",
+      "option-B": "no_go",
+      "option-C": "no_go"
+    }
   },
   "scope": {
     "target_users": [

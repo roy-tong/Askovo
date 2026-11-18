@@ -121,6 +121,11 @@ def _load(path: Path) -> Any:
 
 
 def _records(study_dir: Path) -> List[Dict[str, Any]]:
+    """Qualified evidence only — the same rule audit/deliver/answer use (A-09).
+
+    A registered row without a valid evidence_level is inventory, not decision
+    basis; counting it here was a second, more permissive interpretation path.
+    """
     path = study_dir / "02-data" / "evidence.jsonl"
     if not path.is_file():
         return []
@@ -134,7 +139,11 @@ def _records(study_dir: Path) -> List[Dict[str, Any]]:
             continue
         if isinstance(item, dict):
             records.append(item)
-    return records
+    try:
+        from sure_engine import is_qualified_evidence
+    except ImportError:  # standalone import without the CLI on sys.path
+        return records
+    return [record for record in records if is_qualified_evidence(record)]
 
 
 def _text(record: Dict[str, Any]) -> str:
@@ -683,8 +692,48 @@ def _research_facts(study: Dict[str, Any], records: List[Dict[str, Any]]) -> Dic
 # public API
 # --------------------------------------------------------------------------- #
 
+def _select_chain(chains: List[Dict[str, Any]], records: List[Dict[str, Any]],
+                  chain_id: str = "") -> Dict[str, Any]:
+    """Project the chain the question is actually decided on.
+
+    Never defaults to ``chains[0]`` when a study carries several candidate
+    chains: that silently answers a different question. An explicit chain, or
+    the chain named by the latest DecisionRecord, is required.
+    """
+    wanted = str(chain_id or "").strip()
+    if wanted:
+        for chain in chains:
+            if str(chain.get("id") or "") == wanted:
+                return chain
+        raise BriefError(
+            "chain %r not found in product-reasoning.json" % wanted,
+            "INPUT_REQUIRED", "list chains with `askovo chain <study>`")
+    if len(chains) == 1:
+        return chains[0]
+    named = [item for item in records if str(item.get("chain_id") or "").strip()]
+    if named:
+        latest = max(named, key=lambda item: (
+            _version_int(item.get("version")), str(item.get("recorded_at") or "")))
+        for chain in chains:
+            if str(chain.get("id") or "") == str(latest.get("chain_id")):
+                return chain
+    raise BriefError(
+        "study has %d chains; a brief must name one"
+        % len(chains), "INPUT_REQUIRED",
+        "pass --chain <CHAIN_ID>; candidates: "
+        + ", ".join(str(item.get("id") or "?") for item in chains))
+
+
+def _version_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def build(study_dir: Path, *, task_id: str = "", question: str = "",
-          review_payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+          review_payload: Optional[Dict[str, Any]] = None,
+          chain_id: str = "") -> Dict[str, Any]:
     """Project the canonical chain into one ``askovo.decision-brief/1`` document."""
     study_dir = Path(study_dir).resolve()
     study = _load(study_dir / "study.json")
@@ -700,8 +749,8 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
         raise BriefError(
             "canonical product-reasoning.json has no chain; a brief would have nothing to project",
             "INPUT_REQUIRED", "run `askovo chain STUDY` and write the seven-node chain first")
-    chain = chains[0]
     records = _records(study_dir)
+    chain = _select_chain(chains, records, chain_id)
     record_by_id = {str(item.get("record_id")): item for item in records if item.get("record_id")}
     findings: List[Dict[str, Any]] = []
     recorded_review = _load(study_dir / REVIEW_REF)
@@ -1080,7 +1129,8 @@ def write(study_dir: Path, document: Dict[str, Any],
 
 
 def build_and_write(study_dir: Path, *, task_id: str = "", question: str = "",
-                    output_dir: Optional[Path] = None) -> Dict[str, Any]:
+                    output_dir: Optional[Path] = None,
+                    chain_id: str = "") -> Dict[str, Any]:
     """Project and persist in one call."""
-    document = build(study_dir, task_id=task_id, question=question)
+    document = build(study_dir, task_id=task_id, question=question, chain_id=chain_id)
     return write(study_dir, document, output_dir)

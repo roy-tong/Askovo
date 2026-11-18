@@ -89,6 +89,7 @@ REPO_ROOT = SKILL_ROOT.parent.parent
 ASSETS = SKILL_ROOT / "assets"
 CATALOG_PATH = ASSETS / "method-catalog.json"
 PACKS_DIR = ASSETS / "domain-packs"
+CHINESE_LEXICON_PATH = ASSETS / "chinese-lexicon.txt"
 
 _cdp_strategy_module: Any = None
 
@@ -2090,8 +2091,9 @@ def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str])
         "evidence_level": str(raw.get("evidence_level") or defaults.get("evidence_level") or "unclassified"),
         "evidence_basis": str(raw.get("evidence_basis") or "imported; grade before use"),
         "corpus_role": str(raw.get("corpus_role") or defaults.get("corpus_role") or "open_scene"),
-        "source_family": str(raw.get("source_family") or defaults["source_family"]),
+        "source_family": str(raw.get("source_family") or raw.get("source") or defaults["source_family"]),
         "source_ref": str(raw.get("source_ref") or defaults["source_ref"]),
+        "collected_at": str(raw.get("collected_at") or raw.get("created_at") or raw.get("date") or ""),
         "normalized_text_hash": str(raw.get("normalized_text_hash") or ""),
         "text": text,
         "claim_type": str(raw.get("claim_type") or defaults["claim_type"]),
@@ -2335,6 +2337,32 @@ def _read_jsonl_rows(path: Path) -> list[dict[str, Any]]:
         if isinstance(record, dict):
             rows.append(record)
     return rows
+
+
+def evidence_store_integrity(study_dir: Path) -> dict[str, Any]:
+    """Check that evidence.jsonl can be read without losing records.
+
+    A malformed line is not "one bad row": it means the store may be missing a
+    record the conclusion depends on. The answer path must refuse a trusted
+    conclusion instead of silently skipping it (review 2026-11-18, A-09).
+    """
+    path = Path(study_dir) / "02-data" / "evidence.jsonl"
+    problems: list[dict[str, Any]] = []
+    if not path.is_file():
+        return {"valid": True, "problems": problems, "path": str(path)}
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError as exc:
+            problems.append({"line": lineno, "code": "invalid_json",
+                             "detail": str(exc)[:200]})
+            continue
+        if not isinstance(item, dict):
+            problems.append({"line": lineno, "code": "not_an_object",
+                             "detail": type(item).__name__})
+    return {"valid": not problems, "problems": problems, "path": str(path)}
 
 
 def load_evidence_store(study_dir: Path) -> dict[str, Any]:
@@ -3665,11 +3693,17 @@ def _plan_basis(records: list[dict[str, Any]]) -> str:
     return basis
 
 
-def _plan_quotes(records: list[dict[str, Any]], limit: int = 2) -> list[str]:
+def _plan_quotes(
+    records: list[dict[str, Any]],
+    limit: int = 2,
+    used: set[str] | None = None,
+) -> list[str]:
     """Voices from the corpus in business-report style.
 
     Prefers verbatim excerpts (原话); falls back to the coded situation fields
     (典型情况) so the section stays concrete without faking a verbatim quote.
+    ``used`` carries quote markers already rendered in earlier sections so the
+    same voice is not repeated section after section.
     """
     quotes: list[str] = []
     seen: set[str] = set()
@@ -3687,7 +3721,11 @@ def _plan_quotes(records: list[dict[str, Any]], limit: int = 2) -> list[str]:
         marker = text[:40]
         if marker in seen:
             continue
+        if used is not None and marker in used:
+            continue
         seen.add(marker)
+        if used is not None:
+            used.add(marker)
         when = str(record.get("source_time") or record.get("collected_at") or "").strip()
         suffix = f"，{when}" if when else ""
         if kind == "原话":
@@ -3715,6 +3753,7 @@ def _plan_section(
     field_rows: list[tuple[str, Any]],
     quote_limit: int = 2,
     extra_lines: list[str] | None = None,
+    used_quotes: set[str] | None = None,
 ) -> list[str]:
     lines: list[str] = [f"## {title}", ""]
     if not isinstance(node, dict) or not node:
@@ -3750,7 +3789,7 @@ def _plan_section(
     if metrics:
         lines.append(metrics)
     lines.append(f"依据强度：{marker} {strength_label} —— {strength_detail}")
-    quotes = _plan_quotes(records, limit=quote_limit)
+    quotes = _plan_quotes(records, limit=quote_limit, used=used_quotes)
     if quotes:
         lines.append("来自语料的声音：")
         lines.extend(quotes)
@@ -3839,6 +3878,9 @@ def _plan_narrative(chain: dict[str, Any]) -> list[str]:
 
     def text(value: Any, limit: int = 80) -> str:
         cleaned = re.sub(r"\s+", " ", str(value or "")).strip().rstrip("。；，")
+        # Scaffold placeholders are not facts; drop them instead of narrating them.
+        if cleaned in {"待填写", "待确认", "tbd", "todo"} or cleaned.startswith(("待填写", "待确认", "tbd:", "todo:")):
+            return ""
         return cleaned[:limit]
 
     scene = node("scene")
@@ -3863,18 +3905,17 @@ def _plan_narrative(chain: dict[str, Any]) -> list[str]:
     revenue = text(business.get("revenue_model"), 60)
     payer = text(business.get("payer"), 40)
 
-    if not (trigger or role or want):
+    if not any((trigger, role, substitute, friction, want, name, form, revenue)):
         return []
-    sentence = ""
-    if trigger:
-        sentence += f"在{trigger}，"
-    if role:
-        sentence += f"{role}"
+    middle = ""
     if substitute:
-        sentence += f"现在靠{substitute}"
-    if friction:
-        sentence += f"，代价是{friction}"
-    sentence += "。"
+        middle = f"现在靠{substitute}"
+        if friction:
+            middle += f"，代价是{friction}"
+    elif friction:
+        middle = f"眼下{friction}"
+    opening = "，".join(part for part in (f"在{trigger}" if trigger else "", role, middle) if part)
+    sentence = f"{opening}。" if opening else ""
     if want:
         sentence += f"他们要的是{want}。"
     if name:
@@ -4102,7 +4143,7 @@ def _plan_corpus_profile(records: list[dict[str, Any]]) -> list[str]:
         family = str(record.get("source_family") or "").strip() or "未记录"
         family = PLAN_SOURCE_LABELS.get(family, family)
         families[family] = families.get(family, 0) + 1
-        year = str(record.get("created_at") or record.get("source_time") or "")[:4]
+        year = _record_time(record)[:4]
         if year.isdigit():
             years[year] = years.get(year, 0) + 1
         role = str(record.get("corpus_role") or "").strip()
@@ -4250,6 +4291,9 @@ def _plan_lines(
         nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
         chain_records: list[dict[str, Any]] = []
         chain_seen: set[str] = set()
+        # One voice per document: quotes already shown in an earlier section
+        # are not repeated by a later section citing the same records.
+        used_quotes: set[str] = set()
         for node_name in REASONING_NODES:
             candidate = nodes.get(node_name, {})
             if not isinstance(candidate, dict):
@@ -4266,7 +4310,7 @@ def _plan_lines(
             ("什么时候发生（触发）", scene.get("trigger")),
             ("在什么环境下", scene.get("environment")),
             ("用户当时在做什么（任务背景）", scene.get("task_context")),
-        ]))
+        ], used_quotes=used_quotes))
         user = nodes.get("user", {}) if isinstance(nodes.get("user"), dict) else {}
         segments = []
         business_node = nodes.get("business", {}) if isinstance(nodes.get("business"), dict) else {}
@@ -4278,25 +4322,25 @@ def _plan_lines(
             ("现状", user.get("state")),
             ("在决策中的角色", user.get("decision_role")),
             ("用户分层", segments or None),
-        ]))
+        ], used_quotes=used_quotes))
         pain = nodes.get("pain", {}) if isinstance(nodes.get("pain"), dict) else {}
         lines.extend(_plan_section("4. 痛点：现在怎么办、痛在哪", pain, by_id, [
             ("现在的替代做法", pain.get("current_substitute")),
             ("代价", pain.get("friction_cost")),
             ("不解决的后果", pain.get("consequence")),
-        ]))
+        ], used_quotes=used_quotes))
         need = nodes.get("need", {}) if isinstance(nodes.get("need"), dict) else {}
         lines.extend(_plan_section("5. 需求：他们要的到底是什么", need, by_id, [
             ("期望的结果", need.get("desired_outcome")),
             ("约束", need.get("constraints")),
             ("怎么衡量做好了", need.get("measure")),
-        ]))
+        ], used_quotes=used_quotes))
         feature = nodes.get("feature", {}) if isinstance(nodes.get("feature"), dict) else {}
         lines.extend(_plan_section("6. 产品特性：哪些特性能满足", feature, by_id, [
             ("特性", feature.get("capability")),
             ("生效条件与验收", feature.get("acceptance_conditions")),
             ("考虑过的替代做法", feature.get("alternatives_considered")),
-        ], quote_limit=1, extra_lines=_plan_capability_lines(feature)))
+        ], quote_limit=1, used_quotes=used_quotes, extra_lines=_plan_capability_lines(feature)))
         product = nodes.get("product", {}) if isinstance(nodes.get("product"), dict) else {}
         lines.extend(_plan_section("7. 产品形态：推演出的产品", product, by_id, [
             ("形态", product.get("form")),
@@ -4520,7 +4564,7 @@ def _analysis_lines(study: dict[str, Any], reasoning: dict[str, Any] | None, evi
     for record in records:
         family = str(record.get("source_family") or "未记录").strip() or "未记录"
         families[family] = families.get(family, 0) + 1
-        year = str(record.get("created_at") or record.get("source_time") or "")[:4]
+        year = _record_time(record)[:4]
         if year.isdigit():
             years[year] = years.get(year, 0) + 1
         channel = str(record.get("source_channel") or "").strip()
@@ -7259,9 +7303,9 @@ def _analysis_segments(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _analysis_time_coverage(records: list[dict[str, Any]], study: dict[str, Any]) -> dict[str, Any]:
     months = sorted({
-        str(record.get("created_at") or record.get("source_time") or "")[:7]
+        _record_time(record)[:7]
         for record in records
-        if len(str(record.get("created_at") or record.get("source_time") or "")) >= 7
+        if len(_record_time(record)) >= 7
     })
     scope = study.get("scope") if isinstance(study.get("scope"), dict) else {}
     window = scope.get("source_time_window") if isinstance(scope.get("source_time_window"), dict) else {}
@@ -7277,7 +7321,7 @@ def _analysis_time_coverage(records: list[dict[str, Any]], study: dict[str, Any]
         start_day = end_day = None
     if valid and start_day and end_day:
         for record in records:
-            day = str(record.get("created_at") or record.get("source_time") or "")[:10]
+            day = _record_time(record)[:10]
             try:
                 parsed = datetime.strptime(day, "%Y-%m-%d").date()
             except (TypeError, ValueError):
@@ -7335,6 +7379,87 @@ def _analysis_field_completeness(records: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
+def _record_time(record: dict[str, Any]) -> str:
+    """First known timestamp on a record; collected_at is what imports carry."""
+    return str(record.get("created_at") or record.get("source_time") or record.get("collected_at") or "")
+
+
+_CHINESE_LEXICON: tuple[set[str], int] | None = None
+
+
+def _chinese_lexicon() -> tuple[set[str], int]:
+    """Load the bundled Chinese lexicon once: (terms, max term length)."""
+    global _CHINESE_LEXICON
+    if _CHINESE_LEXICON is None:
+        terms: set[str] = set()
+        try:
+            for line in CHINESE_LEXICON_PATH.read_text(encoding="utf-8").splitlines():
+                word = line.strip()
+                if word and not word.startswith("#"):
+                    terms.add(word)
+        except OSError:
+            terms = set()
+        longest = max((len(term) for term in terms), default=0)
+        _CHINESE_LEXICON = (terms, longest)
+    return _CHINESE_LEXICON
+
+
+def _cjk_lexicon_terms(run: str) -> list[str]:
+    """Greedy longest-match segmentation of one CJK run against the lexicon.
+
+    Unmatched characters are skipped, so the caller never receives character
+    fragments: a term appears only when the lexicon knows the word.
+    """
+    terms, longest = _chinese_lexicon()
+    if not terms:
+        return []
+    found: list[str] = []
+    index = 0
+    while index < len(run):
+        matched = ""
+        for size in range(min(longest, len(run) - index), 1, -1):
+            candidate = run[index:index + size]
+            if candidate in terms:
+                matched = candidate
+                break
+        if matched:
+            found.append(matched)
+            index += len(matched)
+        else:
+            index += 1
+    return found
+
+
+def _analysis_terms(text: str, stop: set[str]) -> list[str]:
+    """Descriptive terms: Latin words (3+) plus lexicon-matched Chinese words."""
+    terms: list[str] = []
+    for token in re.findall(r"[A-Za-z]{3,}|[\u4e00-\u9fff]+", text.casefold()):
+        if token[0].isascii():
+            if token not in stop:
+                terms.append(token)
+        else:
+            terms.extend(_cjk_lexicon_terms(token))
+    return terms
+
+
+def _query_terms(question: str, stop: set[str]) -> list[str]:
+    """Match terms for a question; CJK runs with no lexicon hit fall back to
+    2-char bigrams so an unseen word still matches records instead of
+    silently returning zero hits."""
+    terms: list[str] = []
+    for token in re.findall(r"[A-Za-z]{3,}|[\u4e00-\u9fff]+", question.casefold()):
+        if token[0].isascii():
+            if token not in stop:
+                terms.append(token)
+            continue
+        run_terms = _cjk_lexicon_terms(token)
+        if run_terms:
+            terms.extend(run_terms)
+        elif len(token) >= 2:
+            terms.extend(token[i:i + 2] for i in range(len(token) - 1))
+    return terms
+
+
 def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any]:
     study_dir = study_dir.resolve()
     records: list[dict[str, Any]] = []
@@ -7384,7 +7509,7 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
         by_platform[platform] = by_platform.get(platform, 0) + 1
         by_claim[claim] = by_claim.get(claim, 0) + 1
         by_form[form] = by_form.get(form, 0) + 1
-        created = str(record.get("created_at") or record.get("source_time") or "")
+        created = _record_time(record)
         if len(created) >= 7:
             month = created[:7]
             by_month[month] = by_month.get(month, 0) + 1
@@ -7394,14 +7519,12 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
     stop = set("the and for with that this from are was were you your our not but have has had will can could should about into over under more most some such than then them they their there here what when where which who whom why how all any both each few other own same so too very just also".split())
     tokens: dict[str, int] = {}
     for text in text_blob:
-        for token in re.findall(r"[A-Za-z]{3,}|[\u4e00-\u9fff]{2,4}", text.lower()):
-            if token in stop:
-                continue
+        for token in _analysis_terms(text, stop):
             tokens[token] = tokens.get(token, 0) + 1
     top_terms = sorted(tokens.items(), key=lambda item: (-item[1], item[0]))[:30]
     matches = []
     if question:
-        q_terms = [t for t in re.findall(r"[A-Za-z]{3,}|[\u4e00-\u9fff]{2,4}", question.lower()) if t not in stop]
+        q_terms = _query_terms(question, stop)
         for record in unique:
             text = _evidence_text(record).lower()
             hit = [term for term in q_terms if term in text]
@@ -7604,6 +7727,84 @@ def _chain_node_states(study_dir: Path) -> dict[str, Any]:
     return {"available": True, "chains": states}
 
 
+def _decision_option_entries(study: dict[str, Any]) -> list[dict[str, str]]:
+    """Normalize declared decision options; direction is explicit data only.
+
+    Supported shapes::
+
+        "options": ["Run a pilot", "Stop"]
+        "option_directions": {"option-A": "go", "option-B": "no_go"}
+        "options": [{"id": "pilot", "label": "Run a pilot", "direction": "go"}]
+
+    A missing direction stays missing. Guessing polarity from words such as
+    "stop" inverts statements like "stop delaying and launch the pilot", so the
+    formal answer never reads direction out of free text.
+    """
+    decision = study.get("decision") if isinstance(study.get("decision"), dict) else {}
+    raw = decision.get("options") or []
+    directions = decision.get("option_directions") \
+        if isinstance(decision.get("option_directions"), dict) else {}
+    entries: list[dict[str, str]] = []
+    for index, item in enumerate(raw):
+        fallback_id = "option-%s" % (chr(ord("A") + index) if index < 26 else index + 1)
+        if isinstance(item, dict):
+            label = str(item.get("label") or item.get("statement") or "").strip()
+            option_id = str(item.get("id") or "").strip() or fallback_id
+            direction = str(item.get("direction")
+                            or directions.get(option_id) or "").strip().lower()
+        else:
+            label = str(item).strip()
+            option_id = fallback_id
+            direction = str(directions.get(option_id) or "").strip().lower()
+        entries.append({
+            "id": option_id,
+            "label": label,
+            "direction": direction if direction in ("go", "no_go") else "",
+        })
+    return entries
+
+
+def _option_direction(entries: list[dict[str, str]],
+                      option_id: str | None) -> tuple[str, str | None]:
+    if not option_id:
+        return "", None
+    for entry in entries:
+        if entry["id"] == option_id:
+            return entry["direction"], entry["label"]
+    return "", None
+
+
+def _select_canonical_chain(chains: list[dict[str, Any]],
+                            records: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, str]:
+    """Pick the chain the current question is decided on; never default to [0].
+
+    One chain is unambiguous. With several, the latest named DecisionRecord
+    names the live chain; without a record the answer asks for an explicit
+    choice instead of projecting whichever chain happens to be first.
+    """
+    if len(chains) == 1:
+        return chains[0], ""
+    if records:
+        latest = max(
+            records,
+            key=lambda item: (_version_int(item.get("version")),
+                              str(item.get("recorded_at") or "")))
+        chain_id = str(latest.get("chain_id") or "")
+        for chain in chains:
+            if str(chain.get("id") or "") == chain_id:
+                return chain, ""
+        return None, "最新 DecisionRecord 指向的链 %r 不在 chains 里" % chain_id
+    return None, ("存在 %d 条推理链，且没有 DecisionRecord 指定当前问题对应哪一条"
+                  % len(chains))
+
+
+def _version_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _canonical_business_decision(study_dir: Path, question: str) -> dict[str, Any]:
     """Project a formal business recommendation from the canonical seven-node chain.
 
@@ -7634,7 +7835,14 @@ def _canonical_business_decision(study_dir: Path, question: str) -> dict[str, An
         base["status"] = "needs_canonical_chain"
         base["next_action"] = "先挂接 demand judgment 与七节点链，再记录负责人 DecisionRecord"
         return base
-    chain = chains[0]
+    chain, selection_problem = _select_canonical_chain(chains, records)
+    if chain is None:
+        base.update(status="needs_chain_selection", reason=selection_problem,
+                    chain_candidates=[str(item.get("id") or "") for item in chains],
+                    next_action=("明确当前问题对应哪条链，再记录负责人 DecisionRecord："
+                                 "askovo decision record %s --chain <CHAIN_ID> --by OWNER"
+                                 % study_dir))
+        return base
     chain_id = str(chain.get("id") or "")
     matching = [item for item in records if str(item.get("chain_id") or "") == chain_id]
     if not matching:
@@ -7642,11 +7850,11 @@ def _canonical_business_decision(study_dir: Path, question: str) -> dict[str, An
             "词汇匹配只作研究辅助；正式业务决定先执行："
             "askovo decision record %s --chain %s --by OWNER" % (study_dir, chain_id))
         return base
-    matching.sort(key=lambda item: int(item.get("version") or 0))
+    matching.sort(key=lambda item: _version_int(item.get("version")))
     decision_record = matching[-1]
     try:
         import decision_brief
-        brief = decision_brief.build(study_dir, question=question)
+        brief = decision_brief.build(study_dir, question=question, chain_id=chain_id)
     except Exception as exc:  # noqa: BLE001 正式投影失败时不能退回词汇 go
         base.update(status="projection_failed", reason="%s: %s" % (type(exc).__name__, exc))
         return base
@@ -7691,31 +7899,14 @@ def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]
         study = {}
     decision = study.get("decision") if isinstance(study.get("decision"), dict) else {}
     question = str(question or decision.get("question") or "").strip()
-    options = [str(item).strip() for item in (decision.get("options") or [])
-               if str(item).strip()]
-    records: list[dict[str, Any]] = []
-    for name in ("02-data/evidence.jsonl",):
-        path = study_dir / name
-        if not path.is_file():
-            continue
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                item = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(item, dict):
-                records.append(item)
-    seen: set[str] = set()
-    unique: list[dict[str, Any]] = []
-    for record in records:
-        key = str(record.get("record_id") or "")
-        if key and key in seen:
-            continue
-        if key:
-            seen.add(key)
-        unique.append(record)
+    option_entries = _decision_option_entries(study)
+    options = [entry["label"] for entry in option_entries if entry["label"]]
+    # One evidence authority: the same qualified store that audit/deliver use.
+    # Reading evidence.jsonl directly let unqualified rows join the lexical
+    # counts and let a corrupt file pass as a smaller corpus (A-09).
+    integrity = evidence_store_integrity(study_dir)
+    store = load_evidence_store(study_dir)
+    unique: list[dict[str, Any]] = list(store["records"])
 
     match_keys = _option_match_keys(options)
     support = [{
@@ -7747,7 +7938,21 @@ def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]
     leading_option: str | None = None
     gaps: list[dict[str, Any]] = []
 
-    if not unique:
+    if not integrity["valid"]:
+        # A corrupt store can hide the record a conclusion depends on. Refuse a
+        # trusted answer instead of quietly answering from fewer rows.
+        answer_status = "invalid_evidence_store"
+        decision_value = lexical_decision = "unanswerable"
+        gaps.append({
+            "gap": ("02-data/evidence.jsonl 有 %d 行无法解析，拒绝给出可信结论；"
+                    "不能把损坏当成语料变少" % len(integrity["problems"])),
+            "next_actions": [
+                "修复或重导证据行（备份原文件后逐行检查 line 字段）",
+                "确认修复后重跑 askovo audit 与 askovo answer",
+            ],
+            "problems": integrity["problems"][:10],
+        })
+    elif not unique:
         gaps.append({"gap": "证据库为空：还没有任何经审核登记的证据",
                      "next_actions": [
                          "粘贴文本：askovo import <study> <file> --source-family paste --evidence-level E1",
@@ -7815,14 +8020,28 @@ def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]
                 "next_actions": [business_decision.get("next_action")
                                  or "完成七节点、审计与负责人 DecisionRecord"],
             })
-    if business_decision.get("kind") == "recommend" \
+    if integrity["valid"] \
+            and business_decision.get("kind") == "recommend" \
             and business_decision.get("status") == "ready" \
             and not business_decision.get("stale"):
-        statement = str(business_decision.get("statement") or "")
-        lowered_statement = statement.lower()
-        no_go = any(marker in lowered_statement or marker in statement
-                    for marker in _STATUS_QUO_MARKERS)
-        decision_value = "no_go" if no_go else "go"
+        # Direction comes from the structured option identity, not from words in
+        # the recommendation text ("停止拖延，立即上线试点" must not read as no_go).
+        direction, direction_label = _option_direction(
+            option_entries, business_decision.get("recommended_option_id"))
+        if direction:
+            decision_value = direction
+        else:
+            decision_value = "continue_research"
+            gaps.append({
+                "gap": ("正式建议指向的选项没有结构化方向：recommended_option_id=%r，"
+                        "option=%r；不做文字关键词推断"
+                        % (business_decision.get("recommended_option_id"),
+                           direction_label)),
+                "next_actions": [
+                    "在 study.json 的 decision.option_directions 为每个选项写 go / no_go，"
+                    "或把 options 改成带 id/label/direction 的对象后重跑 answer",
+                ],
+            })
 
     supporting_levels = sorted({
         ref["evidence_level"]
@@ -7844,6 +8063,15 @@ def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]
         },
         "business_decision": business_decision,
         "support": support,
+        "option_directions": {
+            entry["id"]: entry["direction"]
+            for entry in option_entries if entry["direction"]},
+        "evidence_store": {
+            "valid": integrity["valid"],
+            "qualified_records": len(unique),
+            "problems": integrity["problems"][:10],
+            "note": "答案与 audit/deliver 共用同一合格证据集；损坏行不静默跳过",
+        },
         "evidence_summary": {
             "records": len(unique),
             "by_evidence_level": dict(sorted(level_counts.items())),
@@ -7871,8 +8099,11 @@ def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]
         f"> 正式业务决策：`{business_decision.get('kind')}` / `{business_decision.get('status')}`；"
         f"当前建议：`{decision_value}`；批准：**否**。"
         f"依据：{business_decision.get('canonical_ref')}。")
-    if answer_status == "unanswerable":
-        lines.append("> 词汇辅助：**不可回答**——证据库没有可用匹配，缺口如下；不会编造结论。")
+    if answer_status in ("unanswerable", "invalid_evidence_store"):
+        lines.append("> 词汇辅助：**拒绝给出结论**——"
+                     + ("证据文件有无法解析的行，先修复再回答。"
+                        if answer_status == "invalid_evidence_store"
+                        else "证据库没有可用匹配，缺口如下；不会编造结论。"))
     else:
         label = {"supported": "证据支持", "supported_low_n": "低样本支持",
                  "contested": "存在反证", "inconclusive": "并列未决"}[answer_status]
