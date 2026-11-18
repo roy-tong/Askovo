@@ -2306,25 +2306,74 @@ def scaffold_codebook(study_dir: Path) -> dict[str, Any]:
     return {"status": "created", "path": str(path), "rows": len(CODEBOOK_ROWS)}
 
 
-def _evidence_summary(study_dir: Path) -> dict[str, Any]:
-    records: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for name in ("02-data/evidence.jsonl", "02-data/normalized.jsonl"):
-        path = study_dir / name
-        if not path.is_file():
+EVIDENCE_LEVELS = frozenset({"E0", "E1", "E2", "E3", "E4+", "E4-", "E5"})
+
+
+def is_qualified_evidence(record: dict[str, Any]) -> bool:
+    """The single evidence-validity rule shared by audit (`check`) and delivery.
+
+    A record counts as decision evidence only when it is registered in
+    02-data/evidence.jsonl with a valid evidence_level. Collection rows that
+    live only in normalized.jsonl are inventory, not basis: collecting is not
+    having evidence (review 2026-11-04, A-1).
+    """
+    record_id = str(record.get("record_id") or "")
+    return bool(record_id) and str(record.get("evidence_level") or "") in EVIDENCE_LEVELS
+
+
+def _read_jsonl_rows(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if not path.is_file():
+        return rows
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
             continue
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            key = str(record.get("record_id") or record.get("normalized_text_hash") or "")
-            if key in seen:
-                continue
-            seen.add(key)
-            records.append(record)
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict):
+            rows.append(record)
+    return rows
+
+
+def load_evidence_store(study_dir: Path) -> dict[str, Any]:
+    """One evidence-store definition for audit and delivery (A-1 convergence).
+
+    qualified records come from evidence.jsonl and must pass
+    is_qualified_evidence; collected records come from normalized.jsonl and
+    are everything not already qualified. Delivery may draw decision basis
+    from qualified records only; collected rows must never be rendered as
+    basis, so the two commands can no longer disagree on validity.
+    """
+    study_dir = Path(study_dir)
+    qualified: list[dict[str, Any]] = []
+    qualified_ids: set[str] = set()
+    for record in _read_jsonl_rows(study_dir / "02-data" / "evidence.jsonl"):
+        record_id = str(record.get("record_id") or "")
+        if is_qualified_evidence(record) and record_id not in qualified_ids:
+            qualified_ids.add(record_id)
+            qualified.append(record)
+    collected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in _read_jsonl_rows(study_dir / "02-data" / "normalized.jsonl"):
+        key = str(record.get("record_id") or record.get("normalized_text_hash") or "")
+        if not key or key in seen or str(record.get("record_id") or "") in qualified_ids:
+            continue
+        seen.add(key)
+        collected.append(record)
+    return {
+        "count": len(qualified),
+        "records": qualified,
+        "collected_count": len(collected),
+        "collected_records": collected,
+    }
+
+
+def _evidence_summary(study_dir: Path) -> dict[str, Any]:
+    # A-1: audit 与 deliver 共用 load_evidence_store 这一条读取路径（唯一有效性规则）
+    store = load_evidence_store(study_dir)
+    records = store["records"]
     by_form: dict[str, int] = {}
     by_claim: dict[str, int] = {}
     for record in records:
@@ -2371,6 +2420,37 @@ def _delivery_records(reasoning: dict[str, Any] | None, evidence: dict[str, Any]
             selected.append(record)
             seen.add(record_id)
     return selected
+
+
+def chain_cited_evidence_ids(reasoning: dict[str, Any] | None) -> list[str]:
+    """Every evidence id the chains cite, in citation order (nodes + counter)."""
+    ordered_ids: list[str] = []
+    chains = reasoning.get("chains", []) if isinstance(reasoning, dict) else []
+    for chain in chains if isinstance(chains, list) else []:
+        if not isinstance(chain, dict):
+            continue
+        nodes = chain.get("nodes", {})
+        for node_name in REASONING_NODES:
+            node = nodes.get(node_name, {}) if isinstance(nodes, dict) else {}
+            if isinstance(node, dict):
+                ordered_ids.extend(str(value) for value in node.get("evidence_ids", []) if str(value))
+        ordered_ids.extend(
+            str(value) for value in chain.get("counter_evidence_ids", []) if str(value)
+        )
+    return ordered_ids
+
+
+def _unresolved_chain_references(
+    reasoning: dict[str, Any] | None, evidence: dict[str, Any]
+) -> list[str]:
+    """Chain-cited ids that resolve to no qualified evidence record.
+
+    The audit reports exactly these as `references unknown evidence`; the
+    delivery must surface the same set instead of rendering those records as
+    basis, so the two commands cannot disagree on evidence validity (A-1).
+    """
+    qualified_ids = {str(record.get("record_id")) for record in evidence.get("records", [])}
+    return [value for value in dict.fromkeys(chain_cited_evidence_ids(reasoning)) if value not in qualified_ids]
 
 
 def _brd_decision_lines(data: dict[str, Any]) -> list[str]:
@@ -4676,11 +4756,12 @@ def _deliver_artifact(
     industry: str | None = None,
     deliverable_id: str | None = None,
     chain_id: str | None = None,
+    evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     study_dir = study_dir.resolve()
     study = load_json(study_dir / "study.json")
     route = study.get("route") or {}
-    evidence = _evidence_summary(study_dir)
+    evidence = evidence if evidence is not None else _evidence_summary(study_dir)
     by_id = {str(record.get("record_id")): record for record in evidence.get("records", [])}
     reasoning = load_product_reasoning(study_dir)
     if audit is not None and hasattr(audit, "as_dict"):
@@ -4944,6 +5025,13 @@ def _deliver_artifact(
         )
     if not evidence["records"]:
         lines.append("| — | — | — | 尚无导入证据 |")
+    unresolved = _unresolved_chain_references(reasoning, evidence)
+    if unresolved:
+        lines.append("")
+        lines.append(
+            "链条引用了未评级/未登记的记录（仅存在于采集库或不存在），不得计入依据："
+            + ", ".join(f"`{value}`" for value in unresolved)
+        )
     if kind == "report" and reasoning is not None:
         lines.extend(_report_risk_lines(reasoning, by_id))
     else:
@@ -4964,6 +5052,7 @@ def _deliver_artifact(
             "## 附录：证据概况",
             "",
             f"- 记录数：{evidence['count']}",
+            f"- 采集未评级记录数：{evidence.get('collected_count', 0)}（采集 ≠ 证据，不计入依据）",
             f"- 按证据形式：{json.dumps(evidence['by_form'], ensure_ascii=False)}",
             f"- 按结论类型：{json.dumps(evidence['by_claim'], ensure_ascii=False)}",
             f"- 审计：{'已运行' if audit else '未运行'}",
@@ -4998,6 +5087,7 @@ def _with_chat_summary(
     kind: str,
     result: dict[str, Any],
     audit: Any | None,
+    evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Attach one canonical, structured and readable projection to every result."""
     study_dir = Path(study_dir).resolve()
@@ -5011,10 +5101,11 @@ def _with_chat_summary(
         reasoning = load_product_reasoning(study_dir)
     except (OSError, json.JSONDecodeError, ValueError):
         reasoning = None
-    try:
-        evidence = _evidence_summary(study_dir)
-    except (OSError, ValueError):
-        evidence = {"count": 0, "records": [], "by_form": {}, "by_claim": {}}
+    if evidence is None:
+        try:
+            evidence = _evidence_summary(study_dir)
+        except (OSError, ValueError):
+            evidence = {"count": 0, "records": [], "collected_count": 0, "collected_records": [], "by_form": {}, "by_claim": {}}
     result["chat_summary"] = delivery_projection.build_chat_summary(
         study_dir,
         kind,
@@ -5036,10 +5127,14 @@ def deliver(
     deliverable_id: str | None = None,
     chain_id: str | None = None,
 ) -> dict[str, Any]:
+    # One delivery run, one evidence-store read: the artifact and its chat
+    # summary must see the same snapshot even if files change mid-run.
+    evidence = _evidence_summary(Path(study_dir).resolve())
     result = _deliver_artifact(
         study_dir, kind, audit=audit, role_id=role_id, industry=industry, deliverable_id=deliverable_id, chain_id=chain_id,
+        evidence=evidence,
     )
-    return _with_chat_summary(study_dir, kind, result, audit)
+    return _with_chat_summary(study_dir, kind, result, audit, evidence=evidence)
 
 
 def delivery_error(study_dir: Path, kind: str, error: Exception) -> dict[str, Any]:
