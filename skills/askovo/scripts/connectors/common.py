@@ -17,17 +17,20 @@ Standard library only; compatible with Python 3.9+.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import html
 import json
+import os
 import re
+import tempfile
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, Iterator, List, Optional
 
 USER_AGENT = "askovo-connector/1.0 (configure per study)"
 AUTHOR_SALT: Optional[str] = None
@@ -259,3 +262,257 @@ def unique_by_record_id(rows: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
         seen.add(rid)
         out.append(row)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Operational guards: classified backoff, single-writer state, relative time
+#
+# Collected from the golf-device campaign (2026-11), where multi-hour runs kept
+# rediscovering the same failures. These are the reusable rules; the field
+# narrative lives in skills/askovo/references/platform-field-notes.md and the
+# engine exposes the same registry as data (assets/platform-field-notes.json).
+
+RATE_LIMIT_HEADERS = ("X-RateLimit-Reset", "x-ratelimit-reset", "Retry-After", "retry-after")
+PERMANENT_STATUSES = frozenset({400, 401, 404, 410, 451})
+SUCCESS_STATUSES = frozenset({200, 201, 202, 204})
+
+
+class SingleWriterError(RuntimeError):
+    """Another live process is collecting into the same state file."""
+
+
+def _header_value(headers: Optional[Dict[str, str]], names: Iterable[str]) -> Optional[str]:
+    if not headers:
+        return None
+    lowered = {str(key).lower(): value for key, value in headers.items()}
+    for name in names:
+        value = lowered.get(name.lower())
+        if value not in (None, ""):
+            return str(value)
+    return None
+
+
+def _reset_wait_seconds(headers: Optional[Dict[str, str]], now: float) -> Optional[float]:
+    """Seconds to wait from a rate-limit header, accepting epoch or delta values."""
+    raw = _header_value(headers, RATE_LIMIT_HEADERS)
+    if raw is None:
+        return None
+    try:
+        value = float(raw.strip())
+    except (TypeError, ValueError):
+        return None
+    if value <= 0:
+        return 0.0
+    # Epoch seconds (2026+) vs a relative delta: anything above 10^8 is a clock.
+    return max(0.0, value - now) if value > 1e8 else value
+
+
+def _exponential_wait(attempt: int, base: float, max_wait: float) -> float:
+    return min(max_wait, base * (2 ** max(0, int(attempt))))
+
+
+def classify_backoff(
+    status: int,
+    headers: Optional[Dict[str, str]] = None,
+    attempt: int = 0,
+    *,
+    now: Optional[float] = None,
+    base: float = 2.0,
+    max_wait: float = 900.0,
+) -> Dict[str, Any]:
+    """Classified backoff for a collection HTTP response.
+
+    Field-verified rules (Arctic Shift runs, 2026-11):
+
+    - 429/403: wait for ``X-RateLimit-Reset``/``Retry-After`` when present,
+      otherwise retry exponentially; never rotate identity to continue;
+    - 422 "slow down": exponential wait, the archive is asking for a slower
+      cadence rather than a different route;
+    - 5xx: exponential retry;
+    - 400/401/404/410/451: permanent — stop and record the route as missing
+      instead of burning the budget.
+
+    Returns ``{"action": "continue"|"retry"|"wait"|"stop", "wait_seconds": float,
+    "reason": str, "status": int}``. The caller owns the budget: once it is
+    exhausted, stop the window honestly.
+    """
+    clock = time.time() if now is None else now
+    if status in SUCCESS_STATUSES:
+        return {"action": "continue", "wait_seconds": 0.0, "reason": "ok", "status": status}
+    if status in PERMANENT_STATUSES:
+        return {"action": "stop", "wait_seconds": 0.0, "reason": "permanent", "status": status}
+    if status in (429, 403):
+        reset = _reset_wait_seconds(headers, clock)
+        wait = reset if reset is not None else _exponential_wait(attempt, base, max_wait)
+        return {
+            "action": "wait",
+            "wait_seconds": round(min(max_wait, max(0.0, wait)), 3),
+            "reason": "rate_limit_reset" if reset is not None else "rate_limit",
+            "status": status,
+        }
+    if status == 422:
+        return {
+            "action": "retry",
+            "wait_seconds": round(_exponential_wait(attempt, base, max_wait), 3),
+            "reason": "slow_down",
+            "status": status,
+        }
+    return {
+        "action": "retry",
+        "wait_seconds": round(_exponential_wait(attempt, base, max_wait), 3),
+        "reason": "server_error" if status >= 500 else "unexpected",
+        "status": status,
+    }
+
+
+def process_is_alive(pid: int) -> bool:
+    """True when ``pid`` is a live process the current user can signal."""
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+@contextlib.contextmanager
+def single_writer_state(path: Path) -> Iterator[Path]:
+    """Exclusive pid lock for one collector's state file.
+
+    Field lesson (golf-main, 2026-11): a stale duplicate collector kept writing
+    the same state file, doubling the request rate and corrupting resume state.
+    Hold this lock around a run; a live owner raises :class:`SingleWriterError`,
+    a dead owner's lock is reclaimed. Verify with ``ps`` before overriding.
+    """
+    state_path = Path(path)
+    lock_path = state_path.with_name(state_path.name + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    acquired = False
+    try:
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            owner = 0
+            try:
+                existing = json.loads(lock_path.read_text(encoding="utf-8"))
+                owner = int(existing.get("pid") or 0)
+            except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                owner = 0
+            if owner and process_is_alive(owner):
+                raise SingleWriterError(
+                    f"state file is owned by live PID {owner}: {lock_path}. "
+                    "Verify with ps and stop the old collector before restarting — "
+                    "two writers double the request rate and corrupt resume state."
+                )
+            lock_path.unlink(missing_ok=True)
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump({"pid": os.getpid(), "started_at": utc_now_iso()}, handle)
+        acquired = True
+        yield state_path
+    finally:
+        if acquired:
+            try:
+                lock_path.unlink()
+            except FileNotFoundError:
+                pass
+
+
+RELATIVE_TIME_UNITS: Dict[str, int] = {
+    # English
+    "second": 1, "seconds": 1, "sec": 1, "secs": 1,
+    "minute": 60, "minutes": 60, "min": 60, "mins": 60,
+    "hour": 3600, "hours": 3600, "hr": 3600, "hrs": 3600,
+    "day": 86400, "days": 86400,
+    "week": 604800, "weeks": 604800,
+    "month": 2592000, "months": 2592000,
+    "year": 31536000, "years": 31536000,
+    # Chinese
+    "秒": 1, "秒钟": 1, "分钟": 60, "小时": 3600, "天": 86400, "日": 86400,
+    "周": 604800, "星期": 604800, "礼拜": 604800, "个月": 2592000, "月": 2592000,
+    "年": 31536000,
+    # Korean
+    "초": 1, "분": 60, "시간": 3600, "일": 86400, "주": 604800,
+    "개월": 2592000, "달": 2592000, "년": 31536000,
+    # Japanese
+    "秒間": 1, "分間": 60, "時間": 3600, "日間": 86400, "週間": 604800,
+    "ヶ月": 2592000, "か月": 2592000, "カ月": 2592000,
+    "秒": 1, "分": 60, "時": 3600, "週": 604800,
+}
+_RELATIVE_SUFFIXES = ("ago", "前", "전", "之前", "以前")
+_RELATIVE_NOW = ("just now", "刚刚", "方才", "방금", "たった今", "now")
+_RELATIVE_RE = re.compile(
+    r"(?P<count>\d+)\s*(?P<unit>"
+    + "|".join(sorted(RELATIVE_TIME_UNITS, key=len, reverse=True))
+    + r")\s*(?P<suffix>"
+    + "|".join(_RELATIVE_SUFFIXES)
+    + r")"
+)
+
+
+def parse_relative_time(
+    text: Optional[str],
+    *,
+    now: Optional[datetime] = None,
+) -> Optional[Dict[str, Any]]:
+    """Parse a relative timestamp into an approximate UTC instant.
+
+    Platforms render comments as "10 months ago" / "3小时前" / "2일 전" / "5 分前".
+    A relative string can never be an exact date, so the result is always
+    flagged ``date_precision="approximate"``; nothing here guesses an absolute
+    time when the platform did not state one.
+    """
+    if not text:
+        return None
+    raw = str(text).strip()
+    if not raw:
+        return None
+    clock = now or datetime.now(tz=timezone.utc)
+    low = raw.casefold()
+    for marker in _RELATIVE_NOW:
+        if low == marker or low.startswith(marker + " ") or low.endswith(" " + marker):
+            return {
+                "iso": clock.astimezone(timezone.utc).isoformat(),
+                "seconds_ago": 0,
+                "unit": "now",
+                "date_precision": "approximate",
+                "raw": raw,
+            }
+    match = _RELATIVE_RE.search(raw)
+    if not match:
+        return None
+    count = int(match.group("count"))
+    unit = match.group("unit")
+    seconds = count * RELATIVE_TIME_UNITS[unit]
+    instant = clock.timestamp() - seconds
+    return {
+        "iso": datetime.fromtimestamp(instant, tz=timezone.utc).isoformat(),
+        "seconds_ago": seconds,
+        "unit": unit,
+        "date_precision": "approximate",
+        "raw": raw,
+    }
+
+
+def atomic_write_json(path: Path, payload: Any) -> None:
+    """Write JSON through a sibling temp file, then replace (crash-safe).
+
+    Field lesson: persist after every round/burst — an un-persisted round is a
+    lost round.
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(target.parent), suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=1)
+    Path(tmp).replace(target)
+

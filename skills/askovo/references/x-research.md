@@ -101,3 +101,12 @@ A launch day can create thousands of reposts from one announcement. It is one ev
 
 Do not infer verified profession, residence, age, demographics, or sensitive traits from bio text, language, network position, or model classification. Do not enrich or track individuals across platforms.
 
+
+## Field-verified CDP notes (2026-11)
+
+Collected from the golf-device research campaign; see also [social-media-source-adapters.md](social-media-source-adapters.md) and [cdp-collection-playbook.md](cdp-collection-playbook.md).
+
+- The catalog now carries `cdp_visible_page` for X: authorized visible pages in a user-operated browser session are a legitimate fallback to the paid API. The agent never enters credentials and never exports cookies.
+- **Windowed search**: `since:/until:` operators in live search make quarterly time-window sampling work (field run: 165 mentions, 2023 → present, matching the product lifecycle). Real wheel events (`dom_cua`-style) unstick infinite scroll.
+- **Reply economics**: one page load per thread yielded ~1.6 replies in the field — deprioritize thread-walking versus widening windows.
+- Output shape from the field run: raw JSON `{queries, windows, replies}` keyed by tweet id; convert with `clean_screen_corpus.py`.

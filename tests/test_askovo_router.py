@@ -251,8 +251,10 @@ class RouterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "study"
             run_cli("do", "智能硬件样机验证", "--study", str(target))
-            complete_design(target, ["kickstarter"])
-            completed = run_cli("collect", str(target), "--platform", "kickstarter", "--query", "camera")
+            # xiaohongshu stays blocked; kickstarter moved to limited via the
+            # CDP visible-page route and now reports adapter_disabled instead
+            complete_design(target, ["xiaohongshu"])
+            completed = run_cli("collect", str(target), "--platform", "xiaohongshu", "--query", "camera")
             self.assertEqual(3, completed.returncode, completed.stderr + completed.stdout)
             self.assertIn("blocked", completed.stdout)
 

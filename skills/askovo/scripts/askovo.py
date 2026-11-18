@@ -15,6 +15,7 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -37,6 +38,7 @@ import decide  # noqa: E402
 import decision_brief  # noqa: E402
 import research_delta  # noqa: E402
 import issue_structuring  # noqa: E402
+import capture_review  # noqa: E402
 import role_catalog  # noqa: E402
 
 research_loop.bind_cli(sys.modules[__name__])
@@ -217,6 +219,14 @@ REDDIT_CONFIG_REQUIRED = {
 } | CONNECTOR_CONFIG_REQUIRED
 REDDIT_COLLECTION_MODES = {"historical_search", "live_monitoring", "mixed"}
 REDDIT_ACCESS_BASES = {"official_api"}
+# First-party CDP transport contract (must mirror the run manifest stamped by
+# sure_engine.cdp_collect): authorized visible pages on catalog cdp:true
+# platforms. Governed by the platform catalog, not the open-source connector
+# registry, because no third-party collection code is involved.
+CDP_TRANSPORT_CONNECTOR_ID = "cdp-authorized-visible-page"
+CDP_TRANSPORT_ACCESS_BASIS = "cdp_authorized_visible_page"
+CDP_TRANSPORT_LICENSE = "MIT"
+CDP_COLLECTION_MODE = "authorized_visible_page"
 X_REQUIRED = {
     "source_platform",
     "source_url",
@@ -702,6 +712,41 @@ def _validate_connector_selection(
     return errors
 
 
+def _validate_cdp_transport_config(adapter_name: str, config: dict[str, Any]) -> list[str]:
+    """Validate the first-party CDP transport declaration for one platform.
+
+    Eligibility comes from the platform catalog (cdp: true, not blocked, review
+    current); the open-source connector registry is not consulted because the
+    CDP transport runs no third-party collection code.
+    """
+    errors: list[str] = []
+    entry = sure_engine.platform_index().get(adapter_name)
+    if not entry or not entry.get("cdp") or entry.get("decision") == "blocked":
+        errors.append(
+            f"{adapter_name} access_basis {CDP_TRANSPORT_ACCESS_BASIS} is not enabled "
+            "by the platform catalog (cdp: true required)"
+        )
+        return errors
+    if sure_engine.platform_review_expired(adapter_name):
+        errors.append(
+            f"{adapter_name} connector policy review is expired; re-review before capture"
+        )
+    if config.get("collection_mode") != CDP_COLLECTION_MODE:
+        errors.append(
+            f"{adapter_name} CDP transport requires collection_mode={CDP_COLLECTION_MODE}"
+        )
+    if config.get("connector_revision") != sure_engine.VERSION:
+        errors.append(
+            f"{adapter_name} connector_revision must be the engine version "
+            f"{sure_engine.VERSION} that stamps CDP run manifests"
+        )
+    if config.get("connector_license") != CDP_TRANSPORT_LICENSE:
+        errors.append(f"{adapter_name} connector_license must be {CDP_TRANSPORT_LICENSE}")
+    if config.get("policy_status") != "approved_for_study":
+        errors.append(f"{adapter_name} policy_status must be approved_for_study")
+    return errors
+
+
 def _validate_source_adapter_config(
     study: dict[str, Any] | None,
     adapter_name: str,
@@ -720,15 +765,25 @@ def _validate_source_adapter_config(
         errors.append(f"source_adapters.{adapter_name}.enabled must be true")
     if config.get("researcher_role") != "external_third_party":
         errors.append(f"{adapter_name} researcher_role must be external_third_party")
-    if config.get("collection_mode") not in REDDIT_COLLECTION_MODES:
-        errors.append(
-            f"{adapter_name} collection_mode must be one of: "
-            + ", ".join(sorted(REDDIT_COLLECTION_MODES))
-        )
-    if config.get("access_basis") not in access_bases:
-        errors.append(
-            f"{adapter_name} access_basis must be one of: " + ", ".join(sorted(access_bases))
-        )
+    is_cdp_transport = (
+        config.get("access_basis") == CDP_TRANSPORT_ACCESS_BASIS
+        and config.get("connector_id") == CDP_TRANSPORT_CONNECTOR_ID
+    )
+    if is_cdp_transport:
+        # First-party CDP transport: catalog eligibility instead of the
+        # scripted-connector enums and registry.
+        errors.extend(_validate_cdp_transport_config(adapter_name, config))
+    else:
+        if config.get("collection_mode") not in REDDIT_COLLECTION_MODES:
+            errors.append(
+                f"{adapter_name} collection_mode must be one of: "
+                + ", ".join(sorted(REDDIT_COLLECTION_MODES))
+            )
+        if config.get("access_basis") not in access_bases:
+            errors.append(
+                f"{adapter_name} access_basis must be one of: " + ", ".join(sorted(access_bases))
+            )
+        errors.extend(_validate_connector_selection(adapter_name, config))
     if config.get("require_original_source") is not True:
         errors.append(f"{adapter_name} require_original_source must be true")
     if config.get("treat_ai_summaries_as_discovery_only") is not True:
@@ -737,7 +792,6 @@ def _validate_source_adapter_config(
         datetime.fromisoformat(str(config.get("terms_reviewed_at", ""))[:10])
     except ValueError:
         errors.append(f"{adapter_name} terms_reviewed_at must be an ISO date")
-    errors.extend(_validate_connector_selection(adapter_name, config))
     return errors
 
 
@@ -1694,6 +1748,10 @@ def _check_evidence(
         role = str(record["corpus_role"])
         if role not in CORPUS_ROLES:
             errors.append(f"{record_id} has invalid corpus_role {role}")
+        if str(record.get("source_family") or "") == "capture":
+            # Candidate/OCR text cannot be hand-appended as evidence: the source
+            # capture, reviewer, timestamp, hashes and accepted join must agree.
+            errors.extend(capture_review.validate_evidence_record(audit.study_dir, record))
         normalized_hashes.append(str(record["normalized_text_hash"]))
         role_counts[role] += 1
         source_counts[str(record["source_family"])] += 1
@@ -3007,7 +3065,62 @@ def command_deliver(args: argparse.Namespace) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    if getattr(args, "strict", False) and (
+            result.get("audit_status") not in (None, "pass")
+            or result.get("status") in ("blocked", "audit_failed", "no_artifact")):
+        return 1
     return 1 if result.get("status") == "blocked" else 0
+
+
+def command_capture(args: argparse.Namespace) -> int:
+    action = str(getattr(args, "capture_action", "") or "page")
+    if action == "page":
+        # P0.4 unified governance: capture goes through the same design gate as
+        # collect; a second, laxer collection entrance is not allowed.
+        failure = _design_gate_failure(Path(args.study_dir).resolve())
+        if failure is not None:
+            print(json.dumps(failure, ensure_ascii=False, indent=2))
+            return 1
+        cdp_base = (args.cdp_url or os.environ.get("MKT_CDP_URL")
+                    or "http://127.0.0.1:9222")
+        try:
+            result = sure_engine.capture_page(
+                Path(args.study_dir), args.url, cdp_base, bool(args.ack_terms),
+                ocr=bool(args.ocr), wait_seconds=float(args.wait))
+        except (OSError, ValueError, RuntimeError, ConnectionError) as exc:
+            result = {"status": "error", "reason": str(exc)[:500]}
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if result.get("status") == "captured":
+            return 0
+        if result.get("status") == "ocr_failed":
+            return 2
+        return 1
+    # review actions: the only bridge from capture candidates into evidence
+    try:
+        if action == "list":
+            result = capture_review.list_candidates(Path(args.study_dir))
+        elif action == "accept":
+            result = capture_review.accept(
+                Path(args.study_dir), args.capture, by=args.by,
+                evidence_level=args.evidence_level, corpus_role=args.corpus_role,
+                context_key=args.context_key, from_text=args.from_text)
+        elif action == "reject":
+            result = capture_review.reject(
+                Path(args.study_dir), args.capture, by=args.by, reason=args.reason)
+        else:
+            result = {"status": "error", "reason": f"unknown capture action {action!r}"}
+    except capture_review.CaptureReviewError as exc:
+        print(json.dumps({"status": "error", "reason": str(exc),
+                          "reason_code": exc.reason_code,
+                          "suggestion": exc.suggestion}, ensure_ascii=False, indent=2))
+        return 1
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(json.dumps({"status": "error",
+                          "reason": f"{type(exc).__name__}: {exc}"[:500]},
+                         ensure_ascii=False, indent=2))
+        return 1
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
 
 
 def command_collect(args: argparse.Namespace) -> int:
@@ -3549,6 +3662,21 @@ def command_check(args: argparse.Namespace) -> int:
     if args.write_report:
         json_path, md_path = _write_report(audit)
         payload["report_files"] = [str(json_path), str(md_path)]
+    fmt = getattr(args, "format", "auto")
+    if fmt == "auto":
+        fmt = "text" if sys.stdout.isatty() else "json"
+    if fmt == "text":
+        print(f"Askovo 研究门（{args.stage}）：{audit.status}")
+        for check in payload.get("checks", []):
+            if check.get("status") == "pass":
+                continue
+            print(f"- [{str(check.get('status', '')).upper()}] {check.get('id')}")
+            for part in str(check.get("detail") or "").split("; "):
+                if part:
+                    print(f"    - {part}")
+        print("- 下一步：按 `01-sources/fill-checklist.md` 的顺序补主链，再重跑 check")
+        print("- 机器可读：加 `--format json`")
+        return 0 if audit.status == "pass" else 1
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0 if audit.status == "pass" else 1
 
@@ -3763,10 +3891,7 @@ def _write_plan_proposal(
         "planned_at": datetime.now(timezone.utc).isoformat(),
         "platform_quotas": platform_quotas,
         "feasible_platforms": [item["platform"] for item in enabled],
-        "unavailable_platforms": [
-            {"platform": item["platform"], "status": item["status"], "reason": item["reason"]}
-            for item in unavailable
-        ],
+        "unavailable_platforms": [_unavailable_route_summary(item) for item in unavailable],
         "notes": [
             "proposal only: existing study.json and source-plan.csv were not modified",
             "region and market are sampling context, not verified residence",
@@ -3831,6 +3956,18 @@ def _write_plan_proposal(
         "tasks": str(tasks_path),
         "note": "existing study.json, source-plan.csv and route templates were not modified",
     }
+
+
+def _unavailable_route_summary(item: dict[str, Any]) -> dict[str, Any]:
+    """Keep procurement/user-action fields visible in every plan projection."""
+    result = {"platform": item["platform"], "status": item["status"],
+              "reason": item.get("reason", "")}
+    for key in ("reason_code", "blocked_reason_code", "terminal_state",
+                "requires_procurement", "user_action", "transaction_executed",
+                "alternative_routes"):
+        if key in item:
+            result[key] = item[key]
+    return result
 
 
 def command_plan(args: argparse.Namespace) -> int:
@@ -3906,7 +4043,14 @@ def command_plan(args: argparse.Namespace) -> int:
         entry["connector_revision"] = str(connector.get("reviewed_revision", ""))
         entry["connector_license"] = str(connector.get("license", ""))
         entry["registry_decision"] = decision
-        if decision in {"supported", "historical_only"} and sure_engine.connector_review_expired(connector):
+        procurement_block = sure_engine._procurement_preflight(
+            target, platform, sure_engine.platform_index().get(platform, {}))
+        if decision in {"supported", "historical_only"} and procurement_block is not None:
+            # A reviewed client library is not proof that the user already owns
+            # the paid API/provider access. Keep it out of the feasible plan.
+            entry.update(procurement_block)
+            entry["status"] = "blocked"
+        elif decision in {"supported", "historical_only"} and sure_engine.connector_review_expired(connector):
             entry["status"] = "review_expired"
             entry["reason"] = str(connector.get("policy_watch", {}).get("recheck_by") or "policy review expired")
         elif decision in {"supported", "historical_only"}:
@@ -4041,10 +4185,7 @@ def command_plan(args: argparse.Namespace) -> int:
         "planned_at": datetime.now(timezone.utc).isoformat(),
         "platform_quotas": platform_quotas,
         "feasible_platforms": [item["platform"] for item in enabled],
-        "unavailable_platforms": [
-            {"platform": item["platform"], "status": item["status"], "reason": item["reason"]}
-            for item in unavailable
-        ],
+        "unavailable_platforms": [_unavailable_route_summary(item) for item in unavailable],
         "notes": [
             "region and market are sampling context, not verified residence",
             "sample target is a collection ceiling, not a claim of independent users",
@@ -4181,9 +4322,7 @@ def command_plan(args: argparse.Namespace) -> int:
         "sample_target": args.sample_size,
         "feasible_platforms": [item["platform"] for item in enabled],
         "platform_quotas": platform_quotas,
-        "unavailable_platforms": [
-            {"platform": item["platform"], "status": item["status"]} for item in unavailable
-        ],
+        "unavailable_platforms": [_unavailable_route_summary(item) for item in unavailable],
         "warnings": feasibility["warnings"],
         "next_step": "fill the design contract, then run: askovo.py check STUDY --stage design --write-report",
         "feasibility_report": str(target / "01-sources" / "feasibility.json"),
@@ -5223,6 +5362,21 @@ def build_parser() -> argparse.ArgumentParser:
     platforms_parser.add_argument("--domain", choices=tuple(sure_engine.domain_packs().keys()))
     platforms_parser.add_argument("--claim-type", action="append", choices=sure_engine.CLAIM_TYPES)
     platforms_parser.add_argument("--bulk", action="store_true", help="prefer platforms with bulk access")
+    platforms_parser.add_argument(
+        "--field-notes", action="store_true",
+        help="show the field-verified restriction/solution notes for the ranked platforms",
+    )
+    platforms_parser.add_argument(
+        "--platform", help="filter to one platform id (catalog platform or a field-note source type)",
+    )
+    platforms_parser.add_argument(
+        "--strategies", action="store_true",
+        help="show the cross-platform collection strategies (rotation, lanes, quota, cooldowns)",
+    )
+    platforms_parser.add_argument(
+        "--policies", action="store_true",
+        help="show the enforced CDP runtime budgets (cell goto, timeout cooldown, session time-box)",
+    )
     platforms_parser.add_argument("--json", action="store_true")
     platforms_parser.set_defaults(func=sure_engine.cli_platforms)
 
@@ -5239,6 +5393,39 @@ def build_parser() -> argparse.ArgumentParser:
     collect_parser.add_argument("--url", help="authorized visible page URL for CDP")
     collect_parser.add_argument("--ack-terms", action="store_true", help="acknowledge platform terms and authorized session")
     collect_parser.set_defaults(func=command_collect)
+
+    capture_parser = subparsers.add_parser(
+        "capture", help="capture an authorized visible page via CDP, then review the "
+                        "candidate: only `accept --by NAME` registers evidence")
+    capture_sub = capture_parser.add_subparsers(dest="capture_action", required=True)
+    capture_page_parser = capture_sub.add_parser(
+        "page", help="capture an authorized visible page (text + screenshot + optional OCR)")
+    capture_page_parser.add_argument("study_dir")
+    capture_page_parser.add_argument("--url", required=True, help="authorized visible page URL")
+    capture_page_parser.add_argument("--cdp-url", default="", help="Chrome DevTools endpoint (default http://127.0.0.1:9222)")
+    capture_page_parser.add_argument("--ack-terms", action="store_true", help="acknowledge platform terms and your authorization to view this page")
+    capture_page_parser.add_argument("--ocr", action="store_true", help="run local macOS Vision OCR on the screenshot")
+    capture_page_parser.add_argument("--wait", type=float, default=2.0, help="seconds to wait before capture")
+    capture_list_parser = capture_sub.add_parser("list", help="list capture candidates and their review status")
+    capture_list_parser.add_argument("study_dir")
+    capture_accept_parser = capture_sub.add_parser(
+        "accept", help="register one reviewed capture into the evidence store (named human required)")
+    capture_accept_parser.add_argument("study_dir")
+    capture_accept_parser.add_argument("--capture", required=True, help="capture id from `capture list`")
+    capture_accept_parser.add_argument("--by", default="", help="named human reviewer")
+    capture_accept_parser.add_argument("--evidence-level", required=True,
+                                       help="explicit reviewer choice: E0/E1/E2; OCR never assigns a level")
+    capture_accept_parser.add_argument("--corpus-role", default="open_scene")
+    capture_accept_parser.add_argument("--context-key", default="")
+    capture_accept_parser.add_argument("--from", dest="from_text", default="page", choices=("page", "ocr"),
+                                       help="register the page text or the OCR text")
+    capture_reject_parser = capture_sub.add_parser(
+        "reject", help="mark a candidate rejected; the evidence store is never touched")
+    capture_reject_parser.add_argument("study_dir")
+    capture_reject_parser.add_argument("--capture", required=True)
+    capture_reject_parser.add_argument("--by", default="", help="named human reviewer")
+    capture_reject_parser.add_argument("--reason", default="", help="why this page is not evidence")
+    capture_parser.set_defaults(func=command_capture)
 
     research_parser = subparsers.add_parser(
         "research",
@@ -5441,6 +5628,16 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_parser.add_argument("--question", help="optional question to match quotes against")
     analyze_parser.set_defaults(func=sure_engine.cli_analyze)
 
+    answer_parser = subparsers.add_parser(
+        "answer",
+        help="answer the decision question from reviewed evidence: conclusion + "
+             "decision + back-links, or unanswerable + gap list (never invented)",
+    )
+    answer_parser.add_argument("study_dir")
+    answer_parser.add_argument("--question", default="",
+                               help="override the decision question (default: study.decision.question)")
+    answer_parser.set_defaults(func=sure_engine.cli_answer)
+
     instruments_parser = subparsers.add_parser(
         "instruments", help="generate interview/observation/test instruments for a study"
     )
@@ -5456,6 +5653,10 @@ def build_parser() -> argparse.ArgumentParser:
     import_parser.add_argument("--evidence-form", default="self_report")
     import_parser.add_argument("--claim-type", default="need", choices=sure_engine.CLAIM_TYPES)
     import_parser.add_argument("--method-id", default="imported")
+    import_parser.add_argument("--evidence-level", default="E1",
+                               help="reviewed level for the imported material (capped by --evidence-form)")
+    import_parser.add_argument("--corpus-role", default="open_scene")
+    import_parser.add_argument("--context-key", default="")
     import_parser.set_defaults(func=sure_engine.cli_import)
 
     codebook_parser = subparsers.add_parser("codebook", help="scaffold a claim-type codebook")
@@ -5524,6 +5725,8 @@ def build_parser() -> argparse.ArgumentParser:
     deliver_parser.add_argument("--deliverable", help="kind=role: deliverable id/name; defaults to the role's first")
     deliver_parser.add_argument("--industry", help="kind=role: override the study industry context")
     deliver_parser.add_argument("--chain", help="kind=role: canonical chain id when no bound workplan exists or to select its target")
+    deliver_parser.add_argument("--strict", action="store_true",
+                                help="audit_failed 时不返回 0（草稿仍写出，便于自动化拦截）")
     deliver_parser.set_defaults(func=command_deliver)
 
     boundary_parser = subparsers.add_parser(
@@ -5643,6 +5846,8 @@ def build_parser() -> argparse.ArgumentParser:
     check_parser.add_argument("study_dir")
     check_parser.add_argument("--stage", choices=STAGES, default="full")
     check_parser.add_argument("--write-report", action="store_true")
+    check_parser.add_argument("--format", choices=("auto", "json", "text"), default="auto",
+                              help="auto=终端用 text、管道用 json（默认 auto）")
     check_parser.set_defaults(func=command_check)
 
     connector_parser = subparsers.add_parser(
@@ -5696,14 +5901,41 @@ DECIDE_ACTIONS = ("start", "status", "result", "brief", "review", "delta", "canc
 CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "explore",
     "external-research", "do", "domains",
-    "methods", "catalog", "platforms", "collect", "research", "loop", "analyze", "instruments", "import", "queue",
+    "methods", "catalog", "platforms", "capture", "collect", "research", "loop", "analyze", "answer", "instruments", "import", "queue",
     "codebook", "chain", "economics", "psm", "decision", "decide", "issues", "brief", "delta", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }
 
 
+FIRST_INTERACTION_BANNER = """Askovo 交付合同（首次交互摘要；机器可读全文见 docs/delivery-contract.json）
+
+支持的用户意图：
+- 回答一个研究问题并给出结论与决策 —— capture page / import → 具名审核 accept → analyze → answer
+- 单问题决策任务 —— askovo decide start --question …
+- 结构化公开 issue 语料 —— askovo issues import --authorized-by NAME
+- 采集授权可见页候选 —— askovo capture page --url … --ack-terms（design gate + scope 与 collect 同一套规则）
+
+可交付终态：DELIVERED（动作完成且证据已核验）· DELIVERED_WITH_GAP（完成但差距与下一步明确，
+如不可回答+缺口清单）· BLOCKED_USER_INPUT（需登录/授权/补证据/确认/采购）· UNSUPPORTED（超出
+产品定义，开始前说明并路由）· FAILED_UNRESOLVED（已尝试未确认，保留现场，禁止盲目重试）。
+
+明确排除：替用户发布/投放/销售/收款；物理/人体/道路测试；无证据的市场规模与付费结论；
+绕过登录墙或验证码；候选自动成为证据。付费数据源等采购需求走 requires_procurement 分支
+（BLOCKED_USER_INPUT，给出替代路径，不代购、不执行交易）。
+
+证据规则：capture/OCR/粘贴候选必须经具名人工审核登记进证据库，等级按证据形式封顶
+（可见页 ≤E2）；结论随证据改变、反证不被淹没、关键判断回链采集来源；无证据 = 不可回答+缺口清单。
+
+用法：askovo --help 查看全部命令；askovo do "你的研究问题" 开始一条研究。"""
+
+
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
+    if not raw:
+        # First interaction: the delivery contract leads, before any capability
+        # list or plan can read like an execution promise (review §2.3).
+        print(FIRST_INTERACTION_BANNER)
+        return 2
     if (raw and raw[0] == "decide" and len(raw) > 1 and not raw[1].startswith("-")
             and raw[1] not in DECIDE_ACTIONS):
         # PRD §2.4: `askovo decide "question" --repo owner/repo` is the start form.

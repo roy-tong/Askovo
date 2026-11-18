@@ -85,9 +85,32 @@ except ImportError:  # pragma: no cover - Windows fallback
 
 HERE = Path(__file__).resolve().parent
 SKILL_ROOT = HERE.parent
+REPO_ROOT = SKILL_ROOT.parent.parent
 ASSETS = SKILL_ROOT / "assets"
 CATALOG_PATH = ASSETS / "method-catalog.json"
 PACKS_DIR = ASSETS / "domain-packs"
+
+_cdp_strategy_module: Any = None
+
+
+def _cdp_strategy() -> Any:
+    """Load the connectors' CDP strategy module (policy, triage, session guard).
+
+    Loaded by path so the engine does not depend on the connectors directory
+    being importable; the module itself resolves its registry and `common.py`
+    fallbacks. Cached after the first call.
+    """
+    global _cdp_strategy_module
+    if _cdp_strategy_module is None:
+        path = HERE / "connectors" / "cdp_strategy.py"
+        spec = importlib.util.spec_from_file_location("askovo_cdp_strategy", path)
+        if spec is None or spec.loader is None:  # pragma: no cover
+            raise RuntimeError(f"cannot load {path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules.setdefault("askovo_cdp_strategy", module)
+        spec.loader.exec_module(module)
+        _cdp_strategy_module = module
+    return _cdp_strategy_module
 
 STAGES = (
     "discovery",
@@ -1131,7 +1154,8 @@ def route_request(
         "next_commands": next_commands,
         "catalog_version": method_catalog().get("schema_version", "1.0"),
         "platform_preview": platform_fit(
-            text, str(domain_info["domain"]), intent_name == "collect"
+            text, str(domain_info["domain"]),
+            require_bulk=intent_name == "collect",
         )["recommended"][:5],
     }
 
@@ -1284,6 +1308,78 @@ def product_reasoning_template(title: str = "") -> dict[str, Any]:
             }
         ],
     }
+
+
+FILL_CHECKLIST = {
+    "scene": ["statement", "rationale", "trigger", "environment", "task_context"],
+    "user": ["statement", "rationale", "role", "state", "decision_role"],
+    "pain": ["statement", "rationale", "current_substitute", "friction_cost", "consequence"],
+    "need": ["statement", "rationale", "desired_outcome", "constraints", "measure"],
+    "feature": ["statement", "rationale", "capability", "capabilities",
+                "acceptance_conditions", "alternatives_considered"],
+    "product": ["statement", "rationale", "form", "scope", "non_goals",
+                "acceptance_criteria"],
+    "business": ["statement", "rationale", "market_definition", "target_segment",
+                 "payer", "positioning", "revenue_model", "pricing_hypothesis",
+                 "channels", "cost_drivers", "market_estimates",
+                 "unit_economics_inputs", "success_metrics", "gate"],
+}
+
+
+def fill_checklist_markdown(study: dict[str, Any] | None = None) -> str:
+    """The first-version fill guide for a new study.
+
+    The scaffold is intentionally hypothesis-only; this checklist turns the
+    JSON wall into an ordered task list. It does not invent any content.
+    """
+    study = study or {}
+    title = str(study.get("title") or "当前研究")
+    lines = [
+        f"# 填写清单：{title}",
+        "",
+        "目标：先写出第一版可审主链，不追求“填满”。每个节点先写 `statement`（一句话判断）",
+        "和 `rationale`（为什么由上一步推出），再补右侧字段；不知道的保留 `hypothesis`。",
+        "",
+        "## 1. study.json（先过合同门）",
+        "",
+        "- `decision.question`：这次到底要决定什么（一句话）",
+        "- `decision.options`：至少两个选项，其中一个是“不做/维持现状”",
+        "- `decision.owner` / `deadline` / `minimum_evidence`：谁拍板、何时、看到什么证据才敢拍",
+        "- `scope.target_users` / `markets` / `languages` / `source_time_window`：研究边界",
+        "- `scope.allowed_sources`：允许的来源（没有就留空，但设计门会提示）",
+        "- `hypotheses[].statement` / `falsified_if`：至少一条可证伪假设",
+        "- `stopping_rules` / `restart_rules`：什么时候停、什么条件下重启",
+        "",
+        "## 2. product-reasoning.json（七节点，按顺序填）",
+        "",
+        "| 节点 | 必须填的字段 | 一句话写法 |",
+        "|---|---|---|",
+        "| 场景 | statement / rationale / trigger / environment / task_context | 当 X 触发时，Y 环境里的 Z 角色要完成 T |",
+        "| 用户 | statement / rationale / role / state / decision_role | 是这个角色/状态，而不是泛人口画像；谁做决定 |",
+        "| 痛点 | statement / rationale / current_substitute / friction_cost / consequence | 现在用 A 替代，卡在 B，导致 C |",
+        "| 需求 | statement / rationale / desired_outcome / constraints / measure | 要的是结果 R，受约束 C，用 M 衡量 |",
+        "| 特性 | statement / rationale / capability / capabilities / acceptance_conditions / alternatives_considered | 能力 A 通过机制 M 改变结果 R；替代方案是什么 |",
+        "| 产品 | statement / rationale / form / scope / non_goals / acceptance_criteria | 这些特性为什么组合成这个形态；不做什么 |",
+        "| 商业 | statement / rationale / market_definition / target_segment / payer / positioning / revenue_model / pricing_hypothesis / channels / cost_drivers / market_estimates / unit_economics_inputs / success_metrics / gate | 市场边界、谁付钱、怎么收钱、成本与 Gate |",
+        "",
+        "## 3. 最小可审顺序",
+        "",
+        "1. 先填 `scene → user → pain → need` 四段，跑 `askovo check . --stage design`；",
+        "2. 再补 `feature → product → business`，每补一段重跑一次；",
+        "3. 商业数字没有总体、时间窗、单位、公式和来源时，保持 `hypothesis`，不要编。",
+        "",
+        "## 4. 命令",
+        "",
+        "```bash",
+        "askovo check . --stage design",
+        "askovo chain .",
+        "askovo deliver . --kind plan   # 审计通过后再作为正式交付",
+        "```",
+        "",
+        "字段的机器真值仍是 `04-findings/product-reasoning.json`；本清单只做填写顺序，不产生第二套结论。",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def scaffold_product_reasoning(study_dir: Path) -> dict[str, Any]:
@@ -1594,6 +1690,8 @@ def create_study(
     for sub in ("01-sources/instruments", "01-sources/manifests", "02-data/raw", "03-codebook", "04-findings", "05-audit", "06-report"):
         (study_dir / sub).mkdir(parents=True, exist_ok=True)
     reasoning_scaffold = scaffold_product_reasoning(study_dir)
+    (study_dir / "01-sources" / "fill-checklist.md").write_text(
+        fill_checklist_markdown(study), encoding="utf-8")
     if (study.get("research_mode") or {}).get("mode") == "discover":
         opportunity = opportunity_map_contract(study)
         (study_dir / "04-findings" / "opportunity-map.json").write_text(
@@ -1655,7 +1753,7 @@ def create_study(
 
 场景 → 用户 → 痛点 → 需求 → 特性 → 产品 → 商业
 
-先填写 `04-findings/product-reasoning.json`：每个节点都要有判断、推导理由、状态和假设；再针对最薄弱的节点设计采集与分析。
+先填写 `04-findings/product-reasoning.json`：每个节点都要有判断、推导理由、状态和假设；再针对最薄弱的节点设计采集与分析。字段顺序与最小可审顺序见 [`01-sources/fill-checklist.md`](01-sources/fill-checklist.md)。
 
 ## 岗位执行包
 
@@ -1982,16 +2080,16 @@ def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str])
     record_id = str(raw.get("record_id") or raw.get("id") or f"{defaults['source_family']}-{index:04d}")
     record = {
         "record_id": record_id,
-        "context_key": str(raw.get("context_key") or ""),
+        "context_key": str(raw.get("context_key") or defaults.get("context_key") or ""),
         "user_role": str(raw.get("user_role") or raw.get("角色") or "unknown"),
         "scene_trigger": str(raw.get("scene_trigger") or raw.get("scene") or "unknown"),
         "task_outcome": str(raw.get("task_outcome") or raw.get("task") or "unknown"),
         "current_substitute": str(raw.get("current_substitute") or "unknown"),
         "friction_cost": str(raw.get("friction_cost") or raw.get("friction") or "unknown"),
         "consequence": str(raw.get("consequence") or "unknown"),
-        "evidence_level": str(raw.get("evidence_level") or "unclassified"),
+        "evidence_level": str(raw.get("evidence_level") or defaults.get("evidence_level") or "unclassified"),
         "evidence_basis": str(raw.get("evidence_basis") or "imported; grade before use"),
-        "corpus_role": str(raw.get("corpus_role") or "open_scene"),
+        "corpus_role": str(raw.get("corpus_role") or defaults.get("corpus_role") or "open_scene"),
         "source_family": str(raw.get("source_family") or defaults["source_family"]),
         "source_ref": str(raw.get("source_ref") or defaults["source_ref"]),
         "normalized_text_hash": str(raw.get("normalized_text_hash") or ""),
@@ -2010,6 +2108,62 @@ def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str])
     return record
 
 
+class ImportReviewError(ValueError):
+    """An import review rule was violated; carries a C-01 reason code."""
+
+    def __init__(self, message: str, reason_code: str = "INPUT_REQUIRED",
+                 suggestion: str = "") -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+        self.suggestion = suggestion
+
+
+# What an imported file can honestly support, by evidence form. A pasted
+# self-report states a need (E1) and can document current practice (E2); it
+# can never prove acceptance (E3) or payment (E4+/E5). Transaction exports
+# are system records and may carry commercial levels.
+IMPORT_LEVEL_ORDER = {"E0": 0, "E1": 1, "E2": 2, "E3": 3, "E4-": 4, "E4+": 4, "E5": 5}
+IMPORT_LEVEL_CAPS = {
+    "self_report": "E2",
+    "behavior_log": "E2",
+    "transaction": "E5",
+    "purchase": "E5",
+}
+
+
+def _ensure_imported_source_plan(study_dir: Path, family: str, record_count: int) -> None:
+    """Declare an imported source family before its records become evidence.
+
+    The audit refuses evidence from a source family the plan never named; the
+    import command is the human act that declares it (idempotent).
+    """
+    path = study_dir / "01-sources" / "source-plan.csv"
+    rows: list[dict[str, str]] = []
+    if path.is_file():
+        with path.open(encoding="utf-8-sig", newline="") as handle:
+            rows = [dict(row) for row in csv.DictReader(handle)
+                    if str(row.get("source_family") or "").strip()]
+    if any(str(row.get("source_family")) == family for row in rows):
+        return
+    fields = ("corpus_role", "source_family", "route_or_query", "target_records",
+              "cap_share", "access_status", "known_bias")
+    rows.append({
+        "corpus_role": "open_scene",
+        "source_family": family,
+        "route_or_query": "local import reviewed by the operator",
+        "target_records": str(record_count),
+        "cap_share": "0.50",
+        "access_status": "operator-provided local file",
+        "known_bias": "operator-selected material; selection bias is explicit, not corrected",
+    })
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(fields), extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({key: row.get(key, "") for key in fields})
+
+
 def import_material(
     study_dir: Path,
     file_path: Path,
@@ -2017,9 +2171,46 @@ def import_material(
     evidence_form: str = "self_report",
     claim_type: str = "need",
     method_id: str = "imported",
+    evidence_level: str = "E1",
+    corpus_role: str = "open_scene",
+    context_key: str = "",
 ) -> dict[str, Any]:
     study_dir = study_dir.resolve()
     study = load_json(study_dir / "study.json")
+    # A page-capture/OCR candidate has exactly one admission route. Generic
+    # import must not relabel it as paste or bypass the named-review join.
+    candidate_path = file_path.resolve()
+    capture_root = (study_dir / "01-sources" / "captures").resolve()
+    is_capture_file = False
+    try:
+        candidate_path.relative_to(capture_root)
+        is_capture_file = True
+    except ValueError:
+        pass
+    if not is_capture_file and file_path.suffix.lower() == ".json":
+        try:
+            candidate_document = json.loads(file_path.read_text(encoding="utf-8"))
+            is_capture_file = isinstance(candidate_document, dict) and (
+                candidate_document.get("schema") == "askovo.page-capture/1")
+        except (OSError, json.JSONDecodeError):
+            is_capture_file = False
+    if str(source_family).strip() == "capture" or is_capture_file:
+        raise ImportReviewError(
+            "page-capture/OCR candidates require `askovo capture accept --by NAME "
+            "--evidence-level ...`; generic import cannot admit them",
+            "POLICY_DENIED")
+    level = str(evidence_level or "E1").strip().upper()
+    if level not in IMPORT_LEVEL_ORDER:
+        raise ImportReviewError(
+            f"unknown evidence_level {level!r}", "INPUT_REQUIRED",
+            "E0, E1, E2, E3, E4-, E4+, E5")
+    cap = IMPORT_LEVEL_CAPS.get(str(evidence_form or "self_report"), "E2")
+    if IMPORT_LEVEL_ORDER[level] > IMPORT_LEVEL_ORDER[cap]:
+        raise ImportReviewError(
+            f"an imported {evidence_form} cannot support evidence_level {level} "
+            f"(cap {cap})", "POLICY_DENIED",
+            "acceptance (E3) needs concept tests; payment (E4+/E5) needs transaction "
+            "records, not a pasted self-report")
     raw_dir = study_dir / "02-data" / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -2032,6 +2223,9 @@ def import_material(
         "evidence_form": evidence_form,
         "method_id": method_id,
         "product_domain": str(study.get("product_domain") or "unknown"),
+        "evidence_level": level,
+        "corpus_role": corpus_role,
+        "context_key": context_key,
     }
     records: list[dict[str, Any]] = []
     suffix = file_path.suffix.lower()
@@ -2068,6 +2262,7 @@ def import_material(
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
             existing_ids.add(record["record_id"])
             added += 1
+    _ensure_imported_source_plan(study_dir, source_family, added or len(records))
     return {
         "status": "imported",
         "file": str(file_path),
@@ -2076,6 +2271,14 @@ def import_material(
         "added": added,
         "skipped_duplicates": len(records) - added,
         "evidence_file": str(evidence_path),
+        "review": {
+            "evidence_level": level,
+            "evidence_form": evidence_form,
+            "corpus_role": corpus_role,
+            "level_cap": cap,
+            "note": "operator-reviewed import; the level is capped by the evidence form",
+        },
+        "source_plan": str(study_dir / "01-sources" / "source-plan.csv"),
     }
 
 
@@ -2713,8 +2916,8 @@ def _decision_package_lines(
     lines: list[str] = [
         f"# 决策包 Decision Package：{study.get('title', '')}",
         "",
-        f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label', study.get('product_domain', ''))}；"
-        f"阶段：{route.get('stage_label', study.get('lifecycle_stage', ''))}。",
+        f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label') or _study_labels(study)[0]}；"
+        f"阶段：{route.get('stage_label') or _study_labels(study)[1]}。",
         "",
         f"- 决策问题：{decision.get('question') or study.get('decision_question') or study.get('title', '待确认')}",
         f"- 决策负责人：{decision.get('owner') or '待确认'}；截止：{decision.get('deadline') or '未设置'}",
@@ -3320,6 +3523,27 @@ def _plan_strength(records: list[dict[str, Any]], node_name: str | None = None) 
     return "○", "假设（待验证）", "尚无采集到的直接记录"
 
 
+def _study_labels(study: dict[str, Any]) -> tuple[str, str]:
+    """Best-effort human labels for a study without route.json.
+
+    The bundled sample and imported studies may only carry raw domain/stage
+    codes. Prefer the domain pack labels so the first line of a delivered plan
+    never reads "产品类型：；阶段：".
+    """
+    domain = str(study.get("product_domain") or "")
+    stage = str(study.get("lifecycle_stage") or "")
+    domain_label, stage_label = domain, stage
+    if domain:
+        try:
+            pack = load_pack(domain)
+            domain_label = str(pack.get("label") or domain)
+            stage_data = (pack.get("stages") or {}).get(stage) or {}
+            stage_label = str(stage_data.get("label") or stage)
+        except (OSError, ValueError, KeyError):
+            pass
+    return domain_label, stage_label
+
+
 def _plan_time_span(records: list[dict[str, Any]]) -> str:
     stamps: list[str] = []
     for record in records:
@@ -3747,6 +3971,43 @@ PLAN_ROLE_LABELS = {
 }
 
 
+def _capture_provenance_lines(records: list[dict[str, Any]], heading: str = "###") -> list[str]:
+    """Project reviewed capture back-links without rendering OCR as a conclusion."""
+    captures = [record for record in records
+                if str(record.get("source_family") or "") == "capture"]
+    if not captures:
+        return []
+
+    def cell(value: Any) -> str:
+        return str(value or "").replace("|", "\\|").replace("\n", " ").strip()
+
+    lines = [
+        f"{heading} 审核导入材料：来源回链", "",
+        "| 证据 | 人工审核 | 来源 URL | Capture / 截图 | 来源哈希 |",
+        "|---|---|---|---|---|",
+    ]
+    for record in captures:
+        capture_ref = str(record.get("source_ref") or "")
+        screenshot_ref = str(record.get("capture_screenshot_ref") or "")
+        hashes = (
+            f"page={record.get('capture_text_sha256') or '未记录'}; "
+            f"OCR={record.get('capture_ocr_text_sha256') or '未记录'}; "
+            f"screenshot={record.get('capture_screenshot_sha256') or '未记录'}"
+        )
+        review = f"{record.get('reviewed_by') or '未记录'} / {record.get('reviewed_at') or '未记录'}"
+        source_links = f"capture: `{capture_ref}`; screenshot: `{screenshot_ref}`"
+        lines.append(
+            f"| `{cell(record.get('record_id'))}` | {cell(review)} | {cell(record.get('source_url'))} "
+            f"| {cell(source_links)} | {cell(hashes)} |"
+        )
+    lines.extend([
+        "",
+        "这些回链只证明哪份候选经谁审核进入证据；OCR 文本不自动成为需求、七节点或做/缓做/不做结论。",
+        "",
+    ])
+    return lines
+
+
 def _plan_corpus_profile(records: list[dict[str, Any]]) -> list[str]:
     """语料画像：来源、年份、用途三类分布，只描述“看了多少”，不推人群比例。"""
     if not records:
@@ -3826,8 +4087,8 @@ def _plan_lines(
     lines: list[str] = [
         f"# 业务方案 Business Plan：{study.get('title', '')}",
         "",
-        f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label', study.get('product_domain', ''))}；"
-        f"阶段：{route.get('stage_label', study.get('lifecycle_stage', ''))}。",
+        f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label') or _study_labels(study)[0]}；"
+        f"阶段：{route.get('stage_label') or _study_labels(study)[1]}。",
         "",
         "> 读法：每个判断都标注**依据强度**——● 已观察到（多个来源族观察；相关性未证明独立）· ◐ 有线索（单案例或口头线索）· ○ 假设（尚无采集记录，待验证）——"
         "以及**数据基础**（来源、语料量、时间窗）与**来自语料的声音**（用户原话或典型情况）。"
@@ -4062,6 +4323,7 @@ def _plan_lines(
         for item in prohibited:
             lines.append(f"  - {item}")
     lines.append("")
+    lines.extend(_capture_provenance_lines(records))
 
     lines.extend([
         "## 边界",
@@ -4297,6 +4559,9 @@ def _analysis_lines(study: dict[str, Any], reasoning: dict[str, Any] | None, evi
         "- 能回答：谁在什么场景遇到什么问题、他们现在怎么做、哪些做法被反复判无效、这些说法出现在哪个平台。",
         "- 不能回答：这类人占多大比例、市场规模多大、他们愿意为本品付多少钱；最后一条只能靠真实报价与成交来验。",
         "",
+    ])
+    lines.extend(_capture_provenance_lines(records, heading="## 8."))
+    lines.extend([
         "## 边界",
         "",
         "本报告是语料的描述性统计，不证明总体比例、市场规模或因果；样本来自公开社区，说话的人不等于目标人群，条数不等于需求强度。",
@@ -4598,8 +4863,8 @@ def _deliver_artifact(
     lines = [
         f"# {title}：{study.get('title', '')}",
         "",
-        f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label', study.get('product_domain', ''))}；"
-        f"阶段：{route.get('stage_label', study.get('lifecycle_stage', ''))}。",
+        f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label') or _study_labels(study)[0]}；"
+        f"阶段：{route.get('stage_label') or _study_labels(study)[1]}。",
         f"> 审计状态：`{audit_status}`（生成时间：{audit_info.get('generated_at') or '未运行'}）。",
         "",
     ]
@@ -4825,6 +5090,36 @@ def doctor() -> int:
         )
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         checks.append(("platform-catalog", False, str(exc)))
+    try:
+        notes = field_notes_catalog()["notes"]
+        problems = field_note_problems()
+        checks.append((
+            "platform-field-notes",
+            not problems,
+            f"{len(notes)} notes" if not problems else "; ".join(problems[:3]),
+        ))
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        checks.append(("platform-field-notes", False, str(exc)))
+    try:
+        strategies = strategy_catalog()
+        strategy_issues = strategy_problems()
+        checks.append((
+            "collection-strategies",
+            not strategy_issues,
+            f"{len(strategies)} strategies" if not strategy_issues else "; ".join(strategy_issues[:3]),
+        ))
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        checks.append(("collection-strategies", False, str(exc)))
+    try:
+        policy_issues = runtime_policy_problems()
+        cdp_count = sum(1 for item in platform_index().values() if item.get("cdp"))
+        checks.append((
+            "cdp-runtime-policies",
+            not policy_issues,
+            f"{cdp_count} CDP platforms" if not policy_issues else "; ".join(policy_issues[:3]),
+        ))
+    except (OSError, json.JSONDecodeError, ValueError, RuntimeError) as exc:
+        checks.append(("cdp-runtime-policies", False, str(exc)))
     ids = {str(item.get("id")) for item in catalog.get("methods", []) if isinstance(item, dict)}
     missing: list[str] = []
     for name, pack in packs.items():
@@ -4864,6 +5159,435 @@ def platform_index() -> dict[str, dict[str, Any]]:
     return {str(item["id"]): item for item in platform_catalog()["platforms"] if isinstance(item, dict) and item.get("id")}
 
 
+# ---------------------------------------------------------------------------
+# Platform field notes: operational experience as data
+#
+# The campaign-tested restrictions and solutions live in one machine-readable
+# registry (assets/platform-field-notes.json) so planning, doctor and every
+# projection read the same experience instead of a prose document drifting
+# beside the catalog. Access permission stays in platform-catalog.json: a field
+# note records what happened in the field, never that a route is approved.
+
+FIELD_NOTES_PATH = ASSETS / "platform-field-notes.json"
+FIELD_NOTE_REQUIRED = (
+    "id", "platform", "channel", "restriction", "symptom", "solution",
+    "artifact", "verification", "cdp",
+)
+
+
+def _registry_artifact_path(artifact: Any) -> Path:
+    """Resolve a registry artifact path in both checkout and installed runtime.
+
+    Registry entries use repo-relative paths (`skills/askovo/...`) because the
+    skill folder is what ships. A wheel installs that folder as
+    `askovo/runtime/`, so `REPO_ROOT / artifact` does not exist there; the
+    prefix maps onto ``SKILL_ROOT`` instead of failing the doctor.
+    """
+    raw = Path(str(artifact))
+    if raw.is_absolute():
+        return raw
+    candidate = REPO_ROOT / raw
+    if candidate.exists():
+        return candidate
+    parts = raw.parts
+    if len(parts) >= 3 and parts[0] == "skills" and parts[1] == "askovo":
+        mapped = SKILL_ROOT.joinpath(*parts[2:])
+        if mapped.exists():
+            return mapped
+    return candidate
+
+
+def field_notes_catalog() -> dict[str, Any]:
+    data = load_json(FIELD_NOTES_PATH)
+    if not isinstance(data, dict) or not isinstance(data.get("notes"), list):
+        raise ValueError(f"invalid platform field notes: {FIELD_NOTES_PATH}")
+    return data
+
+
+def field_note_problems() -> list[str]:
+    """Structural problems in the field-notes registry (empty means consistent).
+
+    Checks the parts that would silently rot: required fields, unique ids,
+    verification status from the legend, artifact paths that exist, helper
+    references that resolve, and — for catalog platforms — a ``cdp`` flag that
+    matches the platform catalog. A note may describe a source type that is not
+    a catalog platform (``source_types``) or cross-platform practice (``*``);
+    neither may claim a catalog route.
+    """
+    problems: list[str] = []
+    try:
+        data = field_notes_catalog()
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        return [str(exc)]
+    catalog_ids = set(platform_index())
+    source_types = data.get("source_types") or {}
+    legend = set((data.get("verification_legend") or {}).keys())
+    if not isinstance(source_types, dict):
+        problems.append("source_types must be an object")
+        source_types = {}
+    allowed = catalog_ids | set(source_types) | {"*"}
+    seen: set[str] = set()
+    for index, note in enumerate(data["notes"]):
+        if not isinstance(note, dict):
+            problems.append(f"note[{index}] is not an object")
+            continue
+        missing = [key for key in FIELD_NOTE_REQUIRED if note.get(key) in (None, "", [])]
+        if missing:
+            problems.append(f"note[{index}] missing {', '.join(missing)}")
+            continue
+        note_id = str(note["id"])
+        if note_id in seen:
+            problems.append(f"duplicate note id: {note_id}")
+        seen.add(note_id)
+        platform = str(note["platform"])
+        if platform not in allowed:
+            problems.append(f"{note_id}: platform {platform!r} is neither a catalog platform, a source type, nor '*'")
+        verification = note.get("verification")
+        if not isinstance(verification, dict):
+            problems.append(f"{note_id}: verification must be an object")
+        else:
+            status = str(verification.get("status") or "")
+            if legend and status not in legend:
+                problems.append(f"{note_id}: verification status {status!r} not in the legend")
+            if not verification.get("date"):
+                problems.append(f"{note_id}: verification.date is required")
+        artifact = _registry_artifact_path(note["artifact"])
+        if not artifact.is_file():
+            problems.append(f"{note_id}: artifact not found: {note['artifact']}")
+        helper_problem = _resolve_helper_problem(note_id, note.get("helper"))
+        if helper_problem:
+            problems.append(helper_problem)
+        if platform in catalog_ids:
+            entry = platform_index()[platform]
+            if bool(note.get("cdp")) != bool(entry.get("cdp")):
+                problems.append(
+                    f"{note_id}: cdp={bool(note.get('cdp'))} disagrees with the platform catalog "
+                    f"({platform} cdp={bool(entry.get('cdp'))})"
+                )
+    return problems
+
+
+def field_notes_index() -> dict[str, list[dict[str, Any]]]:
+    """Notes grouped by platform; ``*`` holds cross-platform practice."""
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for note in field_notes_catalog()["notes"]:
+        if not isinstance(note, dict):
+            continue
+        grouped.setdefault(str(note.get("platform") or "*"), []).append(note)
+    return grouped
+
+
+def field_notes_for(platforms: list[str] | tuple[str, ...] | None = None) -> list[dict[str, Any]]:
+    """Field notes for the given platforms plus the cross-platform practice.
+
+    ``None`` returns every note. Cross-platform notes lead: they apply to any
+    CDP run and are the ones a planner most often needs before a channel.
+    """
+    grouped = field_notes_index()
+    wanted = list(platforms or [])
+    if not wanted:
+        return [note for notes in grouped.values() for note in notes]
+    selected = list(grouped.get("*", []))
+    for platform in wanted:
+        for note in grouped.get(platform, []):
+            if note not in selected:
+                selected.append(note)
+    return selected
+
+
+def field_notes_markdown(notes: list[dict[str, Any]] | None = None,
+                         platform: str | None = None) -> str:
+    """Render field notes as the human-facing restriction/solution table."""
+    selected = field_notes_for([platform] if platform else None) if notes is None else notes
+    title = "# Askovo 平台实战笔记"
+    if platform:
+        title += f"：{platform}"
+    lines = [
+        title,
+        "",
+        "> 记录的是**实战限制与解法**，不是访问许可：能否采集仍由平台目录、study scope 与"
+        "Design gate 决定（见 `askovo platforms` / `docs/connectors.md`）。",
+        "",
+        "| 平台 | 通道 | 限制 | 解法 | 验证 | 产物 |",
+        "|---|---|---|---|---|---|",
+    ]
+    for note in selected:
+        verification = note.get("verification") or {}
+        lines.append(
+            f"| `{note.get('platform')}` | {note.get('channel')} | "
+            f"{note.get('restriction')} | {note.get('solution')} | "
+            f"{verification.get('status', '')}（{verification.get('date', '')}） | "
+            f"`{note.get('artifact')}` |"
+        )
+    lines.extend([
+        "",
+        "## 怎么用",
+        "",
+        "- 规划前：`askovo platforms \"<需求>\" --field-notes` 看推荐平台的已知坑；",
+        "- 采集时：限制命中先按「解法」走；挑战页只被动等待或人工完成，不绕过；",
+        "- 收尾时：新的限制/解法补进 `skills/askovo/assets/platform-field-notes.json`"
+        "（`askovo doctor` 会校验必填字段、产物路径与 cdp 一致性）。",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+STRATEGY_REQUIRED = (
+    "id", "name", "when", "invariant", "mechanism", "platforms", "artifacts",
+    "verification", "enforcement",
+)
+
+
+def _resolve_helper_problem(note_id: str, helper: Any) -> str | None:
+    """Validate a ``connectors.<module>.<attr>`` reference, or return None."""
+    if not helper:
+        return None
+    module_name, _, attr = str(helper).rpartition(".")
+    module_path = SKILL_ROOT / "scripts" / (module_name.replace(".", "/") + ".py")
+    if not module_name or not module_path.is_file():
+        return f"{note_id}: helper module not found: {helper}"
+    if attr:
+        source = module_path.read_text(encoding="utf-8")
+        if (
+            f"def {attr}(" not in source
+            and f"class {attr}(" not in source
+            and f"class {attr}:" not in source
+        ):
+            return f"{note_id}: helper {attr!r} not defined in {module_name}"
+    return None
+
+
+def strategy_catalog() -> list[dict[str, Any]]:
+    """Cross-platform operating strategies (rotation, lanes, quota, cooldowns)."""
+    data = field_notes_catalog()
+    strategies = data.get("strategies")
+    if strategies is None:
+        return []
+    if not isinstance(strategies, list):
+        raise ValueError(f"invalid strategy layer in {FIELD_NOTES_PATH}")
+    return [item for item in strategies if isinstance(item, dict)]
+
+
+def strategy_problems() -> list[str]:
+    """Structural problems in the strategy layer (empty means consistent)."""
+    problems: list[str] = []
+    try:
+        data = field_notes_catalog()
+        strategies = strategy_catalog()
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        return [str(exc)]
+    allowed = set(platform_index()) | set((data.get("source_types") or {}).keys()) | {"*"}
+    legend = set((data.get("verification_legend") or {}).keys())
+    seen: set[str] = set()
+    for index, strategy in enumerate(strategies):
+        missing = [key for key in STRATEGY_REQUIRED if strategy.get(key) in (None, "", [])]
+        if missing:
+            problems.append(f"strategy[{index}] missing {', '.join(missing)}")
+            continue
+        strategy_id = str(strategy["id"])
+        if strategy_id in seen:
+            problems.append(f"duplicate strategy id: {strategy_id}")
+        seen.add(strategy_id)
+        platforms = strategy.get("platforms")
+        if not isinstance(platforms, list) or not platforms:
+            problems.append(f"{strategy_id}: platforms must be a non-empty list")
+        else:
+            unknown = sorted({str(item) for item in platforms} - allowed)
+            if unknown:
+                problems.append(f"{strategy_id}: unknown platform(s) {', '.join(unknown)}")
+        artifacts = strategy.get("artifacts")
+        if not isinstance(artifacts, list) or not artifacts:
+            problems.append(f"{strategy_id}: artifacts must be a non-empty list")
+        else:
+            for artifact in artifacts:
+                if not _registry_artifact_path(artifact).is_file():
+                    problems.append(f"{strategy_id}: artifact not found: {artifact}")
+        helper_problem = _resolve_helper_problem(strategy_id, strategy.get("helper"))
+        if helper_problem:
+            problems.append(helper_problem)
+        verification = strategy.get("verification")
+        if not isinstance(verification, dict):
+            problems.append(f"{strategy_id}: verification must be an object")
+        else:
+            status = str(verification.get("status") or "")
+            if legend and status not in legend:
+                problems.append(f"{strategy_id}: verification status {status!r} not in the legend")
+            if not verification.get("date"):
+                problems.append(f"{strategy_id}: verification.date is required")
+    return problems
+
+
+def strategy_index() -> dict[str, dict[str, Any]]:
+    return {str(item["id"]): item for item in strategy_catalog() if item.get("id")}
+
+
+def runtime_policy_problems() -> list[str]:
+    """Policy layer ↔ runtime code consistency (empty means consistent).
+
+    The registry declares which invariants the runtime enforces
+    (``enforcement: runtime``), the helper that enforces each one and the
+    per-platform budgets. This gate fails when a declared guard does not
+    resolve, when a runtime strategy has no guard, when an operator strategy
+    falsely claims one, or when a CDP platform cannot build a policy.
+    """
+    problems: list[str] = []
+    try:
+        data = field_notes_catalog()
+        strategy = _cdp_strategy()
+        strategies = strategy_index()
+    except (OSError, json.JSONDecodeError, ValueError, RuntimeError) as exc:
+        return [str(exc)]
+    section = data.get("runtime_policies")
+    if not isinstance(section, dict):
+        return ["runtime_policies section is required (see cdp_strategy.policy_problems)"]
+    known = sorted(set(platform_index()) | set((data.get("source_types") or {}).keys()))
+    problems.extend(strategy.policy_problems(section, known_platforms=known))
+    guards = section.get("guards") if isinstance(section.get("guards"), dict) else {}
+    for strategy_id, helper in guards.items():
+        record = strategies.get(str(strategy_id))
+        if record is None:
+            problems.append(f"runtime guard {strategy_id!r} is not a declared strategy")
+        elif record.get("enforcement") != "runtime":
+            problems.append(
+                f"{strategy_id}: guarded but enforcement is {record.get('enforcement')!r}"
+            )
+        helper_problem = _resolve_helper_problem(f"runtime guard {strategy_id}", helper)
+        if helper_problem:
+            problems.append(helper_problem)
+    for strategy_id, record in strategies.items():
+        enforcement = record.get("enforcement")
+        if enforcement not in ("runtime", "operator"):
+            problems.append(f"{strategy_id}: enforcement must be 'runtime' or 'operator'")
+        elif enforcement == "runtime" and strategy_id not in guards:
+            problems.append(f"{strategy_id}: runtime strategy has no guard in runtime_policies.guards")
+        elif enforcement == "operator" and strategy_id in guards:
+            problems.append(f"{strategy_id}: operator strategy must not claim a runtime guard")
+    for platform, entry in platform_index().items():
+        if not entry.get("cdp"):
+            continue
+        try:
+            policy = strategy.policy_for(platform)
+        except (ValueError, RuntimeError) as exc:
+            problems.append(f"{platform}: cannot build a runtime policy ({exc})")
+            continue
+        if policy.platform != platform:
+            problems.append(f"{platform}: policy platform mismatch ({policy.platform})")
+    for name in ("collect_cdp_discord.py", "collect_cdp_kickstarter.py"):
+        path = HERE / "connectors" / name
+        if not path.is_file():
+            problems.append(f"CDP collector missing: {name}")
+            continue
+        try:
+            source = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            problems.append(f"{name}: cannot read ({exc})")
+            continue
+        if "cdp_strategy" not in source or "SessionGuard" not in source:
+            problems.append(f"{name}: CDP runtime policy is not applied (no cdp_strategy.SessionGuard)")
+    return problems
+
+
+def strategies_for(platforms: list[str] | tuple[str, ...] | None = None) -> list[dict[str, Any]]:
+    """Strategies that apply to the given platforms (``*`` always applies)."""
+    wanted = {str(item) for item in (platforms or [])}
+    selected: list[dict[str, Any]] = []
+    for strategy in strategy_catalog():
+        strategy_platforms = {str(item) for item in strategy.get("platforms", [])}
+        if not wanted or "*" in strategy_platforms or strategy_platforms & wanted:
+            selected.append(strategy)
+    return selected
+
+
+def strategies_markdown(strategies: list[dict[str, Any]] | None = None,
+                        platforms: list[str] | None = None) -> str:
+    """Render the cross-platform operating strategies as a method table."""
+    selected = strategies_for(platforms) if strategies is None else strategies
+    lines = [
+        "# Askovo 多平台采集策略",
+        "",
+        "> 策略是**经验**，不是许可：轮转降低的是每个站点感知到的频率，不绕过平台限制；"
+        "挑战页只被动等待或人工完成，登录会话仅由用户手工完成，身份/代理不轮换。",
+        "",
+        "| 策略 | 何时用 | 不变量（不能破的约束） | 机制 | 验证 |",
+        "|---|---|---|---|---|",
+    ]
+    for strategy in selected:
+        verification = strategy.get("verification") or {}
+        lines.append(
+            f"| **{strategy.get('name')}** (`{strategy.get('id')}`) | {strategy.get('when')} | "
+            f"{strategy.get('invariant')} | {strategy.get('mechanism')} | "
+            f"{verification.get('status', '')}（{verification.get('date', '')}） |"
+        )
+    lines.extend([
+        "",
+        "## 怎么用",
+        "",
+        "- 规划时：`askovo platforms \"<需求>\" --strategies` 按推荐平台取策略；",
+        "- 调度时：`connectors/rotation.py` 的 `RotationScheduler` 强制每站点最小间隔、"
+        "429/422 冷却、日配额与会话冷却（掉线等人工重登）；",
+        "- 收尾时：策略与不变量补进 `skills/askovo/assets/platform-field-notes.json` 的 "
+        "`strategies` 段并声明 `enforcement`（`askovo doctor` 校验必填字段、产物、helper 与 "
+        "runtime guard 引用）。",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+def runtime_policies_markdown(platforms: list[str] | None = None) -> str:
+    """Render the enforced per-platform CDP runtime budgets."""
+    strategy = _cdp_strategy()
+    catalog = platform_index()
+    registry = field_notes_catalog()
+    declared = set((registry.get("source_types") or {}).keys())
+    if platforms:
+        selected = [str(item) for item in platforms if str(item).strip()]
+    else:
+        selected = [str(item) for item, entry in catalog.items() if entry.get("cdp")]
+        selected += [item for item in declared if item in (registry.get("runtime_policies") or {}).get("platforms", {})]
+    if not selected:
+        return (
+            "# Askovo CDP 运行时策略\n\n"
+            "> 本次选择里没有 CDP 平台；运行时策略只约束 CDP 可见页通道"
+            "（`cdp: true` 的平台或已声明的 source type）。\n"
+        )
+    lines = [
+        "# Askovo CDP 运行时策略",
+        "",
+        "> 这些是**运行时预算**，不是访问许可：平台目录、study scope、Design gate、"
+        "人工 ack 与获批 URL 才决定能否采集；策略只约束「怎么碰」，不绕过任何限制。",
+        "",
+        "| 平台 | 站点最小间隔 | 会话上限 | 超时熔断 | 单 cell goto | 预算系数 | 需登录 | 模式互斥 |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for platform in dict.fromkeys(selected):
+        policy = strategy.policy_for(platform)
+        lines.append(
+            f"| `{platform}` | {policy.cadence_seconds:g}s | {policy.session_minutes:g} min | "
+            f"{policy.timeout_cooldown_minutes:g} min | {policy.max_gotos_per_cell} | "
+            f"{policy.budget_fraction:.0%} | {'是' if policy.requires_session else '否'} | "
+            f"{'、'.join(policy.exclusive_modes)} |"
+        )
+    lines.extend([
+        "",
+        "## 执行口径",
+        "",
+        "- **超时=熔断**：任何 timeout/abort 后停止接触该平台至少「超时熔断」时长；"
+        "不诊断、不截图、不重试——撕裂的输入流本身就是自动化签名；",
+        "- **一个 cell 一次 goto**：导航→校验→采集在同一 cell 内完成；`reload()` 默认禁止；",
+        "- **会话限时**：登录态采集到「会话上限」即停，人工登出后再开新一段；掉线只由人工重登；",
+        "- **预算留头**：cell 预算按「预算系数」打折（Discord 60%，其余 70%），宁可少采；",
+        "- **模式互斥**：同一段会话里不混用「模式互斥」列出的模式（如邀请加入与频道抓取）；",
+        "- **空渲染=不支持的栈**：200 + 空标题 + 空正文不是挑战页、也不是空语料，换同垂类信源；",
+        "- **挑战页只被动等待或人工完成**，不求解、不伪造、不换身份。",
+        "",
+        "机器可读：`askovo platforms \"<需求>\" --json` 的每个 CDP 平台带 `runtime_policy`；"
+        "实现见 `connectors/cdp_strategy.py`（`SessionGuard`），"
+        "`python3 connectors/cdp_strategy.py --selftest` 离线自检。",
+        "",
+    ])
+    return "\n".join(lines)
+
+
 CLAIM_HINTS = {
     "need": ("需求", "痛点", "问题", "场景", "替代", "workaround", "为什么"),
     "acceptance": ("接受", "喜欢", "偏好", "概念", "方案", "包装", "外观"),
@@ -4887,6 +5611,7 @@ def platform_fit(
     require_bulk: bool = False,
 ) -> dict[str, Any]:
     claims = claim_types or infer_claim_types(text)
+    notes_by_platform = field_notes_index()
     ranked: list[dict[str, Any]] = []
     blocked: list[dict[str, Any]] = []
     for platform in platform_index().values():
@@ -4962,10 +5687,25 @@ def platform_fit(
             "adapter": platform.get("adapter", "none"),
             "cdp": bool(platform.get("cdp")),
             "notes": platform.get("notes", ""),
+            "field_notes": [
+                {
+                    "id": note.get("id"),
+                    "channel": note.get("channel"),
+                    "restriction": note.get("restriction"),
+                    "solution": note.get("solution"),
+                    "verification": (note.get("verification") or {}).get("status"),
+                    "helper": note.get("helper"),
+                }
+                for note in notes_by_platform.get(platform_id, []) + notes_by_platform.get("*", [])
+            ],
         }
         if decision == "blocked":
             blocked.append(entry)
         else:
+            if entry["cdp"]:
+                # The plan carries the enforced runtime budget, not just prose:
+                # one goto per cell, timeout cooldown, session time-box, headroom.
+                entry["runtime_policy"] = _cdp_strategy().policy_for(platform_id).to_dict()
             ranked.append(entry)
     ranked.sort(key=lambda item: (-item["score"], item["name"]))
     if not ranked:
@@ -4977,6 +5717,12 @@ def platform_fit(
         "require_bulk": require_bulk,
         "recommended": ranked[:8],
         "blocked": blocked,
+        "strategies": strategies_for([item["id"] for item in ranked[:8]]),
+        "runtime_policies": {
+            item["id"]: item["runtime_policy"]
+            for item in ranked[:8]
+            if item.get("runtime_policy")
+        },
         "access_steps": [
             "优先官方 API / 授权导出 / 合规历史数据集；不做未授权抓取",
             "为每个平台记录访问依据、账号/应用、速率限制、保留与删除规则",
@@ -5008,6 +5754,35 @@ def platform_markdown(plan: dict[str, Any]) -> str:
         lines.extend(["", "## 不可直接批量采集", ""])
         for item in plan["blocked"]:
             lines.append(f"- {item['name']}：{item['notes']}")
+    field_notes: list[dict[str, Any]] = []
+    seen_notes: set[str] = set()
+    for item in plan["recommended"]:
+        for note in item.get("field_notes", []):
+            note_id = str(note.get("id"))
+            if note_id in seen_notes:
+                continue
+            seen_notes.add(note_id)
+            field_notes.append(note)
+    if field_notes:
+        lines.extend(["", "## 已知平台限制与解法（实战）", ""])
+        for note in field_notes:
+            lines.append(
+                f"- `{note.get('id')}`（{note.get('verification') or '未标注'}）："
+                f"{note.get('restriction')} → {note.get('solution')}"
+            )
+        lines.append("")
+        lines.append("> 记录的是实战限制与解法，不是访问许可；完整字段见 "
+                     "`askovo platforms \"<需求>\" --field-notes`。")
+    strategies = plan.get("strategies") or []
+    if strategies:
+        lines.extend(["", "## 多平台轮转策略（不变量优先）", ""])
+        for strategy in strategies[:8]:
+            lines.append(
+                f"- **{strategy.get('name')}**（`{strategy.get('id')}`）："
+                f"{strategy.get('mechanism')} 不变量：{strategy.get('invariant')}"
+            )
+        lines.append("")
+        lines.append("> 完整策略表：`askovo platforms \"<需求>\" --strategies`。")
     lines.extend(["", "## 采集前", ""])
     lines.extend(f"- {item}" for item in plan.get("access_steps", []))
     lines.extend(["", "## 边界", "", plan.get("boundary", "")])
@@ -5325,9 +6100,42 @@ CDP_TARGET_HOSTS = {
     "instagram": ("instagram.com",),
     "bilibili": ("bilibili.com",),
     "weibo": ("weibo.com", "weibo.cn"),
+    "kickstarter": ("kickstarter.com",),
+    "discord": ("discord.com",),
+    "x": ("x.com", "twitter.com"),
+    "tiktok": ("tiktok.com",),
 }
 MAX_CDP_HANDSHAKE_BYTES = 64 * 1024
 MAX_CDP_MESSAGE_BYTES = 16 * 1024 * 1024
+CAPTURE_CHALLENGE_WAIT_SECONDS = 5.0
+CDP_CALL_TIMEOUT_SECONDS = 30.0
+
+
+class CDPTimeout(TimeoutError):
+    """A CDP call exceeded its budget; the websocket stream is now torn.
+
+    A torn stream is a stop signal, not a retry signal: the next call would
+    resume reading in the middle of the previous frame, and on a session
+    platform the timeout itself is the anti-automation signature (field:
+    Discord drops the login after timeout-then-continue). Reconnect with a
+    fresh page instead.
+    """
+
+    def __init__(self, method: str, timeout_seconds: float) -> None:
+        self.method = method
+        self.timeout_seconds = float(timeout_seconds)
+        super().__init__(
+            f"CDP {method} timed out after {self.timeout_seconds:.0f}s; "
+            "the stream is torn — stop touching the platform and reconnect with a fresh page"
+        )
+
+
+class CDPTransportError(RuntimeError):
+    """The CDP connection is unusable (torn by an earlier timeout or closed)."""
+
+
+def _capture_title_reports_not_found(title: str) -> bool:
+    return bool(_cdp_strategy().title_reports_not_found(title))
 
 
 def _validate_cdp_base(cdp_base: str) -> tuple[str, int]:
@@ -5486,26 +6294,58 @@ class _WebSocket:
 
 
 class CDPClient:
-    def __init__(self, ws: _WebSocket):
+    def __init__(self, ws: _WebSocket, *, timeout: float = CDP_CALL_TIMEOUT_SECONDS):
         self.ws = ws
+        self.timeout = float(timeout)
         self.next_id = 0
+        self._broken = ""
 
-    def call(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    @property
+    def broken(self) -> str:
+        """Why this client can no longer be used (empty means healthy)."""
+        return self._broken
+
+    def _arm_timeout(self, seconds: float) -> None:
+        sock = getattr(self.ws, "sock", None)
+        if sock is not None:
+            try:
+                sock.settimeout(seconds)
+            except OSError:  # pragma: no cover - socket already closed
+                pass
+
+    def call(self, method: str, params: dict[str, Any] | None = None,
+             *, timeout: float | None = None) -> dict[str, Any]:
+        if self._broken:
+            raise CDPTransportError(
+                f"CDP connection is unusable ({self._broken}); open a fresh page "
+                "instead of retrying on a torn stream"
+            )
+        budget = self.timeout if timeout is None else float(timeout)
+        self._arm_timeout(budget)
         self.next_id += 1
         message_id = self.next_id
-        self.ws.send_text(json.dumps({"id": message_id, "method": method, "params": params or {}}))
-        while True:
-            message = json.loads(self.ws.recv_text())
-            if message.get("id") != message_id:
-                continue
-            if "error" in message:
-                raise RuntimeError(f"CDP {method} failed: {message['error']}")
-            return message.get("result") or {}
+        try:
+            self.ws.send_text(json.dumps({"id": message_id, "method": method, "params": params or {}}))
+            while True:
+                message = json.loads(self.ws.recv_text())
+                if message.get("id") != message_id:
+                    continue
+                if "error" in message:
+                    raise RuntimeError(f"CDP {method} failed: {message['error']}")
+                return message.get("result") or {}
+        except (socket.timeout, TimeoutError) as exc:
+            # The frame boundary is unknown after a timeout: never read on.
+            self._broken = f"{method} timed out after {budget:.0f}s"
+            raise CDPTimeout(method, budget) from exc
+        except ConnectionError:
+            self._broken = "connection closed"
+            raise
 
-    def evaluate(self, expression: str) -> Any:
+    def evaluate(self, expression: str, *, timeout: float | None = None) -> Any:
         result = self.call(
             "Runtime.evaluate",
             {"expression": expression, "returnByValue": True, "awaitPromise": True},
+            timeout=timeout,
         )
         return (result.get("result") or {}).get("value")
 
@@ -5587,6 +6427,363 @@ CDP_EXTRACTOR = r"""
 """
 
 
+CDP_PAGE_EXTRACTOR = r"""
+(() => {
+  const clean = (s) => String(s || "");
+  return {
+    title: document.title || "",
+    url: location.href,
+    text: clean(document.body ? document.body.innerText : "").slice(0, 200000)
+  };
+})()
+"""
+
+
+def _validate_capture_url(url: str) -> str:
+    parsed = urllib.parse.urlparse(str(url or "").strip())
+    default_port = 443 if parsed.scheme == "https" else 80
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError("capture --url must be an http(s) URL")
+    if parsed.username or parsed.password:
+        raise ValueError("capture --url must not contain credentials")
+    if parsed.port not in (None, default_port):
+        raise ValueError("capture --url must use the default HTTP(S) port")
+    return parsed.geturl()
+
+
+# Capture is a narrow CDP exception, not a generic browser-scraping route.
+# Only platforms whose catalog entry sets cdp: true (mirrored in CDP_TARGET_HOSTS)
+# may use it, and each page follows the same explicit scope + enabled-adapter +
+# registry-review checks as collect --cdp. Login-protected platforms are
+# user-session-only: the user logs in by hand; challenges are never bypassed.
+CAPTURE_HOST_PLATFORMS: dict[str, tuple[str, ...]] = {
+    platform: hosts for platform, hosts in CDP_TARGET_HOSTS.items()
+}
+CAPTURE_HOST_PLATFORMS.update({
+    "github": ("github.com",),
+    "reddit": ("reddit.com", "old.reddit.com"),
+    "x": ("x.com", "twitter.com"),
+    "youtube": ("youtube.com", "youtu.be"),
+    "tiktok": ("tiktok.com",),
+    "app_store": ("apps.apple.com",),
+    "google_play": ("play.google.com",),
+    "hackernews": ("news.ycombinator.com",),
+    "stackoverflow": ("stackoverflow.com",),
+    "zhihu": ("zhihu.com",),
+    "xiaohongshu": ("xiaohongshu.com",),
+    "jd": ("jd.com",),
+    "taobao": ("taobao.com", "tmall.com"),
+    "kickstarter": ("kickstarter.com",),
+})
+
+
+def _platform_for_capture_host(hostname: str) -> str | None:
+    host = str(hostname or "").lower().rstrip(".")
+    if not host:
+        return None
+    for platform, domains in CAPTURE_HOST_PLATFORMS.items():
+        if any(host == domain or host.endswith("." + domain) for domain in domains):
+            return platform
+    return None
+
+
+def _capture_scope_failure(study: dict[str, Any], url: str) -> dict[str, Any] | None:
+    """Apply collect's explicit allowed_sources rule to a capture URL."""
+    scope = study.get("scope") if isinstance(study.get("scope"), dict) else {}
+    allowed = scope.get("allowed_sources") if isinstance(scope.get("allowed_sources"), list) else []
+    allowed_ids = {str(item).strip() for item in allowed if str(item).strip()}
+    parsed = urllib.parse.urlparse(str(url))
+    platform = _platform_for_capture_host(parsed.hostname or "")
+    host = str(parsed.hostname or "")
+    if platform in CDP_TARGET_HOSTS and platform in allowed_ids:
+        return None
+    if platform not in CDP_TARGET_HOSTS:
+        return {
+            "status": "cdp_not_allowed",
+            "platform": platform,
+            "reason": (
+                f"page host {host} is outside the CDP-enabled platforms "
+                "(amazon/instagram/bilibili/weibo/kickstarter/discord/x/tiktok); "
+                "capture is not a generic browser route and YouTube/blocked platforms "
+                "never use CDP"),
+            "allowed_sources": sorted(allowed_ids),
+        }
+    return {
+        "status": "scope_blocked",
+        "platform": platform,
+        "reason": (
+            f"page host {host} maps to {platform!r}, which is not listed in "
+            "study.scope.allowed_sources"),
+        "allowed_sources": sorted(allowed_ids),
+        "note": "capture reuses the collect scope rule: one entrance, one rule set",
+    }
+
+
+def _capture_adapter_failure(study: dict[str, Any], platform: str) -> dict[str, Any] | None:
+    """Match collect's registry, review and enabled-adapter checks before CDP I/O."""
+    entry = platform_index().get(platform)
+    if not entry or not entry.get("cdp") or entry.get("decision") == "blocked":
+        return {
+            "status": "cdp_not_allowed", "platform": platform,
+            "reason": "CDP is only enabled for authorized visible pages on the "
+                      "catalog platforms with cdp: true "
+                      "(amazon/instagram/bilibili/weibo/kickstarter/discord/x/tiktok)",
+        }
+    if platform_review_expired(platform):
+        return {
+            "status": "review_expired", "platform": platform,
+            "reason": "connector policy review is expired; re-review the registry before capture",
+        }
+    adapters = study.get("source_adapters") if isinstance(study.get("source_adapters"), dict) else {}
+    adapter = adapters.get(platform) if isinstance(adapters, dict) else None
+    if not isinstance(adapter, dict) or not adapter.get("enabled", False):
+        return {
+            "status": "adapter_disabled", "platform": platform,
+            "reason": "capture requires an enabled platform adapter in study.json, same as collect",
+        }
+    return None
+
+
+def _ocr_with_vision(image_path: Path) -> dict[str, Any]:
+    """Optional macOS Vision OCR adapter. Returns text/engine/error."""
+    script = Path(__file__).with_name("ocr_image.swift")
+    if sys.platform != "darwin":
+        return {"engine": "macos_vision", "text": "", "error": "macOS Vision OCR only on darwin"}
+    if not script.is_file():
+        return {"engine": "macos_vision", "text": "", "error": f"missing {script.name}"}
+    try:
+        proc = subprocess.run(["swift", str(script), str(image_path)],
+                              capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"engine": "macos_vision", "text": "", "error": str(exc)[:300]}
+    if proc.returncode != 0:
+        return {"engine": "macos_vision", "text": "",
+                "error": (proc.stderr or proc.stdout or "ocr failed").strip()[:300]}
+    text = proc.stdout.strip()
+    return {"engine": "macos_vision", "text": text,
+            "error": "" if text else "no text recognized"}
+
+
+def capture_page(
+    study_dir: Path,
+    url: str,
+    cdp_base: str,
+    ack_terms: bool,
+    *,
+    ocr: bool = False,
+    wait_seconds: float = 2.0,
+) -> dict[str, Any]:
+    """Capture a user-authorized visible page through CDP.
+
+    This writes a *candidate capture* under 01-sources/captures/: page text,
+    screenshot, optional OCR text, hashes and source metadata. It does not
+    register evidence or change the chain; a human must review it first.
+    """
+    study_dir = Path(study_dir).resolve()
+    if not (study_dir / "study.json").is_file():
+        return {"status": "error", "reason": f"missing study.json under {study_dir}"}
+    if not ack_terms:
+        return {"status": "terms_required",
+                "reason": "capture needs --ack-terms and a browser session you are authorized to use"}
+    try:
+        url = _validate_capture_url(url)
+        _validate_cdp_base(cdp_base)
+    except ValueError as exc:
+        return {"status": "error", "reason": str(exc)}
+    try:
+        study = load_json(study_dir / "study.json")
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"status": "error", "reason": f"cannot read study.json: {exc}"}
+    if not isinstance(study, dict):
+        return {"status": "error", "reason": "study.json must be a JSON object"}
+    scope_failure = _capture_scope_failure(study, url)
+    if scope_failure is not None:
+        return scope_failure
+    platform = _platform_for_capture_host(urllib.parse.urlparse(url).hostname or "")
+    if platform is None:  # defensive: scope validation normally returns first
+        return {"status": "cdp_not_allowed", "reason": "capture host is not approved"}
+    try:
+        _validate_cdp_target(platform, url)
+    except ValueError as exc:
+        return {"status": "error", "platform": platform, "reason": str(exc)}
+    adapter_failure = _capture_adapter_failure(study, platform)
+    if adapter_failure is not None:
+        return adapter_failure
+    strategy = _cdp_strategy()
+    policy = strategy.policy_for(platform)
+    capture_id = (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+                  + "-" + hashlib.sha256(url.encode()).hexdigest()[:8])
+    out_dir = study_dir / "01-sources" / "captures"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    client: CDPClient | None = None
+    try:
+        ws_url = cdp_new_page(cdp_base, url)
+        client = CDPClient(_WebSocket(ws_url))
+        client.call("Runtime.enable")
+        time.sleep(max(0.5, wait_seconds))
+        value = client.evaluate(CDP_PAGE_EXTRACTOR)
+        if not isinstance(value, dict):
+            return {"status": "error", "reason": "CDP did not return page content"}
+        final_url = str(value.get("url") or url)
+        final_platform = _platform_for_capture_host(
+            urllib.parse.urlparse(final_url).hostname or "")
+        if final_platform != platform:
+            return {
+                "status": "scope_blocked", "platform": platform,
+                "reason": "final page URL left the approved platform; capture stopped",
+                "final_url": final_url,
+            }
+        try:
+            _validate_cdp_target(platform, final_url)
+        except ValueError as exc:
+            return {"status": "error", "platform": platform, "reason": str(exc)}
+        text = str(value.get("text") or "")
+        challenge_waited = False
+        if strategy.classify_page("", text) == "challenge":
+            # Passive wait only: a human may complete the challenge in the same
+            # browser. Never solve it, reload through a bypass, or alter the page.
+            deadline = time.monotonic() + max(0.0, CAPTURE_CHALLENGE_WAIT_SECONDS)
+            while time.monotonic() < deadline:
+                time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
+                refreshed = client.evaluate(CDP_PAGE_EXTRACTOR)
+                if not isinstance(refreshed, dict):
+                    continue
+                refreshed_text = str(refreshed.get("text") or "")
+                if strategy.classify_page("", refreshed_text) != "challenge":
+                    value = refreshed
+                    text = refreshed_text
+                    challenge_waited = True
+                    break
+            else:
+                return {"status": "challenge",
+                        "reason": ("page shows a challenge; passive wait expired and "
+                                   "human completion was not observed — capture stopped")}
+        title = str(value.get("title") or "")
+        verdict = strategy.classify_page(title, text)
+        if verdict == "challenge":
+            # The title can still report the interstitial after the body
+            # cleared; never mint a candidate out of a challenge page.
+            return {"status": "challenge",
+                    "reason": ("page still reports a challenge after the passive wait; "
+                               "capture stopped without a candidate")}
+        if verdict == "page_not_found":
+            # An error page is not research evidence: stop before the
+            # screenshot and persist no candidate for it.
+            return {
+                "status": "page_not_found",
+                "platform": platform,
+                "reason": ("final page reports a not-found/error state; "
+                           "no candidate was written"),
+                "final_url": final_url,
+                "title": title,
+            }
+        if verdict == "blank_render":
+            # 200 + empty title + empty body is an unsupported rendering stack,
+            # not a challenge and not an empty corpus: no candidate, no retry.
+            return {
+                "status": "blank_render",
+                "platform": platform,
+                "reason": ("the page returned an empty title and body; this rendering "
+                           "stack is unsupported on the CDP channel — pivot to another "
+                           "source in the same vertical instead of retrying"),
+                "final_url": final_url,
+                "title": title,
+                "runtime_policy": policy.to_dict(),
+            }
+        if platform == "discord" and len(text.strip()) < 1500 and strategy.detect_membership_gate(text):
+            # Join is not access: a short page that announces a membership gate
+            # is a coverage gap, not evidence. Never capture it as a candidate.
+            return {
+                "status": "membership_gated",
+                "platform": platform,
+                "reason": ("the page announces a membership verification gate; joining "
+                           "a server is not permission to read its history — record the "
+                           "gap; no candidate was written"),
+                "final_url": final_url,
+                "title": title,
+                "runtime_policy": policy.to_dict(),
+            }
+        shot = client.call("Page.captureScreenshot", {"format": "png"})
+        raw = shot.get("data") if isinstance(shot, dict) else None
+        if not raw:
+            return {"status": "error", "reason": "CDP screenshot returned no data"}
+        image_path = out_dir / f"{capture_id}.png"
+        image_path.write_bytes(base64.b64decode(raw))
+        ocr_payload = {"engine": "not_requested", "text": "", "error": ""}
+        if ocr:
+            ocr_payload = _ocr_with_vision(image_path)
+        payload = {
+            "schema": "askovo.page-capture/1",
+            "capture_id": capture_id,
+            "captured_at": now(),
+            "collected_at": now(),
+            "url": url,
+            "final_url": final_url,
+            "source_url": final_url,
+            "capture_platform": platform,
+            "title": title,
+            "text": text,
+            "text_length": len(text),
+            "text_sha256": hashlib.sha256(text.encode()).hexdigest(),
+            "screenshot": str(image_path),
+            "screenshot_sha256": hashlib.sha256(image_path.read_bytes()).hexdigest(),
+            "ocr": {
+                "engine": ocr_payload.get("engine"),
+                "text": ocr_payload.get("text") or "",
+                "text_length": len(str(ocr_payload.get("text") or "")),
+                "text_sha256": hashlib.sha256(
+                    str(ocr_payload.get("text") or "").encode()).hexdigest(),
+                "error": ocr_payload.get("error") or "",
+            },
+            "cdp_endpoint": cdp_base,
+            "ack_terms": True,
+            "governance": {
+                "transport": "cdp",
+                "scope": "allowed_sources_matched",
+                "adapter": "enabled",
+                "registry_review": "current",
+                "challenge_check": ("waited_then_passed" if challenge_waited else "passed"),
+                "cdp_loopback": True,
+                "runtime_policy": policy.to_dict(),
+            },
+            "evidence_status": "candidate",
+            "note": "candidate capture only; named-human accept with an explicit evidence level is required", 
+        }
+        json_path = out_dir / f"{capture_id}.json"
+        json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                             encoding="utf-8")
+        with (out_dir / "index.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({
+                "capture_id": capture_id, "captured_at": payload["captured_at"],
+                "url": url, "title": payload["title"],
+                "text_sha256": payload["text_sha256"],
+                "screenshot": str(image_path),
+                "ocr_error": payload["ocr"]["error"],
+            }, ensure_ascii=False) + "\n")
+        status = "captured"
+        if ocr and payload["ocr"]["error"]:
+            status = "ocr_failed"
+        return {"status": status, "capture_id": capture_id, "capture": str(json_path),
+                "screenshot": str(image_path), "ocr": payload["ocr"],
+                "platform": platform, "source_url": final_url,
+                "evidence_status": "candidate", "text_length": len(text)}
+    except (TimeoutError, socket.timeout) as exc:
+        # A timeout tears the CDP stream and, on a session platform, is the
+        # anti-automation signature itself: stop instead of retrying.
+        decision = strategy.classify_failure(exc, platform=platform, policy=policy)
+        return {
+            "status": "cdp_timeout",
+            "platform": platform,
+            "reason": str(exc),
+            "action": decision["message"],
+            "retry_after_seconds": int(policy.timeout_cooldown_minutes * 60),
+            "runtime_policy": policy.to_dict(),
+        }
+    finally:
+        if client is not None:
+            client.close()
+
+
 def collect_cdp(
     study_dir: Path,
     platform: str,
@@ -5611,28 +6808,54 @@ def collect_cdp(
         return {
             "status": "cdp_not_allowed",
             "platform": platform,
-            "reason": "CDP is only enabled for authorized visible pages on amazon/instagram/bilibili/weibo",
+            "reason": "CDP is only enabled for authorized visible pages on the catalog platforms with cdp: true",
         }
     if not url:
         return {"status": "error", "platform": platform, "reason": "CDP requires --url"}
     _validate_cdp_target(platform, url)
     if lease_valid is not None and not lease_valid():
         return {"status": "lease_lost", "platform": platform, "reason": "queue lease is no longer owned by this worker"}
-    ws_url = cdp_new_page(cdp_base, url)
-    client = CDPClient(_WebSocket(ws_url))
+    strategy = _cdp_strategy()
+    policy = strategy.policy_for(platform)
+    guard = strategy.SessionGuard(platform, policy=policy)
+    guard.begin_cell("collect")
+    guard.navigate()  # one goto per cell: the page is opened exactly once
+    client: CDPClient | None = None
     rows: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
     try:
+        ws_url = cdp_new_page(cdp_base, url)
+        client = CDPClient(_WebSocket(ws_url))
         client.call("Runtime.enable")
         time.sleep(max(0.5, wait_seconds))
+        stale_rounds = 0
         for _ in range(max(0, scrolls) + 1):
+            guard.check_session()
             value = client.evaluate(CDP_EXTRACTOR)
             if isinstance(value, dict) and value.get("error") == "challenge_page":
+                guard.record_stop("challenge_page")
                 return {
                     "status": "challenge",
                     "platform": platform,
                     "reason": "page shows a challenge/robot check; stop and use an authorized export instead",
                 }
+            if (
+                not rows
+                and isinstance(value, dict)
+                and not value.get("rows")
+                and not str(value.get("page_title") or "").strip()
+            ):
+                # 200 + empty title + empty body is an unsupported stack, not
+                # an empty corpus: stop before writing an empty run.
+                guard.record_stop("blank_render")
+                return {
+                    "status": "blank_render",
+                    "platform": platform,
+                    "reason": ("page returned an empty title and body; unsupported rendering "
+                               "stack — pivot to another source in the same vertical"),
+                    "runtime_policy": policy.to_dict(),
+                }
+            before = len(rows)
             if isinstance(value, dict) and isinstance(value.get("rows"), list):
                 for row in value["rows"]:
                     key = hashlib.sha256(
@@ -5646,10 +6869,29 @@ def collect_cdp(
                         break
             if len(rows) >= limit:
                 break
+            stale_rounds = stale_rounds + 1 if len(rows) == before else 0
+            if stale_rounds >= 2:
+                # The list stopped growing: stop instead of metronome-scrolling
+                # a page that is not producing (silent extractor failure triage).
+                break
             client.evaluate("window.scrollBy(0, Math.max(700, Math.floor(window.innerHeight * 0.85)))")
             time.sleep(max(0.4, wait_seconds / 2))
+    except (TimeoutError, socket.timeout, strategy.SessionExpired, strategy.CircuitOpen) as exc:
+        decision = guard.record_failure(exc, str(exc))
+        status = "cdp_timeout" if isinstance(exc, (TimeoutError, socket.timeout)) else (
+            "session_expired" if isinstance(exc, strategy.SessionExpired) else "cooldown")
+        return {
+            "status": status,
+            "platform": platform,
+            "reason": str(exc),
+            "action": decision["message"],
+            "retry_after_seconds": int(policy.timeout_cooldown_minutes * 60),
+            "runtime_policy": policy.to_dict(),
+        }
     finally:
-        client.close()
+        guard.end_cell("circuit_open" if guard.circuit()["open"] else "ok")
+        if client is not None:
+            client.close()
     raw_records = [
         {
             "id": f"{platform}:{hashlib.sha256((row.get('source_url','') + row.get('text','')[:500]).encode()).hexdigest()[:16]}",
@@ -5685,12 +6927,64 @@ def collect_cdp(
         "requested": limit,
         "source_url": url,
         "cdp_base": cdp_base,
+        "runtime_policy": policy.to_dict(),
         "limits": entry.get("limits", []),
         "bias": entry.get("bias", []),
         "terms_note": "visible page text only; no challenge bypass; platform terms may still restrict collection",
     }
     written = _write_run(study_dir, platform, run_id, normalized, manifest, raw_records)
     return {"status": "collected", "platform": platform, "transport": "cdp", "records": len(normalized), **written}
+
+
+def _procurement_preflight(study_dir: Path, platform: str,
+                           entry: dict[str, Any]) -> dict[str, Any] | None:
+    """Stop routes whose live access requires the user to buy/license a service.
+
+    An authorized local fixture bypasses this preflight because no provider is
+    selected. Askovo never purchases a tier, provider, credits, or subscription.
+    """
+    access_modes = {str(item) for item in entry.get("access_modes", [])}
+    paid_api = str(entry.get("auth") or "") == "oauth_paid"
+    licensed_provider = "licensed_provider" in access_modes
+    if not paid_api and not licensed_provider:
+        return None
+    import_command = (
+        f"askovo import {study_dir} <authorized-export.jsonl> "
+        f"--source-family {platform} --evidence-level E1"
+    )
+    alternatives = [
+        {"route": "authorized_export_or_paste", "command": import_command,
+         "requires_procurement": False},
+        {"route": "local_screenshot_transcription",
+         "action": "transcribe a screenshot you are authorized to use, import the text, "
+                   "and have a named human assign its evidence level; OCR itself assigns none",
+         "requires_procurement": False},
+    ]
+    if entry.get("cdp") and platform in CDP_TARGET_HOSTS:
+        alternatives.insert(0, {
+            "route": "authorized_visible_page_cdp",
+            "command": f"askovo capture page {study_dir} --url <approved-visible-url> --ack-terms --ocr",
+            "then": "askovo capture accept ... --by NAME --evidence-level E0|E1|E2",
+            "requires_procurement": False,
+        })
+    service = "the official paid API tier" if paid_api else "a licensed data provider"
+    return {
+        "status": "blocked",
+        # C-01 §3 registry vocabulary for the machine-readable reason; the
+        # delivery-contract terminal state (BLOCKED_USER_INPUT) travels in its
+        # own field so the frozen ten-code registry stays intact.
+        "reason_code": "INPUT_REQUIRED",
+        "blocked_reason_code": "INPUT_REQUIRED",
+        "terminal_state": "BLOCKED_USER_INPUT",
+        "platform": platform,
+        "reason": f"live {platform} collection selects {service}; user input/procurement is required",
+        "requires_procurement": True,
+        "user_action": (
+            f"Use an authorized export/local paste, or arrange access to {service} yourself. "
+            "Askovo cannot buy it or confirm eligibility for you."),
+        "transaction_executed": False,
+        "alternative_routes": alternatives,
+    }
 
 
 def collect_platform(
@@ -5722,6 +7016,10 @@ def collect_platform(
             "reason": entry.get("notes", "blocked by platform policy"),
             "alternatives": [item["id"] for item in platform_index().values() if item.get("decision") == "supported"][:5],
         }
+    if fixture is None:
+        procurement_block = _procurement_preflight(study_dir, platform, entry)
+        if procurement_block is not None:
+            return procurement_block
     run_id = run_id or _run_id(platform)
     plan = {
         "platform": platform,
@@ -5897,6 +7195,48 @@ def _analysis_time_coverage(records: list[dict[str, Any]], study: dict[str, Any]
     }
 
 
+ANALYSIS_FIELD_CONCEPTS = {
+    "record_id": ("record_id", "id"),
+    "text": ("text", "body", "normalized_text", "content", "selftext"),
+    "source_url": ("source_url", "url", "source_ref"),
+    "created_at": ("created_at", "source_time"),
+}
+ANALYSIS_REQUIRED_FIELDS = ("record_id",)
+
+
+def _analysis_field_completeness(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Non-empty rates for the fields a downstream join depends on.
+
+    A 0% rate on record_id is a normalization bug. text/source_url/created_at
+    can legitimately be absent for first-party or structured material, so they
+    are reported but only flagged for review, not declared a bug.
+    """
+    total = len(records)
+    fields: dict[str, dict[str, Any]] = {}
+    for concept, keys in ANALYSIS_FIELD_CONCEPTS.items():
+        if concept == "text":
+            non_empty = sum(1 for record in records if str(_evidence_text(record) or "").strip())
+        else:
+            non_empty = sum(
+                1 for record in records
+                if any(str(record.get(key) or "").strip() for key in keys)
+            )
+        fields[concept] = {
+            "non_empty": non_empty,
+            "ratio": round(non_empty / total, 3) if total else 0.0,
+        }
+    zero = [concept for concept, item in fields.items() if total and item["non_empty"] == 0]
+    return {
+        "fields": fields,
+        "zero_rate_fields": zero,
+        "required_zero_rate": [concept for concept in zero if concept in ANALYSIS_REQUIRED_FIELDS],
+        "note": (
+            "0% 的 record_id 是清洗/转换 bug；正文、source_url、created_at 对第一方或结构化材料"
+            "可能本来为空，按来源复核后再判断。先修管线，不要改派生结论。"
+        ),
+    }
+
+
 def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any]:
     study_dir = study_dir.resolve()
     records: list[dict[str, Any]] = []
@@ -5980,6 +7320,7 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
     for record in unique:
         level = str(record.get("evidence_level") or "unregistered")
         level_counts[level] = level_counts.get(level, 0) + 1
+    field_completeness = _analysis_field_completeness(unique)
     analysis = {
         "generated_at": now(),
         "question": question,
@@ -5991,6 +7332,7 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
         "segments": _analysis_segments(unique),
         "segments_note": "描述性计数，n<3 的分段标记 low_n；不做显著性、因果或总体推断。",
         "time_coverage": _analysis_time_coverage(unique, study),
+        "field_completeness": field_completeness,
         "by_evidence_form": by_form,
         "by_month": dict(sorted(by_month.items())),
         "avg_text_length": round(sum(lengths) / len(lengths), 1) if lengths else 0,
@@ -6010,9 +7352,39 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
         f"- 证据形式：{json.dumps(by_form, ensure_ascii=False)}",
         f"- 平均文本长度：{analysis['avg_text_length']}",
         "",
-        "## 高频词（候选主题，不是结论）",
+        "## 字段完整性（管线体检）",
         "",
     ]
+    field_labels = {
+        "record_id": "记录 id",
+        "text": "正文",
+        "source_url": "来源 URL",
+        "created_at": "发生时间",
+    }
+    for concept, item in field_completeness["fields"].items():
+        lines.append(
+            f"- {field_labels.get(concept, concept)}：{item['non_empty']}/{analysis['records']}"
+            f"（{item['ratio']:.0%}）"
+        )
+    if field_completeness["required_zero_rate"]:
+        lines.append(
+            "- **0% 必填字段：" + "、".join(
+                field_labels.get(item, item) for item in field_completeness["required_zero_rate"])
+            + "**——先查清洗/转换是否丢字段，不要把 0% 当来源缺口。"
+        )
+    elif field_completeness["zero_rate_fields"]:
+        lines.append(
+            "- 0% 字段：" + "、".join(
+                field_labels.get(item, item) for item in field_completeness["zero_rate_fields"])
+            + "（第一方或结构化材料可能本来为空，按来源复核）。"
+        )
+    lines.extend([
+        "",
+        "> " + field_completeness["note"],
+        "",
+        "## 高频词（候选主题，不是结论）",
+        "",
+    ])
     lines.extend(f"- {item['term']}：{item['count']}" for item in analysis["top_terms"][:20])
     if question:
         lines.extend(["", "## 与问题的匹配片段", ""])
@@ -6040,6 +7412,411 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
     return {"status": "analyzed", "analysis": str(out_dir / "analysis.json"), "markdown": str(out_dir / "analysis.md"), "records": len(unique)}
 
 
+# --------------------------------------------------------------------------- #
+# Research answer: the terminal projection of the golden chain
+# (capture/paste -> human review -> evidence -> analyze -> answer).
+# It is a deterministic read over evidence.jsonl + study.decision: the
+# conclusion changes when the evidence changes, every cited record keeps its
+# collection back-link, and no evidence means unanswerable + gap list —
+# never an invented conclusion. It writes no canonical truth.
+# --------------------------------------------------------------------------- #
+
+ANSWER_SCHEMA = "askovo.research-answer/1"
+ANSWER_MIN_SUPPORT = 3  # n<3 is low_n everywhere else in the engine; go needs it met
+ANSWER_STOPWORDS = set(
+    "the and for with that this from are was were you your our not but have has had will "
+    "can could should about into over under more most some such than then them they their "
+    "there here what when where which who whom why how all any both each few other own same "
+    "so too very just also a an of to in on at or be is it as by we do does did".split())
+_STATUS_QUO_MARKERS = ("不做", "维持现状", "保持现状", "停止", "放弃", "暂缓",
+                       "do nothing", "status quo", "stop the", "cancel the", "postpone")
+
+
+def _answer_terms(text: str) -> list[str]:
+    return [token for token in
+            re.findall(r"[A-Za-z]{3,}|[\u4e00-\u9fff]{2,4}", str(text or "").lower())
+            if token not in ANSWER_STOPWORDS]
+
+
+def _cjk_bigrams(text: str) -> set[str]:
+    chars = re.findall(r"[\u4e00-\u9fff]", str(text or ""))
+    return {chars[i] + chars[i + 1] for i in range(len(chars) - 1)}
+
+
+def _option_match_keys(options: list[str]) -> list[set[str]]:
+    """Distinctive match keys per option: CJK bigrams + latin tokens.
+
+    Bigrams shared by two options (e.g. 「摄像头」in every alternative) cannot
+    distinguish anything, so they are dropped; an option whose keys are all
+    shared falls back to its full key set instead of matching nothing.
+    """
+    raw = []
+    for option in options:
+        keys = set(_answer_terms(option))
+        keys |= {bigram.lower() for bigram in _cjk_bigrams(option)}
+        raw.append(keys)
+    distinctive = []
+    for index, keys in enumerate(raw):
+        shared = set().union(*(raw[other] for other in range(len(raw)) if other != index)) \
+            if len(raw) > 1 else set()
+        distinctive.append(keys - shared or keys)
+    return distinctive
+
+
+def _is_counter_record(record: dict[str, Any]) -> bool:
+    return (str(record.get("claim_type")) == "counter"
+            or str(record.get("corpus_role")) in ("control", "substitute_rejector")
+            or str(record.get("evidence_level")) == "E4-")
+
+
+def _answer_ref(record: dict[str, Any]) -> dict[str, Any]:
+    ref = {
+        "record_id": str(record.get("record_id") or ""),
+        "source_family": str(record.get("source_family") or ""),
+        "source_ref": str(record.get("source_ref") or ""),
+        "evidence_level": str(record.get("evidence_level") or ""),
+        "excerpt": _evidence_text(record)[:120],
+    }
+    if record.get("capture_id"):
+        ref["capture_id"] = str(record.get("capture_id"))
+    if record.get("capture_url"):
+        ref["url"] = str(record.get("capture_url"))
+    return ref
+
+
+def _chain_node_states(study_dir: Path) -> dict[str, Any]:
+    path = study_dir / "04-findings" / "product-reasoning.json"
+    try:
+        reasoning = load_json(path)
+    except (OSError, json.JSONDecodeError):
+        return {"available": False, "note": "no readable product-reasoning.json"}
+    chains = reasoning.get("chains") if isinstance(reasoning, dict) else None
+    if not isinstance(chains, list) or not chains:
+        return {"available": False, "note": "no chains written yet; nodes stay hypotheses"}
+    states: dict[str, Any] = {}
+    for chain in chains:
+        if not isinstance(chain, dict):
+            continue
+        chain_id = str(chain.get("id") or "")
+        nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
+        states[chain_id] = {
+            str(node): str((node_data or {}).get("status") or "hypothesis")
+            for node, node_data in nodes.items()
+        }
+    return {"available": True, "chains": states}
+
+
+def _canonical_business_decision(study_dir: Path, question: str) -> dict[str, Any]:
+    """Project a formal business recommendation from the canonical seven-node chain.
+
+    Lexical evidence matches never enter this projection. A formal recommendation
+    requires a named DecisionRecord, a decided chain and audited support; the
+    existing DecisionBrief builder owns the actual recommendation semantics.
+    """
+    reasoning_path = study_dir / "04-findings" / "product-reasoning.json"
+    try:
+        reasoning = load_json(reasoning_path)
+    except (OSError, json.JSONDecodeError):
+        reasoning = {}
+    chains = reasoning.get("chains") if isinstance(reasoning, dict) else []
+    records = reasoning.get("decision_records") if isinstance(reasoning, dict) else []
+    chains = [item for item in (chains or []) if isinstance(item, dict)]
+    records = [item for item in (records or []) if isinstance(item, dict)
+               and str(item.get("decision_maker") or "").strip()]
+    base = {
+        "kind": "not_ready",
+        "status": "needs_decision_record",
+        "statement": None,
+        "recommended_option_id": None,
+        "approved": False,
+        "canonical_ref": "04-findings/product-reasoning.json",
+        "next_action": "人工完成七节点挂接与审计后：askovo decision record STUDY --chain CHAIN --by OWNER",
+    }
+    if not chains:
+        base["status"] = "needs_canonical_chain"
+        base["next_action"] = "先挂接 demand judgment 与七节点链，再记录负责人 DecisionRecord"
+        return base
+    chain = chains[0]
+    chain_id = str(chain.get("id") or "")
+    matching = [item for item in records if str(item.get("chain_id") or "") == chain_id]
+    if not matching:
+        base["next_action"] = (
+            "词汇匹配只作研究辅助；正式业务决定先执行："
+            "askovo decision record %s --chain %s --by OWNER" % (study_dir, chain_id))
+        return base
+    matching.sort(key=lambda item: int(item.get("version") or 0))
+    decision_record = matching[-1]
+    try:
+        import decision_brief
+        brief = decision_brief.build(study_dir, question=question)
+    except Exception as exc:  # noqa: BLE001 正式投影失败时不能退回词汇 go
+        base.update(status="projection_failed", reason="%s: %s" % (type(exc).__name__, exc))
+        return base
+    recommendation = brief.get("recommendation") or {}
+    return {
+        "kind": str(recommendation.get("kind") or "hold"),
+        "status": str(brief.get("decision_status") or "hold"),
+        "statement": recommendation.get("statement"),
+        "recommended_option_id": brief.get("recommended_option_id"),
+        "approved": False,
+        "not_approved": True,
+        "stale": brief.get("artifact_status") == "stale",
+        "source_fingerprint": brief.get("source_fingerprint"),
+        "canonical_ref": "04-findings/product-reasoning.json",
+        "decision_record": {
+            "record_id": decision_record.get("record_id"),
+            "version": decision_record.get("version"),
+            "decision_maker": decision_record.get("decision_maker"),
+        },
+        "audit": {
+            "supported_chain": bool(recommendation.get("kind") == "recommend"),
+            "basis": recommendation.get("ranking_basis"),
+        },
+        "next_action": brief.get("next_required_action"),
+    }
+
+
+def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]:
+    """Answer the study's decision question from the evidence store, or refuse.
+
+    Two separate projections share one output:
+    - lexical support/counter matches are research assistance only and can at
+      most recommend ``continue_research``;
+    - a formal go/no-go comes only from the canonical seven-node chain,
+      audited support and a named DecisionRecord via ``business_decision``.
+    normalized.jsonl is deliberately excluded: only the canonical evidence
+    store participates in either projection.
+    """
+    study_dir = Path(study_dir).resolve()
+    study = load_json(study_dir / "study.json")
+    if not isinstance(study, dict):
+        study = {}
+    decision = study.get("decision") if isinstance(study.get("decision"), dict) else {}
+    question = str(question or decision.get("question") or "").strip()
+    options = [str(item).strip() for item in (decision.get("options") or [])
+               if str(item).strip()]
+    records: list[dict[str, Any]] = []
+    for name in ("02-data/evidence.jsonl",):
+        path = study_dir / name
+        if not path.is_file():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict):
+                records.append(item)
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for record in records:
+        key = str(record.get("record_id") or "")
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        unique.append(record)
+
+    match_keys = _option_match_keys(options)
+    support = [{
+        "option": option,
+        "match_keys": sorted(keys)[:12],
+        "supporting_refs": [],
+        "counter_refs": [],
+    } for option, keys in zip(options, match_keys)]
+    for record in unique:
+        text = _evidence_text(record).lower()
+        counter = _is_counter_record(record)
+        for entry in support:
+            if any(key in text for key in entry["match_keys"]):
+                (entry["counter_refs"] if counter else entry["supporting_refs"]).append(
+                    _answer_ref(record))
+
+    level_counts: dict[str, int] = {}
+    family_counts: dict[str, int] = {}
+    for record in unique:
+        level = str(record.get("evidence_level") or "unregistered")
+        level_counts[level] = level_counts.get(level, 0) + 1
+        family = str(record.get("source_family") or "unknown")
+        family_counts[family] = family_counts.get(family, 0) + 1
+
+    minimum_evidence = [str(item) for item in (decision.get("minimum_evidence") or [])]
+    answer_status = "unanswerable"
+    decision_value = "unanswerable"
+    lexical_decision = "unanswerable"
+    leading_option: str | None = None
+    gaps: list[dict[str, Any]] = []
+
+    if not unique:
+        gaps.append({"gap": "证据库为空：还没有任何经审核登记的证据",
+                     "next_actions": [
+                         "粘贴文本：askovo import <study> <file> --source-family paste --evidence-level E1",
+                         "可见页面：askovo capture page <study> --url … --ack-terms，再 capture accept --by NAME",
+                         "截图 OCR：capture page --ocr 后用 capture accept --from ocr"]})
+        for item in minimum_evidence:
+            gaps.append({"gap": f"决策最低证据要求未满足：{item}", "next_actions": []})
+        gates = study.get("quality_gates") if isinstance(study.get("quality_gates"), dict) else {}
+        if gates.get("required_corpus_roles"):
+            gaps.append({"gap": "必需语料角色尚无记录："
+                         + ", ".join(map(str, gates["required_corpus_roles"])),
+                         "next_actions": []})
+    elif not options:
+        gaps.append({"gap": "study.decision.options 为空：没有可比较的选项",
+                     "next_actions": ["在 study.json 的 decision.options 里写出至少两个选项"]})
+    elif not any(entry["supporting_refs"] or entry["counter_refs"] for entry in support):
+        answer_status = "unanswerable"
+        gaps.append({"gap": f"证据库有 {len(unique)} 条记录，但没有一条提到任何选项的内容",
+                     "next_actions": ["检查选项措辞是否与语料同词，或补充针对性语料"]})
+        for item in minimum_evidence:
+            gaps.append({"gap": f"决策最低证据要求未满足：{item}", "next_actions": []})
+    else:
+        ranked = sorted(support, key=lambda entry: (-len(entry["supporting_refs"]),
+                                                    entry["option"]))
+        top = ranked[0]
+        tied = [entry["option"] for entry in ranked
+                if len(entry["supporting_refs"]) == len(top["supporting_refs"])]
+        leading_option = top["option"]
+        if len(tied) > 1:
+            answer_status = "inconclusive"
+            decision_value = lexical_decision = "continue_research"
+            gaps.append({"gap": f"选项并列领先（各 {len(top['supporting_refs'])} 条支持）："
+                         + "、".join(tied),
+                         "next_actions": ["补充能区分并列选项的证据"]})
+        elif top["counter_refs"]:
+            answer_status = "contested"
+            decision_value = lexical_decision = "continue_research"
+            gaps.append({
+                "gap": f"领先选项「{leading_option}」存在 {len(top['counter_refs'])} 条反证；"
+                       "支持数不能淹没反证，需人工裁决",
+                "next_actions": ["人工审核反证记录，或收集能回应反证的新证据"]})
+        elif len(top["supporting_refs"]) < ANSWER_MIN_SUPPORT:
+            answer_status = "supported_low_n"
+            decision_value = lexical_decision = "continue_research"
+            gaps.append({
+                "gap": f"领先选项「{leading_option}」仅 {len(top['supporting_refs'])} 条支持"
+                       f"（低于 {ANSWER_MIN_SUPPORT}）",
+                "next_actions": ["继续采集，或接受低样本并人工签注"]})
+        else:
+            answer_status = "supported"
+            lowered = leading_option.lower()
+            status_quo = any(marker in lowered or marker in leading_option
+                             for marker in _STATUS_QUO_MARKERS)
+            decision_value = lexical_decision = "no_go" if status_quo else "go"
+
+    business_decision = _canonical_business_decision(study_dir, question)
+    if lexical_decision in ("go", "no_go"):
+        # Lexical matches can guide the next research step, never authorize a
+        # business go. Without a canonical recommendation the terminal advice
+        # is deliberately continue_research, even with 3+ same-source E1 hits.
+        decision_value = "continue_research"
+        if business_decision.get("kind") != "recommend":
+            gaps.append({
+                "gap": "词汇命中只是研究辅助，不能直接形成做/不做的业务决定",
+                "next_actions": [business_decision.get("next_action")
+                                 or "完成七节点、审计与负责人 DecisionRecord"],
+            })
+    if business_decision.get("kind") == "recommend" \
+            and business_decision.get("status") == "ready" \
+            and not business_decision.get("stale"):
+        statement = str(business_decision.get("statement") or "")
+        lowered_statement = statement.lower()
+        no_go = any(marker in lowered_statement or marker in statement
+                    for marker in _STATUS_QUO_MARKERS)
+        decision_value = "no_go" if no_go else "go"
+
+    supporting_levels = sorted({
+        ref["evidence_level"]
+        for entry in support for ref in entry["supporting_refs"]})
+    result = {
+        "schema": ANSWER_SCHEMA,
+        "generated_at": now(),
+        "question": question,
+        "options": options,
+        "answer_status": answer_status,
+        "decision": decision_value,
+        "leading_option": leading_option,
+        "lexical_projection": {
+            "answer_status": answer_status,
+            "candidate_decision": lexical_decision,
+            "leading_option": leading_option,
+            "business_decision_allowed": False,
+            "note": "选项词命中只用于研究辅助；同源E1、关键词数量或normalized-only记录均不能产生正式go",
+        },
+        "business_decision": business_decision,
+        "support": support,
+        "evidence_summary": {
+            "records": len(unique),
+            "by_evidence_level": dict(sorted(level_counts.items())),
+            "by_source_family": dict(sorted(family_counts.items())),
+            "min_support_for_go": ANSWER_MIN_SUPPORT,
+        },
+        "supporting_evidence_levels": supporting_levels,
+        "gaps": gaps,
+        "chain_context": _chain_node_states(study_dir),
+        "boundary": (
+            "词汇计数只作研究辅助，最多建议继续研究；不证明总体比例、因果或付费意愿。"
+            "正式go/no-go只来自七节点+审计支持+负责人DecisionRecord；"
+            "反证不被支持数淹没；引用只回链02-data/evidence.jsonl，normalized-only不参与。"
+            if unique else
+            "无证据时本答案只声明不可回答与缺口，不产生任何结论。"),
+        "evidence_file": str(study_dir / "02-data/evidence.jsonl"),
+    }
+    out_dir = study_dir / "04-findings"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "research-answer.json").write_text(
+        json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    lines = [f"# 研究答案：{question or '（未设置决策问题）'}", ""]
+    lines.append(
+        f"> 正式业务决策：`{business_decision.get('kind')}` / `{business_decision.get('status')}`；"
+        f"当前建议：`{decision_value}`；批准：**否**。"
+        f"依据：{business_decision.get('canonical_ref')}。")
+    if answer_status == "unanswerable":
+        lines.append("> 词汇辅助：**不可回答**——证据库没有可用匹配，缺口如下；不会编造结论。")
+    else:
+        label = {"supported": "证据支持", "supported_low_n": "低样本支持",
+                 "contested": "存在反证", "inconclusive": "并列未决"}[answer_status]
+        lines.append(f"> 词汇辅助：**{label}**；候选：`{lexical_decision}`；"
+                     f"领先选项：{leading_option or '—'}（不直接构成业务决定）。")
+    lines += ["", "## 各选项证据（回链采集来源）", ""]
+    for entry in support:
+        lines.append(f"### {entry['option']}")
+        lines.append(f"- 支持 {len(entry['supporting_refs'])} 条 / 反证 {len(entry['counter_refs'])} 条")
+        for ref in entry["supporting_refs"]:
+            back = f"（回链 {ref['record_id']} · {ref['source_family']}"
+            back += f" · {ref.get('capture_id')})" if ref.get("capture_id") else "）"
+            lines.append(f"- 支持{back}：{ref['excerpt']}")
+        for ref in entry["counter_refs"]:
+            lines.append(f"- 反证（回链 {ref['record_id']}）：{ref['excerpt']}")
+        lines.append("")
+    if gaps:
+        lines += ["## 缺口与下一步", ""]
+        for item in gaps:
+            lines.append(f"- {item['gap']}")
+            for action in item.get("next_actions") or []:
+                lines.append(f"  - {action}")
+        lines.append("")
+    lines += ["## 边界", "", result["boundary"], "",
+              f"- 证据等级分布：{json.dumps(result['evidence_summary']['by_evidence_level'], ensure_ascii=False)}",
+              f"- 机器真值：`02-data/evidence.jsonl` 与 `04-findings/product-reasoning.json`；本文件是投影。"]
+    (out_dir / "research-answer.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return result
+
+
+def cli_answer(args: Any) -> int:
+    try:
+        result = answer_study(Path(args.study_dir),
+                              question=str(getattr(args, "question", "") or "").strip() or None)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(json.dumps({"status": "error", "reason": f"{type(exc).__name__}: {exc}"},
+                         ensure_ascii=False, indent=2))
+        return 1
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def cli_platforms(args: Any) -> int:
     domain = args.domain
     inferred = None
@@ -6051,8 +7828,47 @@ def cli_platforms(args: Any) -> int:
     plan = platform_fit(args.need, domain, getattr(args, "claim_type", None), getattr(args, "bulk", False))
     if inferred:
         plan["inferred_domain"] = inferred
+    platform_filter = getattr(args, "platform", None)
+    if platform_filter:
+        plan["recommended"] = [item for item in plan["recommended"] if item["id"] == platform_filter]
+        plan["blocked"] = [item for item in plan["blocked"] if item["id"] == platform_filter]
+        plan["platform_filter"] = platform_filter
+        known = sorted(set(platform_index()) | set(field_notes_index()))
+        if platform_filter not in known:
+            print(
+                f"unknown platform: {platform_filter} (known: {', '.join(known)})",
+                file=sys.stderr,
+            )
+            return 2
+        if not plan["recommended"] and not plan["blocked"]:
+            # A known source can sit outside the top-ranked set; --field-notes,
+            # --policies and --json still have a truthful answer for it.
+            plan["platform_filter_note"] = (
+                f"{platform_filter} is a known source but is not in the current ranked set; "
+                "showing its notes/policies only."
+            )
+        notes = field_notes_for([platform_filter])
+    else:
+        notes = field_notes_for([item["id"] for item in plan["recommended"]])
+    plan["field_notes"] = notes
+    strategy_platforms = [platform_filter] if platform_filter else [item["id"] for item in plan["recommended"]]
+    plan["strategies"] = strategies_for(strategy_platforms)
+    if getattr(args, "policies", False):
+        catalog = platform_index()
+        declared = set((field_notes_catalog().get("source_types") or {}).keys())
+        plan["runtime_policies"] = {
+            platform: _cdp_strategy().policy_for(platform).to_dict()
+            for platform in strategy_platforms
+            if platform in declared or catalog.get(platform, {}).get("cdp")
+        }
     if getattr(args, "json", False):
         print(json.dumps(plan, ensure_ascii=False, indent=2))
+    elif getattr(args, "field_notes", False):
+        print(field_notes_markdown(notes=notes, platform=platform_filter))
+    elif getattr(args, "strategies", False):
+        print(strategies_markdown(plan["strategies"]))
+    elif getattr(args, "policies", False):
+        print(runtime_policies_markdown(list(plan["runtime_policies"])))
     else:
         print(platform_markdown(plan))
     return 0
@@ -6719,7 +8535,15 @@ def cli_import(args: Any) -> int:
             evidence_form=args.evidence_form,
             claim_type=args.claim_type,
             method_id=args.method_id,
+            evidence_level=getattr(args, "evidence_level", "E1"),
+            corpus_role=getattr(args, "corpus_role", "open_scene"),
+            context_key=getattr(args, "context_key", ""),
         )
+    except ImportReviewError as exc:
+        print(json.dumps({"status": "error", "reason": str(exc),
+                          "reason_code": exc.reason_code,
+                          "suggestion": exc.suggestion}, ensure_ascii=False, indent=2))
+        return 1
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2

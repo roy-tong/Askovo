@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FAQ: is AI research trustworthy, how is it installed, what do you deliver | Askovo</title>
+  <meta name="description" content="Askovo FAQ: how it differs from asking an AI to write a research report, what the E0–E5 evidence grading is, where the data comes from and whether collection breaks the rules, the free boundary, 30-second local verification, deliverables, and the relation to Growovo/Verovo. Every answer comes from facts verifiable in the repository.">
+  <link rel="canonical" href="https://roy-tong.github.io/Askovo/en/faq.html">
+  <link rel="alternate" hreflang="zh-CN" href="https://roy-tong.github.io/Askovo/faq.html">
+  <link rel="alternate" hreflang="en" href="https://roy-tong.github.io/Askovo/en/faq.html">
+  <link rel="alternate" hreflang="x-default" href="https://roy-tong.github.io/Askovo/faq.html">
+  <meta name="theme-color" content="#090C10">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Askovo">
+  <meta property="og:title" content="FAQ: is AI research trustworthy, how is it installed, what do you deliver">
+  <meta property="og:description" content="How Askovo differs from a generic AI report, what E0–E5 grading is, where the data comes from, the free boundary, and what a delivery contains.">
+  <meta property="og:url" content="https://roy-tong.github.io/Askovo/en/faq.html">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="FAQ: is AI research trustworthy, how is it installed, what do you deliver">
+  <meta name="twitter:description" content="How Askovo differs from a generic AI report, what E0–E5 grading is, where the data comes from, the free boundary, and what a delivery contains.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      { "@type": "Question", "name": "How is Askovo different from asking an AI to write a research report?", "acceptedAnswer": { "@type": "Answer", "text": "A generic AI report sounds equally confident in every sentence, so you cannot tell which sentence has evidence behind it and which is guesswork. Askovo splits a judgment into a seven-node reasoning chain and grades every conclusion by evidence (E0–E5); when a conclusion outruns its evidence, askovo audit names it and returns exit code 1, which can gate CI. What you get is an inspectable reasoning process, not a confidently worded document." } },
+      { "@type": "Question", "name": "What is the E0–E5 evidence grading?", "acceptedAnswer": { "@type": "Answer", "text": "The engine's internal evidence grading, used for gates and audits: E0 scene context, E1 problem stated, E2 observed substitute, workaround, or failure behavior, E3 concept accepted, E4+ purchase or payment intent, E5 behavioral evidence of payment or continued use. It describes demand and commercial evidence strength only — it is not a product score. See the glossary for the level-by-level definitions." } },
+      { "@type": "Question", "name": "If a user says they want it, is that a need?", "acceptedAnswer": { "@type": "Answer", "text": "No. A verbal statement is only E1, the weakest level of evidence; for a need to reach validated it needs at least one piece of E2 — an observed substitute, workaround, or failure behavior. The four common misreadings, a substitute-behavior checklist, and how to grade a conclusion are in the need-validation guide." } },
+      { "@type": "Question", "name": "Where does the data come from? Does it scrape in violation of the rules?", "acceptedAnswer": { "@type": "Answer", "text": "Collection runs through authorized routes: the official GitHub and Reddit APIs, and so on. Channels blocked by a platform are not bypassed and stay recorded as gaps; CDP browser collection is limited to explicitly authorized visible pages and requires the Design gate before collection. No unauthorized scraping, and no bypassing login walls or platform challenges." } },
+      { "@type": "Question", "name": "Does it cost anything? Is the free version feature-gated?", "acceptedAnswer": { "@type": "Answer", "text": "The engine, CLI, Agent Skill, MCP, and the five domains' base domain packs are all MIT open source, with no feature-gated edition. Only deep domain assets and human delivery (need-validation studies, team workshops) can be paid; scope and fee are agreed per task." } },
+      { "@type": "Question", "name": "How can I verify in 30 seconds that it is real?", "acceptedAnswer": { "@type": "Answer", "text": "pipx install askovo, then run askovo demo: an offline synthetic sample that runs locally and uploads nothing, verifying that the reasoning chain and the audit logic are self-consistent (expected status: pass, supported: 1, overclaims: 0). Note the boundary: the synthetic sample proves structural self-consistency only, not real demand or a market." } },
+      { "@type": "Question", "name": "What do you actually deliver? Can it produce an MRD/PRD/BRD?", "acceptedAnswer": { "@type": "Answer", "text": "The main deliverable is a Business Plan: every judgment carries its data basis (sources, corpus size, time window) and user voices from the corpus. MRD, PRD, BRD, and the decision package are projections of the same machine truth (product-reasoning.json), not four parallel sources of fact." } },
+      { "@type": "Question", "name": "Can you guarantee the conclusions are correct?", "acceptedAnswer": { "@type": "Answer", "text": "No. Askovo validates structure, evidence references, and whether a conclusion outruns its evidence; semantic review remains a human responsibility. Its value is making every step of the reasoning inspectable, not deciding what is true in your place." } },
+      { "@type": "Question", "name": "How does it relate to Growovo and Verovo?", "acceptedAnswer": { "@type": "Answer", "text": "The ovo family has three layers: Askovo is the research layer (from user reasoning to product and business); Growovo is the execution layer, which consumes Askovo's research judgments for positioning and growth, with first-party growth feedback returning under the same E0–E5 grading; Verovo is the verification layer, which verifies the cost and delivery of AI services. The three work independently." } }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="./">Askovo<span class="cursor">_</span></a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="./#chain">Reasoning chain</a>
+        <a href="./first-look.html">Commission a task</a>
+        <a href="./glossary.html">Glossary</a>
+        <a href="https://github.com/roy-tong/askovo">GitHub</a>
+        <a href="../faq.html" hreflang="zh-CN" lang="zh-CN">中文</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="hero" id="top">
+      <p class="kicker">FAQ</p>
+      <h1>Frequently asked questions</h1>
+      <p class="lead">Every answer here comes from facts verifiable in the repository and on this site, including what Askovo can and cannot do. The <a href="./glossary.html">glossary</a> has its own page; this page answers the real questions about using the product.</p>
+    </div>
+
+    <section>
+      <h2>How is Askovo different from asking an AI to write a research report?</h2>
+      <p>A generic AI report sounds equally confident in every sentence, so you cannot tell which sentence has evidence behind it and which is guesswork. Askovo splits a judgment into a <strong>seven-node reasoning chain</strong> (scene→user→pain→need→feature→product→business) and grades every conclusion by <a href="./glossary.html">evidence level E0–E5</a>; when a conclusion outruns its evidence, <code>askovo audit</code> names it outright, and exit code 1 can gate CI. What you get is an inspectable reasoning process, not a confidently worded document.</p>
+    </section>
+
+    <section>
+      <h2>What is the E0–E5 evidence grading?</h2>
+      <p>An evidence grading internal to the engine, used for gates and audits: E0 scene context, E1 problem stated, E2 observed substitute/workaround/failure behavior, E3 concept accepted, E4+ purchase or payment intent, E5 behavioral evidence of payment or continued use. It <strong>describes demand and commercial evidence strength only</strong> — it is not a product score: usability, engineering performance, and safety each carry their own verification requirements. The level-by-level definitions are in the <a href="./glossary.html">glossary</a>.</p>
+    </section>
+
+    <section>
+      <h2>If a user says they want it, is that a need?</h2>
+      <p>No. A verbal statement is only E1, the weakest level of evidence; for a need to reach <strong>"validated" it needs at least one piece of E2</strong> — an observed substitute, workaround, or failure behavior. The four common misreadings, a substitute-behavior checklist, and how to grade a conclusion are in the <a href="./guides/need-validation.html">need-validation guide</a>; "many people say so" does not upgrade a conclusion.</p>
+    </section>
+
+    <section>
+      <h2>Where does the data come from? Does it scrape in violation of the rules?</h2>
+      <p>Collection runs through <strong>authorized routes</strong>: the official GitHub and Reddit APIs, and so on. Channels blocked by a platform are not bypassed and stay recorded as gaps; CDP browser collection is limited to explicitly authorized visible pages and requires the Design gate before collection. No unauthorized scraping, and no bypassing login walls or platform challenges.</p>
+    </section>
+
+    <section>
+      <h2>Does it cost anything? Is the free version feature-gated?</h2>
+      <p>The engine, CLI, Agent Skill, MCP, and the five domains' base domain packs are all <strong>MIT open source, with no feature-gated edition</strong>. Only deep domain assets and human delivery (need-validation studies, team workshops) can be paid; scope and fee are agreed per task, and no standard price list is published.</p>
+    </section>
+
+    <section>
+      <h2>How can I verify in 30 seconds that it is real?</h2>
+      <pre><code>pipx install askovo
+askovo demo</code></pre>
+      <p>An offline synthetic sample that runs locally and uploads nothing, verifying that the reasoning chain and the audit logic are self-consistent (expected <span class="tag-ok">status: pass</span> · <span class="tag-ok">supported: 1</span> · <span class="tag-ok">overclaims: 0</span>). Note the boundary: the synthetic sample proves structural self-consistency only, not real demand or a market.</p>
+    </section>
+
+    <section>
+      <h2>What do you actually deliver? Can it produce an MRD/PRD/BRD?</h2>
+      <p>The main deliverable is a <strong>Business Plan</strong>: every judgment carries its data basis (sources, corpus size, time window) and user voices from the corpus. MRD, PRD, BRD, and the decision package are projections of the same machine truth (<code>product-reasoning.json</code>) — not four parallel sources of fact.</p>
+    </section>
+
+    <section>
+      <h2>Can you guarantee the conclusions are correct?</h2>
+      <p>No. What Askovo validates automatically is structure, evidence references, and whether a conclusion outruns its evidence; <strong>semantic review remains a human responsibility</strong>. Its value is making every step of the reasoning inspectable, not deciding what is true in your place. We hold our own claims to the same discipline on the <a href="./claims.html">claims page</a>.</p>
+    </section>
+
+    <section>
+      <h2>How does it relate to Growovo and Verovo?</h2>
+      <p>Three layers in the ovo family: <strong>Askovo, the research layer</strong> (from user reasoning to product and business) → <a href="https://roy-tong.github.io/Growovo/">Growovo, the execution layer</a> (consumes the research judgments for positioning and growth, and sends first-party growth feedback back through the same E0–E5 grading) → <a href="https://roy-tong.github.io/Verovo/">Verovo, the verification layer</a> (verifies the cost and delivery of AI services). The three work independently.</p>
+    </section>
+  </main>
+
+  <footer class="footer wrap">
+    <p>Open-source engine, free forever (MIT).</p>
+    <p class="row"><span>© 2026 Askovo</span><span>·</span><a href="./">Home</a><span>·</span><a href="./glossary.html">Glossary</a><span>·</span><a href="./guides/need-validation.html">Need-validation guide</a><span>·</span><a href="./claims.html">Claims</a><span>·</span><span>Reviewed 2026-11-15</span></p>
+    <p class="row"><span>ovo family: research <strong>Askovo</strong> → execution <a href="https://roy-tong.github.io/Growovo/">Growovo</a> → verification <a href="https://roy-tong.github.io/Verovo/">Verovo</a></span></p>
+  </footer>
+</body>
+</html>

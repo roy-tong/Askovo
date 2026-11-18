@@ -174,9 +174,17 @@ askovo chain ./study
 ```bash
 askovo platforms "家用摄像头夜间告警的用户抱怨" --domain hardware --bulk
 askovo platforms "SaaS 用户在 GitHub 和论坛上的抱怨" --domain software --claim-type need
+askovo platforms "Kickstarter 众筹评论" --field-notes            # 平台实战笔记（限制/解法/验证等级）
+askovo platforms "Discord 社区抱怨" --platform discord --field-notes  # 单平台完整表
+askovo platforms "Discord 和 Kickstarter 的多平台采集" --strategies   # 多平台轮转策略（不变量/机制/验证）
+askovo platforms "Discord 社区抱怨" --policies                        # CDP 运行时预算（goto/熔断/会话上限）
 ```
 
 输出推荐平台、适配分、访问方式、批量能力、限制、偏差，以及不可直接采集的平台与原因。`--bulk` 优先支持批量的来源。
+
+`--field-notes` 渲染 `skills/askovo/assets/platform-field-notes.json` 里的实战限制与解法（含跨平台实践）；`--platform <id>` 收窄到单个目录平台或 source type（如 `vertical_forum`），未知 id 退出码 2，已知但不在当前推荐集的平台（如 `app_store`）仍返回其笔记/策略而不是报未知；`--json` 的每个推荐条目带 `field_notes`，顶层另有 `field_notes`。笔记**不是许可**：能否采集仍由平台目录、study scope 与 Design gate 决定。
+
+`--policies` 渲染注册表 `runtime_policies` 编译出的 CDP 运行时预算：每站点最小间隔、会话上限、超时熔断、单 cell goto 数、预算留头系数与模式互斥。`--json` 的每个 CDP 推荐条目带 `runtime_policy`，`--policies` 时顶层另有 `runtime_policies`。预算是**执行约束**（`connectors/cdp_strategy.py` 的 `SessionGuard`），不是访问许可。
 
 ## collect
 
@@ -209,7 +217,7 @@ askovo collect ./study --platform amazon --query "night alert" \
 - 需要 Chrome 以 `--remote-debugging-port=9222` 启动，且使用你本人已登录的 profile；
 - 只抓当前页面可见文本；命中验证码/机器人检查立即停止；
 - `--ack-terms` 是人工确认平台条款、账号授权、用途与保留；没有它返回 `4`；
-- 仅 amazon/instagram/bilibili/weibo 开放；X/YouTube 只走官方 API，blocked 平台不开放；
+- 仅平台目录 `cdp: true` 集合开放（当前 amazon/instagram/bilibili/weibo/kickstarter/discord/x/tiktok）；YouTube 只走官方 API，其余 blocked 平台不开放；
 - CDP 仅允许回环端点与默认端口 HTTP(S) 平台 URL，WebSocket 不得跳到其他主机或端口；
 - 不伪造指纹、不绕验证码、不做无限翻页。
 

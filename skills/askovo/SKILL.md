@@ -34,7 +34,10 @@ askovo roles recommend "<goal>" --stage concept --task design  # task-sized team
 askovo roles scaffold <study> --task define    # only this task's roles, outputs and templates
 askovo platforms "<request>" --domain …        # where supporting data lives
 askovo collect <study> --platform …            # collect/import against a chain gap
+askovo capture page <study> --url … --ack-terms --ocr  # visible-page candidate (collect-grade gates)
+askovo capture accept <study> --capture ID --by NAME --evidence-level E2  # named review -> evidence; no auto chain/conclusion
 askovo analyze <study> --question …            # normalize/describe
+askovo answer <study>                          # conclusion + decision from reviewed evidence, or unanswerable + gaps
 askovo deliver <study> --kind plan            # Business Plan (conclusions + data basis + user voices)
 askovo deliver <study> --kind analysis        # corpus analysis (funnel, sources, coverage, counter-evidence)
 askovo deliver <study> --kind decision         # Decision Package (chain-led, five decision views)
@@ -88,8 +91,10 @@ The Business Plan (`askovo deliver --kind plan` → `06-report/plan.md`) is the 
 
 When a supported platform is in scope, read [references/open-source-connectors.md](references/open-source-connectors.md) and [references/connector-contract.md](references/connector-contract.md) before choosing acquisition code. Then read the shared adapter and matching platform reference:
 
-- social: [shared](references/social-media-source-adapters.md), [Reddit](references/reddit-research.md), [X](references/x-research.md), [YouTube](references/youtube-research.md);
+- social: [shared](references/social-media-source-adapters.md), [Reddit](references/reddit-research.md), [X](references/x-research.md), [YouTube](references/youtube-research.md), [Discord](references/social-media-source-adapters.md);
 - commerce/crowdfunding: [shared](references/commerce-and-crowdfunding-source-adapters.md), [Amazon](references/amazon-research.md), [JD](references/jd-research.md), [Taobao/Tmall](references/taobao-research.md), [Kickstarter](references/kickstarter-research.md).
+
+When a plain HTTP collector is blocked (Cloudflare, JS-rendered lists, login-only communities) and the platform's catalog entry sets `cdp: true`, read [references/cdp-collection-playbook.md](references/cdp-collection-playbook.md) for the field-verified channel decision tree, CDP operation patterns (passive challenge waits, real wheel events, anti-automation cadence) and the collector toolbox under `scripts/connectors/`. The same experience is machine-readable in [references/platform-field-notes.md](references/platform-field-notes.md) (`askovo platforms "<need>" --field-notes`, `askovo doctor`): each platform restriction carries its symptom, solution, verification status and the runtime helper that encodes it — a note records the field, never an approval. Cross-platform operating strategies (platform rotation, one tab per site, single-writer quota, channel pivots, session cooldowns, join-is-not-access, classification coverage, field preservation) live in the same registry under `strategies` and are surfaced by `askovo platforms "<need>" --strategies`; `connectors/rotation.py` enforces them at runtime. The enforceable subset is compiled into `runtime_policies` (per-platform cadence, session time-box, timeout/session cooldowns, one goto per cell, budget headroom, exclusive modes) and enforced by `connectors/cdp_strategy.py`: any timeout is a circuit breaker (stop touching the platform for the cooldown), a challenge is a passive wait or a human stop, and a blank 200 is an unsupported stack. `askovo platforms "<need>" --policies` renders the budget; `askovo doctor` fails when the registry and the runtime drift apart.
 
 Use the bundled route template and enable the matching `study.json.source_adapters` config before collection. These routes remain separate source families and must pass their own hierarchy/concentration audit.
 
@@ -372,7 +377,7 @@ A `warn` is a question to answer in the delivery, never something to hide; a `fa
 - Respect login walls, CAPTCHAs, paywalls, robots restrictions, 403/429 responses, explicit platform challenges, privacy, and copyright boundaries.
 - For platform automation, select a pinned, non-blocked open-source connector from the bundled registry and write a run manifest. Do not substitute a commercial provider, seller/merchant API, saved login session, internal endpoint, or browser scraper.
 - A repository license covers code only. Review platform access and dataset/content rights separately.
-- The separate CDP transport is permitted only for an authorized visible page on amazon/instagram/bilibili/weibo after the Design gate, with an enabled adapter, explicit human `--ack-terms`, a loopback debugger, and an approved default-port HTTP(S) platform URL. It is never a bypass for a blocked registry route, challenge page, or missing access rights.
+- The separate CDP transport is permitted only for an authorized visible page on a catalog platform with `cdp: true` (currently amazon/instagram/bilibili/weibo/kickstarter/discord/x/tiktok) after the Design gate, with an enabled adapter, explicit human `--ack-terms`, a loopback debugger, and an approved default-port HTTP(S) platform URL. Challenges are only waited out passively or completed by hand, login sessions are user-operated, and it is never a bypass for a blocked registry route, challenge page, or missing access rights. Field-verified channel selection and CDP operation patterns: [references/cdp-collection-playbook.md](references/cdp-collection-playbook.md).
 - Do not scrape or browser-automate X or YouTube. Do not run the reviewed JD, Taobao, or Kickstarter crawler candidates; their registry decisions are blocked.
 
 ## Enforce claim discipline

@@ -1,6 +1,474 @@
 # Changelog
 
-## Unreleased
+## 2.18.0 — 2026-11-18
+
+This release publishes the decision surface and the write path underneath it:
+`askovo decide` (one decision question tracked as a task, including
+`decide delta --since latest-accepted`), the **Decision Brief** (`askovo brief`)
+with PRD development acceptance, **incremental research** (`askovo delta`,
+append-only `source id + updated_at` comparison), **A-07** canonical decision
+write integrity (journalled accept, `askovo issues recover`, cross-process
+lock), and the **C-01-Lite** minimal delegation projection on
+`askovo decide status`.
+
+It also ships the multi-platform collection line grown out of the golf-device
+campaign: `askovo capture page` (CDP capture as a reviewed candidate, governed
+by the same collect rule set), `askovo answer` (conclusions follow the reviewed
+evidence), four new connectors (YouTube innertube, Kickstarter/Discord CDP,
+arctic window) with a rotation scheduler, and the campaign experience compiled
+into product surface — platform field notes (35) and strategies (14) as a
+registry, runtime policies enforced by `cdp_strategy` guards, `analyze` field
+completeness, and the 2026-11-17 postmortem as the campaign-level index.
+
+The site also ships an English mirror of its six pages under `website/en/`,
+with reciprocal `hreflang` and a sitemap entry for each.
+
+### Engine integration for the postmortem: field completeness, membership gates, App Store route
+
+Reviewed the 35 notes / 14 strategies for what belongs in the engine rather
+than docs. Three rules earned engine surface; the rest stayed operator-level
+because encoding them as fake runtime budgets would overclaim.
+
+- `askovo analyze` now publishes `field_completeness` and `zero_rate_fields`
+  for the join fields (`record_id`, `text`, `source_url`, `created_at`) and
+  renders a "字段完整性（管线体检）" section. A 0% `record_id` is flagged as a
+  pipeline bug; text/url/time can legitimately be absent for first-party or
+  structured material and are reported for source-level review. This gives
+  `field-preservation` a product surface instead of leaving it in the
+  postmortem.
+- The Discord collector gains `--list-channels`: one cell, one goto, a sidebar
+  snapshot printed as JSON and no empty snapshot written. The
+  "name the channels before scanning" rule is now a product command, not a
+  prose suggestion.
+- `capture page` refuses a Discord membership gate too (`membership_gated`, no
+  candidate): the gate is a coverage gap, not evidence, and never something to
+  work around.
+- `connectors.cdp_strategy.detect_membership_gate` recognises the membership
+  wall (Discord and generic community pages); the Discord collector stops with
+  `membership_gated`, writes no empty snapshot and records the gap. The
+  `join-is-not-access` strategy is now `enforcement: runtime`, bound to that
+  helper in `runtime_policies.guards`, so `askovo doctor` fails if the guard
+  disappears.
+- `app_store` in `platform-catalog.json` now states that the customer-reviews
+  RSS endpoint is retired, so platform planning stops recommending it; the
+  browser-visible route remains unverified and is labelled as such.
+- Left operator-level on purpose: classification coverage (a campaign counter,
+  not an engine concept), single-writer for derived outputs (a local job
+  concern), Instagram keyword/profile routing, Discord channel naming and vB5
+  cross-link dedupe (each needs a specific collector that does not exist yet).
+  The registry keeps them visible; no runtime field pretends to enforce them.
+- `askovo platforms --platform <known-but-unranked>` now returns that source's
+  notes/JSON instead of "unknown platform"; the App Store RSS retirement is
+  reachable from the CLI even when app_store is outside the top-ranked set.
+- Tests: `analyze` field-completeness rates and required-field flags, gate
+  detection, the runtime guard binding and the known-unranked filter. Full
+  suite: 645 tests green.
+
+### Campaign postmortem becomes strategy: join is not access, buckets reconcile, fields survive
+
+A full read of the 2026-11-17 golf-device campaign session (≈1,150 messages,
+≈323k cleaned records) collected the lessons that were still prose after the
+first registry pass. The pattern is consistent: the expensive failures were
+access assumptions, silent data loss and multi-process collisions — not
+selectors.
+
+- Six new field notes (35 total): **Discord membership-gated history** (SGT,
+  40,967 members: join succeeded, history stayed behind member verification —
+  a coverage gap, never a gate to work around); **Discord channel-name
+  targeting** (snapshot the sidebar once, rank by name, stop burning cells on
+  rules/welcome/empty rooms); **Instagram keyword search over profile
+  crawling** (`/explore/search/keyword/?q=` yields 3–8 posts/query while
+  two-post profile cells timed out); **App Store RSS retired** (0 entries
+  across variants; browser-visible comments API is the remaining route);
+  **vB5 sidebar cross-links** (dedupe section threads by canonical href); and
+  **silent normalized-field loss** (`author_hash` dropped by a positional
+  mismatch; 0/16,226 Amazon dates were a parser field issue).
+- Three new operator strategies (14 total): `join-is-not-access`,
+  `classification-coverage` (every raw file maps into a bucket; Rapsodo/
+  FlightScope 5,863 records had fallen outside every bucket and the "gap" was
+  partly a classifier bug) and `field-preservation` (named-field conversion,
+  golden record, 0% non-empty rate is a bug).
+- Existing strategies refined from the same postmortem: single-writer now
+  covers derived outputs and managed jobs (clean4 still writing when clean5
+  started, then nohup residue); multilingual routing records that word choice
+  dominates language (generic Japanese ≈3 posts vs `ゴルフスイング` 42);
+  cell budget covers slow surfaces and one page per cell; goal counting
+  reconciles raw → deduped → cleaned → classified; session health covers
+  idle-open sessions and Instagram's account-level 24–72 h block risk.
+- Note corrections: `vertical-forum-cloudflare` moves from channel_verified to
+  verified (GolfWRX vB5 Equipment section reached 4,601 floors; MyGolfSpy blank);
+  `discord-invite-rot` now distinguishes a bounced invite from a membership
+  wall; `x-search-infinite-scroll-stall` keeps one search page per cell;
+  `instagram-locale-keyword-grid` separates term yield from locale yield.
+- Playbook: new platform quirks (membership walls, channel naming, IG keyword
+  surface, App Store RSS, vB5 cross-links), a data-pipeline hygiene section
+  (join keys, bucket reconciliation, nominal/deduped/cleaned counts), and
+  run-hygiene rules (verify a background launch with `ps` and absolute paths;
+  a browser lane stops when the agent turn ends).
+- Docs: the English/Chinese field-note strategy tables and the platform index
+  are regenerated from the registry; the new
+  `docs/campaign-postmortem-20261117.md` indexes each incident to its note or
+  strategy id (linked from the docs index); feature-status counts updated.
+  Full suite: 637 tests green.
+
+### CDP strategies become runtime policy: one guard, timeouts as circuit breakers
+
+The campaign's CDP strategies used to live in three disconnected places — prose
+in the registry, helper modules nothing called, and hand-rolled loops in each
+collector. The 2026-11-17 close made the cost concrete: four Discord session
+drops, and every one shared the same precursor — a timed-out/aborted operation
+followed by continued driving. Equally fast but timeout-free navigation never
+dropped; one drop arrived 40 minutes after the last operation with zero browser
+contact. That is now one runtime layer instead of prose plus per-script logic:
+
+- `assets/platform-field-notes.json` gains `runtime_policies`: per-platform
+  budgets (`cadence_seconds`, `session_minutes`, `session_cooldown_minutes`,
+  `timeout_cooldown_minutes`, `max_gotos_per_cell`, `budget_fraction`,
+  `allow_reload`, `exclusive_modes`, `requires_session`, `challenge_policy`,
+  `blank_render_status`) plus `guards`, which bind every runtime-enforced
+  strategy to the helper that enforces it. Each strategy now declares
+  `enforcement: runtime | operator`; `askovo doctor` fails when a runtime
+  strategy has no guard, an operator strategy claims one, or a CDP platform
+  cannot build a policy.
+- `connectors/cdp_strategy.py` compiles the section into `RuntimePolicy` and
+  `SessionGuard`: one goto per cell (`reload()` refused), timeout → circuit open
+  for the cooldown (15 min), session time-box (Discord 40 min), mode exclusivity
+  (messages/forum/invite; comments/posts), cell-budget headroom (Discord 60%,
+  others 70%), page triage (challenge / not-found / blank render / content) and
+  a persisted `askovo.cdp-session/1` journal. `--selftest` and `--policy
+  <platform>` run offline.
+- `sure_engine.CDPClient` gains a per-call timeout and marks the websocket torn
+  after one: no read-on, no retry (`CDPTimeout` / `CDPTransportError`). A torn
+  stream is a stop signal, not a transient error.
+- `capture page` and `collect --cdp` share the triage: a blank 200 returns
+  `blank_render` and writes no candidate/run, a timeout returns `cdp_timeout`
+  with the cooldown, and both record the applied policy in
+  `governance.runtime_policy` / the run manifest. `collect --cdp` also stops
+  scrolling after two stale rounds instead of metronome-scrolling a page that
+  is not producing.
+- The Discord and Kickstarter collectors run under the guard: persisting the
+  best harvest before stopping, writing `<out>.session.json`, and exiting 2 on
+  timeout/circuit/session drop/blank render instead of retrying.
+- `connectors/rotation.py` now takes cadence and the session requirement from
+  the same registry for every platform the policy layer declares (explicit
+  call arguments still win); archive-only routes (Reddit/YouTube) keep their
+  field table. The scheduler and the collectors can no longer disagree about
+  how fast a site may be hit.
+- Engine surface: `platform_fit` attaches `runtime_policy` to every CDP
+  platform (plan-level `runtime_policies` map), `askovo platforms "<need>"
+  --policies` renders the enforced-budget table, `--json` carries the same
+  data, and MCP `askovo_platforms` gains the matching `policies` flag.
+- `askovo doctor` resolves registry artifact paths in an installed runtime too
+  (`skills/askovo/...` maps onto the bundled `runtime/`), so a wheel doctor run
+  no longer fails on field-note or strategy artifact paths.
+- Docs: the playbook's anti-automation post-mortem is rewritten to the
+  four-drop protocol (timeout circuit breaker, one goto per cell, no reload,
+  mode exclusivity, 30–40 minute session box, deliberate logout); the
+  field-note references (EN/ZH), capture/CLI/feature-status docs, connectors
+  README, llms.txt, SKILL.md and both READMEs are in sync. Full suite: 635
+  tests green.
+
+### CDP studies become designable; error pages stop pretending to be evidence
+
+Live-chain finding (2026-11-17): the catalog opened eight CDP platforms, but
+six of them (kickstarter/bilibili/weibo blocked-only in the registry,
+discord/instagram/tiktok absent) could never pass the study design gate —
+`capture` accepted URLs no study was allowed to declare. Two fixes:
+
+- First-party CDP transport declaration in `source_adapters.<platform>`:
+  `connector_id=cdp-authorized-visible-page`,
+  `access_basis=cdp_authorized_visible_page`,
+  `collection_mode=authorized_visible_page`. Eligibility comes from the
+  platform catalog (`cdp: true`, review current); the open-source connector
+  registry still governs scripted collection exactly as before. A kickstarter
+  study is now designable and its captures can enter evidence legally.
+- `capture page` returns `page_not_found` and writes no candidate when the
+  final page title reports a not-found/error state (404, "not found",
+  "页面不存在"); it stops before the screenshot instead of minting a
+  reviewable candidate out of an error page.
+- Scaffolded canonical stores (`evidence.jsonl`, `gold-set.jsonl`) ship empty:
+  the old two-line comment headers made a freshly scaffolded study fail its
+  first `capture accept` with `INTERNAL_ERROR`, because canonical JSONL has no
+  comments. A regression test now parses every template store through the
+  strict reader.
+
+### CDP platform contract alignment: catalog `cdp: true`, passive challenge wait
+
+- The CDP capture allowlist is now explicitly tied to the platform catalog's
+  `cdp: true` set (currently amazon/instagram/bilibili/weibo/kickstarter/
+  discord/x/tiktok). The delivery contract lists the same eight; a test fails
+  if the code allowlist, catalog and contract drift.
+- A challenge page is no longer rejected at first sight: capture waits
+  passively for the same browser session to clear it or a human to complete
+  it, then proceeds; if the wait expires it stops before screenshot/write.
+  It never solves, bypasses or reloads around the challenge.
+
+### Multi-platform rotation strategy (stay under every site's frequency radar)
+
+The campaign's answer to per-platform rate control is now product capability:
+**alternate between platforms instead of raising any one site's frequency**.
+A site can only measure its own request stream, so rotation lowers every site's
+observed cadence while total throughput stays flat (or rises when render waits
+overlap). The strategy layer records the invariants that make this safe to
+automate, and `connectors/rotation.py` enforces them at runtime.
+
+Registry (`assets/platform-field-notes.json`): a `strategies` section with 11
+records — platform rotation, one tab per site, single-writer archive quota,
+channel pivot (not identity), windowed search, session health/cooldown,
+batch auto-relay, multilingual query routes, blank-render triage, cell budget
+headroom, nominal-vs-deduped goal counting. Each record carries `when`,
+`invariant`, `mechanism`, `platforms`, repo-relative artifacts, the runtime
+helper and an honest verification status; the registry also absorbs the five
+late field notes the campaign produced (X `since:/until:` windows, PullPush
+commercial wall, archive-client contention, IAB blank-render stacks, YouTube
+multilingual routes), now 29 notes with normalized repo-relative paths.
+
+Engine surface: `platform_fit` attaches the applicable strategies to the plan
+and to every recommended entry; `askovo platforms "<need>" --strategies`
+renders the invariant table, `--json` carries the same data, and
+`askovo doctor` gates the strategy layer (`collection-strategies`: required
+fields, platform ids, artifacts, helper references, verification legend).
+MCP `askovo_platforms` gains the matching `strategies` flag.
+
+Runtime: `connectors/rotation.py` — `RotationScheduler` with per-site minimum
+interval (`PlatformCooling`), classified cooldown through
+`common.classify_backoff`, session-drop gate plus human re-login, daily quota,
+fair round-robin (`plan_round`/`next_platform`), JSON resume (`save`/`load`)
+and offline `--selftest`/`--plan`. Rotation never rotates identities, proxies,
+keys or accounts, never bypasses a challenge, and records a blocked platform as
+a gap.
+
+Docs: reference `platform-field-notes.md` gains the strategy table; Chinese
+`docs/platform-field-notes.md`, the CDP playbook ("Multi-platform rotation"),
+connectors README §4d, CLI flags, `llms.txt` and the feature-status row are in
+sync. Full suite: 591 tests green.
+
+### Platform field notes: campaign experience becomes a product capability
+
+Every platform limit the 2026-11 campaign hit now ships as data, not prose.
+`skills/askovo/assets/platform-field-notes.json` records 24 field notes — one
+restriction per note, with symptom, detector, field-verified solution,
+verification status (`verified` / `partially_verified` / `login_verified` /
+`channel_verified`), the repo-relative artifact and the runtime helper that
+encodes the mechanism — for Reddit (Arctic Shift backoff, empty-window
+honesty), YouTube (PO-token block, `commentEntityPayload`, relative time),
+Kickstarter (Cloudflare, load-more expansion, reply threading), Discord
+(sandboxed internal APIs, real-wheel lazy loading, anti-automation session
+drops, forum cards, invite rot), X (infinite-scroll stall, reply density),
+Instagram (comment ancestor chain, reel caption fallback, locale keyword
+grids), TikTok (login verified), vertical forums (Cloudflare) and four
+cross-platform rules (tab-binding rot, silent extractor failure, parallel
+lanes, single-writer state). A note records the field and never an approval:
+access permission stays in the platform catalog plus the study's scope,
+adapter, Design gate and human ack.
+
+Engine surface: `platform_fit` attaches each ranked platform's notes (cross-
+platform practice included) to its entry, `askovo platforms "<need>"
+--field-notes` renders the restriction/solution table, `--platform <id>`
+filters to one catalog platform or source type, `--json` carries the same data,
+and `askovo doctor` gates the registry (required fields, unique ids, legend
+status, artifact paths, helper references, and a `cdp` flag that must match the
+platform catalog). A note may cover a declared source type (`vertical_forum`)
+or cross-platform practice (`*`); neither claims a catalog route, and the
+pre-existing CDP entries (amazon / bilibili / weibo) deliberately carry no
+field note.
+
+Runtime guards extracted from the same experience: `connectors/common.py` gains
+`classify_backoff` (429/403 reset waits, 422 slow-down retry, permanent stop),
+`single_writer_state` (exclusive pid lock, live-owner stop, stale reclaim),
+`parse_relative_time` (en/zh/ko/ja → approximate UTC with `date_precision`) and
+`atomic_write_json`; new `connectors/cdp_runtime.py` provides passive
+`wait_for_challenge_clear`, real `wheel_scroll`, `rebind_tab`,
+`bounded_load_more` and `run_lanes` (parallel lanes with isolated failures and
+a one-tab-per-site guard), plus an offline `--selftest`. The Kickstarter and
+Discord CDP collectors now import these helpers instead of forking the logic.
+
+### Multi-platform CDP collection + crawler methods from the golf-device campaign
+
+The CDP exception now follows the platform catalog's `cdp: true` set
+(currently amazon / instagram / bilibili / weibo / kickstarter / discord /
+x / tiktok, up from the fixed four). Kickstarter moves blocked → limited via
+authorized visible public pages; Discord joins the catalog; X and TikTok gain
+the `cdp_visible_page` route alongside their APIs; YouTube stays API-only.
+Semantics made explicit: challenges are only waited out passively or completed
+by hand (never bypassed), login sessions are user-operated (no credentials
+entered, read, or cookies exported), and a consistency test now locks the
+runtime whitelist to the catalog set.
+
+Four field-verified connectors collected into `scripts/connectors/` (from the
+golf-device research campaign, 2026-11): `collect_arctic_windows.py` (windowed
+Arctic Shift backfill with in-window cursor paging and resume),
+`collect_youtube_innertube.py` (login-free innertube comments incl. the 2024+
+`commentEntityPayload` shape, approximate dates flagged via
+`date_precision`), `collect_cdp_kickstarter.py` (CDP visible pages, passive
+Cloudflare wait, bounded load-more expansion, comments + creator updates) and
+`collect_cdp_discord.py` (user-session CDP with real wheel events, slow
+anti-automation cadence, per-round persistence, text + forum channels). The
+CDP collectors reuse the engine's CDP client via importlib instead of forking
+the transport.
+
+New reference `references/cdp-collection-playbook.md` records the method:
+channel decision tree (no-login API → CDP → paste → OCR), the Nov-2026 field
+matrix, CDP operation patterns (login collaboration, passive challenge waits,
+lazy-loading via real input events, the Discord anti-automation post-mortem
+and corrected protocol, platform rotation), and crawler engineering rules
+(classified backoff, resume state, bounded collection, empty-window honesty,
+two-layer raw-JSON-then-envelope output). Platform references for YouTube,
+Kickstarter, Reddit, X and the shared social adapters gained field-verified
+notes; catalog limits/bias updated accordingly (yt-dlp PO-token blocks,
+Cloudflare on direct fetches, Discord sandbox/storage constraints, invite
+rot).
+
+The playbook also records the last methods the campaign proved after the first
+connector pass: **parallel lanes** (background archive processes plus a
+two-tab browser pipeline for logged-in sites — per-site cadence stays flat
+while render waits overlap, ≈55 s per cell for two sites), the **one-writer
+per state file** rule (a stale duplicate collector doubles request rate and
+corrupts resume state; verify by `ps` before restart), and two Instagram
+quirks (reels break caption selectors — fall back to `og:description`; keyword
+grids are locale-dependent, so queue per term × locale instead of assuming
+paraphrase parity).
+
+### Decision integrity: lexical research assistance is not a business go
+
+`askovo answer` now reads only `02-data/evidence.jsonl` and separates
+`lexical_projection` from `business_decision`. Option-keyword support counts,
+including 3+ same-source E1 hits, can at most recommend `continue_research`.
+A formal go/no-go is projected only through the canonical seven-node chain,
+audited support and a named DecisionRecord; normalized-only records cannot
+create an answer. This prevents lexical matches from being misrepresented as
+seven-node scientific reasoning, causal evidence or commercial truth.
+
+### Study onboarding: fill checklist, terminal-friendly check output, label fallback
+
+`askovo do` now scaffolds `01-sources/fill-checklist.md` — an ordered,
+hypothesis-only task list for `study.json` and the seven-node
+`product-reasoning.json` (it invents no content and is not a second truth;
+`product-reasoning.json` stays the machine source). `askovo check --format`
+gains `text` (auto: text in a terminal, JSON when piped) so humans get the
+failed checks plus the next step instead of a JSON wall. Delivered plans and
+decision packages no longer read "产品类型：；阶段：" when `route.json` is
+absent: labels fall back to the domain pack via `_study_labels`.
+`deliver --strict` returns 1 on `audit_failed` while still writing the draft,
+so automation can gate on it.
+
+### Local golden-chain acceptance run (offline, 6/6 scenarios)
+
+`tests/acceptance/golden_chain_local.py` drives the real pipeline end to end
+and writes `docs/acceptance/golden-chain-local-20261117.{json,md}` with the
+review §2.1 fields (user_intent / expected_terminal_state / real_side_effect /
+receipt / observed_outcome / evidence_paths): paste → import → analyze →
+answer; loopback fake-CDP fixture page + real macOS Vision OCR → `capture
+accept` → answer (honest low-n continue_research with capture back-links);
+opposite corpora flip the leading option; empty store → unanswerable + gap
+list; scope/design/host/challenge rejections at the capture entrance; a
+hand-appended capture row fails the evidence audit. The log grades evidence
+honestly: synthetic corpora, local loopback fixture transport (not a real
+browser), real local OCR; live external reads remain unverified.
+
+### Governance hardening: capture = collect rule set, audit-checked review join, procurement preflight
+
+- `capture page` is not a generic browser route: the CDP exception stays on
+  the four approved platforms (amazon/instagram/bilibili/weibo) with
+  default-port http(s), no credentials, an enabled per-study adapter, a
+  current connector registry review, and a redirect that leaves the platform
+  stops the capture. X/YouTube/arbitrary hosts are refused before any CDP
+  I/O (`cdp_not_allowed`), and a challenge page stops before the screenshot.
+- `capture accept` now requires an explicit `--evidence-level`, verifies the
+  reviewed bytes are the captured bytes (schema/ack/platform/page+OCR+
+  screenshot hashes), refuses accepted→reject flips, and writes the source
+  plan inside the same journalled transaction. The CLI evidence audit calls
+  `capture_review.validate_evidence_record` for every capture row, so a
+  hand-appended OCR line can no longer bypass review. `deliver --kind plan`
+  and `analyze` render the reviewed-capture back-link table (reviewer, URL,
+  capture/screenshot refs, hashes).
+- Paid live routes (x official API, app_store/google_play licensed
+  providers) are stopped at planning and collection by a
+  `requires_procurement` preflight: `terminal_state: BLOCKED_USER_INPUT`,
+  registered `reason_code: INPUT_REQUIRED`, alternatives listed, and no
+  transaction is ever executed.
+- `docs/delivery-contract.json` (askovo.delivery-contract/1) now carries both
+  vocabularies: the five delivery terminal states and the decision-outcome
+  semantics (do/defer/do_not_do/decision_adopted), plus supported intents,
+  candidate-input governance, review/delivery commands, exclusions, evidence
+  requirements and the procurement branch.
+
+### P0.1 delivery contract: machine-readable and shown at first interaction
+
+`docs/delivery-contract.json` freezes the Askovo delivery contract
+(askovo.delivery-contract/1): supported intents with entry commands, common
+inputs, the five terminal states (DELIVERED / DELIVERED_WITH_GAP /
+BLOCKED_USER_INPUT / UNSUPPORTED / FAILED_UNRESOLVED) with their meanings,
+explicit exclusions (no publishing/ads/sales/collection, no physical/human/
+road tests, no evidence-free market or payment conclusions, no challenge
+bypass, no auto-promotion of candidates), the `requires_procurement` branch
+(BLOCKED_USER_INPUT, alternatives listed, transaction never executed) and
+the evidence requirements. Bare `askovo` now prints this contract summary
+first (exit 2) instead of a bare usage error, and a test asserts the first
+interaction mentions every terminal state, every supported intent and the
+contract path — the boundary is seen before any capability list.
+
+### P1 golden chain, step 2: `askovo answer` — evidence-following research answer
+
+The golden chain's terminal projection (`04-findings/research-answer.json` +
+`.md`). It reads `study.decision.question/options` and the reviewed evidence
+store, tallies support per option using distinctive CJK-bigram/latin match
+keys (bigrams shared by two options cannot distinguish anything and are
+dropped), and emits `answer_status` (supported / supported_low_n / contested
+/ inconclusive / unanswerable) plus a decision (`go` / `no_go` — the
+status-quo option winning — / `continue_research` / `unanswerable`). Counter
+records (claim_type=counter, control/substitute_rejector roles, E4-) are
+tallied separately and are never outvoted by support count; `go` needs at
+least three supporting records and zero counters. Every cited record keeps
+its collection back-link (record id, source family, source_ref, capture id
+and URL for captures). With no evidence — or evidence silent on every
+option — the answer is `unanswerable` with a gap list (empty-store next
+actions, unmet `decision.minimum_evidence`, missing required corpus roles),
+never an invented conclusion. The command is a read-only projection: the
+evidence store and `product-reasoning.json` stay the only truth.
+
+### P1 golden chain, step 1: reviewed capture/paste registration into evidence
+
+`askovo capture` becomes `page|list|accept|reject`. Acceptance is the only
+bridge from a candidate into the canonical evidence store: a named human
+(`--by`, `AUTH_REQUIRED` otherwise) appends exactly one record to
+`02-data/evidence.jsonl` with full back-links (capture id, capture JSON,
+URL, screenshot/OCR hashes). A visible page can only support E0/E1/E2 —
+requesting E3+ is `POLICY_DENIED` because a page cannot prove acceptance or
+payment. Acceptance registers **no demand judgment and no chain node**
+(judgments stay human-authored), is idempotent, verifies the accepted join
+(A-07 lesson), and writes the capture document + review trail as one
+journalled `write_integrity` transaction; the `capture` source family is
+declared in the source plan idempotently. `askovo import` gains the same
+review semantics for pasted text: `--evidence-level` capped by evidence form
+(self-report/behavior log ≤ E2, transactions ≤ E5), `--corpus-role`,
+`--context-key`, idempotent source-family declaration, so the paste path no
+longer produces audit-failing `unclassified` records.
+
+Capture review now requires an explicit E0/E1/E2 choice, preserves page/OCR/
+screenshot content and hashes plus reviewer/time, reuses import normalization,
+and verifies the accepted source join in the evidence audit; generic `import`
+cannot relabel a capture candidate as paste. `analyze`, `deliver --kind
+analysis`, and `deliver --kind plan` carry the source back-links without
+authoring judgments or business conclusions. Paid API/licensed-provider plan
+and collect preflights stop with `terminal_state=BLOCKED_USER_INPUT`,
+`requires_procurement=true`, user alternatives, and
+`transaction_executed=false` (the frozen C-01 reason remains INPUT_REQUIRED).
+
+### P0.4 unified capture governance + CDP page capture (candidate only)
+
+`askovo capture` captures one user-authorized visible page through the local
+CDP endpoint (page text + screenshot + optional macOS Vision OCR via
+`scripts/ocr_image.swift`) into `01-sources/captures/` as a **candidate** — it
+never registers evidence or touches the seven-node chain by itself. Governance
+is unified with `collect` instead of opening a second, laxer collection
+entrance: the Design gate must pass before capture starts, only the approved
+amazon/instagram/bilibili/weibo hosts are eligible, the exact platform must be
+listed in `study.scope.allowed_sources` with an enabled adapter and current
+registry review, default-port/final-URL rules apply, challenge pages stop the
+capture before screenshot or candidate writes, and the CDP endpoint stays
+loopback-only. There is no generic-web, Reddit, X, or YouTube capture bypass.
+See `docs/capture.md` for the full rule set.
 
 ### C-01-Lite minimal delegation projection
 

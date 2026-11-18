@@ -182,8 +182,12 @@ class AskvoMcpServerTests(unittest.TestCase):
             by_id = {response.get("id"): response for response in responses}
             planned = tool_payload(by_id[1])
             self.assertEqual(0, planned["exit_code"])
-            self.assertEqual(["reddit", "x"], planned["result"]["feasible_platforms"])
+            self.assertEqual(["reddit"], planned["result"]["feasible_platforms"])
             self.assertEqual(5000, sum(planned["result"]["platform_quotas"].values()))
+            blocked_x = next(item for item in planned["result"]["unavailable_platforms"]
+                             if item["platform"] == "x")
+            self.assertEqual("BLOCKED_USER_INPUT", blocked_x["terminal_state"])
+            self.assertFalse(blocked_x["transaction_executed"])
             design = tool_payload(by_id[2])
             self.assertEqual(1, design["exit_code"])
             self.assertEqual("fail", design["result"]["status"])

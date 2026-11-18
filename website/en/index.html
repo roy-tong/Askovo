@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Askovo | Collect data, validate judgments, deliver business research</title>
+  <meta name="description" content="Demand validation and research delivery for product managers, researchers, and business analysts: permitted collection, descriptive analysis, evidence audit, and report delivery. A seven-node scene→user→pain→need→feature→product→business reasoning chain, every conclusion graded E0–E5, and conclusions that outrun their evidence named outright.">
+  <link rel="canonical" href="https://roy-tong.github.io/Askovo/en/index.html">
+  <link rel="alternate" hreflang="zh-CN" href="https://roy-tong.github.io/Askovo/">
+  <link rel="alternate" hreflang="en" href="https://roy-tong.github.io/Askovo/en/index.html">
+  <link rel="alternate" hreflang="x-default" href="https://roy-tong.github.io/Askovo/">
+  <meta name="theme-color" content="#090C10">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Askovo">
+  <meta property="og:title" content="Askovo | Collect data, validate judgments, deliver business research">
+  <meta property="og:description" content="Every sentence in an AI research report sounds equally confident — Askovo grades each conclusion by evidence and says so when it overreaches. Open-source CLI / Agent Skill / MCP.">
+  <meta property="og:url" content="https://roy-tong.github.io/Askovo/en/index.html">
+  <meta property="og:image" content="https://roy-tong.github.io/Askovo/assets/social-preview.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Askovo: research delivery where every conclusion carries an E0–E5 evidence level (MIT open source)">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Askovo | Collect data, validate judgments, deliver business research">
+  <meta name="twitter:description" content="Every sentence in an AI research report sounds equally confident — Askovo grades each conclusion by evidence and says so when it overreaches. Open-source CLI / Agent Skill / MCP.">
+  <meta name="twitter:image" content="https://roy-tong.github.io/Askovo/assets/social-preview.png">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Askovo",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "macOS, Linux, Windows",
+    "inLanguage": "en",
+    "description": "Product and business reasoning delivery: a seven-node reasoning chain, E0–E5 evidence grading, and overclaim audit. CLI / Agent Skill / MCP, MIT open source.",
+    "url": "https://roy-tong.github.io/Askovo/en/index.html",
+    "codeRepository": "https://github.com/roy-tong/askovo",
+    "license": "https://opensource.org/license/mit",
+    "author": { "@type": "Person", "name": "Roy Tong", "url": "https://github.com/roy-tong" },
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  }
+  </script>
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="./">Askovo<span class="cursor">_</span></a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="#chain">Reasoning chain</a>
+        <a href="#today">What is available</a>
+        <a href="#try">Verify locally</a>
+        <a href="./first-look.html">Commission a task</a>
+        <a href="./faq.html">FAQ</a>
+        <a href="https://github.com/roy-tong/askovo">GitHub</a>
+        <a href="../index.html" hreflang="zh-CN" lang="zh-CN">中文</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="hero" id="top">
+      <p class="kicker">PRODUCT &amp; BUSINESS REASONING, WITH EVIDENCE</p>
+      <h1>From a business question to research delivery.<br>Collect the data, validate the judgments, give the next step something to stand on.</h1>
+      <p class="lead">Askovo splits a product judgment into an inspectable reasoning chain: every judgment states why this step follows from the previous one, and which evidence carries it. Evidence is graded E0–E5; when a conclusion outruns its evidence, <code>askovo audit</code> names it outright, and exit code 1 can gate CI. Built for product managers, user researchers, user operations, and market/requirements/business analysts, covering software, hardware, consumer goods, automotive, and mobile.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#method">See a concrete demand judgment</a>
+        <a class="btn" href="#try">Verify it locally in 30 seconds</a>
+        <a class="btn" href="./first-look.html">Describe a need-validation task</a>
+        <a class="btn" href="./claims.html">What we claim, and what we don't</a>
+      </div>
+    </div>
+
+    <section id="chain">
+      <h2>One chain, from user reasoning to business<span class="en">SCENE → BUSINESS</span></h2>
+      <p class="sub">Data collection, interviews, experiments, and platform connectors are supporting steps only — they validate a node or an inference edge; they never replace the reasoning itself.</p>
+      <div class="chain" aria-label="Seven-node reasoning chain">
+        <span class="node">Scene</span><span class="arrow">→</span>
+        <span class="node">User</span><span class="arrow">→</span>
+        <span class="node">Pain</span><span class="arrow">→</span>
+        <span class="node">Need</span><span class="arrow">→</span>
+        <span class="node">Feature</span><span class="arrow">→</span>
+        <span class="node">Product</span><span class="arrow">→</span>
+        <span class="node">Business</span>
+      </div>
+      <p>Every node must record: the current statement, the rationale, the assumptions it rests on, the supporting evidence (<code>evidence_ids</code>), and a status. One machine truth (<code>product-reasoning.json</code>) projects into the MRD, PRD, BRD, and decision memo — not four parallel sources of fact. Six kinds of conclusions are never mixed: need does not pose as acceptance, usability does not pose as commercial, and stated intent is never paying behavior.</p>
+    </section>
+
+    <section id="today">
+      <h2>What is available today<span class="en">CAPABILITY BOUNDARIES</span></h2>
+      <table>
+        <thead><tr><th>Capability</th><th>Current boundary</th></tr></thead>
+        <tbody>
+          <tr><td>Seven-node chain and decision package / MRD / PRD / BRD projections</td><td>Structure and evidence references are validated automatically; <strong>semantic review stays with humans</strong></td></tr>
+          <tr><td>Evidence-level audit (E0–E5, exit code fits CI)</td><td>Checks structure and configured gates only; proves neither demand prevalence, market success, nor release feasibility</td></tr>
+          <tr><td>Platform radar and collection (GitHub / Reddit official APIs)</td><td>Blocked platforms are never bypassed; CDP is limited to authorized visible pages; the Design gate comes before any collection</td></tr>
+          <tr><td>Unit-economics and PSM price-sensitivity projection</td><td>Deterministic calculation; PSM is stated intent, not paying behavior</td></tr>
+          <tr><td>Human delivery (need-validation study / team workshop)</td><td>Scope and fee agreed per specific task; commercial repeat purchase and scaling are still being validated</td></tr>
+        </tbody>
+      </table>
+      <p class="scope">The engine, CLI, Agent Skill, MCP, and the five base domain packs are MIT open source, with no feature-gated edition. Only deep domain assets and human delivery can be paid — never the engine itself.</p>
+    </section>
+
+    <section id="method">
+      <h2>How need validation works<span class="en">NEED VALIDATION</span></h2>
+      <p class="sub">A user saying "I want it" is only E1, a verbal statement. To reach "validated", a judgment needs at least one piece of E2 — an observed substitute, workaround, or failure behavior. The full method is in <a href="./guides/need-validation.html">"When a user says 'I want it', is it a need?"</a>: four common misreadings, a substitute-behavior checklist, and the E0–E5 criteria — usable without installing any tool.</p>
+
+      <h3>A concrete task: five demand judgments, two backed only by words</h3>
+      <p class="scope">A synthetic example, to show how a judgment lands and how a gap is marked — not real customer data, and not a market size. Rule source: <a href="https://github.com/roy-tong/askovo/blob/main/docs/concepts.md">docs/concepts.md</a>.</p>
+      <table>
+        <thead><tr><th>Demand judgment</th><th>Evidence on hand</th><th>Marker</th><th>Next validation step</th></tr></thead>
+        <tbody>
+          <tr><td>Adult children will pay to "check on an elderly parent remotely"</td><td>3 interviews saying "I would buy"; no actual payment</td><td><span class="tag-warn">E1 · needs validation</span></td><td>Price anchor: a real reservation deposit, not a survey tick</td></tr>
+          <tr><td>Night-time blind spots push users to build their own substitute</td><td>2 user posts: adding a second camera, getting up at night to check</td><td><span class="tag-ok">E2 · validated</span></td><td>Add 5 more links to original posts in the same scene</td></tr>
+          <tr><td>A privacy switch is a purchase precondition</td><td>1 explicit refusal: no physical shutter, no purchase</td><td><span class="tag-warn">E4− · counter-evidence (single case)</span></td><td>Write "physical shutter" into the acceptance conditions, then find 3 more like it</td></tr>
+          <tr><td>Willing to pay 30% more for anomaly detection</td><td>60% of survey respondents ticked "willing"</td><td><span class="tag-warn">E1 · needs validation</span></td><td>A real price-quote experiment; stated intent is not payment evidence</td></tr>
+          <tr><td>Installation complexity is one reason people give up</td><td>3 return or bad-review records pointing at installation</td><td><span class="tag-warn">E4− · counter-evidence</span></td><td>Record it separately from "unwilling to pay", so the attributions do not blur</td></tr>
+        </tbody>
+      </table>
+      <p>The two judgments with only E1 do not get upgraded because "many people say so"; a cell with no evidence says "unknown", never "zero". That is what <code>askovo audit</code> does: a judgment marked "validated" whose question chain holds only E1 is named and recommended for downgrade, and exit code 1 can gate CI (regression tests in <a href="https://github.com/roy-tong/askovo/blob/main/tests/test_askovo_cli.py">tests/test_askovo_cli.py</a>). Run <code>askovo demo</code> locally to see one full audit output.</p>
+    </section>
+
+    <section id="try">
+      <h2>Verify it locally in 30 seconds<span class="en">NO SIGNUP, NO UPLOAD</span></h2>
+      <p class="sub">An offline synthetic sample: it verifies that the structure and the reasoning chain are self-consistent — it proves nothing about real demand or the market. Python 3.9+, standard library only; published on PyPI, with the <a href="https://pypi.org/project/askovo/">PyPI page</a> as the version of record (checked 2026-11-14).</p>
+      <pre><code>pipx install askovo
+askovo do "home security camera false alerts at night, want to validate the prototype" --domain hardware --dry-run
+askovo demo</code></pre>
+      <p>Expected key results: <span class="tag-ok">status: pass</span> · <span class="tag-ok">supported: 1</span> · <span class="tag-ok">overclaims: 0</span>. Every command runs locally and uploads nothing. The same engine plugs into your agent workflow as an Agent Skill or an MCP server.</p>
+      <div class="note">Want a human to do it? <a href="./first-look.html">Describe a need-validation task</a> — scope and fee are agreed per task before any commission; no standard price list is published.</div>
+    </section>
+
+    <section>
+      <h2>Engineering and claims discipline<span class="en">CLAIMS</span></h2>
+      <p>Unit tests plus a Python 3.9–3.12 CI matrix, and an automated release flow (the test count is whatever the CI badge says). The synthetic sample proves structural self-consistency only; on the <a href="./claims.html">claims page</a> we list, item by item, what each number and conclusion can claim and what it must not pose as — that is the same product as the engine itself.</p>
+      <p><a href="https://github.com/roy-tong/askovo">GitHub repository</a> · <a href="https://github.com/roy-tong/askovo/blob/main/docs/quickstart.md">Quickstart</a> · <a href="https://github.com/roy-tong/askovo/blob/main/llms.txt">llms.txt (agent entry)</a> · <a href="https://github.com/roy-tong/askovo/actions/workflows/tests.yml">CI</a></p>
+    </section>
+  </main>
+
+  <footer class="footer wrap">
+    <p>Open-source engine, free forever (MIT). Human delivery scope and fee are agreed per task.</p>
+    <p class="row"><span>© 2026 Askovo</span><span>·</span><a href="https://github.com/roy-tong/askovo">GitHub</a><span>·</span><a href="./first-look.html">Commission a task</a><span>·</span><a href="./claims.html">Claims</a><span>·</span><a href="./faq.html">FAQ</a><span>·</span><a href="./glossary.html">Glossary</a><span>·</span><a href="./guides/need-validation.html">Need-validation guide</a><span>·</span><span>Reviewed 2026-11-15</span></p>
+    <p class="row"><span>ovo family: research <strong>Askovo</strong> → execution <a href="https://roy-tong.github.io/Growovo/">Growovo</a> → verification <a href="https://roy-tong.github.io/Verovo/">Verovo</a></span></p>
+  </footer>
+</body>
+</html>

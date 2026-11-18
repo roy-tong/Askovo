@@ -47,3 +47,14 @@ Use creator/backer interviews, participant-provided pledge or delivery records w
 
 Add a new registry ID only after confirming a permitted acquisition surface, code and data licenses, freshness, campaign identity, pagination, deletion/retention rules, privacy minimization, stop behavior, and the [connector contract](connector-contract.md). Keep the KSInsights review as a blocked historical entry.
 
+
+## Field-verified collection notes (2026-11)
+
+Collected from the golf-device research campaign (~2k comments across four campaigns); full method context in [cdp-collection-playbook.md](cdp-collection-playbook.md).
+
+- **Why direct fetch fails**: comment pages sit behind Cloudflare and the comment list is JS-rendered — a plain HTTP client gets 403/empty. A real browser over CDP renders fully; the platform catalog now marks Kickstarter `cdp: true` (decision `limited`), i.e. the authorized-visible-page route passed review. The "no unreviewed crawler" rule above still applies to anything outside this route.
+- **Collector**: [../scripts/connectors/collect_cdp_kickstarter.py](../scripts/connectors/collect_cdp_kickstarter.py) — comments mode and creator-updates mode (delivery-period sentiment concentrates in update-post threads).
+- **Challenge semantics**: wait for passive Cloudflare auto-clear (`--challenge-wait`); a challenge needing interaction is a hard stop — finish it by hand, rerun. Never solve or spoof.
+- **DOM facts**: comment cards are `DIV.border-box` inside `LI.mb2`; replies carry `&reply=` in the permalink; "load more" must be clicked in bounded bursts with re-extraction and per-burst persistence. Deep "load previous replies" threads under a comment are not expanded by the collector.
+- **Output**: platform-faithful raw JSON (`{project, n, comments}` / `{posts}`); convert to the corpus envelope with `clean_screen_corpus.py`.
+- **Backer intent ≠ market**: pledge comments validate willingness-to-pay narratives for comparable products at comparable price points; they do not size the market.

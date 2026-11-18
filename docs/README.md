@@ -14,7 +14,7 @@ askovo 用同一主链服务五域产品经理、用户研究、用户运营及�
 8. [核心概念](concepts.md) —— 六类结论、证据形式、E0–E5 的适用范围。
 9. [数据契约](data-contract.md) —— product-reasoning、study、evidence、judgments、商业节点与报告写入权。
 10. [CLI 参考](cli.md) —— 命令、参数、产物和退出码。
-11. [平台与连接器](connectors.md) —— 数据在哪、如何合规补证、哪些路线被阻断。
+11. [平台与连接器](connectors.md) —— 数据在哪、如何合规补证、哪些路线被阻断；多平台采集手册（通道决策树 / CDP 操作 / 反自动化纪律）见 `skills/askovo/references/cdp-collection-playbook.md`；平台限制与解法的机器可读注册表见 [平台实战笔记](platform-field-notes.md)。
 12. [研究闭环](research-loop.md) —— 缺口检测、信封授权、多轮复审与候选证据。
 13. [一问题研究执行器](decide.md) —— 一个问题 → 一个受跟踪任务：`decide start/status/brief/cancel`、C-01 状态字段、partial 产物与记录上限。
 14. [Issue 结构化](issues.md) —— 公开 Issue 导出 → 机器候选 → 人工接受：13 个候选字段、A13–A18 语义规则、选择偏差与私有内容边界。
@@ -26,6 +26,9 @@ askovo 用同一主链服务五域产品经理、用户研究、用户运营及�
 20. [故障排查](troubleshooting.md) —— 安装、断链、门禁、采集与 MCP。
 21. [十二项证据检查](plan-evidence-check.md) —— 评审前过一遍：目标、因果链、判据、反证、成本、单点假设。
 22. [开源集成清单](open-source-integrations.md) —— 三个产品对 Docling/Playwright/Stagehand 等组件的实际接入状态与取舍。
+23. [CDP/OCR 候选审核](capture.md) —— 候选抓取、具名审核入证据、分析与业务交付来源回链。
+24. [机器可读交付合同](delivery-contract.json) —— 定量/定性研究到做/缓做/不做业务结论、采购门与独立业务结果边界。
+25. [2026-11 采集战役复盘](campaign-postmortem-20261117.md) —— 问题 → 根因 → 有效解法 → 沉淀位置（风控 / 平台通道 / 数据管线）。
 
 | 你想做什么 | 去哪 |
 | --- | --- |
@@ -46,6 +49,7 @@ askovo 用同一主链服务五域产品经理、用户研究、用户运营及�
 | 生成 MRD/PRD/BRD | [整合模板](../skills/askovo/templates/integration-docs/runbook.md) |
 | 用访谈补证 | [访谈模板](../skills/askovo/templates/interview-kit/runbook.md) |
 | 看平台具体规则 | [../skills/askovo/references/](../skills/askovo/references/) |
+| 看一次真实采集战役踩过哪些坑、怎么修的 | [2026-11 采集战役复盘](campaign-postmortem-20261117.md) |
 | 给 Agent 做发现入口 | [../llms.txt](../llms.txt) |
 
 ## 一句话原则

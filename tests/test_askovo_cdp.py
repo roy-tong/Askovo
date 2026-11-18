@@ -180,10 +180,18 @@ class CDPBoundaryTests(unittest.TestCase):
             for thread in threads:
                 thread.join(timeout=2)
 
-    def test_x_and_youtube_do_not_enable_cdp(self) -> None:
+    def test_x_enabled_youtube_still_api_only(self) -> None:
         platforms = sure_engine.platform_index()
-        self.assertFalse(platforms["x"].get("cdp", False))
+        self.assertTrue(platforms["x"].get("cdp", False))
         self.assertFalse(platforms["youtube"].get("cdp", False))
+
+    def test_cdp_whitelist_matches_catalog(self) -> None:
+        # Two-layer registration: the runtime host whitelist and the catalog
+        # cdp flag must stay in sync; drift here is a governance bug.
+        self.assertEqual(
+            set(sure_engine.CDP_TARGET_HOSTS),
+            {pid for pid, entry in sure_engine.platform_index().items() if entry.get("cdp")},
+        )
 
 
 class WebSocketFrameTests(unittest.TestCase):
