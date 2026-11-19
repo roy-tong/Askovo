@@ -1,3 +1,6 @@
+# Changelog
+
+
 ## 2.19.0 — 2026-11-19
 
 The 2026-11-18 end-to-end review: one evidence authority, structured decision
