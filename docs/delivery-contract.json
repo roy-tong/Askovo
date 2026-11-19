@@ -1,7 +1,7 @@
 {
   "schema": "askovo.delivery-contract/1",
   "product": "Askovo",
-  "updated_at": "2026-11-17",
+  "updated_at": "2026-11-18",
   "source_review": "ai输出/ovo三产品-端到端业务交付测试-20261116/后续优化评审-20261117.md (§2.3, §3.1, §4.1, §5)",
   "promise": "在用户授权可见的数据范围内，回答约定研究问题，形成可追溯的 go / no-go / continue-research 决策与七节点判断；没有证据时明确不可回答及缺口。",
   "core": {
@@ -201,6 +201,27 @@
     "requires_procurement": true,
     "user_action": "Choose an authorized export/local alternative or arrange the paid access yourself.",
     "transaction_executed": false
+  },
+  "review_followups_20261118": {
+    "attach_existing_visible_page": {
+      "command": "askovo capture page STUDY --url EXACT_OPEN_URL --attach-existing --ack-terms [--ocr]",
+      "behavior": "Select the exact already-open page through loopback CDP; do not navigate or create a tab.",
+      "normal_new_page_blank_render": "BLOCKED_USER_INPUT with no candidate when navigation does not commit",
+      "candidate_still_requires_named_review": true
+    },
+    "decision_adoption": {
+      "command": "askovo decision adopt STUDY --record-id DR-ID --by ACCOUNTABLE_OWNER --scope EXACT_SCOPE --adoption-evidence RECEIPT_OR_SOURCE",
+      "artifact": "04-findings/product-reasoning.json#decision_adoptions",
+      "projection": "decision_lifecycle in askovo brief",
+      "delivery_or_decided_does_not_imply_adoption": true,
+      "adoption_does_not_imply_implementation_commercial_success_or_causality": true,
+      "identity_basis": "declaration_only"
+    },
+    "github_rest_issue_export": {
+      "entry": "askovo issues import STUDY --file AUTHORIZED_EXPORT --authorized-by NAME",
+      "comments_integer": "Preserve as comments_count; comments remains empty because REST list output has no comment bodies.",
+      "comment_objects": "Retain only the reviewed comment whitelist; comments are not observed users."
+    }
   },
   "excluded": [
     {

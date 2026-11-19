@@ -304,6 +304,7 @@ class ResearchModeTests(unittest.TestCase):
             self.assertEqual(5, len(contract["layers"]))
 
     def test_external_research_stores_candidates_only(self) -> None:
+        import shlex as _shlex
         import sys as _sys
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
@@ -314,7 +315,9 @@ class ResearchModeTests(unittest.TestCase):
             self.assertEqual(0, completed.returncode, completed.stderr + completed.stdout)
             script = ("import json;print(json.dumps({'sources':[{'url':'https://example.com/a',"
                       "'title':'T','excerpt':'E','claim':'C'}],'notes':['n']}))")
-            command = f"{_sys.executable} -c \"{script}\""
+            command = " ".join((
+                _shlex.quote(_sys.executable), "-c", _shlex.quote(script),
+            ))
             denied = run_cli("external-research", str(study_dir), "--command", command)
             self.assertEqual(2, denied.returncode)
             # A-06: the pre-A-06 arbitrary `--command` path now needs the explicit

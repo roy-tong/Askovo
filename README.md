@@ -314,10 +314,11 @@ askovo cost ./study log --task "audit PRD" --minutes 25           # F4 logged hu
 askovo deliver ./study --kind signoff   # F3 stakeholder sign-off page: conclusions + evidence levels + boundaries + signature block
 askovo deliver ./study --kind ops      # user-ops projection
 askovo deliver ./study --kind tracker  # behavior, acceptance, and business metric tracking
+askovo deliver ./study --kind web      # self-contained Web reading surface: 4 reading labels + data/judgment time layering
 askovo report ./study                  # research status: 06-report/research-status.md
 ```
 
-`deliver --kind report` is the single writer of the combined product/business report; `askovo report` writes a separate research-status file. The business plan, decision package, MRD, PRD, BRD, and ops views are all projections of one seven-node chain — not parallel sources of truth.
+`deliver --kind report` is the single writer of the combined product/business report; `askovo report` writes a separate research-status file. The business plan, decision package, MRD, PRD, BRD, and ops views are all projections of one seven-node chain — not parallel sources of truth. `deliver --kind web` (`06-report/web/index.html`) is the same chain arranged for reading: self-contained, no external assets, labels records as 事实 / 自述 and judgments as 推导 / 我的判断 while E0–E5 stay in the method archive, and shows 「now: numbers and charts」 beside 「judgment formed at」 so a fresher evidence store is never dressed up as fresh prose.
 
 With multiple candidate chains, the plan opens with a cross-chain decision table and one conclusion block per chain, then renders the detailed sections once for the priority chain; `--kind report` fills its product-decision section with the same chain states instead of leaving placeholders. When a study aggregates several collection waves, `01-sources/collection-summary.json` supplies the funnel totals. Business strength (●◐○) is node-aware: the commercial node only counts E4+/E5, so counter-evidence cannot make it look observed.
 

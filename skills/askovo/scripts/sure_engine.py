@@ -79,6 +79,20 @@ except ModuleNotFoundError as exc:  # direct importlib loading used by embedders
     _role_spec.loader.exec_module(role_catalog)
 
 try:
+    import web_surface
+except ModuleNotFoundError as exc:  # direct importlib loading used by embedders/tests
+    if exc.name != "web_surface":
+        raise
+    _web_spec = importlib.util.spec_from_file_location(
+        "askovo_web_surface", Path(__file__).with_name("web_surface.py")
+    )
+    if _web_spec is None or _web_spec.loader is None:  # pragma: no cover
+        raise RuntimeError("cannot load web_surface.py beside sure_engine.py")
+    web_surface = importlib.util.module_from_spec(_web_spec)
+    sys.modules.setdefault("askovo_web_surface", web_surface)
+    _web_spec.loader.exec_module(web_surface)
+
+try:
     import fcntl
 except ImportError:  # pragma: no cover - Windows fallback
     fcntl = None
@@ -3754,6 +3768,7 @@ def _plan_section(
     quote_limit: int = 2,
     extra_lines: list[str] | None = None,
     used_quotes: set[str] | None = None,
+    qualification: dict[str, Any] | None = None,
 ) -> list[str]:
     lines: list[str] = [f"## {title}", ""]
     if not isinstance(node, dict) or not node:
@@ -3789,6 +3804,9 @@ def _plan_section(
     if metrics:
         lines.append(metrics)
     lines.append(f"依据强度：{marker} {strength_label} —— {strength_detail}")
+    if records:
+        counts = web_surface.label_counts(records, qualification)
+        lines.append(f"证据类型：事实 {counts.get(web_surface.TAG_FACT, 0)} 条 · 自述 {counts.get(web_surface.TAG_SELF, 0)} 条")
     quotes = _plan_quotes(records, limit=quote_limit, used=used_quotes)
     if quotes:
         lines.append("来自语料的声音：")
@@ -4207,7 +4225,7 @@ def _plan_lines(
     by_id = {str(record.get("record_id")): record for record in records}
     chains = reasoning.get("chains", []) if isinstance(reasoning, dict) else []
     chains = [chain for chain in chains if isinstance(chain, dict)]
-
+    qualification = evidence.get("qualification") if isinstance(evidence.get("qualification"), dict) else {}
     lines: list[str] = [
         f"# 业务方案 Business Plan：{study.get('title', '')}",
         "",
@@ -4217,6 +4235,9 @@ def _plan_lines(
         "> 读法：每个判断都标注**依据强度**——● 已观察到（多个来源族观察；相关性未证明独立）· ◐ 有线索（单案例或口头线索）· ○ 假设（尚无采集记录，待验证）——"
         "以及**数据基础**（来源、语料量、时间窗）与**来自语料的声音**（用户原话或典型情况）。"
         "“暂无采集数据”表示还没研究到这一步，不等于没有需求。",
+        "",
+        "> 时间分层：数字与图表截至最新输入时间，判断文字形成于判断链最后一次写入。"
+        "两者不一致时以数字和图表的生成时间为准，并重跑 `askovo deliver <study> --kind plan` 重新生成判断。",
         "",
     ]
     if audit_status != "pass":
@@ -4310,7 +4331,7 @@ def _plan_lines(
             ("什么时候发生（触发）", scene.get("trigger")),
             ("在什么环境下", scene.get("environment")),
             ("用户当时在做什么（任务背景）", scene.get("task_context")),
-        ], used_quotes=used_quotes))
+        ], used_quotes=used_quotes, qualification=qualification))
         user = nodes.get("user", {}) if isinstance(nodes.get("user"), dict) else {}
         segments = []
         business_node = nodes.get("business", {}) if isinstance(nodes.get("business"), dict) else {}
@@ -4322,32 +4343,33 @@ def _plan_lines(
             ("现状", user.get("state")),
             ("在决策中的角色", user.get("decision_role")),
             ("用户分层", segments or None),
-        ], used_quotes=used_quotes))
+        ], used_quotes=used_quotes, qualification=qualification))
         pain = nodes.get("pain", {}) if isinstance(nodes.get("pain"), dict) else {}
         lines.extend(_plan_section("4. 痛点：现在怎么办、痛在哪", pain, by_id, [
             ("现在的替代做法", pain.get("current_substitute")),
             ("代价", pain.get("friction_cost")),
             ("不解决的后果", pain.get("consequence")),
-        ], used_quotes=used_quotes))
+        ], used_quotes=used_quotes, qualification=qualification))
         need = nodes.get("need", {}) if isinstance(nodes.get("need"), dict) else {}
         lines.extend(_plan_section("5. 需求：他们要的到底是什么", need, by_id, [
             ("期望的结果", need.get("desired_outcome")),
             ("约束", need.get("constraints")),
             ("怎么衡量做好了", need.get("measure")),
-        ], used_quotes=used_quotes))
+        ], used_quotes=used_quotes, qualification=qualification))
         feature = nodes.get("feature", {}) if isinstance(nodes.get("feature"), dict) else {}
         lines.extend(_plan_section("6. 产品特性：哪些特性能满足", feature, by_id, [
             ("特性", feature.get("capability")),
             ("生效条件与验收", feature.get("acceptance_conditions")),
             ("考虑过的替代做法", feature.get("alternatives_considered")),
-        ], quote_limit=1, used_quotes=used_quotes, extra_lines=_plan_capability_lines(feature)))
+        ], quote_limit=1, used_quotes=used_quotes, extra_lines=_plan_capability_lines(feature),
+            qualification=qualification))
         product = nodes.get("product", {}) if isinstance(nodes.get("product"), dict) else {}
         lines.extend(_plan_section("7. 产品形态：推演出的产品", product, by_id, [
             ("形态", product.get("form")),
             ("范围", product.get("scope")),
             ("明确不做", product.get("non_goals")),
             ("上线验收", product.get("acceptance_criteria")),
-        ], quote_limit=0))
+        ], quote_limit=0, qualification=qualification))
         gate = business_node.get("gate", {}) if isinstance(business_node.get("gate"), dict) else {}
         success_metrics = []
         for metric in business_node.get("success_metrics", []) if isinstance(business_node.get("success_metrics"), list) else []:
@@ -4380,7 +4402,7 @@ def _plan_lines(
             ("成本结构", business_node.get("cost_drivers")),
             ("成功指标", success_metrics or None),
             ("资源门禁", f"{gate.get('stage', '待确认')}：{gate.get('decision', '待确认')}（负责人：{gate.get('owner', '待确认')}；复审条件：{gate.get('revisit_trigger', '待确认')}）" if gate else None),
-        ], quote_limit=0, extra_lines=_plan_money_evidence(chain_records)))
+        ], quote_limit=0, extra_lines=_plan_money_evidence(chain_records), qualification=qualification))
 
     # ── 9. 风险与下一步 ────────────────────────────────────────
     lines.extend(["## 9. 风险与下一步", ""])
@@ -4913,6 +4935,40 @@ def _deliver_artifact(
                         ])
         return {"status": "written", "path": str(path), "kind": kind}
 
+    if kind == "web":
+        delta_status: dict[str, Any] | None = None
+        try:
+            import research_delta
+            delta_status = research_delta.status(study_dir)
+        except (OSError, ValueError, ImportError):
+            delta_status = None
+        rendered = web_surface.render(
+            study_dir,
+            study=study,
+            reasoning=reasoning,
+            evidence=evidence,
+            audit_info=audit_info,
+            delta_status=delta_status,
+            funnel=_collection_summary(study_dir),
+            helpers={
+                "strength": _plan_strength,
+                "basis": _plan_basis,
+                "source_label": _plan_source_label,
+                "time_span": _plan_time_span,
+            },
+        )
+        return {
+            "status": "written",
+            "path": rendered["path"],
+            "kind": kind,
+            "audit_status": audit_status,
+            "audit_generated_at": audit_info.get("generated_at", ""),
+            "evidence_count": evidence["count"],
+            "product_reasoning": product_reasoning_summary(reasoning),
+            "assets_copied": len(rendered["assets"]),
+            "warnings": rendered["warnings"],
+            "number_stale": rendered["layers"]["number_stale"],
+        }
     titles = {"memo": "决策备忘", "report": "产品推理报告", "mrd": "MRD 市场需求文档", "prd": "PRD 产品需求文档", "brd": "BRD 商业需求文档", "ops": "用户运营交付", "decision": "决策包 Decision Package", "signoff": "干系人签收页", "plan": "业务方案 Business Plan", "analysis": "语料分析 Corpus Analysis"}
     title = titles.get(kind, "交付物")
     if kind == "plan":
@@ -6532,6 +6588,29 @@ def cdp_new_page(cdp_base: str, url: str) -> str:
     return str(ws_url)
 
 
+def cdp_existing_page(cdp_base: str, url: str) -> str:
+    """Attach to an already visible authorized page without navigating it."""
+    _, expected_port = _validate_cdp_base(cdp_base)
+    target = cdp_base.rstrip("/") + "/json/list"
+    with _CDP_OPENER.open(target, timeout=15) as response:
+        payload = _read_limited_json(response)
+    if not isinstance(payload, list):
+        raise RuntimeError("CDP /json/list did not return an array")
+    wanted = url.rstrip("/")
+    for item in payload:
+        if not isinstance(item, dict) or item.get("type") != "page":
+            continue
+        if str(item.get("url") or "").rstrip("/") != wanted:
+            continue
+        ws_url = str(item.get("webSocketDebuggerUrl") or "")
+        _validate_cdp_ws_url(ws_url, expected_port)
+        return ws_url
+    raise RuntimeError(
+        "no already-open visible page exactly matches the capture URL; "
+        "open it in the user browser or omit --attach-existing"
+    )
+
+
 CDP_EXTRACTOR = r"""
 (() => {
   const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
@@ -6714,6 +6793,7 @@ def capture_page(
     *,
     ocr: bool = False,
     wait_seconds: float = 2.0,
+    attach_existing: bool = False,
 ) -> dict[str, Any]:
     """Capture a user-authorized visible page through CDP.
 
@@ -6759,14 +6839,27 @@ def capture_page(
     out_dir.mkdir(parents=True, exist_ok=True)
     client: CDPClient | None = None
     try:
-        ws_url = cdp_new_page(cdp_base, url)
+        ws_url = cdp_existing_page(cdp_base, url) if attach_existing else cdp_new_page(cdp_base, url)
         client = CDPClient(_WebSocket(ws_url))
         client.call("Runtime.enable")
-        time.sleep(max(0.5, wait_seconds))
-        value = client.evaluate(CDP_PAGE_EXTRACTOR)
-        if not isinstance(value, dict):
-            return {"status": "error", "reason": "CDP did not return page content"}
-        final_url = str(value.get("url") or url)
+        # `/json/new` returns before navigation commits. A transient about:blank
+        # is still the requested page loading, not evidence of a scope escape.
+        deadline = time.monotonic() + max(0.5, wait_seconds)
+        while True:
+            time.sleep(min(0.5, max(0.0, deadline - time.monotonic())))
+            value = client.evaluate(CDP_PAGE_EXTRACTOR)
+            if not isinstance(value, dict):
+                return {"status": "error", "reason": "CDP did not return page content"}
+            final_url = str(value.get("url") or url)
+            if final_url != "about:blank" or time.monotonic() >= deadline:
+                break
+        if final_url == "about:blank":
+            return {
+                "status": "blank_render", "platform": platform,
+                "reason": "page navigation did not commit before the capture wait expired; no candidate was written",
+                "final_url": final_url, "terminal_state": "BLOCKED_USER_INPUT",
+                "next_action": "retry once with a longer --wait after confirming the visible page loaded",
+            }
         final_platform = _platform_for_capture_host(
             urllib.parse.urlparse(final_url).hostname or "")
         if final_platform != platform:
@@ -6863,6 +6956,7 @@ def capture_page(
             "final_url": final_url,
             "source_url": final_url,
             "capture_platform": platform,
+            "capture_mode": "attach_existing" if attach_existing else "new_page",
             "title": title,
             "text": text,
             "text_length": len(text),

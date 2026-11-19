@@ -307,10 +307,11 @@ askovo cost ./study log --task "audit PRD" --minutes 25           # F4 核验人
 askovo deliver ./study --kind signoff   # F3 干系人签收页：结论+证据等级+边界+签名栏
 askovo deliver ./study --kind ops      # 用户运营投影
 askovo deliver ./study --kind tracker  # 行为、验收和商业指标跟踪
+askovo deliver ./study --kind web      # Web 阅读面：四类阅读标签 + 数字/判断时间分层（自包含单页）
 askovo report ./study                  # 用研状态：06-report/research-status.md
 ```
 
-`deliver --kind report` 是产品/商业总报告的唯一写入者；`askovo report` 写独立的研究状态文件。业务方案、决策包、MRD、PRD、BRD、运营视图全部由同一条七节点主链投影生成，不是几套平行事实源。
+`deliver --kind report` 是产品/商业总报告的唯一写入者；`askovo report` 写独立的研究状态文件。业务方案、决策包、MRD、PRD、BRD、运营视图全部由同一条七节点主链投影生成，不是几套平行事实源。`deliver --kind web`（`06-report/web/index.html`）把同一条主链排成可读页面：自包含、不加载外部资源，记录标成事实/自述、判断标成推导/我的判断，E0–E5 留在方法档案；「现在：数字与图表」与「判断形成于」并列展示，证据比判断新时如实提示重算，而不是把旧文字当成新结论。
 
 多候选链时，业务方案先给跨链比较表与逐链结论，再把七环节正文只展开一次（优先级最高的那条）；`--kind report` 会填充产品决策一节，不再留占位。多波次语料由 `01-sources/collection-summary.json` 提供漏斗总量。依据强度按节点取级：商业节点只认 E4+/E5，反证不会把它抬成“已观察到”。
 

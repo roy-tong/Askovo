@@ -127,6 +127,32 @@ class CDPBoundaryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             sure_engine._validate_cdp_ws_url("ws://127.0.0.1:9223/devtools/page/1", 9222)
 
+    def test_new_page_returns_the_validated_websocket(self) -> None:
+        ws_url = "ws://127.0.0.1:9222/devtools/page/new"
+        response = mock.MagicMock()
+        response.read.return_value = json.dumps(
+            {"webSocketDebuggerUrl": ws_url}).encode("utf-8")
+        with mock.patch.object(sure_engine._CDP_OPENER, "open") as opened:
+            opened.return_value.__enter__.return_value = response
+            actual = sure_engine.cdp_new_page(
+                "http://127.0.0.1:9222", "https://www.amazon.com/product-reviews/B0")
+        self.assertEqual(ws_url, actual)
+
+    def test_attach_existing_selects_the_exact_visible_page(self) -> None:
+        ws_url = "ws://127.0.0.1:9222/devtools/page/existing"
+        response = mock.MagicMock()
+        response.read.return_value = json.dumps([
+            {"type": "page", "url": "https://www.amazon.com/other",
+             "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/other"},
+            {"type": "page", "url": "https://www.amazon.com/product-reviews/B0/",
+             "webSocketDebuggerUrl": ws_url},
+        ]).encode("utf-8")
+        with mock.patch.object(sure_engine._CDP_OPENER, "open") as opened:
+            opened.return_value.__enter__.return_value = response
+            actual = sure_engine.cdp_existing_page(
+                "http://127.0.0.1:9222", "https://www.amazon.com/product-reviews/B0")
+        self.assertEqual(ws_url, actual)
+
     def test_redirected_page_creation_never_reaches_second_server(self) -> None:
         second_hits = []
 

@@ -611,8 +611,10 @@ class IssueAcceptanceTests(IssueHelpers, unittest.TestCase):
         for record_id in counter_ids:
             self.assertIn(record_id, chain["counter_evidence_ids"],
                           "the canonical chain must keep the counter evidence")
+        # A-09: with several chains the brief never assumes chains[0]; name the
+        # chain the accepted D03 judgment was registered on.
         brief = subprocess.run([sys.executable, str(CLI), "brief", str(self.study),
-                                "--format", "json"],
+                                "--chain", chain["id"], "--format", "json"],
                                capture_output=True, text=True, timeout=120)
         document = json.loads(brief.stdout)
         self.assertEqual("partial", document["artifact_status"], document.get("stale_reasons"))

@@ -47,6 +47,7 @@ askovo deliver <study> --kind brd              # business analysis projection
 askovo deliver <study> --kind ops              # user-operations projection
 askovo deliver <study> --kind role --role R52  # bound, read-only role projection
 askovo deliver <study> --kind lifecycle        # 10-module role/workflow navigation board
+askovo deliver <study> --kind web              # self-contained HTML reading surface (4 reading labels, time layering)
 askovo boundary <study> --requirements <req.md> --output <ai-doc.md>  # F2: Added/Missing/Inflated lexical candidates
 askovo cost <study> log --task <t> --minutes <n> [--baseline-minutes <n>]  # F4: manual verification minutes
 askovo deliver <study> --kind signoff            # F3: stakeholder sign-off one-pager

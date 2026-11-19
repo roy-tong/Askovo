@@ -422,8 +422,8 @@ def _build_review(arguments: dict[str, Any]) -> argparse.Namespace:
 
 def _build_decision(arguments: dict[str, Any]) -> argparse.Namespace:
     action = _string(arguments.get("action"), "action")
-    if action not in ("record", "list", "replay"):
-        raise ValueError("action must be record, list or replay")
+    if action not in ("record", "adopt", "list", "replay"):
+        raise ValueError("action must be record, adopt, list or replay")
     version = arguments.get("version")
     if version is not None and (not isinstance(version, int) or isinstance(version, bool) or version < 1):
         raise ValueError("version must be a positive integer")
@@ -434,6 +434,8 @@ def _build_decision(arguments: dict[str, Any]) -> argparse.Namespace:
         record_id=_optional_string(arguments, "record_id") or "",
         version=version,
         by=_optional_string(arguments, "by") or "",
+        scope=_optional_string(arguments, "scope") or "",
+        adoption_evidence=_string_list(arguments, "adoption_evidence") or [],
         decision=_optional_string(arguments, "decision") or "",
         hypothesis=_optional_string(arguments, "hypothesis") or "",
         observation=_string_list(arguments, "observation") or [],
@@ -463,8 +465,8 @@ def _build_codebook(arguments: dict[str, Any]) -> argparse.Namespace:
 
 def _build_deliver(arguments: dict[str, Any]) -> argparse.Namespace:
     kind = arguments.get("kind", "memo")
-    if kind not in ("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis", "role", "lifecycle"):
-        raise ValueError("kind must be memo, report, mrd, prd, brd, ops, decision, tracker, signoff, plan, analysis, role or lifecycle")
+    if kind not in ("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis", "role", "lifecycle", "web"):
+        raise ValueError("kind must be memo, report, mrd, prd, brd, ops, decision, tracker, signoff, plan, analysis, role, lifecycle or web")
     role = _string(arguments.get("role"), "role") if kind == "role" else _optional_string(arguments, "role")
     return _namespace(
         study_dir=_string(arguments.get("study_dir"), "study_dir"),
@@ -993,21 +995,23 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "askovo_decision",
         "description": (
-            "Record, list and replay versioned DecisionRecords inside the canonical seven-node "
-            "product-reasoning.json. Captures original hypotheses, candidate actions, basis, "
-            "observations and revisions. Registered, same-context evidence with a recorded "
-            "contradicts mapping can trigger safe hold plus one confidence downgrade; an optional "
-            "replacement recommendation is accepted, but candidates and causality are never auto-validated."
+            "Record, adopt, list and replay versioned DecisionRecords inside the canonical seven-node "
+            "product-reasoning.json. Adoption is a separate named-owner receipt with scope and evidence; "
+            "it is never inferred from a record or brief. Captures original hypotheses, candidate actions, "
+            "basis, observations and revisions. Contradictions may trigger safe hold without auto-validating "
+            "candidates, causality, implementation or commercial outcomes."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "study_dir": {"type": "string"},
-                "action": {"enum": ["record", "list", "replay"]},
+                "action": {"enum": ["record", "adopt", "list", "replay"]},
                 "chain": {"type": "string", "description": "existing chain id; required for record"},
                 "record_id": {"type": "string"},
                 "version": {"type": "integer", "minimum": 1},
-                "by": {"type": "string", "description": "record: named decision-maker"},
+                "by": {"type": "string", "description": "record: decision-maker; adopt: accountable owner"},
+                "scope": {"type": "string", "description": "adopt: exact adopted scope"},
+                "adoption_evidence": {"type": "array", "items": {"type": "string"}, "description": "adopt: observable receipt/source"},
                 "decision": {"type": "string"},
                 "hypothesis": {"type": "string", "description": "declared study hypothesis id"},
                 "observation": {"type": "array", "items": {"type": "string"}},
@@ -1029,12 +1033,12 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "askovo_deliver",
-        "description": "Assemble the business plan, decision package, MRD/PRD/BRD, operations/tracker, or a role deliverable projected read-only from the canonical chain. kind=role requires role and never authors findings from a blank template.",
+        "description": "Assemble the business plan, decision package, MRD/PRD/BRD, operations/tracker, a role deliverable, or a self-contained Web reading surface projected read-only from the canonical chain. kind=role requires role and never authors findings from a blank template.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "study_dir": {"type": "string"},
-                "kind": {"enum": ["memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis", "role", "lifecycle"], "default": "memo"},
+                "kind": {"enum": ["memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis", "role", "lifecycle", "web"], "default": "memo"},
                 "role": {"type": "string", "description": "kind=role: R52 or role alias"},
                 "deliverable": {"type": "string", "description": "kind=role: deliverable id or name"},
                 "industry": {"type": "string", "description": "kind=role: optional industry overlay"},

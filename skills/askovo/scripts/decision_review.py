@@ -16,7 +16,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import research_loop
 import role_catalog
@@ -913,6 +913,113 @@ def record_decision(
     return result
 
 
+def adopt_decision(
+    study_dir: Path,
+    *,
+    record_id: str,
+    by: str,
+    scope: str,
+    adoption_evidence: Any = (),
+) -> Dict[str, Any]:
+    """Append a named owner's adoption receipt without changing the chain.
+
+    A DecisionRecord is a recommendation/decision projection. Adoption is a
+    separate business event and must never be inferred from that record, a
+    brief, evidence volume or a generated artifact. The CLI records the owner's
+    declaration and supplied receipt text; it does not claim to verify identity
+    or commercial success.
+    """
+    operator = str(by or "").strip()
+    wanted = str(record_id or "").strip()
+    adoption_scope = str(scope or "").strip()
+    evidence = [str(item).strip() for item in (adoption_evidence or []) if str(item).strip()]
+    if not operator:
+        raise ValueError("decision adoption requires the accountable owner via --by")
+    if not wanted:
+        raise ValueError("decision adoption requires --record-id")
+    if not adoption_scope:
+        raise ValueError("decision adoption requires --scope describing what was adopted")
+    if not evidence:
+        raise ValueError("decision adoption requires --adoption-evidence with an observable receipt/source")
+
+    study_dir = Path(study_dir).resolve()
+    _, reasoning, reasoning_path = _canonical(study_dir)
+    records = [item for item in reasoning.get("decision_records") or [] if isinstance(item, dict)]
+    matches = [item for item in records if str(item.get("record_id") or "") == wanted]
+    if not matches:
+        raise ValueError(f"unknown DecisionRecord {wanted!r}; record the decision before adoption")
+    decision_record = matches[0]
+    chain_id = str(decision_record.get("chain_id") or "")
+    _one_chain(reasoning, chain_id)
+    chain_records = [item for item in records if str(item.get("chain_id") or "") == chain_id]
+    latest = max(chain_records, key=lambda item: int(item.get("version") or 0))
+    if str(latest.get("record_id") or "") != wanted:
+        raise ValueError(
+            f"{wanted} is superseded by {latest.get('record_id')}; adopt the current DecisionRecord"
+        )
+
+    adoptions = reasoning.setdefault("decision_adoptions", [])
+    if not isinstance(adoptions, list):
+        raise ValueError("product-reasoning.json decision_adoptions must be an array")
+    if any(isinstance(item, dict) and str(item.get("decision_record_id") or "") == wanted
+           for item in adoptions):
+        raise ValueError(f"DecisionRecord {wanted} already has an adoption receipt")
+    sequence = len([item for item in adoptions if isinstance(item, dict)]) + 1
+    adoption_id = f"DA-{chain_id}-{sequence:03d}"
+    receipt = {
+        "kind": "askovo.decision-adoption",
+        "schema_version": "1.0",
+        "adoption_id": adoption_id,
+        "decision_record_id": wanted,
+        "chain_id": chain_id,
+        "decision": decision_record.get("decision"),
+        "adopted_by": operator,
+        "adopted_at": datetime.now(timezone.utc).isoformat(),
+        "scope": adoption_scope,
+        "adoption_evidence": evidence,
+        "decision_chain_fingerprint": decision_record.get("chain_fingerprint"),
+        "identity_basis": "declaration_only",
+        "verification": "named_owner_action_with_supplied_receipt_not_independent_identity_verification",
+        "boundary": (
+            "This separate append-only receipt records owner adoption. It is not implied by a "
+            "DecisionRecord or brief and does not prove implementation, commercial success or causality."
+        ),
+    }
+    adoptions.append(receipt)
+    reasoning_path.write_text(json.dumps(reasoning, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {
+        "status": "adopted",
+        "adoption": receipt,
+        "canonical_artifact": str(reasoning_path),
+        "chain_changed": False,
+        "next_step": "Run `askovo review STUDY` and `askovo brief STUDY` to refresh derived projections.",
+    }
+
+
+def decision_lifecycle(reasoning: Dict[str, Any], chain: Dict[str, Any]) -> Dict[str, Any]:
+    """Project recommendation, recorded decision and adoption independently."""
+    chain_id = str(chain.get("id") or "")
+    records = [item for item in reasoning.get("decision_records") or []
+               if isinstance(item, dict) and str(item.get("chain_id") or "") == chain_id]
+    latest_record = max(records, key=lambda item: int(item.get("version") or 0)) if records else None
+    record_id = str((latest_record or {}).get("record_id") or "")
+    adoptions = [item for item in reasoning.get("decision_adoptions") or []
+                 if isinstance(item, dict) and str(item.get("decision_record_id") or "") == record_id]
+    adoption = adoptions[-1] if adoptions and record_id else None
+    return {
+        "recommendation_state": "recommended" if chain.get("status") == "decided" else "not_ready",
+        "record_state": "recorded" if latest_record else "not_recorded",
+        "adoption_state": "adopted" if adoption else "not_observed",
+        "decision_record_id": record_id or None,
+        "adoption_id": str((adoption or {}).get("adoption_id") or "") or None,
+        "adopted_by": (adoption or {}).get("adopted_by"),
+        "adopted_at": (adoption or {}).get("adopted_at"),
+        "scope": (adoption or {}).get("scope"),
+        "adoption_evidence": list((adoption or {}).get("adoption_evidence") or []),
+        "note": "Recommendation, DecisionRecord and owner adoption are separate states; none implies a business outcome.",
+    }
+
+
 def list_decision_records(study_dir: Path, *, chain_id: str = "") -> Dict[str, Any]:
     _, reasoning, path = _canonical(Path(study_dir))
     records = [item for item in reasoning.get("decision_records") or [] if isinstance(item, dict)]
@@ -929,6 +1036,60 @@ def list_decision_records(study_dir: Path, *, chain_id: str = "") -> Dict[str, A
         )} for item in records],
         "boundary": "Record metadata only; replay reads the historical chain snapshots in the same canonical artifact.",
     }
+
+
+def _version_number(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def latest_decision_record(records: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The DecisionRecord that names the currently decided chain.
+
+    Version is the ordering key; ``recorded_at`` breaks ties. A record without
+    a ``chain_id`` never selects a chain.
+    """
+    named = [item for item in records
+             if isinstance(item, dict) and str(item.get("chain_id") or "").strip()]
+    if not named:
+        return None
+    return max(named, key=lambda item: (_version_number(item.get("version")),
+                                        str(item.get("recorded_at") or "")))
+
+
+def select_chain(chains: List[Dict[str, Any]], *, chain_id: str = "",
+                 records: Optional[Iterable[Dict[str, Any]]] = None
+                 ) -> Tuple[Optional[Dict[str, Any]], str]:
+    """One chain-selection rule for brief, evidence page and web surface.
+
+    Order: explicit ``chain_id`` → the only chain → the chain named by the
+    latest DecisionRecord. ``chains[0]`` is never a default: with several
+    candidate chains that silently answers a different question.
+
+    Returns ``(chain, source)``; ``chain`` is None when nothing selects one.
+    ``source`` is one of ``explicit``, ``single``, ``decision``, ``missing``
+    (explicit id not found), ``missing_decision`` (record names an absent
+    chain) or ``undecided`` (several chains, no decision).
+    """
+    items = [item for item in chains if isinstance(item, dict)]
+    wanted = str(chain_id or "").strip()
+    if wanted:
+        for chain in items:
+            if str(chain.get("id") or "") == wanted:
+                return chain, "explicit"
+        return None, "missing"
+    if len(items) == 1:
+        return items[0], "single"
+    latest = latest_decision_record(list(records or []))
+    if latest is not None:
+        target = str(latest.get("chain_id") or "")
+        for chain in items:
+            if str(chain.get("id") or "") == target:
+                return chain, "decision"
+        return None, "missing_decision"
+    return None, "undecided"
 
 
 def _record_changes(previous: Optional[Dict[str, Any]], current: Dict[str, Any]) -> Dict[str, Any]:

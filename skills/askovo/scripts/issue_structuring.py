@@ -264,7 +264,7 @@ def _attach_recovery(document: Dict[str, Any], txn: write_integrity.Transaction)
 #: private note (or any future private field) cannot ride along into the study.
 _SNAPSHOT_FIELDS = (
     "id", "number", "title", "body", "state", "html_url", "user", "author_association",
-    "created_at", "updated_at", "closed_at", "labels", "comments", "visibility",
+    "created_at", "updated_at", "closed_at", "labels", "comments", "comments_count", "visibility",
     "deleted_at",
 )
 _COMMENT_FIELDS = ("user", "body", "created_at")
@@ -276,12 +276,23 @@ def _snapshot_row(raw: Dict[str, Any]) -> Dict[str, Any]:
         if field not in raw:
             continue
         if field == "comments":
+            raw_comments = raw.get("comments")
             comments = []
-            for comment in raw.get("comments") or []:
-                if not isinstance(comment, dict):
-                    continue
-                comments.append({key: comment.get(key) for key in _COMMENT_FIELDS
-                                 if key in comment})
+            if isinstance(raw_comments, int) and not isinstance(raw_comments, bool):
+                # GitHub REST returns a count; `gh issue list --json comments`
+                # returns objects. A count is metadata, never comment content.
+                row["comments_count"] = max(0, raw_comments)
+            elif isinstance(raw_comments, list):
+                for comment in raw_comments:
+                    if not isinstance(comment, dict):
+                        continue
+                    comments.append({key: comment.get(key) for key in _COMMENT_FIELDS
+                                     if key in comment})
+                row["comments_count"] = len(comments)
+            elif raw_comments not in (None, ""):
+                raise IssueError(
+                    "issue comments must be a REST count or an array of comment objects",
+                    "INPUT_REQUIRED", "export issues with the GitHub REST API or reviewed gh connector")
             row["comments"] = comments
         elif field == "user":
             user = raw.get("user")
