@@ -61,6 +61,10 @@ Tests: `tests/test_web_surface.py`.
 - **GitHub REST issue exports remain importable**: a REST `comments` integer is
   preserved as `comments_count` with no invented comment bodies; exports that
   contain full comment objects retain the reviewed comment whitelist.
+- **The synthetic sample tracks `VERSION` again**: the release bump left
+  `examples/sample-study/study.json` on `2.18.2`, so the CI single-source
+  version assertion failed on every Python version. The sample now reads
+  `2.19.0`, matching `VERSION`, the CLI, the package and the MCP server.
 
 Tests: `tests/test_askovo_answer_semantics.py`,
 `tests/test_decision_adoption.py`, `tests/test_issue_rest_export.py`, and the
