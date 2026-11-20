@@ -1,6 +1,38 @@
 # Changelog
 
 
+## 2.20.1 — 2026-11-20
+
+A-TRUST-01 and A-WEB-01 from the 2026-11-20 main review.
+
+### Fixed
+
+- **P0 A-TRUST-01 a self-declared material type no longer buys a high evidence
+  grade**: `import ... --evidence-form transaction --evidence-level E5` used to
+  cap the row at E5 purely from the caller's label. A `transaction`/`purchase`
+  row that declares E4 or above must now carry a real record structure:
+  `counterparty`, `occurred_at`, `amount`, `source_ref` and `evidence_ref`
+  (Chinese aliases accepted). If any is absent the row is held at E2, and the
+  record explains why (`level_basis`, `level_declared`,
+  `requested_evidence_level`, `level_derivation_version =
+  askovo-import-derivation/2`). A line of free text labelled "transaction" is
+  not a transaction record; import also returns `structure_downgrades` and
+  `review.structure_rule` so the caller can see the rule that fired.
+  `tests/test_p0_import_levels.py` keeps a structured positive row and four
+  counter-examples (plain text claiming transaction, missing counterparty,
+  missing amount, missing source reference).
+- **P1 A-WEB-01 report source links stay safe to share**: an evidence
+  `source_url` is rendered as `<a href>` only when its scheme is `http`/`https`
+  and the host is non-empty. `javascript:`, `data:`, `file:` and
+  protocol-relative URLs render as inert text instead of a clickable link, and
+  the generated page carries a CSP meta tag (no scripts, no frames, no forms).
+
+### Tests
+
+- `tests/test_p0_import_levels.py`: 8 tests OK.
+- `tests/test_web_surface.py`: 10 tests OK, including unsafe-URL, safe-https
+  and CSP cases.
+
 ## 2.20.0 — 2026-11-20
 
 The 2026-11-19/20 full-scenario end-to-end test: two P0 evidence-trust defects

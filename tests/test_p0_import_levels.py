@@ -85,12 +85,69 @@ class ImportLevelDerivationTests(unittest.TestCase):
 
     def test_transaction_form_allows_e5(self) -> None:
         done = self.import_csv(
-            "record_id,text,evidence_level\nX1,发票号 2026-0031,E5\n",
+            "record_id,text,evidence_level,counterparty,occurred_at,amount,"
+            "source_ref,evidence_ref\n"
+            "X1,发票号 2026-0031,E5,Acme Cloud,2026-11-03,3980.00,"
+            "erp-export-202611,INV-2026-0031\n",
             "--evidence-form", "transaction")
         self.assertEqual(0, done.returncode, done.stdout + done.stderr)
         row = self.rows()[0]
         self.assertEqual("E5", row["evidence_level"])
         self.assertEqual("E5", row["level_declared"])
+        self.assertEqual("E5", row["requested_evidence_level"])
+        self.assertEqual("askovo-import-derivation/2", row["level_derivation_version"])
+
+    def test_transaction_form_without_structure_is_held_at_e2(self) -> None:
+        """Declaring --evidence-form transaction does not make text a transaction."""
+        done = self.import_csv(
+            "record_id,text,evidence_level\nX1,发票号 2026-0031,E5\n",
+            "--evidence-form", "transaction")
+        self.assertEqual(0, done.returncode, done.stdout + done.stderr)
+        row = self.rows()[0]
+        self.assertEqual("E2", row["evidence_level"])
+        self.assertEqual("E5", row["level_declared"])
+        self.assertIn("transaction structure incomplete", row["level_basis"])
+        for field in ("counterparty", "occurred_at", "amount", "source_ref",
+                      "evidence_ref"):
+            self.assertIn(field, row["level_basis"])
+
+    def test_plain_text_cannot_claim_e5_by_form_alone(self) -> None:
+        done = self.import_csv(
+            "record_id,text,evidence_level\nX1,发票号 2026-0031,E5\n",
+            "--evidence-form", "transaction", "--evidence-level", "E5")
+        self.assertEqual(0, done.returncode, done.stdout + done.stderr)
+        payload = json.loads(done.stdout)
+        self.assertEqual(1, payload["review"]["structure_downgrades"])
+        self.assertEqual("E2", payload["review"]["evidence_level"])
+        self.assertEqual("E5", payload["review"]["requested_level"])
+        self.assertEqual("E2", self.rows()[0]["evidence_level"])
+
+    def test_each_missing_transaction_field_downgrades(self) -> None:
+        done = self.import_csv(
+            "record_id,text,evidence_level,counterparty,occurred_at,amount\n"
+            "X1,发票号 2026-0031,E5,Acme Cloud,2026-11-03,3980.00\n",
+            "--evidence-form", "transaction")
+        self.assertEqual(0, done.returncode, done.stdout + done.stderr)
+        row = self.rows()[0]
+        self.assertEqual("E2", row["evidence_level"])
+        self.assertIn("source_ref, evidence_ref", row["level_basis"])
+        self.assertNotIn("counterparty", row["level_basis"])
+
+    def test_mixed_rows_keep_per_row_levels(self) -> None:
+        done = self.import_csv(
+            "record_id,text,evidence_level,counterparty,occurred_at,amount,"
+            "source_ref,evidence_ref\n"
+            "X1,发票号 2026-0031,E5,Acme Cloud,2026-11-03,3980.00,"
+            "erp-export-202611,INV-2026-0031\n"
+            "X2,供应商口头说会开票,E5,,,,,\n",
+            "--evidence-form", "transaction")
+        self.assertEqual(0, done.returncode, done.stdout + done.stderr)
+        rows = {row["record_id"]: row for row in self.rows()}
+        self.assertEqual("E5", rows["X1"]["evidence_level"])
+        self.assertEqual("E2", rows["X2"]["evidence_level"])
+        payload = json.loads(done.stdout)
+        self.assertEqual("E5", payload["review"]["evidence_level"])
+        self.assertEqual(1, payload["review"]["structure_downgrades"])
 
 
 if __name__ == "__main__":

@@ -36,6 +36,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 OUTPUT_SUBDIR = Path("06-report") / "web"
 ASSET_SUBDIR = "assets"
@@ -124,6 +125,24 @@ REASONING_RELATIVE = "04-findings/product-reasoning.json"
 
 def _esc(value: Any) -> str:
     return html.escape(str(value), quote=True)
+
+
+def _safe_href(value: Any) -> str:
+    """Return the URL only when it is a plain http(s) link with a host.
+
+    Evidence records are untrusted input. ``html.escape`` stops tag injection
+    but not a ``javascript:`` URL, so anything that is not http(s) is dropped
+    and rendered as inert text instead of a clickable link.
+    """
+    url = str(value or "").strip()
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in ("http", "https"):
+        return ""
+    if not parsed.netloc:
+        return ""
+    return url
 
 
 def _flat(value: Any) -> str:
@@ -777,13 +796,20 @@ def _evidence_section(records: list[dict[str, Any]], by_id_cites: dict[str, list
         if not text:
             text = "（该记录只包含结构化编码字段）"
         url = str(record.get("source_url") or "").strip()
+        safe_url = _safe_href(url)
+        if not url:
+            link = ""
+        elif safe_url:
+            link = (f'<a href="{_esc(safe_url)}" rel="noopener noreferrer">'
+                    f'原帖/来源</a>')
+        else:
+            link = "来源链接已停用（不是 http/https 地址）"
         when = str(record.get("source_time") or record.get("collected_at") or "").strip()
         cites = by_id_cites.get(record_id) or []
         asset = assets.get(record_id)
         thumb = (f'<figure class="thumb"><img src="{_esc(asset["relative_path"])}" '
                  f'alt="记录 {_esc(record_id)} 的来源截图" loading="lazy">'
                  f'<figcaption>来源截图（已本地复制）</figcaption></figure>') if asset else ""
-        link = f'<a href="{_esc(url)}" rel="noopener noreferrer">原帖/来源</a>' if url else ""
         info = (qualification.get("records") or {}).get(record_id) or {}
         technical = " · ".join(
             part for part in (
@@ -1286,6 +1312,7 @@ def render(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="generator" content="Askovo web reading surface">
 <meta name="robots" content="noindex">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
 <title>{_esc(title)} · Askovo 研究阅读面</title>
 <style>{CSS}</style>
 </head>
