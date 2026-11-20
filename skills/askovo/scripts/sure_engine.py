@@ -33,6 +33,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
@@ -160,6 +161,7 @@ REASONING_NODE_LABELS = {
     "product": "产品",
     "business": "商业",
 }
+CHAIN_NODE_STATUSES = ("hypothesis", "needs-validation", "validated", "rejected", "deprioritized")
 REASONING_STAGE_FOCUS = {
     "discovery": ("scene", "user", "pain", "need"),
     "concept": ("need", "feature"),
@@ -1507,8 +1509,9 @@ def _business_detail_lines(chain: dict[str, Any]) -> list[str]:
     if isinstance(gate, dict) and gate:
         lines.append(
             f"- 商业门：`{gate.get('stage', 'G0')}` / `{gate.get('decision', 'hypothesis')}`；"
-            f"负责人：{gate.get('owner') or '待确认'}；资源承诺：{gate.get('resource_commitment') or '待确认'}；"
-            f"复审触发：{gate.get('revisit_trigger') or '待确认'}"
+            f"负责人：{_gap_or_value(gate.get('owner'), '无法确定谁对投入负责', '补写负责人', compact=True)}；"
+            f"资源承诺：{_gap_or_value(gate.get('resource_commitment'), '无法核对投入的人力和预算', '补写已承诺的人力和预算', compact=True)}；"
+            f"复审触发：{_gap_or_value(gate.get('revisit_trigger'), '无法知道何时重新评审', '补写复审触发条件', compact=True)}"
         )
     return lines
 
@@ -1586,11 +1589,20 @@ def _product_chain_lines(data: dict[str, Any]) -> list[str]:
                 lines.append(f"- 风险接受：{review['risk_acceptance']}")
         prioritization = chain.get("prioritization", {})
         if isinstance(prioritization, dict) and any(prioritization.values()):
-            lines.append(
-                f"- 优先级：方法 {prioritization.get('method') or '待确认'}；负责人 {prioritization.get('owner') or '待确认'}；"
-                f"理由 {prioritization.get('rationale') or '待确认'}；因素 "
-                f"{json.dumps(prioritization.get('factors', {}), ensure_ascii=False)}"
+            method = _gap_or_value(
+                prioritization.get("method"), "无法核对优先级比较方法", "补写优先级比较方法", compact=True
             )
+            owner = _gap_or_value(
+                prioritization.get("owner"), "无法确定谁做的优先级判断", "补写优先级负责人", compact=True
+            )
+            rationale = _gap_or_value(
+                prioritization.get("rationale"), "无法复核为什么选这条链路", "补写选择这条链路的理由", compact=True
+            )
+            line = f"- 优先级：方法 {method}；负责人 {owner}；理由 {rationale}"
+            factors = prioritization.get("factors", {})
+            if not _delivery_missing(factors):
+                line += f"；因素 {_delivery_value(factors)}"
+            lines.append(line)
         change_log = chain.get("change_log", [])
         if isinstance(change_log, list) and change_log:
             latest = change_log[-1] if isinstance(change_log[-1], dict) else {}
@@ -2393,6 +2405,7 @@ def scaffold_codebook(study_dir: Path) -> dict[str, Any]:
 
 
 EVIDENCE_LEVELS = frozenset({"E0", "E1", "E2", "E3", "E4+", "E4-", "E5"})
+COMMERCIAL_EVIDENCE_LEVELS = frozenset({"E4+", "E5"})
 
 
 def is_qualified_evidence(record: dict[str, Any]) -> bool:
@@ -2568,6 +2581,116 @@ def _unresolved_chain_references(
     return [value for value in dict.fromkeys(chain_cited_evidence_ids(reasoning)) if value not in qualified_ids]
 
 
+DELIVERY_PLACEHOLDERS = frozenset(
+    {"待填写", "待确认", "未记录", "未关联", "未设置", "tbd", "todo", "none", "null", "n/a"}
+)
+
+
+def _delivery_missing(value: Any) -> bool:
+    """True when a delivery value gives the reader nothing to work with."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return True
+        if text.lower() in DELIVERY_PLACEHOLDERS:
+            return True
+        return text.startswith(("待填写", "待确认"))
+    if isinstance(value, dict):
+        return not value or all(_delivery_missing(item) for item in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return not value or all(_delivery_missing(item) for item in value)
+    return False
+
+
+def _delivery_value(value: Any) -> str:
+    """Render a value as business text; `[]`, `{}` and `None` never reach the page."""
+    if isinstance(value, dict):
+        parts = [
+            f"{key}：{_delivery_value(item)}" for key, item in value.items() if not _delivery_missing(item)
+        ]
+        return "；".join(part for part in parts if part)
+    if isinstance(value, (list, tuple, set)):
+        parts = [_delivery_value(item) for item in value if not _delivery_missing(item)]
+        return "；".join(part for part in parts if part)
+    if isinstance(value, str):
+        return value.strip()
+    return str(value)
+
+
+def _gap_note(impact: str, action: str, compact: bool = False) -> str:
+    """State what is missing, why it matters, and how to add it."""
+    if compact:
+        return f"未提供｜补充方式：{action}"
+    return f"未提供｜影响：{impact}｜补充方式：{action}"
+
+
+def _gap_or_value(value: Any, impact: str, action: str, compact: bool = False) -> str:
+    if _delivery_missing(value):
+        return _gap_note(impact, action, compact=compact)
+    return _delivery_value(value)
+
+
+def _missing_fields(rows: list[tuple[str, Any]]) -> list[str]:
+    return [label for label, value in rows if _delivery_missing(value)]
+
+
+def _delivery_gap_block(
+    chain_id: Any, labels: list[str], guide: dict[str, tuple[str, str]]
+) -> list[str]:
+    """Per-chain list of what this document could not fill in."""
+    if not labels:
+        return []
+    lines = ["**材料缺口（本篇未提供的内容）**", ""]
+    for label in labels:
+        impact, action = guide[label]
+        lines.append(f"- {chain_id} · {label}：{_gap_note(impact, action)}")
+    lines.extend(["", "> 缺口不是结论：补齐前，相应判断保持待验证。", ""])
+    return lines
+
+
+BRD_FIELD_GUIDE: dict[str, tuple[str, str]] = {
+    "产品→商业结论": ("无法判断这条链是否值得投入", "在商业环节补一句话结论"),
+    "产品→商业的推导": ("无法复核这条结论为什么成立", "补写从产品到商业的推导理由"),
+    "决策人": ("无法确定谁对投入负责", "补写对这次投入负责的人"),
+    "资源承诺": ("无法核对投入的人力和预算", "补写已承诺的人力和预算"),
+    "复审触发": ("无法知道什么条件下需要重新评审", "补写触发重新评审的条件"),
+    "商业证据": (
+        "商业判断没有可核对的成交或付费依据",
+        "用 askovo chain-node <study> bind-evidence --node business 绑定证据",
+    ),
+    "需求判断": ("商业结论无法回溯到需求依据", "关联支撑这条商业判断的需求判断"),
+    "下一项商业/产品验证": ("无法安排下一轮降低不确定性的验证", "补写下一项要做的商业或产品验证"),
+}
+
+MRD_FIELD_GUIDE: dict[str, tuple[str, str]] = {
+    "市场定义": ("无法判断这里说的市场指哪一群人、哪笔支出", "用一句话界定市场边界"),
+    "地理范围": ("无法判断结论适用于哪些地区", "列出覆盖的国家或地区"),
+    "时间窗": ("无法判断数据对应哪段时间", "写明数据覆盖的起止时间"),
+    "纳入市场": ("无法知道这次分析包含哪些市场", "列出纳入分析的市场"),
+    "排除市场": ("无法知道这次分析有意排除了什么", "列出排除的市场及原因"),
+    "目标细分": ("无法判断先服务哪一群人", "写清最先切入的细分人群"),
+    "细分定义": ("无法核对细分人群的边界和规模口径", "给出每个细分的定义与划分依据"),
+    "付费者": ("无法判断谁掏钱、谁使用", "写清付费方与使用方是否同一人"),
+    "竞争定位": ("无法判断客户为什么选你而不是替代方案", "写清相对替代方案的定位"),
+    "竞争与替代": ("无法核对客户现在用什么解决问题", "列出客户当前的替代做法"),
+    "渠道": ("无法判断客户从哪里触达和购买", "列出计划使用的触达与成交渠道"),
+    "价格假设": ("无法判断这一定价的依据", "写清价格假设及其依据"),
+    "价格口径": ("无法复核对账用的价格记录", "按币种、单位、周期列出价格"),
+    "市场估计口径": ("无法复核任何市场规模数字", "补总体、时间窗、单位、公式、来源与推断范围"),
+}
+
+PRD_FIELD_GUIDE: dict[str, tuple[str, str]] = {
+    "特性主张": ("无法判断这次到底要做什么", "补写一句话特性主张"),
+    "能力承诺": ("无法判断这项特性承诺到什么程度", "补写能力承诺的边界"),
+    "逐条能力说明": ("无法判断每条能力解决哪个需求", "补写每条能力做什么、对应哪个需求"),
+    "产品形态": ("无法判断交付物长什么样", "写清产品以什么形态交付"),
+    "范围": ("无法判断这次做到哪里为止", "写清本次交付范围"),
+    "非目标": ("无法判断明确不做什么", "列出本次明确不做的内容"),
+}
+
+
 def _brd_decision_lines(data: dict[str, Any]) -> list[str]:
     lines = ["## 2. BRD 商业决策", ""]
     chains = data.get("chains", [])
@@ -2579,21 +2702,31 @@ def _brd_decision_lines(data: dict[str, Any]) -> list[str]:
         if not isinstance(business, dict) or not business:
             lines.append("商业节点尚未建立；先完成市场研究、需求分析和商业验证。")
             continue
+        chain_id = chain.get("id", "PR?")
         gate = business.get("gate", {}) if isinstance(business.get("gate"), dict) else {}
-        lines.extend(
-            [
-                f"### {chain.get('id', 'PR?')} · {business.get('statement', '待填写')}",
-                "",
-                f"- 产品→商业的推导：{business.get('rationale', '待填写')}",
-                f"- 商业门：`{gate.get('stage', 'G0')}` / `{gate.get('decision', 'hypothesis')}`",
-                f"- 决策人：{gate.get('owner') or '待确认'}；资源承诺：{gate.get('resource_commitment') or '待确认'}",
-                f"- 复审触发：{gate.get('revisit_trigger') or '待确认'}",
-                f"- 商业证据：{', '.join(f'`{item}`' for item in business.get('evidence_ids', [])) or '未记录'}",
-                f"- 需求判断：`{chain.get('demand_judgment_id') or '未关联'}`",
-                f"- 下一项商业/产品验证：{chain.get('next_test') or '待确认'}",
-                "",
-            ]
+        evidence_ids = [f"`{item}`" for item in business.get("evidence_ids", []) if str(item).strip()]
+        demand_id = chain.get("demand_judgment_id")
+        field_rows = [
+            ("产品→商业结论", business.get("statement")),
+            ("产品→商业的推导", business.get("rationale")),
+            ("决策人", gate.get("owner")),
+            ("资源承诺", gate.get("resource_commitment")),
+            ("复审触发", gate.get("revisit_trigger")),
+            ("商业证据", evidence_ids),
+            ("需求判断", f"`{demand_id}`" if not _delivery_missing(demand_id) else demand_id),
+            ("下一项商业/产品验证", chain.get("next_test")),
+        ]
+        statement_impact, statement_action = BRD_FIELD_GUIDE["产品→商业结论"]
+        statement = _gap_or_value(
+            business.get("statement"), statement_impact, statement_action, compact=True
         )
+        lines.extend([f"### {chain_id} · {statement}", ""])
+        lines.extend(_delivery_gap_block(chain_id, _missing_fields(field_rows), BRD_FIELD_GUIDE))
+        lines.append(f"- 商业门：`{gate.get('stage', 'G0')}` / `{gate.get('decision', 'hypothesis')}`")
+        for label, value in field_rows[1:]:
+            impact, action = BRD_FIELD_GUIDE[label]
+            lines.append(f"- {label}：{_gap_or_value(value, impact, action)}")
+        lines.append("")
     lines.extend(
         [
             "BRD 的 Go/Kill/Hold/Recycle 或试点选择必须同时考虑用户价值、交付约束、市场证据、成本、资源和反证。",
@@ -2615,27 +2748,29 @@ def _mrd_lines(data: dict[str, Any]) -> list[str]:
         if not isinstance(business, dict) or not business:
             lines.append("商业节点尚未建立；先完成市场研究、市场分析和 MRD 候选基线。")
             continue
-        lines.extend(
-            [
-                f"### {chain.get('id', 'PR?')} 的市场边界与选择",
-                "",
-                f"- 市场定义：{business.get('market_definition') or '待填写'}",
-                f"- 地理范围：{json.dumps(business.get('geographies', []), ensure_ascii=False)}",
-                f"- 时间窗：{business.get('time_window') or '待填写'}",
-                f"- 纳入市场：{json.dumps(business.get('included_markets', []), ensure_ascii=False)}",
-                f"- 排除市场：{json.dumps(business.get('excluded_markets', []), ensure_ascii=False)}",
-                f"- 目标细分：{business.get('target_segment') or '待填写'}",
-                f"- 细分定义：{json.dumps(business.get('segments', []), ensure_ascii=False)}",
-                f"- 付费者：{business.get('payer') or '待填写'}",
-                f"- 竞争定位：{business.get('positioning') or '待填写'}",
-                f"- 竞争与替代：{json.dumps(business.get('competitive_alternatives', []), ensure_ascii=False)}",
-                f"- 渠道：{json.dumps(business.get('channels', []), ensure_ascii=False)}",
-                f"- 价格假设：{business.get('pricing_hypothesis') or '待填写'}",
-                f"- 价格口径：{json.dumps(business.get('pricing', []), ensure_ascii=False)}",
-                f"- 市场估计口径：{json.dumps(business.get('market_estimates', []), ensure_ascii=False)}",
-                "",
-            ]
-        )
+        chain_id = chain.get("id", "PR?")
+        field_rows = [
+            ("市场定义", business.get("market_definition")),
+            ("地理范围", business.get("geographies", [])),
+            ("时间窗", business.get("time_window")),
+            ("纳入市场", business.get("included_markets", [])),
+            ("排除市场", business.get("excluded_markets", [])),
+            ("目标细分", business.get("target_segment")),
+            ("细分定义", business.get("segments", [])),
+            ("付费者", business.get("payer")),
+            ("竞争定位", business.get("positioning")),
+            ("竞争与替代", business.get("competitive_alternatives", [])),
+            ("渠道", business.get("channels", [])),
+            ("价格假设", business.get("pricing_hypothesis")),
+            ("价格口径", business.get("pricing", [])),
+            ("市场估计口径", business.get("market_estimates", [])),
+        ]
+        lines.extend([f"### {chain_id} 的市场边界与选择", ""])
+        lines.extend(_delivery_gap_block(chain_id, _missing_fields(field_rows), MRD_FIELD_GUIDE))
+        for label, value in field_rows:
+            impact, action = MRD_FIELD_GUIDE[label]
+            lines.append(f"- {label}：{_gap_or_value(value, impact, action)}")
+        lines.append("")
     lines.extend(
         [
             "MRD 是商业节点中市场部分的候选基线与选择视图；它不证明用户需求、产品成功或精确市场规模。",
@@ -2665,34 +2800,53 @@ def _prd_lines(data: dict[str, Any]) -> list[str]:
         rendered = True
         chain_id = chain.get("id", "PR?")
         lines.extend([f"### {chain_id} 需求基线", ""])
+        field_rows: list[tuple[str, Any]] = []
+        capability_lines: list[str] = []
+        capability_gaps = False
+        capabilities = feature.get("capabilities") if feature else None
+        for cap in capabilities if isinstance(capabilities, list) else []:
+            if not isinstance(cap, dict):
+                continue
+            what = cap.get("what")
+            if _delivery_missing(what):
+                capability_gaps = True
+            cap_impact, cap_action = PRD_FIELD_GUIDE["逐条能力说明"]
+            entry = f"- 逐条能力 {cap.get('name') or '未命名'}：{_gap_or_value(what, cap_impact, cap_action, compact=True)}"
+            if cap.get("solves"):
+                entry += f"（对应：{cap.get('solves')}）"
+            capability_lines.append(entry)
         if feature:
-            lines.extend(
+            field_rows.extend(
+                [("特性主张", feature.get("statement")), ("能力承诺", feature.get("capability"))]
+            )
+        if product:
+            field_rows.extend(
                 [
-                    f"- 特性主张：{feature.get('statement') or '待填写'}",
-                    f"- 能力承诺：{feature.get('capability') or '待填写'}",
-                    f"- 状态：`{feature.get('status', 'unknown')}`",
+                    ("产品形态", product.get("form")),
+                    ("范围", product.get("scope")),
+                    ("非目标", product.get("non_goals", [])),
                 ]
             )
-            capabilities = feature.get("capabilities")
-            for cap in capabilities if isinstance(capabilities, list) else []:
-                if not isinstance(cap, dict):
-                    continue
-                entry = f"- 逐条能力 {cap.get('name') or '未命名'}：{cap.get('what') or '待填写'}"
-                if cap.get("solves"):
-                    entry += f"（对应：{cap.get('solves')}）"
-                lines.append(entry)
+        gap_labels = _missing_fields(field_rows)
+        if capability_gaps:
+            gap_labels.insert(2 if feature else 0, "逐条能力说明")
+        lines.extend(_delivery_gap_block(chain_id, gap_labels, PRD_FIELD_GUIDE))
+        values = dict(field_rows)
+
+        def _prd_field(label: str) -> str:
+            impact, action = PRD_FIELD_GUIDE[label]
+            shown = "非目标（不做什么）" if label == "非目标" else label
+            return f"- {shown}：{_gap_or_value(values[label], impact, action)}"
+
+        if feature:
+            lines.extend([_prd_field("特性主张"), _prd_field("能力承诺")])
+            lines.append(f"- 状态：`{feature.get('status', 'unknown')}`")
+            lines.extend(capability_lines)
             lines.append("")
         if product:
-            non_goals = product.get("non_goals", [])
-            lines.extend(
-                [
-                    f"- 产品形态：{product.get('form') or '待填写'}",
-                    f"- 范围：{product.get('scope') or '待填写'}",
-                    f"- 非目标（不做什么）：{'；'.join(str(item) for item in non_goals) if non_goals else '未记录'}",
-                    f"- 状态：`{product.get('status', 'unknown')}`",
-                    "",
-                ]
-            )
+            lines.extend([_prd_field(label) for label in ("产品形态", "范围", "非目标")])
+            lines.append(f"- 状态：`{product.get('status', 'unknown')}`")
+            lines.append("")
         lines.extend(
             [
                 f"**{chain_id} 验收清单（可直接粘贴到 issue / 任务列表）**",
@@ -2784,6 +2938,309 @@ def _user_ops_lines(data: dict[str, Any]) -> list[str]:
 
 
 COST_NAME_PATTERN = re.compile(r"cost|费用|成本", re.IGNORECASE)
+TOTAL_COST_PATTERN = re.compile(r"total|合计|总计|sum", re.IGNORECASE)
+GROSS_PROFIT_PATTERN = re.compile(r"毛利|gross\s*profit", re.IGNORECASE)
+MARGIN_RATE_PATTERN = re.compile(r"毛利\s*率|利润率|margin", re.IGNORECASE)
+ROI_PATTERN = re.compile(r"\broi\b|回报率|投资回报", re.IGNORECASE)
+PRICE_NAME_PATTERN = re.compile(r"price|pricing|价格|单价|售价|定价|月费|年费|订阅费", re.IGNORECASE)
+ECONOMICS_TOLERANCE = Decimal("0.01")
+ECONOMICS_RELATIVE_TOLERANCE = Decimal("0.005")
+
+
+def _decimal_business_value(value: Any) -> Decimal | None:
+    """Parse a real number as Decimal; null, text and ranges stay unknown, never zero."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return Decimal(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return None
+        return Decimal(str(value))
+    if isinstance(value, str):
+        text = value.strip().replace(",", "")
+        if not text:
+            return None
+        try:
+            parsed = Decimal(text)
+        except InvalidOperation:
+            return None
+        return parsed if parsed.is_finite() else None
+    return None
+
+
+def _format_decimal(value: Decimal) -> str:
+    """Format without binary float residue or scientific notation."""
+    if not value.is_finite():
+        return str(value)
+    if value == value.to_integral_value():
+        return format(value.quantize(Decimal("1")), "f")
+    return format(value.normalize(), "f")
+
+
+def _economics_close(expected: Decimal, actual: Decimal) -> bool:
+    tolerance = max(ECONOMICS_TOLERANCE, abs(expected) * ECONOMICS_RELATIVE_TOLERANCE)
+    return abs(expected - actual) <= tolerance
+
+
+def _economics_mismatch(metric: str, expected: Decimal, actual: Decimal) -> dict[str, str]:
+    return {
+        "code": "economics_mismatch",
+        "metric": metric,
+        "expected": _format_decimal(expected),
+        "actual": _format_decimal(actual),
+        "delta": _format_decimal(actual - expected),
+    }
+
+
+def _economics_check(
+    checks: list[dict[str, Any]],
+    mismatches: list[dict[str, Any]],
+    kind: str,
+    metric: str,
+    expected: Decimal,
+    actual: Decimal,
+) -> None:
+    passed = _economics_close(expected, actual)
+    checks.append(
+        {
+            "kind": kind,
+            "metric": metric,
+            "expected": _format_decimal(expected),
+            "actual": _format_decimal(actual),
+            "status": "ok" if passed else "mismatch",
+        }
+    )
+    if not passed:
+        mismatches.append({**_economics_mismatch(metric, expected, actual), "kind": kind})
+
+
+def _economics_rate(value: Decimal, metric: str) -> Decimal:
+    """Read an explicitly percent-valued rate as a ratio; otherwise keep the declaration as-is."""
+    text = metric.casefold()
+    percent_hint = "%" in metric or "率" in metric or "percent" in text or "margin" in text
+    if percent_hint and value > 1 and value <= 100:
+        return value / 100
+    return value
+
+
+def _format_percent(value: Decimal) -> str:
+    return f"{value.quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)}%"
+
+
+def _format_ratio(value: Decimal) -> str:
+    return _format_decimal(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def validate_unit_economics(business: dict[str, Any]) -> dict[str, Any]:
+    """Check the business node's declared arithmetic with Decimal.
+
+    Only relationships the node itself declares are checked. Mismatches are
+    reported, never rewritten; missing declarations stay unknown, never zero.
+    """
+    checks: list[dict[str, Any]] = []
+    mismatches: list[dict[str, Any]] = []
+    notes: list[dict[str, str]] = []
+    computed: dict[str, dict[str, str]] = {}
+    if not isinstance(business, dict):
+        business = {}
+
+    prices: list[tuple[str, dict[str, Any], Decimal]] = []
+    for index, entry in enumerate(business.get("pricing") or []):
+        if not isinstance(entry, dict):
+            continue
+        amount = _decimal_business_value(entry.get("amount"))
+        if amount is None or amount <= 0:
+            continue
+        prices.append((str(entry.get("model") or f"price-{index + 1}"), entry, amount))
+
+    inputs: list[tuple[dict[str, Any], Decimal, bool]] = []
+    for item in business.get("unit_economics_inputs") or []:
+        if not isinstance(item, dict):
+            continue
+        value = _decimal_business_value(item.get("value"))
+        if value is None:
+            continue
+        if not str(item.get("source_ref") or "").strip():
+            continue
+        name = str(item.get("metric") or "")
+        cost_like = bool(
+            COST_NAME_PATTERN.search(name) or COST_NAME_PATTERN.search(str(item.get("status") or ""))
+        )
+        inputs.append((item, value, cost_like))
+
+    for label, entry, amount in prices:
+        unit = str(entry.get("unit") or "").strip()
+        matched = [
+            (item, value, cost_like)
+            for item, value, cost_like in inputs
+            if str(item.get("unit") or "").strip() == unit
+        ]
+        computed_entry: dict[str, str] = {}
+
+        volume = None
+        for key in ("volume", "units", "quantity"):
+            volume = _decimal_business_value(entry.get(key))
+            if volume is not None:
+                break
+        revenue = None
+        for key in ("revenue", "total_revenue"):
+            revenue = _decimal_business_value(entry.get(key))
+            if revenue is not None:
+                break
+
+        if volume is not None and revenue is not None:
+            _economics_check(checks, mismatches, "revenue", f"{label} · 收入", amount * volume, revenue)
+        elif volume is not None:
+            computed_entry["revenue"] = _format_decimal(amount * volume)
+            notes.append(
+                {
+                    "code": "revenue_computed",
+                    "metric": label,
+                    "message": (
+                        f"未声明总营收；按 {_format_decimal(amount)} × {_format_decimal(volume)} "
+                        f"推得 {computed_entry['revenue']}，仅作计算，不替代声明"
+                    ),
+                }
+            )
+        elif revenue is not None:
+            computed_entry["volume"] = _format_decimal(revenue / amount)
+            notes.append(
+                {
+                    "code": "volume_implied",
+                    "metric": label,
+                    "message": (
+                        f"未声明数量；按总营收 {_format_decimal(revenue)} ÷ 单价 {_format_decimal(amount)} "
+                        f"推得 {computed_entry['volume']}，仅作计算，不替代声明"
+                    ),
+                }
+            )
+
+        costs = [(item, value) for item, value, cost_like in matched if cost_like]
+        detail_costs = [
+            (item, value)
+            for item, value in costs
+            if not TOTAL_COST_PATTERN.search(str(item.get("metric") or ""))
+        ]
+        declared_totals = [
+            (item, value)
+            for item, value in costs
+            if TOTAL_COST_PATTERN.search(str(item.get("metric") or ""))
+        ]
+
+        cost_basis: Decimal | None = None
+        if detail_costs:
+            cost_basis = sum((value for _, value in detail_costs), Decimal("0"))
+            for item, declared in declared_totals:
+                _economics_check(
+                    checks,
+                    mismatches,
+                    "total_cost",
+                    f"{label} · {item.get('metric') or '成本合计'}",
+                    cost_basis,
+                    declared,
+                )
+        elif declared_totals:
+            cost_basis = sum((value for _, value in declared_totals), Decimal("0"))
+            notes.append(
+                {
+                    "code": "cost_basis_from_declared_total",
+                    "metric": label,
+                    "message": "只有成本合计、没有分项成本；毛利与毛利率按该合计值计算，成本口径未核验",
+                }
+            )
+
+        if cost_basis is not None:
+            gross_profit = amount - cost_basis
+            computed_entry["cost_basis"] = _format_decimal(cost_basis)
+            computed_entry["gross_profit"] = _format_decimal(gross_profit)
+            computed_entry["margin_rate"] = _format_percent(gross_profit / amount * 100)
+            if cost_basis != 0:
+                computed_entry["roi"] = _format_ratio(gross_profit / cost_basis)
+
+        for item, value, cost_like in matched:
+            name = str(item.get("metric") or "")
+            metric_label = f"{label} · {name or '未命名输入'}"
+            if cost_like:
+                continue
+            if MARGIN_RATE_PATTERN.search(name):
+                if cost_basis is None:
+                    notes.append(
+                        {
+                            "code": "margin_rate_unchecked",
+                            "metric": metric_label,
+                            "message": "声明了毛利率，但没有同单位、带来源的成本输入；未做校验",
+                        }
+                    )
+                    continue
+                _economics_check(
+                    checks,
+                    mismatches,
+                    "margin_rate",
+                    metric_label,
+                    (amount - cost_basis) / amount,
+                    _economics_rate(value, name),
+                )
+            elif ROI_PATTERN.search(name):
+                if cost_basis is None or cost_basis == 0:
+                    notes.append(
+                        {
+                            "code": "roi_undefined",
+                            "metric": metric_label,
+                            "message": "成本基础为零或缺失，ROI 无定义；作为缺口保留，不按零计算",
+                        }
+                    )
+                    continue
+                _economics_check(
+                    checks,
+                    mismatches,
+                    "roi",
+                    metric_label,
+                    (amount - cost_basis) / cost_basis,
+                    _economics_rate(value, name),
+                )
+            elif GROSS_PROFIT_PATTERN.search(name):
+                if cost_basis is None:
+                    notes.append(
+                        {
+                            "code": "gross_profit_unchecked",
+                            "metric": metric_label,
+                            "message": "声明了毛利，但没有同单位、带来源的成本输入；未做校验",
+                        }
+                    )
+                    continue
+                _economics_check(
+                    checks,
+                    mismatches,
+                    "gross_profit",
+                    metric_label,
+                    amount - cost_basis,
+                    value,
+                )
+            elif PRICE_NAME_PATTERN.search(name) and value == amount:
+                notes.append(
+                    {
+                        "code": "price_restated_as_input",
+                        "metric": metric_label,
+                        "message": "金额与定价相同且名称像价格；疑似重复登记，不作为成本参与减法",
+                    }
+                )
+        if computed_entry:
+            computed[label] = computed_entry
+
+    if mismatches:
+        status = "mismatch"
+    elif checks:
+        status = "ok"
+    else:
+        status = "insufficient"
+    return {
+        "status": status,
+        "checks": checks,
+        "mismatches": mismatches,
+        "notes": notes,
+        "computed": computed,
+    }
 
 
 def _numeric_business_value(value: Any) -> float | None:
@@ -2806,7 +3263,8 @@ def _chain_economics_section(chain: dict[str, Any]) -> tuple[list[str], dict[str
     Aggregation rules stay explicit: computation happens only for numeric
     pricing amounts and unit-matched numeric inputs with a source reference;
     "cost-like" grouping is name-based and labeled as indicative. null means
-    unknown, never zero; no causal or commercial proof is claimed.
+    unknown, never zero; mismatches with declared values are reported, not
+    rewritten, and no causal or commercial proof is claimed.
     """
     business = (chain.get("nodes") or {}).get("business") or {}
     lines: list[str] = []
@@ -2818,6 +3276,10 @@ def _chain_economics_section(chain: dict[str, Any]) -> tuple[list[str], dict[str
         "unknown_inputs": 0,
         "provenance_warnings": 0,
         "computed": False,
+        "validation_status": "insufficient",
+        "mismatch_count": 0,
+        "mismatches": [],
+        "notes": [],
     }
     lines.append(f"## {stats['id']} — {stats['title'] or '（未命名）'}")
     lines.append("")
@@ -2825,15 +3287,16 @@ def _chain_economics_section(chain: dict[str, Any]) -> tuple[list[str], dict[str
     lines.append(f"- 定价假设：{business.get('pricing_hypothesis') or '未填写'}")
     lines.append("")
 
-    prices = []
+    prices: list[tuple[dict[str, Any], Decimal]] = []
     for entry in business.get("pricing") or []:
         if not isinstance(entry, dict):
             continue
-        amount = _numeric_business_value(entry.get("amount"))
+        amount = _decimal_business_value(entry.get("amount"))
         ev = ", ".join(str(x) for x in entry.get("evidence_ids") or [])
+        shown = _format_decimal(amount) if amount is not None else "未知"
         lines.append(
             f"- 定价：{entry.get('model') or '未命名'} = "
-            f"{entry.get('amount') if entry.get('amount') is not None else '未知'} "
+            f"{shown} "
             f"{entry.get('currency') or ''}/{entry.get('unit') or '单位未注明'}"
             f"（{entry.get('term') or '期限未注明'}；证据：{ev or '无'}）"
         )
@@ -2843,20 +3306,26 @@ def _chain_economics_section(chain: dict[str, Any]) -> tuple[list[str], dict[str
     lines.append("")
 
     inputs = [item for item in business.get("unit_economics_inputs") or [] if isinstance(item, dict)]
-    known: list[tuple[dict[str, Any], float]] = []
+    known: list[tuple[dict[str, Any], Decimal, bool]] = []
     unknown: list[dict[str, Any]] = []
     warnings: list[str] = []
     for item in inputs:
-        value = _numeric_business_value(item.get("value"))
+        value = _decimal_business_value(item.get("value"))
         has_source = bool(str(item.get("source_ref") or "").strip())
         if value is None:
             unknown.append(item)
             continue
         if not has_source:
-            warnings.append(f"{item.get('metric') or '未命名'}：数值 {value} 缺少 source_ref，不进入计算")
+            warnings.append(
+                f"{item.get('metric') or '未命名'}：数值 {_format_decimal(value)} 缺少 source_ref，不进入计算"
+            )
             unknown.append(item)
             continue
-        known.append((item, value))
+        name = str(item.get("metric") or "")
+        cost_like = bool(
+            COST_NAME_PATTERN.search(name) or COST_NAME_PATTERN.search(str(item.get("status") or ""))
+        )
+        known.append((item, value, cost_like))
     stats["unknown_inputs"] = len(unknown)
     stats["provenance_warnings"] = len(warnings)
 
@@ -2864,9 +3333,9 @@ def _chain_economics_section(chain: dict[str, Any]) -> tuple[list[str], dict[str
     lines.append("")
     lines.append("| 输入 | 数值 | 单位 | 来源 |")
     lines.append("|---|---|---|---|")
-    for item, value in known:
+    for item, value, _cost_like in known:
         lines.append(
-            f"| {item.get('metric') or '未命名'} | {value:g} | {item.get('unit') or '未注明'} | "
+            f"| {item.get('metric') or '未命名'} | {_format_decimal(value)} | {item.get('unit') or '未注明'} | "
             f"{item.get('source_ref') or ''} |"
         )
     for item in unknown:
@@ -2876,35 +3345,65 @@ def _chain_economics_section(chain: dict[str, Any]) -> tuple[list[str], dict[str
 
     for entry, amount in prices:
         unit = str(entry.get("unit") or "").strip()
-        matched = [(item, value) for item, value in known if str(item.get("unit") or "").strip() == unit]
+        matched = [
+            (item, value, cost_like)
+            for item, value, cost_like in known
+            if str(item.get("unit") or "").strip() == unit
+        ]
         stats["unit_matched_inputs"] += len(matched)
         model = entry.get("model") or "定价"
-        lines.append(f"### 计算：{model}（{amount:g} / {unit or '单位未注明'}）")
+        lines.append(f"### 计算：{model}（{_format_decimal(amount)} / {unit or '单位未注明'}）")
         lines.append("")
         if not matched:
             lines.append(f"- 没有单位匹配（unit = “{unit or '未注明'}”）且带来源的数值输入；无法进行任何算术。")
             lines.append("")
             continue
-        cost_like = [
+        cost_like = [(item, value) for item, value, is_cost in matched if is_cost]
+        for item, value, is_cost in matched:
+            name = item.get("metric") or "未命名"
+            if is_cost:
+                delta = amount - value
+                multiple = amount / value if value else None
+                multiple_text = f"；{_format_ratio(multiple)}×" if multiple is not None else ""
+                lines.append(
+                    f"- {name}：{_format_decimal(amount)} − {_format_decimal(value)} = "
+                    f"{_format_decimal(delta)}（单位 {unit or '未注明'}）{multiple_text}"
+                )
+            else:
+                text = (
+                    f"- {name}：同单位但不是成本项，不参与价格减法"
+                    f"（单位 {unit or '未注明'}；数值 {_format_decimal(value)}）"
+                )
+                if PRICE_NAME_PATTERN.search(str(item.get("metric") or "")) and value == amount:
+                    text += "；与定价金额相同，疑似重复登记"
+                lines.append(text)
+        detail_costs = [
             (item, value)
-            for item, value in matched
-            if COST_NAME_PATTERN.search(str(item.get("metric") or "")) or COST_NAME_PATTERN.search(str(item.get("status") or ""))
+            for item, value in cost_like
+            if not TOTAL_COST_PATTERN.search(str(item.get("metric") or ""))
         ]
-        for item, value in matched:
-            delta = amount - value
-            multiple = amount / value if value else None
-            multiple_text = f"；{multiple:.2f}×" if multiple is not None else ""
-            lines.append(
-                f"- {item.get('metric') or '未命名'}：{amount:g} − {value:g} = {delta:g}（单位 {unit or '未注明'}）{multiple_text}"
-            )
-        if cost_like:
-            cost_sum = sum(value for _, value in cost_like)
+        declared_totals = [
+            (item, value)
+            for item, value in cost_like
+            if TOTAL_COST_PATTERN.search(str(item.get("metric") or ""))
+        ]
+        if detail_costs:
+            cost_sum = sum((value for _, value in detail_costs), Decimal("0"))
             margin = (amount - cost_sum) / amount * 100 if amount else None
-            names = "、".join(str(item.get("metric")) for item, _ in cost_like)
+            names = "、".join(str(item.get("metric")) for item, _ in detail_costs)
             lines.append("")
-            lines.append(f"- 指示性成本类合计（仅按名称匹配“cost/成本/费用”：{names}）：{cost_sum:g}")
+            lines.append(f"- 指示性成本类合计（仅按名称匹配“cost/成本/费用”：{names}）：{_format_decimal(cost_sum)}")
             if margin is not None:
-                lines.append(f"- 指示性毛利：{amount:g} − {cost_sum:g} = {amount - cost_sum:g}（{margin:.1f}%）")
+                lines.append(
+                    f"- 指示性毛利：{_format_decimal(amount)} − {_format_decimal(cost_sum)} = "
+                    f"{_format_decimal(amount - cost_sum)}（{_format_percent(margin)}）"
+                )
+        elif declared_totals:
+            cost_sum = sum((value for _, value in declared_totals), Decimal("0"))
+            names = "、".join(str(item.get("metric")) for item, _ in declared_totals)
+            lines.append("")
+            lines.append(f"- 声明成本合计（{names}）：{_format_decimal(cost_sum)}（无分项成本可核对）")
+        if cost_like:
             lines.append("- 上述合计依赖输入命名与单位一致，不构成成本口径核验；财务评审独立进行。")
             stats["computed"] = True
         lines.append("")
@@ -2914,6 +3413,31 @@ def _chain_economics_section(chain: dict[str, Any]) -> tuple[list[str], dict[str
         lines.append("")
         lines.extend(f"- {text}" for text in warnings)
         lines.append("")
+
+    validation = validate_unit_economics(business)
+    stats["validation_status"] = validation["status"]
+    stats["mismatch_count"] = len(validation["mismatches"])
+    stats["mismatches"] = validation["mismatches"]
+    stats["notes"] = validation["notes"]
+    lines.append("### 测算校验（声明值与确定性计算）")
+    lines.append("")
+    if validation["status"] == "mismatch":
+        lines.append(
+            f"- 状态：发现 {len(validation['mismatches'])} 处声明值与确定性计算不一致"
+            "（只报告，不替用户改数；容差 0.01 或 0.5%）。"
+        )
+        for mismatch in validation["mismatches"]:
+            lines.append(
+                f"- {mismatch['metric']}：应为 {mismatch['expected']}，"
+                f"声明 {mismatch['actual']}，差 {mismatch['delta']}"
+            )
+    elif validation["status"] == "ok":
+        lines.append(f"- 状态：一致（{len(validation['checks'])} 项声明通过容差校验；容差 0.01 或 0.5%）。")
+    else:
+        lines.append("- 状态：没有可校验的数量声明；只列出确定性计算，未补默认值。")
+    for note in validation["notes"]:
+        lines.append(f"- 备注：{note['message']}")
+    lines.append("")
     lines.append("---")
     lines.append("")
     return lines, stats
@@ -2937,6 +3461,7 @@ def unit_economics_report(reasoning: dict[str, Any], title: str) -> tuple[str, d
         "",
         f"> 来自产品与商业推理主链「{title}」的确定性算术投影。",
         "> 只对 business 节点中带来源引用、单位匹配的数值输入做计算；null 表示未知，不是零。",
+        "> 声明值与计算值不一致时只报告，不替用户改数；缺失声明保持未知，不补默认值。",
         "> 本投影不构成商业证明、发布就绪或因果结论；E4/E5 商业证据、财务评审与人工决策保持独立。",
         "",
     ]
@@ -3114,8 +3639,9 @@ def _decision_package_lines(
         f"> 状态：草稿（未签收）。产品类型：{route.get('domain_label') or _study_labels(study)[0]}；"
         f"阶段：{route.get('stage_label') or _study_labels(study)[1]}。",
         "",
-        f"- 决策问题：{decision.get('question') or study.get('decision_question') or study.get('title', '待确认')}",
-        f"- 决策负责人：{decision.get('owner') or '待确认'}；截止：{decision.get('deadline') or '未设置'}",
+        f"- 决策问题：{_gap_or_value(decision.get('question') or study.get('decision_question') or study.get('title'), '读者不知道这份决策包回答什么', '补写决策问题', compact=True)}",
+        f"- 决策负责人：{_gap_or_value(decision.get('owner'), '无法确定谁对结论负责', '补写决策负责人', compact=True)}；"
+        f"截止：{_gap_or_value(decision.get('deadline'), '无法判断什么时候必须拍板', '补写截止时间', compact=True)}",
         f"- 审计状态：`{audit_status}`（full audit）",
         "",
         "> 本包是研究投影：所有判断、证据与缺口以 `04-findings/` 为准；证据强度不等于商业或发布证明。",
@@ -3331,16 +3857,29 @@ def _decision_package_lines(
                 value = states.get(key, {}) if isinstance(states.get(key), dict) else {}
                 if value.get("status"):
                     state_bits.append(f"{label} `{value['status']}`")
+            method = _gap_or_value(
+                prioritization.get("method"), "无法核对优先级比较方法", "补写优先级比较方法", compact=True
+            )
+            owner = _gap_or_value(
+                prioritization.get("owner"), "无法确定谁做的优先级判断", "补写优先级负责人", compact=True
+            )
+            rationale = _gap_or_value(
+                prioritization.get("rationale"), "无法复核为什么选这条链路", "补写选择这条链路的理由", compact=True
+            )
+            resource = _gap_or_value(
+                gate.get("resource_commitment"),
+                "无法核对投入的人力和预算",
+                "补写已承诺的人力和预算",
+                compact=True,
+            )
             lines.extend(
                 [
                     f"### {chain.get('id', 'PR?')} · {chain.get('title', '')}",
                     "",
                     f"- 推荐读法：`decided` 是**产品/商业选择记录**，不是发布或商业成功证明。",
-                    f"- 优先级：方法 {prioritization.get('method') or '待确认'}；"
-                    f"负责人 {prioritization.get('owner') or '待确认'}；"
-                    f"理由 {prioritization.get('rationale') or '待确认'}",
+                    f"- 优先级：方法 {method}；负责人 {owner}；理由 {rationale}",
                     f"- 商业门：`{gate.get('stage', 'G0')}` / `{gate.get('decision', 'hypothesis')}`；"
-                    f"资源承诺 {gate.get('resource_commitment') or '待确认'}",
+                    f"资源承诺 {resource}",
                     f"- 置信边界：反证 {', '.join(f'`{i}`' for i in chain.get('counter_evidence_ids', [])) or '未记录'}；"
                     f"缺口 {'；'.join(str(g) for g in chain.get('gaps', [])) or '未记录'}",
                     f"- 交付/结果/因果三态（互相独立，不得互推）：{'；'.join(state_bits) or '未记录'}",
@@ -3714,7 +4253,7 @@ def _plan_strength(records: list[dict[str, Any]], node_name: str | None = None) 
             return "◐", "有商业线索", f"商业线索 {len(leads)} 条 · {len(lead_families)} 个来源族（未达多个来源族观察；相关性未证明独立）"
         return "◐", "有线索", f"单案例或口头线索：线索记录 {len(leads)} 条 · {len(lead_families)} 个来源族（未达多个来源族观察；相关性未证明独立）"
     if node_name == "business":
-        return "○", "假设（商业门未验证）", "尚无 E4+/E5 商业证据；商业判断仍待验证"
+        return "○", "假设（商业门未验证）", "尚无成交、付费或可核对的商业行为；商业判断仍待验证"
     return "○", "假设（待验证）", "尚无采集到的直接记录"
 
 
@@ -3848,7 +4387,13 @@ def _plan_section(
     node_key = {"2": "scene", "3": "user", "4": "pain", "5": "need",
                 "6": "feature", "7": "product", "8": "business"}.get(title.split(".")[0].strip())
     marker, strength_label, strength_detail = _plan_strength(records, node_key)
-    lines.extend([f"**{marker} {strength_label}｜{node.get('statement') or '待填写'}**", ""])
+    statement = _gap_or_value(
+        node.get("statement"),
+        "本节判断不完整，无法据此决策",
+        "补写该环节的一句话结论",
+        compact=True,
+    )
+    lines.extend([f"**{marker} {strength_label}｜{statement}**", ""])
     for label, value in field_rows:
         if value is None:
             continue
@@ -4060,11 +4605,11 @@ def _plan_conclusion_items(chain: dict[str, Any], chain_records: list[dict[str, 
     segment = str(business.get("target_segment") or "").strip()
     payer = str(business.get("payer") or "").strip()
     if segment or payer:
-        items.append(f"- **先卖给谁**：{segment or '待确认'}" + (f"（付费者：{payer}）" if payer else ""))
+        items.append(f"- **先卖给谁**：{segment or '未提供目标人群'}" + (f"（付费者：{payer}）" if payer else ""))
     revenue = str(business.get("revenue_model") or "").strip()
     pricing = str(business.get("pricing_hypothesis") or "").strip()
     if revenue or pricing:
-        items.append(f"- **怎么收钱**：{revenue or '待确认'}" + (f"；定价方向：{pricing}" if pricing else ""))
+        items.append(f"- **怎么收钱**：{revenue or '未提供收钱方式'}" + (f"；定价方向：{pricing}" if pricing else ""))
     next_test = str(chain.get("next_test") or "").strip()
     if next_test:
         items.append(f"- **30 天内怎么验证**：{next_test}")
@@ -4090,16 +4635,153 @@ def _plan_conclusion_items(chain: dict[str, Any], chain_records: list[dict[str, 
     return items
 
 
+PLAN_NODE_STATUS_LABELS = {
+    "hypothesis": "假设",
+    "needs-validation": "待验证",
+    "validated": "已验证",
+    "rejected": "已否决",
+    "deprioritized": "已降级",
+}
+
+PLAN_AUDIT_STATUS_LABELS = {
+    "pass": "通过",
+    "fail": "未通过",
+    "not_run": "未运行",
+}
+
+
+def _plan_conclusion_gate(
+    chain: dict[str, Any],
+    by_id: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Decide whether a chain may render a formal conclusion.
+
+    A formal conclusion needs a validated business node, at least one
+    qualified E4+/E5 commercial record bound to it, and a chain context_key.
+    A hand-edited ``validated`` status without commercial evidence stays a
+    gap: status is a claim, not evidence. The full-audit requirement is
+    applied by the caller because it is per delivery, not per chain.
+    """
+    nodes = chain.get("nodes", {}) if isinstance(chain.get("nodes"), dict) else {}
+    business = nodes.get("business", {}) if isinstance(nodes.get("business"), dict) else {}
+    feature = nodes.get("feature", {}) if isinstance(nodes.get("feature"), dict) else {}
+    product = nodes.get("product", {}) if isinstance(nodes.get("product"), dict) else {}
+    business_status = str(business.get("status") or "未设置").strip()
+    business_records = _plan_node_records(business, by_id)
+    commercial_records = [
+        record for record in business_records
+        if is_qualified_evidence(record)
+        and str(record.get("evidence_level") or "") in COMMERCIAL_EVIDENCE_LEVELS
+    ]
+    gaps: list[str] = []
+    if business_status != "validated":
+        status_label = PLAN_NODE_STATUS_LABELS.get(business_status, business_status)
+        gaps.append(f"商业环节仍处于「{status_label}」状态，未完成验证")
+    if not commercial_records:
+        bound = f"当前绑定 {len(business_records)} 条记录" if business_records else "当前没有绑定证据"
+        gaps.append(f"商业环节缺少合格的商业证据（成交、付费或可核对的商业行为）；{bound}")
+    if not str(chain.get("context_key") or "").strip():
+        gaps.append("链缺少研究情境标识，无法把商业证据限定在同一研究情境")
+
+    chain_records = _plan_chain_records(chain, by_id)
+    families = {
+        str(record.get("source_family") or "")
+        for record in chain_records
+        if record.get("source_family")
+    }
+    direction = str(feature.get("statement") or product.get("statement") or "").strip()
+    support_parts: list[str] = []
+    if chain_records:
+        support_parts.append(f"{len(chain_records)} 条可核对记录、{len(families)} 类来源")
+    if commercial_records:
+        support_parts.append(f"其中商业证据 {len(commercial_records)} 条（成交、付费或可核对的商业行为）")
+    if direction and chain_records:
+        support_parts.append(f"能支持“{direction}”这一产品方向")
+    if not support_parts:
+        support = "当前没有绑定任何证据，只能把这条链当作待验证的产品假设"
+    elif chain_records:
+        support = "；".join(support_parts) + "；这些记录不证明成交、定价、市场规模或因果"
+    else:
+        support = "；".join(support_parts) + "；这只是待验证的产品假设"
+    return {
+        "qualified": not gaps,
+        "support": support,
+        "gaps": gaps,
+        "business_status": business_status,
+        "commercial_count": len(commercial_records),
+    }
+
+
+def _plan_conclusion_next_step(
+    chain: dict[str, Any],
+    study: dict[str, Any] | None,
+    gate: dict[str, Any],
+) -> str:
+    study_ref = str((study or {}).get("study_id") or "<study>")
+    chain_id = str(chain.get("id") or "").strip()
+    chain_arg = f" --chain {chain_id}" if chain_id else ""
+    commands: list[str] = []
+    if not gate["commercial_count"]:
+        commands.append(
+            "先补充并注册商业证据（成交、付费或可核对的商业行为），再运行 "
+            f"`askovo chain-node {study_ref} bind-evidence --node business --evidence <证据ID>{chain_arg}`"
+        )
+    if gate["business_status"] != "validated":
+        commands.append(
+            "完成人工语义复核后运行 "
+            f"`askovo chain-node {study_ref} set --node business --status validated{chain_arg}`"
+        )
+    if not str(chain.get("context_key") or "").strip():
+        commands.append("在 04-findings/product-reasoning.json 补齐与关联需求判断一致的研究情境标识")
+    commands.append(f"最后运行 `askovo check {study_ref} --stage full`；审计通过前不输出正式结论")
+    return "；".join(commands) + "。"
+
+
+def _plan_conclusion_verdict(
+    chain: dict[str, Any],
+    by_id: dict[str, dict[str, Any]],
+    audit_status: str,
+    study: dict[str, Any] | None,
+) -> list[str]:
+    """Render a formal conclusion only when evidence and audit both qualify."""
+    business = (chain.get("nodes") or {}).get("business", {})
+    gate = _plan_conclusion_gate(chain, by_id)
+    if gate["qualified"] and audit_status == "pass":
+        return [f"**结论：{business.get('statement')}**", ""]
+    gaps = list(gate["gaps"])
+    if gate["qualified"]:
+        heading = "**当前判断：完整检查未通过，不作为正式结论**"
+        audit_label = PLAN_AUDIT_STATUS_LABELS.get(audit_status or "not_run", audit_status or "未运行")
+        gaps.insert(
+            0,
+            f"完整检查（`askovo check --stage full`）状态为「{audit_label}」，"
+            "结构、证据链与交付新鲜度校验未全部通过",
+        )
+    else:
+        heading = "**当前判断：证据不足**"
+    return [
+        heading, "",
+        f"- **现有证据能支持什么**：{gate['support']}",
+        f"- **缺口是什么**：{'；'.join(gaps)}",
+        f"- **下一步补证动作**：{_plan_conclusion_next_step(chain, study, gate)}",
+        "",
+    ]
+
+
 def _plan_conclusion_lines(
     chains: list[dict[str, Any]],
     records: list[dict[str, Any]] | None = None,
     by_id: dict[str, dict[str, Any]] | None = None,
+    audit_status: str = "not_run",
+    study: dict[str, Any] | None = None,
 ) -> list[str]:
     """把七段推理收成可执行的决定：做什么、卖给谁、怎么收钱、先验证什么。
 
     纯投影：只读链上的 product / business 节点与 next_test、failure_condition，
     不产生新判断，也不引入证据编码。多链时先给比较表，再逐链给结论，避免
-    只渲染第一条主链、把其他候选链的结论丢掉。
+    只渲染第一条主链、把其他候选链的结论丢掉。正式结论需 business 节点
+    validated、绑定合格的 E4+/E5 商业证据，且 full audit 通过；否则输出
+    “当前判断 + 缺口 + 下一步补证动作”，不把假设写成结论。
     """
     by_id = by_id or {}
     entries: list[tuple[dict[str, Any], list[dict[str, Any]], list[str]]] = []
@@ -4117,14 +4799,15 @@ def _plan_conclusion_lines(
         return []
 
     intro = ("这一节把后面的七段推理收成可执行的决定：做什么、卖给谁、怎么收钱、先验证什么。"
-             "判断的依据、数据基础和用户原话仍在后面各节。")
+             "判断的依据、数据基础和用户原话仍在后面各节。"
+             "只有商业环节完成验证、绑定合格的商业证据（成交、付费或可核对的商业行为）"
+             "且完整检查通过时，才给出正式结论。")
     if len(entries) == 1:
         chain, _, items = entries[0]
-        business = chain.get("nodes", {}).get("business", {})
         return [
             "## 0. 结论与推进建议", "",
             f"> {intro}", "",
-            f"**结论：{business.get('statement')}**", "",
+            *_plan_conclusion_verdict(chain, by_id, audit_status, study),
             *_plan_narrative(chain),
             *items,
             "",
@@ -4143,10 +4826,19 @@ def _plan_conclusion_lines(
         product = nodes.get("product", {}) if isinstance(nodes.get("product"), dict) else {}
         marker, strength, _ = _plan_strength(chain_records)
         priority = str((chain.get("prioritization") or {}).get("rationale") or "未排序").replace("|", "\\|")
-        what = str(feature.get("statement") or product.get("statement") or "待确认").replace("|", "\\|")
-        next_test = str(chain.get("next_test") or "待确认").replace("|", "\\|")
-        failure = str(chain.get("failure_condition") or "待确认").replace("|", "\\|")
-        status = str(chain.get("status") or "待确认")
+        what = _gap_or_value(
+            feature.get("statement") or product.get("statement"),
+            "无法判断这条链先做什么",
+            "补写特性或产品主张",
+            compact=True,
+        ).replace("|", "\\|")
+        next_test = _gap_or_value(
+            chain.get("next_test"), "无法安排下一步验证", "补写下一步验证", compact=True
+        ).replace("|", "\\|")
+        failure = _gap_or_value(
+            chain.get("failure_condition"), "无法判断何时止损", "补写失败线", compact=True
+        ).replace("|", "\\|")
+        status = str(chain.get("status") or "未提供")
         chain_id = str(chain.get("id") or "PR?")
         title_safe = str(chain.get("title") or "").replace("|", "\\|")
         lines.append(
@@ -4155,10 +4847,9 @@ def _plan_conclusion_lines(
         )
     lines.append("")
     for chain, _, items in entries:
-        business = chain.get("nodes", {}).get("business", {})
         lines.extend([
             f"### 结论 · {chain.get('id', 'PR?')} · {chain.get('title', '未命名主线')}", "",
-            f"**结论：{business.get('statement')}**", "",
+            *_plan_conclusion_verdict(chain, by_id, audit_status, study),
             *_plan_narrative(chain),
             *items,
             "",
@@ -4317,14 +5008,19 @@ def _plan_lines(
             "",
         ])
 
-    conclusion = _plan_conclusion_lines(chains, records, by_id)
+    conclusion = _plan_conclusion_lines(chains, records, by_id, audit_status, study)
     if conclusion:
         lines.extend(conclusion)
 
     # ── 1. 方案导读 ────────────────────────────────────────────
     lines.extend(["## 1. 方案导读", ""])
-    lines.append(f"- 研究问题：{decision.get('question') or study.get('title', '待确认')}")
-    lines.append(f"- 负责人：{decision.get('owner') or '待确认'}；截止：{decision.get('deadline') or '未设置'}")
+    lines.append(
+        f"- 研究问题：{_gap_or_value(decision.get('question') or study.get('title'), '读者不知道这份方案回答什么', '补写决策问题或给研究命名', compact=True)}"
+    )
+    lines.append(
+        f"- 负责人：{_gap_or_value(decision.get('owner'), '无法确定谁对结论负责', '补写决策负责人', compact=True)}；"
+        f"截止：{_gap_or_value(decision.get('deadline'), '无法判断什么时候必须拍板', '补写截止时间', compact=True)}"
+    )
     overall = _plan_basis(records)
     lines.append(f"- {overall}")
     lines.append("")
@@ -4360,7 +5056,12 @@ def _plan_lines(
             node_records = _plan_node_records(node, by_id)
             basis = f"{len(node_records)} 条语料" if node_records else "暂无采集数据"
             node_marker, node_strength, _ = _plan_strength(node_records, node_name)
-            statement = str(node.get("statement") or "待填写").replace("|", "\\|")
+            statement = _gap_or_value(
+                node.get("statement"),
+                "本节判断不完整，无法据此决策",
+                "补写该环节的一句话结论",
+                compact=True,
+            ).replace("|", "\\|")
             lines.append(
                 f"| {REASONING_NODE_LABELS.get(node_name, node_name)} | {statement} "
                 f"| {node_marker} {node_strength} | {basis} |"
@@ -4407,7 +5108,10 @@ def _plan_lines(
         business_node = nodes.get("business", {}) if isinstance(nodes.get("business"), dict) else {}
         for segment in business_node.get("segments", []) if isinstance(business_node.get("segments"), list) else []:
             if isinstance(segment, dict):
-                segments.append(f"{segment.get('id', '分层')}：{segment.get('criteria', '')}（付费者：{segment.get('payer', '待确认')}）")
+                payer_text = _gap_or_value(
+                    segment.get("payer"), "无法判断这一层谁掏钱", "补写这一层的付费者", compact=True
+                )
+                segments.append(f"{segment.get('id', '分层')}：{segment.get('criteria', '')}（付费者：{payer_text}）")
         lines.extend(_plan_section("3. 目标用户：谁有这个需求", user, by_id, [
             ("角色", user.get("role")),
             ("现状", user.get("state")),
@@ -4447,7 +5151,8 @@ def _plan_lines(
                 success_metrics.append(
                     f"{metric.get('metric_id', '指标')}：{metric.get('definition', '')}"
                     f"（口径：{metric.get('numerator', '—')}/{metric.get('denominator', '—')}，"
-                    f"窗口：{metric.get('window', '待确认')}，护栏：{metric.get('guardrail', '待确认')}）"
+                    f"窗口：{_gap_or_value(metric.get('window'), '无法判断指标统计哪段时间', '补写统计窗口', compact=True)}，"
+                    f"护栏：{_gap_or_value(metric.get('guardrail'), '无法判断指标恶化时谁叫停', '补写护栏指标', compact=True)}）"
                 )
         pricing_points = []
         for price in business_node.get("pricing", []) if isinstance(business_node.get("pricing"), list) else []:
@@ -4462,7 +5167,7 @@ def _plan_lines(
                 pricing_points.append(str(price))
         lines.extend(_plan_section("8. 商业与 GTM：怎么走向市场", business_node, by_id, [
             ("市场边界", business_node.get("market_definition")),
-            ("区域与时间窗", f"{('、'.join(business_node.get('geographies', [])) or '待确认')}；{business_node.get('time_window', '待确认')}"),
+            ("区域与时间窗", f"{_gap_or_value(business_node.get('geographies'), '无法判断结论适用于哪些地区', '列出覆盖区域', compact=True)}；{_gap_or_value(business_node.get('time_window'), '无法判断数据对应哪段时间', '写明起止时间', compact=True)}"),
             ("目标人群", business_node.get("target_segment")),
             ("付费者", business_node.get("payer")),
             ("定位", business_node.get("positioning")),
@@ -4471,7 +5176,7 @@ def _plan_lines(
             ("已验证的价格点", pricing_points or "待验证（尚无成交数据）"),
             ("成本结构", business_node.get("cost_drivers")),
             ("成功指标", success_metrics or None),
-            ("资源门禁", f"{gate.get('stage', '待确认')}：{gate.get('decision', '待确认')}（负责人：{gate.get('owner', '待确认')}；复审条件：{gate.get('revisit_trigger', '待确认')}）" if gate else None),
+            ("资源门禁", f"{gate.get('stage', 'G0')}：{_gap_or_value(gate.get('decision'), '无法判断这一关怎么过', '补写门禁结论', compact=True)}（负责人：{_gap_or_value(gate.get('owner'), '无法确定谁对投入负责', '补写负责人', compact=True)}；复审条件：{_gap_or_value(gate.get('revisit_trigger'), '无法知道何时重新评审', '补写复审触发条件', compact=True)}）" if gate else None),
         ], quote_limit=0, extra_lines=_plan_money_evidence(chain_records), qualification=qualification))
 
     # ── 9. 风险与下一步 ────────────────────────────────────────
@@ -5330,16 +6035,32 @@ def _deliver_artifact(
     elif kind == "report" and reasoning is not None:
         lines.extend(_report_decision_lines(reasoning, by_id))
     else:
-        lines.extend(
-            [
-                "## 2. 产品决策",
-                "",
-                "- 建议（做/不做/调整哪个节点，必须对应上方推理链）：",
-                "- 适用条件与代价：",
-                "- 优先级依据（后果、替代成本、证据强度、战略匹配分别说明）：",
-                "",
-            ]
-        )
+        if reasoning is not None:
+            chains = reasoning.get("chains", [])
+            first = next((item for item in chains if isinstance(item, dict)), {}) if isinstance(chains, list) else {}
+            nodes = first.get("nodes", {}) if isinstance(first.get("nodes"), dict) else {}
+            product = nodes.get("product", {}) if isinstance(nodes.get("product"), dict) else {}
+            business = nodes.get("business", {}) if isinstance(nodes.get("business"), dict) else {}
+            lines.extend(
+                [
+                    "## 2. 产品决策",
+                    "",
+                    f"- 产品判断：{_gap_or_value(product.get('statement'), '无法判断这次交付什么', '补写产品节点的一句话结论', compact=True)}",
+                    f"- 商业判断：{_gap_or_value(business.get('statement'), '无法判断是否值得投入', '补写商业节点的一句话结论', compact=True)}",
+                    "- 取舍与代价：以第 1 节推理链与文末的替代解释、缺口为准，本节不另拟结论。",
+                    "",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "## 2. 产品决策",
+                    "",
+                    "本次交付没有可投影的七节点推理链，因此本节不生成建议。"
+                    "先建立 `04-findings/product-reasoning.json` 的场景 → 用户 → 痛点 → 需求 → 特性 → 产品 → 商业，再交付决策建议。",
+                    "",
+                ]
+            )
     lines.extend(
         [
             "## 支撑证据",
@@ -5368,7 +6089,7 @@ def _deliver_artifact(
             "链条引用了未评级/未登记的记录（仅存在于采集库或不存在），不得计入依据："
             + ", ".join(f"`{value}`" for value in unresolved)
         )
-    if kind == "report" and reasoning is not None:
+    if reasoning is not None:
         lines.extend(_report_risk_lines(reasoning, by_id))
     else:
         lines.extend(
@@ -5376,9 +6097,7 @@ def _deliver_artifact(
                 "",
                 "## 反证、缺口与下一步",
                 "",
-                "- 缺口（按推理节点和推导关系列）：",
-                "- 反证与替代解释：",
-                "- 最便宜且能改变决策的下一验证：",
+                "尚未建立推理主链，暂无已登记的反证、缺口与下一验证；先补齐七环节，再回到本节。",
                 "",
             ]
         )
@@ -9237,8 +9956,27 @@ def cli_economics(args: Any) -> int:
             "chain_file": str(study_dir / "04-findings/product-reasoning.json"),
             "report": str(report),
             "chains": stats["chains"],
-            "boundary": "算术投影，不构成商业证明；null 表示未知；来源缺口需补证后重算",
+            "validation": {
+                "status": "insufficient",
+                "mismatch_count": 0,
+                "mismatches": [],
+            },
+            "boundary": (
+                "算术投影，不构成商业证明；null 表示未知；来源缺口需补证后重算；"
+                "声明值与计算值不一致只报告，不替用户改数"
+            ),
         }
+        statuses = [str(chain.get("validation_status") or "insufficient") for chain in stats["chains"]]
+        mismatches: list[dict[str, Any]] = []
+        for chain in stats["chains"]:
+            for mismatch in chain.get("mismatches") or []:
+                mismatches.append({"chain": chain.get("id"), **mismatch})
+        if any(status == "mismatch" for status in statuses):
+            result["validation"]["status"] = "mismatch"
+        elif any(status == "ok" for status in statuses):
+            result["validation"]["status"] = "ok"
+        result["validation"]["mismatches"] = mismatches
+        result["validation"]["mismatch_count"] = len(mismatches)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -9285,6 +10023,343 @@ def cli_psm(args: Any) -> int:
     return 0
 
 
+def _reasoning_file(study_dir: Path) -> Path:
+    return Path(study_dir) / "04-findings" / "product-reasoning.json"
+
+
+def _select_reasoning_chain(reasoning: dict[str, Any], selector: str) -> dict[str, Any]:
+    """Resolve a chain by id or 1-based position; never guess near-misses."""
+    chains = reasoning.get("chains")
+    if not isinstance(chains, list) or not chains:
+        raise ValueError("product-reasoning.json 没有 chains；先运行 `askovo chain STUDY` 生成七节点链")
+    text = str(selector or "").strip()
+    if not text:
+        chain = chains[0]
+        if not isinstance(chain, dict):
+            raise ValueError("chains[1] 不是对象；先修复 04-findings/product-reasoning.json")
+        return chain
+    for chain in chains:
+        if isinstance(chain, dict) and str(chain.get("id") or "") == text:
+            return chain
+    if text.isdigit() and 1 <= int(text) <= len(chains):
+        chain = chains[int(text) - 1]
+        if isinstance(chain, dict):
+            return chain
+    available = "、".join(
+        f"{chain.get('id') or '<无 id>'}（序号 {index}）"
+        for index, chain in enumerate(chains, start=1)
+        if isinstance(chain, dict)
+    )
+    raise ValueError(f"未找到推理链 {selector!r}；可用：{available}")
+
+
+def _reasoning_node(chain: dict[str, Any], node_name: str) -> tuple[str, dict[str, Any]]:
+    """Return an editable node object; create a hypothesis stub only for a known node name."""
+    name = str(node_name or "").strip()
+    if name not in REASONING_NODES:
+        raise ValueError(f"未知节点 {node_name!r}；可用节点：{', '.join(REASONING_NODES)}")
+    nodes = chain.get("nodes")
+    if nodes is None:
+        nodes = {}
+        chain["nodes"] = nodes
+    if not isinstance(nodes, dict):
+        raise ValueError(f"{chain.get('id') or 'chain'}.nodes 必须是对象；先修复 product-reasoning.json")
+    node = nodes.get(name)
+    if node is None:
+        node = {
+            "statement": "",
+            "rationale": "",
+            "status": "hypothesis",
+            "evidence_ids": [],
+            "assumptions": [],
+        }
+        nodes[name] = node
+    elif not isinstance(node, dict):
+        raise ValueError(f"{chain.get('id') or 'chain'}.nodes.{name} 必须是对象；先修复 product-reasoning.json")
+    if not isinstance(node.get("evidence_ids"), list):
+        node["evidence_ids"] = []
+    return name, node
+
+
+def _evidence_records_by_id(study_dir: Path) -> dict[str, dict[str, Any]]:
+    records: dict[str, dict[str, Any]] = {}
+    for record in _read_jsonl_rows(Path(study_dir) / "02-data" / "evidence.jsonl"):
+        record_id = str(record.get("record_id") or "").strip()
+        if record_id and record_id not in records:
+            records[record_id] = record
+    return records
+
+
+def _next_change_log_id(changes: list[Any]) -> str:
+    used = {str(entry.get("id")) for entry in changes if isinstance(entry, dict)}
+    index = len(changes) + 1
+    while f"CHG{index:02d}" in used:
+        index += 1
+    return f"CHG{index:02d}"
+
+
+def _save_product_reasoning(study_dir: Path, reasoning: dict[str, Any]) -> Path:
+    path = _reasoning_file(study_dir)
+    temp = path.with_name(path.name + ".tmp")
+    try:
+        temp.write_text(json.dumps(reasoning, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        os.replace(temp, path)
+    finally:
+        if temp.exists():
+            temp.unlink()
+    return path
+
+
+def _append_chain_change(
+    chain: dict[str, Any],
+    chain_id: str,
+    node_name: str,
+    changed_fields: list[str],
+    previous: dict[str, Any],
+    reason_evidence_ids: Iterable[str],
+    note: str,
+) -> dict[str, Any]:
+    changes = chain.get("change_log")
+    if changes is None:
+        changes = []
+        chain["change_log"] = changes
+    if not isinstance(changes, list):
+        raise ValueError(f"{chain_id}.change_log 必须是数组；先修复 product-reasoning.json")
+    entry = {
+        "id": _next_change_log_id(changes),
+        "base_version": f"chain-v{len(changes)}",
+        "new_version": f"chain-v{len(changes) + 1}",
+        "reason_evidence_ids": sorted({str(value).strip() for value in reason_evidence_ids if str(value).strip()}),
+        "affected_refs": [f"{chain_id}.{node_name}"],
+        "impact": f"编辑 {node_name}：{', '.join(changed_fields)}",
+        "decision": note,
+        "owner": "askovo chain-node",
+        "decided_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "projection_sync": "pending",
+        "previous": previous,
+    }
+    changes.append(entry)
+    return entry
+
+
+def _chain_node_payload(
+    study_dir: Path,
+    chain: dict[str, Any],
+    node_name: str,
+    node: dict[str, Any],
+    *,
+    status: str,
+    changed_fields: list[str],
+    previous: dict[str, Any],
+    entry: dict[str, Any] | None,
+    message: str,
+) -> dict[str, Any]:
+    chain_id = str(chain.get("id") or "").strip()
+    records = _evidence_records_by_id(study_dir)
+    evidence_ids = [str(value) for value in node.get("evidence_ids") or [] if str(value).strip()]
+    levels = {
+        value: str(records[value].get("evidence_level") or "")
+        for value in evidence_ids if value in records
+    }
+    if status == "updated":
+        next_step = (
+            f"运行 `askovo check {study_dir} --stage full` 重新审计（本次改动涉及 {chain_id}.{node_name}）；"
+            "审计通过后再重跑 `askovo deliver STUDY --kind ...` 同步交付物。"
+            "本次编辑只改机器真值，不是审计通过，也不代表证据已复核。"
+        )
+    elif status == "unchanged":
+        next_step = "文件未变化，无需重跑 check/deliver；要查看当前审计状态可运行 `askovo check STUDY --stage full`。"
+    else:
+        next_step = f"只读操作，未写文件；如需查看审计状态，运行 `askovo check {study_dir} --stage full`。"
+    result = {
+        "status": status,
+        "chain": chain_id,
+        "chain_status": chain.get("status"),
+        "node": node_name,
+        "node_status": node.get("status"),
+        "changed_fields": changed_fields,
+        "previous": previous,
+        "evidence_ids": evidence_ids,
+        "evidence_levels": levels,
+        "change_log_id": entry.get("id") if entry else None,
+        "affected_refs": list(entry.get("affected_refs") or []) if entry else [],
+        "chain_file": str(_reasoning_file(study_dir)),
+        "audit_status": "not_run",
+        "message": message,
+        "next_step": next_step,
+    }
+    return result
+
+
+def cli_chain_node(args: Any) -> int:
+    """Edit one node of the canonical chain; writes truth + change_log, never audits."""
+    try:
+        study_dir = Path(args.study_dir).resolve()
+        reasoning = load_product_reasoning(study_dir)
+        if reasoning is None:
+            raise ValueError(
+                "找不到 04-findings/product-reasoning.json；先运行 `askovo chain STUDY` 生成七节点链"
+            )
+        chain = _select_reasoning_chain(reasoning, getattr(args, "chain", ""))
+        action = str(getattr(args, "chain_node_action", "") or "")
+        node_name = str(getattr(args, "node", "") or "").strip()
+        if action == "show":
+            if node_name:
+                name, node = _reasoning_node(chain, node_name)
+                result = _chain_node_payload(
+                    study_dir, chain, name, node,
+                    status="shown", changed_fields=[], previous={}, entry=None,
+                    message="只读查看；未写文件，也未运行审计。",
+                )
+                result["node_payload"] = node
+            else:
+                nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
+                result = {
+                    "status": "shown",
+                    "chain": str(chain.get("id") or ""),
+                    "chain_status": chain.get("status"),
+                    "chain_title": chain.get("title"),
+                    "nodes": {
+                        name: (nodes.get(name) if isinstance(nodes.get(name), dict) else None)
+                        for name in REASONING_NODES
+                    },
+                    "chain_file": str(_reasoning_file(study_dir)),
+                    "audit_status": "not_run",
+                    "message": "只读查看；未写文件，也未运行审计。",
+                    "next_step": f"运行 `askovo check {study_dir} --stage full` 查看当前证据与门禁状态。",
+                }
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+
+        chain_id = str(chain.get("id") or "").strip()
+        if not chain_id:
+            raise ValueError("该链缺少 id；change_log.affected_refs 需要 CHAIN.node，先补 id 再编辑")
+        if not node_name:
+            raise ValueError("该动作需要 --node；可用节点：" + ", ".join(REASONING_NODES))
+        name, node = _reasoning_node(chain, node_name)
+
+        if action == "set":
+            updates: dict[str, str] = {}
+            for field_name in ("statement", "rationale", "status"):
+                raw = getattr(args, field_name, None)
+                if raw is None:
+                    continue
+                value = str(raw).strip()
+                if field_name == "status":
+                    if value not in CHAIN_NODE_STATUSES:
+                        raise ValueError(
+                            f"未知节点状态 {value!r}；可用：{', '.join(CHAIN_NODE_STATUSES)}"
+                        )
+                elif not value:
+                    raise ValueError(
+                        f"--{field_name} 不能为空；若该节点不再适用，请用 --status deprioritized 并说明原因"
+                    )
+                updates[field_name] = value
+            if not updates:
+                raise ValueError("set 至少需要 --statement、--rationale 或 --status 之一")
+            previous: dict[str, Any] = {}
+            changed: list[str] = []
+            for field_name, value in updates.items():
+                old = node.get(field_name)
+                if old != value:
+                    previous[field_name] = old
+                    node[field_name] = value
+                    changed.append(field_name)
+            if not changed:
+                result = _chain_node_payload(
+                    study_dir, chain, name, node,
+                    status="unchanged", changed_fields=[], previous={}, entry=None,
+                    message="写入值与当前值相同；未写文件，未追加 change_log。",
+                )
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+                return 0
+            entry = _append_chain_change(
+                chain, chain_id, name, changed, previous, [],
+                str(getattr(args, "note", "") or "").strip()
+                or "人工更新节点字段；未重新审计，不作为审计通过",
+            )
+            _save_product_reasoning(study_dir, reasoning)
+            result = _chain_node_payload(
+                study_dir, chain, name, node,
+                status="updated", changed_fields=changed, previous=previous, entry=entry,
+                message=f"已写入 {chain_id}.{name}；旧值保存在 change_log[{entry['id']}].previous。",
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+
+        evidence_ids = [
+            str(value).strip()
+            for value in (getattr(args, "evidence", None) or [])
+            if str(value).strip()
+        ]
+        if not evidence_ids:
+            raise ValueError("该动作需要至少一个 --evidence 证据 ID")
+        bound = [str(value) for value in node.get("evidence_ids") or [] if str(value).strip()]
+        if action == "bind-evidence":
+            records = _evidence_records_by_id(study_dir)
+            unknown = [value for value in evidence_ids if value not in records]
+            if unknown:
+                raise ValueError(
+                    "证据库没有这些 ID：" + ", ".join(unknown)
+                    + "；核对 02-data/evidence.jsonl，或先运行 `askovo import STUDY FILE`"
+                )
+            added = [value for value in dict.fromkeys(evidence_ids) if value not in bound]
+            if not added:
+                result = _chain_node_payload(
+                    study_dir, chain, name, node,
+                    status="unchanged", changed_fields=[], previous={}, entry=None,
+                    message="这些证据已全部绑定在该节点；未写文件，未追加 change_log。",
+                )
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+                return 0
+            node["evidence_ids"] = bound + added
+            entry = _append_chain_change(
+                chain, chain_id, name, ["evidence_ids"], {"evidence_ids": bound}, added,
+                str(getattr(args, "note", "") or "").strip()
+                or "人工绑定证据；证据是否属于该节点可接受的判断类仍由 check 判定",
+            )
+            _save_product_reasoning(study_dir, reasoning)
+            result = _chain_node_payload(
+                study_dir, chain, name, node,
+                status="updated", changed_fields=["evidence_ids"],
+                previous={"evidence_ids": bound}, entry=entry,
+                message=f"已把 {', '.join(added)} 绑定到 {chain_id}.{name}；是否可被该节点引用由 check 判定。",
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+
+        if action == "unbind-evidence":
+            missing = [value for value in dict.fromkeys(evidence_ids) if value not in bound]
+            if missing:
+                raise ValueError(
+                    "这些证据未绑定到 " + f"{chain_id}.{name}：" + ", ".join(missing)
+                    + "；用 `askovo chain-node STUDY show --node " + name + "` 查看当前绑定"
+                )
+            remove = set(evidence_ids)
+            node["evidence_ids"] = [value for value in bound if value not in remove]
+            entry = _append_chain_change(
+                chain, chain_id, name, ["evidence_ids"], {"evidence_ids": bound}, evidence_ids,
+                str(getattr(args, "note", "") or "").strip()
+                or "人工解绑证据；check 的证据覆盖与结论门禁会随之变化",
+            )
+            _save_product_reasoning(study_dir, reasoning)
+            result = _chain_node_payload(
+                study_dir, chain, name, node,
+                status="updated", changed_fields=["evidence_ids"],
+                previous={"evidence_ids": bound}, entry=entry,
+                message=f"已从 {chain_id}.{name} 解绑 {', '.join(evidence_ids)}。",
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+
+        raise ValueError(
+            "未知动作；可用动作：show、set、bind-evidence、unbind-evidence"
+        )
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+
 def cli_chain(args: Any) -> int:
     try:
         study_dir = Path(args.study_dir).resolve()
@@ -9303,7 +10378,11 @@ def cli_chain(args: Any) -> int:
             "report": str(report),
             "flow": list(REASONING_NODES),
             "summary": product_reasoning_summary(reasoning),
-            "next_step": "填写各节点的 statement/rationale/status/evidence_ids，再运行 askovo check STUDY --stage design 或 --stage full",
+            "next_step": (
+                "用 `askovo chain-node STUDY show` 查看节点，用 `askovo chain-node STUDY set --node NODE "
+                "--statement ... --status ...` 写 statement/rationale/status，用 `bind-evidence` 绑定证据；"
+                "改完运行 `askovo check STUDY --stage design 或 --stage full`"
+            ),
         }
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(str(exc), file=sys.stderr)

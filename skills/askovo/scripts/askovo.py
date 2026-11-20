@@ -2609,6 +2609,31 @@ def _check_product_reasoning(
                     stage,
                 )
 
+        economics_findings: list[str] = []
+        for chain_item in chains if isinstance(chains, list) else []:
+            if not isinstance(chain_item, dict):
+                continue
+            node_map = chain_item.get("nodes") if isinstance(chain_item.get("nodes"), dict) else {}
+            business_node = node_map.get("business") if isinstance(node_map.get("business"), dict) else {}
+            if not business_node:
+                continue
+            validation = sure_engine.validate_unit_economics(business_node)
+            if validation.get("status") != "mismatch":
+                continue
+            chain_id = str(chain_item.get("id") or "chain")
+            for mismatch in validation.get("mismatches") or []:
+                economics_findings.append(
+                    f"{chain_id} · {mismatch.get('metric')}：应为 {mismatch.get('expected')}，"
+                    f"声明 {mismatch.get('actual')}，差 {mismatch.get('delta')}"
+                )
+        if economics_findings:
+            audit.add(
+                "unit_economics",
+                "warn",
+                "；".join(economics_findings[:5]),
+                stage,
+            )
+
 
 def _check_role_workplan(audit: Audit, root: Path, stage: str) -> None:
     path = root / "01-sources" / "role-workbench" / "workplan.json"
@@ -6247,6 +6272,44 @@ def build_parser() -> argparse.ArgumentParser:
     chain_parser.add_argument("study_dir")
     chain_parser.set_defaults(func=sure_engine.cli_chain)
 
+    chain_node_parser = subparsers.add_parser(
+        "chain-node",
+        help="edit one canonical chain node (writes machine truth + change_log; never audits)",
+    )
+    chain_node_parser.add_argument("study_dir")
+    chain_node_sub = chain_node_parser.add_subparsers(dest="chain_node_action", required=True)
+    chain_node_show = chain_node_sub.add_parser(
+        "show", help="show one node (or the whole chain) and its bound evidence; read-only"
+    )
+    chain_node_show.add_argument("--chain", default="", help="chain id or 1-based index; defaults to the first chain")
+    chain_node_show.add_argument("--node", default="", help=f"one of: {', '.join(sure_engine.REASONING_NODES)}")
+    chain_node_show.set_defaults(func=sure_engine.cli_chain_node)
+
+    chain_node_set = chain_node_sub.add_parser(
+        "set", help="set statement/rationale/status on one node and append a change_log entry"
+    )
+    chain_node_set.add_argument("--chain", default="", help="chain id or 1-based index; defaults to the first chain")
+    chain_node_set.add_argument("--node", required=True, help=f"one of: {', '.join(sure_engine.REASONING_NODES)}")
+    chain_node_set.add_argument("--statement", default=None)
+    chain_node_set.add_argument("--rationale", default=None)
+    chain_node_set.add_argument("--status", default=None, help=f"one of: {', '.join(sure_engine.CHAIN_NODE_STATUSES)}")
+    chain_node_set.add_argument("--note", default="", help="why this edit is made; recorded in change_log.decision")
+    chain_node_set.set_defaults(func=sure_engine.cli_chain_node)
+
+    for action_name, action_help in (
+        ("bind-evidence", "bind existing evidence ids to one node"),
+        ("unbind-evidence", "remove evidence ids from one node"),
+    ):
+        action_parser = chain_node_sub.add_parser(action_name, help=action_help)
+        action_parser.add_argument("--chain", default="", help="chain id or 1-based index; defaults to the first chain")
+        action_parser.add_argument("--node", required=True, help=f"one of: {', '.join(sure_engine.REASONING_NODES)}")
+        action_parser.add_argument(
+            "--evidence", action="append", required=True,
+            help="evidence id from 02-data/evidence.jsonl; repeat for multiple ids",
+        )
+        action_parser.add_argument("--note", default="", help="why this edit is made; recorded in change_log.decision")
+        action_parser.set_defaults(func=sure_engine.cli_chain_node)
+
     metric_parser = subparsers.add_parser(
         "metric", help="map the chain's need.measure to the ovo family metric contract (Growovo gauge + Verovo criteria)"
     )
@@ -6450,6 +6513,9 @@ def build_parser() -> argparse.ArgumentParser:
     roles_scaffold.add_argument("--task", choices=role_catalog.TASK_TYPES, help="task type; inferred from the decision question when omitted")
     roles_scaffold.add_argument("--scale", choices=tuple(role_catalog.SCALE_CAPS), help="team size mode for automatic selection")
     roles_scaffold.add_argument("--all-templates", action="store_true", help="generate every selected role's templates instead of only this task's outputs")
+    roles_scaffold.add_argument("--overwrite", action="store_true", help="existing workbench: preview added/modified/deleted files; writes nothing without --confirm")
+    roles_scaffold.add_argument("--confirm", action="store_true", help="with --overwrite: back up the existing workbench, then replace it atomically")
+    roles_scaffold.add_argument("--force", action="store_true", help="deprecated: never overwrites an existing workbench; use --overwrite --confirm")
     roles_scaffold.add_argument("--json", action="store_true")
     roles_scaffold.set_defaults(func=role_catalog.command_roles)
     roles_template = roles_sub.add_parser("template", help="render one role deliverable template without creating findings")
@@ -6535,7 +6601,7 @@ CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "explore",
     "external-research", "do", "domains",
     "methods", "catalog", "platforms", "capture", "collect", "research", "loop", "analyze", "answer", "instruments", "import", "queue",
-    "codebook", "chain", "metric", "economics", "psm", "decision", "followup", "decide", "issues", "brief", "delta", "page", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
+    "codebook", "chain", "chain-node", "metric", "economics", "psm", "decision", "followup", "decide", "issues", "brief", "delta", "page", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }
 

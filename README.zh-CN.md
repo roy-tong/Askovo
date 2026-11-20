@@ -62,6 +62,7 @@ askovo decision --help   # 版本化决策、反证触发的安全暂停与回�
 ```bash
 askovo chain examples/sample-study
 askovo deliver examples/sample-study --kind plan   # → 06-report/plan.md（业务语言）
+askovo chain-node examples/sample-study show --node business  # 查看单个节点；set/bind-evidence 会追加 change_log
 ```
 
 方案读起来是一份业务文档："## 2. 目标场景：哪些场景值得做"、"## 4. 痛点：现在怎么办、痛在哪"、"## 8. 商业与 GTM：怎么走向市场"——每个判断标依据强度`●已观察到 / ◐有线索 / ○假设`，下面是`数据基础`（来源 · 语料量 · 时间窗）与`来自语料的声音`（用户原话或典型情况）；尚无数据的判断如实标注"暂无采集数据"。证据编码与原始状态只出现在文末的方法档案，不进正文。
@@ -123,7 +124,7 @@ askovo deliver ./study --kind role --role R52  # 主链只读岗位投影
 askovo deliver ./study --kind lifecycle        # 十板块岗位导航
 ```
 
-`do/route` 返回的是**按任务裁剪**的岗位建议，而不是默认上全套 80 岗。系统先判断本次属于决策、发现、定义、设计、验证、上市、运营或审查，再选最小充分岗位，列出暂不纳入岗位及原因，并生成输出合同：主交付物、格式、篇幅、读者、章节结构、证据呈现和行业表达方式。软件决策通常只需 1–3 个岗位；硬件 DVT、医疗器械等高风险任务才扩展为跨职能复核。确认主链后，`roles scaffold` 原子生成 `01-sources/role-workbench/`：任务/输出合同、RACI、绑定的 chain/node、SOP 质量门、KPI 空目标，以及只属于本轮主交付/必要支撑的未复核模板；多链必须加 `--chain`，需要全部岗位模板时显式加 `--all-templates`。它们只组织工作，不建立第二套市场/需求/产品/商业真值，也不会把 SOP 完成变成需求验证、工程批准、临床/安全/合规签收、量产就绪或因果证明。详见[产品创新岗位操作系统](docs/role-operating-system.md)和 [Agent 岗位协议](skills/askovo/references/role-operations.md)。
+`do/route` 返回的是**按任务裁剪**的岗位建议，而不是默认上全套 80 岗。系统先判断本次属于决策、发现、定义、设计、验证、上市、运营或审查，再选最小充分岗位，列出暂不纳入岗位及原因，并生成输出合同：主交付物、格式、篇幅、读者、章节结构、证据呈现和行业表达方式。软件决策通常只需 1–3 个岗位；硬件 DVT、医疗器械等高风险任务才扩展为跨职能复核。确认主链后，`roles scaffold` 原子生成 `01-sources/role-workbench/`：任务/输出合同、RACI、绑定的 chain/node、SOP 质量门、KPI 空目标，以及只属于本轮主交付/必要支撑的未复核模板；多链必须加 `--chain`，需要全部岗位模板时显式加 `--all-templates`。已有 workbench 默认拒绝覆盖（`--force` 同样拒绝）：`--overwrite` 只返回新增/修改/删除的差异预览、不写盘；`--overwrite --confirm` 先备份到 `role-workbench.bak-<时间戳>` 再原子替换；内容与现有完全一致时返回 `unchanged`，不产生备份。它们只组织工作，不建立第二套市场/需求/产品/商业真值，也不会把 SOP 完成变成需求验证、工程批准、临床/安全/合规签收、量产就绪或因果证明。详见[产品创新岗位操作系统](docs/role-operating-system.md)和 [Agent 岗位协议](skills/askovo/references/role-operations.md)。
 
 五个 SURE 基础领域包仍负责方法路由；十一个行业覆盖层只改变专业上下文，不分叉七节点 schema。以下主链投影继续服务各自读者：
 

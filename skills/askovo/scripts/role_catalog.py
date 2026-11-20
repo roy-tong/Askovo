@@ -8,6 +8,7 @@ Standard library only; Python 3.9+.
 from __future__ import annotations
 
 import copy
+import difflib
 import hashlib
 import json
 import os
@@ -16,6 +17,7 @@ import shutil
 import sys
 import tempfile
 from collections import OrderedDict
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -1559,6 +1561,57 @@ def _workplan_markdown(
     return "\n".join(lines)
 
 
+def _workbench_snapshot(root: Path | None) -> dict[str, bytes]:
+    if root is None or not root.is_dir():
+        return {}
+    return {
+        str(path.relative_to(root)): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def _workbench_changes(current_dir: Path | None, staged_dir: Path) -> list[dict[str, Any]]:
+    before = _workbench_snapshot(current_dir)
+    after = _workbench_snapshot(staged_dir)
+    changes: list[dict[str, Any]] = []
+    for name in sorted(set(before) | set(after)):
+        old = before.get(name)
+        new = after.get(name)
+        if old == new:
+            continue
+        if old is None:
+            changes.append({"path": name, "change": "added", "sha256": hashlib.sha256(new or b"").hexdigest()})
+        elif new is None:
+            changes.append({"path": name, "change": "deleted", "sha256": hashlib.sha256(old).hexdigest()})
+        else:
+            old_lines = old.decode("utf-8", "replace").splitlines()
+            new_lines = new.decode("utf-8", "replace").splitlines()
+            changed_lines = 0
+            for tag, old_start, old_end, new_start, new_end in difflib.SequenceMatcher(None, old_lines, new_lines).get_opcodes():
+                if tag != "equal":
+                    changed_lines += max(old_end - old_start, new_end - new_start)
+            changes.append({
+                "path": name,
+                "change": "modified",
+                "changed_lines": changed_lines,
+                "before_sha256": hashlib.sha256(old).hexdigest(),
+                "after_sha256": hashlib.sha256(new).hexdigest(),
+                "preview": new_lines[:3],
+            })
+    return changes
+
+
+def _timestamped_backup_path(out_dir: Path) -> Path:
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    candidate = out_dir.with_name(f"{out_dir.name}.bak-{stamp}")
+    counter = 1
+    while candidate.exists():
+        candidate = out_dir.with_name(f"{out_dir.name}.bak-{stamp}-{counter}")
+        counter += 1
+    return candidate
+
+
 def scaffold_workplan(
     study_dir: Path,
     role_refs: Iterable[str] | None = None,
@@ -1568,6 +1621,8 @@ def scaffold_workplan(
     task: str | None = None,
     scale: str | None = None,
     all_templates: bool = False,
+    overwrite: bool = False,
+    confirm: bool = False,
 ) -> dict[str, Any]:
     study_dir = Path(study_dir).resolve()
     catalog_errors = validate_catalog()
@@ -1699,12 +1754,22 @@ def scaffold_workplan(
         "roles": plan_roles,
     }
     out_dir = study_dir / "01-sources" / "role-workbench"
-    if out_dir.exists():
-        raise ValueError("stateful role workbench already exists; refusing to overwrite it (including --force)")
+    existed = out_dir.exists()
+    if existed and not overwrite:
+        raise ValueError(
+            "stateful role workbench already exists; refusing to overwrite it "
+            "(including --force); re-run with --overwrite to preview the change, "
+            "or --overwrite --confirm to back it up and replace it"
+        )
+    if existed and not out_dir.is_dir():
+        raise ValueError(f"{out_dir} exists and is not a directory; refusing to replace it")
     sources_dir = out_dir.parent
     sources_dir.mkdir(parents=True, exist_ok=True)
     temp_dir = Path(tempfile.mkdtemp(prefix=".role-workbench-", dir=str(sources_dir)))
     final_template_dir = out_dir / "templates"
+    status = "created"
+    changes: list[dict[str, Any]] = []
+    backup_path: Path | None = None
     try:
         template_dir = temp_dir / "templates"
         template_dir.mkdir(parents=True, exist_ok=True)
@@ -1725,12 +1790,36 @@ def scaffold_workplan(
             after = path.read_bytes() if path.exists() else None
             if protected_before[name] != after:
                 raise ValueError(f"role scaffold must not modify canonical {name}")
-        os.replace(str(temp_dir), str(out_dir))
+        changes = _workbench_changes(out_dir if existed else None, temp_dir)
+        if not existed:
+            os.replace(str(temp_dir), str(out_dir))
+        elif not changes:
+            status = "unchanged"
+        elif not confirm:
+            status = "preview"
+        else:
+            backup_path = _timestamped_backup_path(out_dir)
+            os.replace(str(out_dir), str(backup_path))
+            try:
+                os.replace(str(temp_dir), str(out_dir))
+            except OSError:
+                os.replace(str(backup_path), str(out_dir))
+                backup_path = None
+                raise
+            status = "written"
     finally:
         if temp_dir.exists():
             shutil.rmtree(temp_dir)
-    return {
-        "status": "created",
+    if status == "preview":
+        note = "预览：未写入任何文件；确认后加 --overwrite --confirm，会先备份再替换。"
+    elif status == "unchanged":
+        note = "现有 workbench 与本次生成内容一致，未写入、未备份。"
+    elif status == "written":
+        note = f"已先备份旧 workbench 到 {backup_path.name if backup_path else ''}，再原子替换；负责人、目标、证据和专业签收仍待人工完成。"
+    else:
+        note = "已原子生成岗位 SOP/KPI/交接与模板；负责人、目标、证据和专业签收仍待人工完成。"
+    result = {
+        "status": status,
         "study_dir": str(study_dir),
         "industry_id": industry_id,
         "chain_id": selected_chain_id,
@@ -1745,8 +1834,13 @@ def scaffold_workplan(
         "canonical_reasoning_unchanged": True,
         "demand_judgments_unchanged": True,
         "evidence_unchanged": True,
-        "note": "已原子生成岗位 SOP/KPI/交接与模板；负责人、目标、证据和专业签收仍待人工完成。",
+        "note": note,
     }
+    if existed:
+        result["changes"] = changes
+        result["backup"] = str(backup_path) if backup_path else None
+        result["backup_created"] = bool(backup_path)
+    return result
 
 
 def command_roles(args: Any) -> int:
@@ -1802,6 +1896,8 @@ def command_roles(args: Any) -> int:
                 task=getattr(args, "task", None),
                 scale=getattr(args, "scale", None),
                 all_templates=bool(getattr(args, "all_templates", False)),
+                overwrite=bool(getattr(args, "overwrite", False)),
+                confirm=bool(getattr(args, "confirm", False)),
             )
             if as_json:
                 print(json.dumps(result, ensure_ascii=False, indent=2))

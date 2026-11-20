@@ -79,7 +79,7 @@ chain 字段：
 
 专属字段：scene 使用 `trigger/environment/task_context`；user 使用 `role/state/decision_role`；pain 使用 `current_substitute/friction_cost/consequence`；need 使用 `desired_outcome/constraints/measure`；feature 使用 `capability/acceptance_conditions/alternatives_considered`；product 使用 `form/scope/non_goals/acceptance_criteria`。
 
-business 使用 `market_definition`、`geographies`、`time_window`、`included_markets`、`excluded_markets`、`target_segment`、`segments`、`payer`、`positioning`、`revenue_model`、`pricing_hypothesis`、`pricing`、`channels`、`competitive_alternatives`、`cost_drivers`、`market_estimates`、`unit_economics_inputs`、`success_metrics`、`non_goals` 和 `gate`。市场规模条目必须有总体定义、时间窗、单位、方法、假设；有数值时还要有公式和来源。价格、支付意愿、交易与续约分层记录，未知保留 `null` 并登记缺口。
+business 使用 `market_definition`、`geographies`、`time_window`、`included_markets`、`excluded_markets`、`target_segment`、`segments`、`payer`、`positioning`、`revenue_model`、`pricing_hypothesis`、`pricing`、`channels`、`competitive_alternatives`、`cost_drivers`、`market_estimates`、`unit_economics_inputs`、`success_metrics`、`non_goals` 和 `gate`。市场规模条目必须有总体定义、时间窗、单位、方法、假设；有数值时还要有公式和来源。价格、支付意愿、交易与续约分层记录，未知保留 `null` 并登记缺口。`pricing[]` 条目可选声明 `volume`（数量）与 `revenue`（收入），供 `askovo economics` 校验“单价×数量=收入”；缺一项时由另一项反算并标注为计算值，两项都缺时保持未知，不补默认值。
 
 节点证据必须是 linked judgment 已登记证据的子集：scene/user/pain/need 只能引用 problem 或 counter；feature 只能引用 solution 或 counter；product 只能引用 solution、commercial 或 counter；business 只能引用 commercial 或 counter。节点 validated 还需满足对应 E-level；decided chain 要求七节点 validated、linked judgment validated、反证与替代解释齐全，并要求商业门与优先级记录。嵌套引用同样受约束：`segments[].evidence_ids` 可用 problem/commercial/counter 中与细分相关的已登记证据，`pricing[].evidence_ids` 可用 solution/commercial/counter，`change_log[].reason_evidence_ids` 必须是该 judgment 四个证据组之一的已登记证据；三者都必须存在且 context_key 一致。
 
@@ -142,7 +142,7 @@ business 使用 `market_definition`、`geographies`、`time_window`、`included_
 
 ## role-workbench/workplan.json
 
-岗位执行包是支撑层，不是第二套研究真值。`roles scaffold` 要求已有主链：空链拒绝，单链自动绑定，多链必须 `--chain`；在临时目录完整构建后原子重命名，已有 stateful workbench 不用 `--force` 覆盖。
+岗位执行包是支撑层，不是第二套研究真值。`roles scaffold` 要求已有主链：空链拒绝，单链自动绑定，多链必须 `--chain`；在临时目录完整构建后原子重命名，已有 stateful workbench 默认拒绝覆盖（`--force` 也不覆盖）。`--overwrite` 只返回 added/modified/deleted 差异预览，不写盘；`--overwrite --confirm` 先备份到同级 `role-workbench.bak-YYYYmmddTHHMMSS` 再原子替换，失败恢复备份；生成内容与现有完全一致时返回 `unchanged`，不写盘不备份。
 
 | 字段 | 说明 |
 |---|---|
