@@ -2106,6 +2106,7 @@ def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str],
             f"record {record_id}: unknown evidence_level {level_declared!r}",
             "INVALID_INPUT", "E0, E1, E2, E3, E4-, E4+, E5")
     level = level_declared or defaults.get("evidence_level") or "unclassified"
+    requested_level = level
     capped_from = ""
     if cap and level in IMPORT_LEVEL_ORDER and IMPORT_LEVEL_ORDER[level] > IMPORT_LEVEL_ORDER[cap]:
         capped_from = level
@@ -2113,6 +2114,12 @@ def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str],
     level_basis = f"import derivation: form={form}, cap={cap}"
     if capped_from:
         level_basis += f"; declared {capped_from} capped to {cap}"
+    if form in TRANSACTION_FORMS and IMPORT_LEVEL_ORDER.get(level, 0) >= IMPORT_LEVEL_ORDER["E4-"]:
+        missing = _missing_transaction_fields(raw)
+        if missing:
+            level_basis += ("; transaction structure incomplete: missing "
+                            f"{', '.join(missing)}; {level} held at E2")
+            level = "E2"
     record = {
         "record_id": record_id,
         "context_key": str(raw.get("context_key") or defaults.get("context_key") or ""),
@@ -2123,7 +2130,9 @@ def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str],
         "friction_cost": str(raw.get("friction_cost") or raw.get("friction") or "unknown"),
         "consequence": str(raw.get("consequence") or "unknown"),
         "evidence_level": level,
-        "level_declared": level_declared or level,
+        "level_declared": requested_level,
+        "requested_evidence_level": requested_level,
+        "level_derivation_version": "askovo-import-derivation/2",
         "level_basis": level_basis,
         "evidence_basis": str(raw.get("evidence_basis") or "imported; grade before use"),
         "corpus_role": str(raw.get("corpus_role") or defaults.get("corpus_role") or "open_scene"),
@@ -2167,6 +2176,30 @@ IMPORT_LEVEL_CAPS = {
     "transaction": "E5",
     "purchase": "E5",
 }
+
+# A transaction/purchase export earns commercial grades (E4-/E4+/E5) only when
+# each row itself says what was traded, when, with whom, how much, and where the
+# voucher sits. `--evidence-form transaction` is an operator claim about the
+# file; these row fields are the checkable structure behind it. Rows missing any
+# of them are held at E2 (documented practice), never at the form's cap.
+TRANSACTION_FORMS = ("transaction", "purchase")
+TRANSACTION_STRUCTURE_FIELDS = {
+    "counterparty": ("counterparty", "vendor", "交易对象", "对方"),
+    "occurred_at": ("occurred_at", "event", "date", "交易日期", "事件时间"),
+    "amount": ("amount", "total", "金额"),
+    "source_ref": ("source_ref", "来源"),
+    "evidence_ref": ("evidence_ref", "voucher", "凭证定位"),
+}
+
+
+def _missing_transaction_fields(raw: dict[str, Any]) -> list[str]:
+    """Judge structure from the row's own fields; defaults never fill the gap."""
+    missing: list[str] = []
+    for name, aliases in TRANSACTION_STRUCTURE_FIELDS.items():
+        if not any(str(raw.get(alias) if raw.get(alias) is not None else "").strip(" \t")
+                   for alias in aliases):
+            missing.append(name)
+    return missing
 
 
 def _ensure_imported_source_plan(study_dir: Path, family: str, record_count: int) -> None:
@@ -2302,6 +2335,12 @@ def import_material(
             existing_ids.add(record["record_id"])
             added += 1
     _ensure_imported_source_plan(study_dir, source_family, added or len(records))
+    row_levels = [str(record.get("evidence_level") or "") for record in records]
+    row_level_max = max(row_levels, key=lambda value: IMPORT_LEVEL_ORDER.get(value, -1),
+                        default="unclassified")
+    structure_downgrades = sum(
+        1 for record in records
+        if "transaction structure incomplete" in str(record.get("level_basis") or ""))
     return {
         "status": "imported",
         "file": str(file_path),
@@ -2311,13 +2350,19 @@ def import_material(
         "skipped_duplicates": len(records) - added,
         "evidence_file": str(evidence_path),
         "review": {
-            "evidence_level": level,
+            "evidence_level": row_level_max,
+            "requested_level": level,
             "evidence_form": evidence_form,
             "corpus_role": corpus_role,
             "level_cap": cap,
             "row_level_rule": "a row's evidence_level is capped by its evidence form and "
                               "the command's form; an unknown level rejects the file",
-            "note": "operator-reviewed import; the level is capped by the evidence form",
+            "structure_rule": "transaction/purchase rows reach E4-/E4+/E5 only when the row "
+                              "itself carries counterparty, date/event, amount, source and "
+                              "voucher location; otherwise the row is held at E2",
+            "structure_downgrades": structure_downgrades,
+            "note": "operator-reviewed import; the level is capped by the evidence form "
+                    "and by the row's own transaction structure",
         },
         "source_plan": str(study_dir / "01-sources" / "source-plan.csv"),
     }

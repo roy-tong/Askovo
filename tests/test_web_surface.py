@@ -134,6 +134,44 @@ class WebSurfaceTests(unittest.TestCase):
         self.assertNotIn("SCENE-FROM-LATEST-PR02", chain_section)
         self.assertIn("--chain", html)
 
+    def _set_source_url(self, record_id: str, url: str) -> None:
+        path = self.study / "02-data/evidence.jsonl"
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip()]
+        for row in rows:
+            if row.get("record_id") == record_id:
+                row["source_url"] = url
+        path.write_text("\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n",
+                        encoding="utf-8")
+
+    def test_unsafe_source_urls_are_rendered_inert(self) -> None:
+        for payload in ("javascript:alert(1)", "data:text/html,<script>alert(1)</script>",
+                        "file:///etc/passwd", "//evil.example/x"):
+            with self.subTest(payload=payload):
+                self._set_source_url("R01", payload)
+                self._deliver()
+                html = self.page.read_text(encoding="utf-8")
+                self.assertNotIn('<a href="javascript', html)
+                self.assertNotIn('<a href="data:', html)
+                self.assertNotIn('<a href="file:', html)
+                self.assertNotIn('href="//evil.example', html)
+                self.assertIn("来源链接已停用", html)
+
+    def test_https_source_url_stays_clickable(self) -> None:
+        self._set_source_url("R01", "https://example.com/post/1?a=1&b=2")
+        self._deliver()
+        html = self.page.read_text(encoding="utf-8")
+        self.assertIn('href="https://example.com/post/1?a=1&amp;b=2"', html)
+        self.assertIn('rel="noopener noreferrer"', html)
+
+    def test_web_surface_declares_content_security_policy(self) -> None:
+        self._deliver()
+        html = self.page.read_text(encoding="utf-8")
+        self.assertIn('http-equiv="Content-Security-Policy"', html)
+        self.assertIn("default-src 'none'", html)
+        self.assertIn("frame-ancestors 'none'", html)
+        self.assertNotIn("<script", html)
+
     def test_mcp_deliver_accepts_web(self) -> None:
         responses = run_mcp({
             "jsonrpc": "2.0", "id": 1, "method": "tools/call",
