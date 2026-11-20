@@ -6310,6 +6310,44 @@ def build_parser() -> argparse.ArgumentParser:
         action_parser.add_argument("--note", default="", help="why this edit is made; recorded in change_log.decision")
         action_parser.set_defaults(func=sure_engine.cli_chain_node)
 
+    context_parser = subparsers.add_parser(
+        "context",
+        help="export a Growovo-verifiable research context (payload file + sha256 envelope)",
+    )
+    context_sub = context_parser.add_subparsers(dest="context_action", required=True)
+    context_export = context_sub.add_parser(
+        "export",
+        help="write one immutable context version; hypothesis stays hypothesis downstream",
+    )
+    context_export.add_argument("study_dir")
+    context_export.add_argument("--out", required=True, help="output directory for the payload + envelope files")
+    context_export.add_argument(
+        "--context-id", default="",
+        help="defaults to askovo-<study id>; Growovo keys imported contexts on (context_id, version)",
+    )
+    context_export.add_argument(
+        "--version", default="",
+        help="defaults to reasoning-<hash12 of product-reasoning.json>; an existing version is never overwritten",
+    )
+    context_export.add_argument(
+        "--approved-by", required=True,
+        help="who approved handing this research context to a downstream product",
+    )
+    context_export.add_argument(
+        "--value-event", action="append", required=True,
+        help="what counts as a value event downstream; repeatable; the engine never invents it",
+    )
+    context_export.add_argument(
+        "--non-goal", action="append", default=[],
+        help="extra non-goal on top of product/business node non_goals; repeatable",
+    )
+    context_export.add_argument(
+        "--chain", default="", help="chain id or 1-based index; default exports every chain",
+    )
+    context_export.add_argument("--market", default="", help="optional scope.market")
+    context_export.add_argument("--time-window", default="", help="optional scope.time_window")
+    context_export.set_defaults(func=sure_engine.cli_context_export)
+
     metric_parser = subparsers.add_parser(
         "metric", help="map the chain's need.measure to the ovo family metric contract (Growovo gauge + Verovo criteria)"
     )
@@ -6601,7 +6639,7 @@ CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "explore",
     "external-research", "do", "domains",
     "methods", "catalog", "platforms", "capture", "collect", "research", "loop", "analyze", "answer", "instruments", "import", "queue",
-    "codebook", "chain", "chain-node", "metric", "economics", "psm", "decision", "followup", "decide", "issues", "brief", "delta", "page", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
+    "codebook", "chain", "chain-node", "context", "metric", "economics", "psm", "decision", "followup", "decide", "issues", "brief", "delta", "page", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }
 

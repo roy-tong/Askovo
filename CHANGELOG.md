@@ -1,6 +1,35 @@
 # Changelog
 
 
+## 2.20.3 — 2026-11-20
+
+The research handoff: a study can publish its premises to a downstream product
+without letting them arrive as conclusions.
+
+### Added
+
+- **`askovo context export <study> --out <dir> --approved-by <name>
+  --value-event <event>`** writes the chain a downstream product needs, in two
+  files: `<context_id>.<version>.payload.json` and a `<context_id>.<version>.json`
+  envelope carrying `source.kind: "askovo"`, the payload's absolute `source.ref`
+  and its `content_sha256`. Every claim keeps the status it earned in
+  `04-findings/product-reasoning.json` — `evidence_supported`, `hypothesis`,
+  `insufficient_evidence` — and the export only copies, never promotes, so a
+  hypothesis cannot reach Growovo looking like evidence. `product` and
+  `business` non-goals are collected into the package and an empty set refuses
+  the export; `--approved-by` and at least one `--value-event` are required,
+  because exporting is approval to forward the research and Askovo does not
+  invent the downstream value metric. Defaults are
+  `context_id=askovo-<study_id|context_key|directory>` and
+  `version=reasoning-<first 12 of the reasoning sha256>`; `--chain` narrows a
+  multi-chain study, and an unknown chain exits 2 listing the ones that exist.
+  Re-exporting the same version refuses and leaves both files byte-identical
+  (`open(path, "x")`), and a failed envelope write removes the payload it just
+  wrote. Output ends with the next command,
+  `mkt context import --file <envelope> --by <operator>`.
+  `tests/test_context_export.py` covers 7 cases: grades preserved, refusals
+  write nothing, payload hash verified, re-export identical.
+
 ## 2.20.2 — 2026-11-20
 
 Delivery-truth round from the 2026-11-20 end-to-end business test: what a

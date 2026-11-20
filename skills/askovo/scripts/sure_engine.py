@@ -10391,6 +10391,265 @@ def cli_chain(args: Any) -> int:
     return 0
 
 
+CONTEXT_SCHEMA = "askovo.research-context/1"
+CONTEXT_CLAIM_STATUSES = ("evidence_supported", "hypothesis", "insufficient_evidence")
+
+
+def _context_file_component(text: str, fallback: str) -> str:
+    cleaned = re.sub(r"[^\w.-]+", "-", str(text or "").strip(), flags=re.UNICODE).strip("-")
+    return cleaned[:80] or fallback
+
+
+def _write_new_text_file(path: Path, text: str) -> None:
+    """Exclusive create: a context version is immutable once written."""
+    with open(path, "x", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+
+
+def _context_claim(
+    chain: dict[str, Any],
+    node_name: str,
+    node: dict[str, Any],
+    records: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Map one chain node to a Growovo-verifiable claim; never upgrades status."""
+    chain_id = str(chain.get("id") or "").strip() or "chain"
+    statement = str(node.get("statement") or "").strip()
+    if len(statement) < 8:
+        statement = (
+            f"{node_name} 节点：{statement}"
+            if statement
+            else f"{node_name} 节点尚未填写 statement（待补充）"
+        )
+    node_status = str(node.get("status") or "").strip()
+    evidence_ids = [
+        str(value).strip() for value in node.get("evidence_ids") or [] if str(value).strip()
+    ]
+    refs: list[dict[str, Any]] = []
+    unresolved: list[str] = []
+    for evidence_id in evidence_ids:
+        record = records.get(evidence_id)
+        if record is None:
+            unresolved.append(evidence_id)
+            refs.append({
+                "evidence_id": evidence_id,
+                "source": f"02-data/evidence.jsonl#{evidence_id}",
+                "resolved": False,
+            })
+            continue
+        source = str(record.get("source_ref") or "").strip() or f"02-data/evidence.jsonl#{evidence_id}"
+        ref: dict[str, Any] = {"evidence_id": evidence_id, "source": source, "resolved": True}
+        level = str(record.get("evidence_level") or "").strip()
+        if level:
+            ref["evidence_level"] = level
+        refs.append(ref)
+    note = ""
+    if node_status == "validated" and refs and not unresolved:
+        status = "evidence_supported"
+    elif node_status == "hypothesis":
+        status = "hypothesis"
+    else:
+        status = "insufficient_evidence"
+        if node_status == "validated":
+            note = "节点标记为 validated，但缺少可用证据或证据未在 evidence.jsonl 中登记；导出时降级为 insufficient_evidence"
+        elif node_status in ("rejected", "deprioritized"):
+            note = f"节点状态 {node_status} 表示该判断未成立或已降权；下游不得当作已验证事实"
+        elif node_status and node_status != "insufficient_evidence":
+            note = f"节点状态 {node_status}，尚无足够证据支持；下游只能当作待验证前提"
+    claim: dict[str, Any] = {
+        "claim_id": f"{chain_id}:{node_name}",
+        "statement": statement,
+        "status": status,
+        "node_status": node_status or "unknown",
+        "chain_id": chain_id,
+        "node": node_name,
+        "evidence_refs": refs,
+    }
+    chain_context_key = str(chain.get("context_key") or "").strip()
+    if chain_context_key:
+        claim["context_key"] = chain_context_key
+    if status == "hypothesis":
+        claim["assumption"] = True
+    if unresolved:
+        claim["unresolved_evidence_ids"] = unresolved
+    if status == "insufficient_evidence" and not refs:
+        claim["evidence_refs"] = [{
+            "evidence_id": f"reasoning-record:{chain_id}/{node_name}",
+            "source": f"04-findings/product-reasoning.json#chains/{chain_id}/nodes/{node_name}",
+            "basis": "status_record_only",
+        }]
+        note = (
+            (note + "；" if note else "")
+            + "没有任何外部证据引用；这里只引用 status 记录本身，不代表外部研究证据"
+        )
+    if note:
+        claim["note"] = note
+    return claim
+
+
+def cli_context_export(args: Any) -> int:
+    """Export a Growovo-verifiable research context: payload file + sha256 envelope."""
+    try:
+        study_dir = Path(args.study_dir).resolve()
+        reasoning = load_product_reasoning(study_dir)
+        if reasoning is None:
+            raise ValueError(
+                "找不到 04-findings/product-reasoning.json；先运行 `askovo chain STUDY` 生成七节点链"
+            )
+        chains = reasoning.get("chains")
+        if not isinstance(chains, list) or not chains:
+            raise ValueError("product-reasoning.json 没有 chains；先运行 `askovo chain STUDY` 生成七节点链")
+        selector = str(getattr(args, "chain", "") or "").strip()
+        selected = (
+            [_select_reasoning_chain(reasoning, selector)]
+            if selector
+            else [chain for chain in chains if isinstance(chain, dict)]
+        )
+        if not selected:
+            raise ValueError("没有可导出的 chain；先修复 04-findings/product-reasoning.json")
+        approved_by = str(getattr(args, "approved_by", "") or "").strip()
+        if not approved_by:
+            raise ValueError("--approved-by 必填：导出上下文等于批准把研究前提交给下游产品")
+        value_events = [
+            str(value).strip()
+            for value in (getattr(args, "value_event", None) or [])
+            if str(value).strip()
+        ]
+        if not value_events:
+            raise ValueError(
+                "--value-event 至少一个：下游需要知道什么算价值事件，Askovo 不替下游发明口径"
+            )
+        records = _evidence_records_by_id(study_dir)
+        claims: list[dict[str, Any]] = []
+        non_goals: list[str] = []
+        for chain in selected:
+            nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
+            for node_name in REASONING_NODES:
+                node = nodes.get(node_name)
+                if not isinstance(node, dict):
+                    continue
+                claims.append(_context_claim(chain, node_name, node, records))
+                if node_name in ("product", "business"):
+                    for value in node.get("non_goals") or []:
+                        text = str(value).strip()
+                        if text and text not in non_goals:
+                            non_goals.append(text)
+        for value in getattr(args, "non_goal", None) or []:
+            text = str(value).strip()
+            if text and text not in non_goals:
+                non_goals.append(text)
+        if not non_goals:
+            raise ValueError(
+                "--non-goal 至少一个：product/business 节点没有 non_goals，导出必须写明这次研究不做什么"
+            )
+        study_file = study_dir / "study.json"
+        study = load_json(study_file) if study_file.is_file() else {}
+        study_id = str((study or {}).get("study_id") or "").strip() if isinstance(study, dict) else ""
+        context_id = str(getattr(args, "context_id", "") or "").strip()
+        if not context_id:
+            base = (
+                study_id
+                or str(selected[0].get("context_key") or "").strip()
+                or study_dir.name
+            )
+            context_id = f"askovo-{base}"
+        reasoning_path = _reasoning_file(study_dir)
+        reasoning_sha = hashlib.sha256(reasoning_path.read_bytes()).hexdigest()
+        version = str(getattr(args, "version", "") or "").strip() or f"reasoning-{reasoning_sha[:12]}"
+        scope: dict[str, str] = {}
+        market = str(getattr(args, "market", "") or "").strip()
+        if market:
+            scope["market"] = market
+        time_window = str(getattr(args, "time_window", "") or "").strip()
+        if time_window:
+            scope["time_window"] = time_window
+        chain_ids = [str(chain.get("id") or "").strip() for chain in selected]
+        payload: dict[str, Any] = {
+            "schema": CONTEXT_SCHEMA,
+            "context_id": context_id,
+            "version": version,
+            "approved_by": approved_by,
+            "subject_id": study_id or context_id,
+            "claims": claims,
+            "value_event_definitions": value_events,
+            "non_goals": non_goals,
+            "provenance_refs": sorted({
+                str(ref.get("evidence_id") or "")
+                for claim in claims
+                for ref in claim.get("evidence_refs") or []
+                if ref.get("evidence_id")
+            }),
+            "provenance": {
+                "reasoning_file": "04-findings/product-reasoning.json",
+                "reasoning_sha256": reasoning_sha,
+                "chain_ids": chain_ids,
+            },
+        }
+        if scope:
+            payload["scope"] = scope
+        payload_text = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        digest = hashlib.sha256(payload_text.encode("utf-8")).hexdigest()
+        out_dir = Path(getattr(args, "out", "") or "").resolve()
+        stem = (
+            "askovo-context-"
+            + _context_file_component(context_id, "context")
+            + "-"
+            + _context_file_component(version, "version")
+        )
+        payload_path = out_dir / f"{stem}.payload.json"
+        envelope_path = out_dir / f"{stem}.json"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        # Two files keep the hash honest: the payload carries no self-reference,
+        # and the envelope binds the payload bytes downstream can re-verify.
+        _write_new_text_file(payload_path, payload_text)
+        envelope = dict(payload)
+        envelope["source"] = {"kind": "askovo", "ref": str(payload_path)}
+        envelope["content_sha256"] = digest
+        try:
+            _write_new_text_file(
+                envelope_path,
+                json.dumps(envelope, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            )
+        except FileExistsError:
+            payload_path.unlink()
+            raise
+        counts = {status: 0 for status in CONTEXT_CLAIM_STATUSES}
+        for claim in claims:
+            counts[claim["status"]] += 1
+        result = {
+            "status": "exported",
+            "context_id": context_id,
+            "version": version,
+            "payload_file": str(payload_path),
+            "envelope_file": str(envelope_path),
+            "content_sha256": digest,
+            "reasoning_sha256": reasoning_sha,
+            "chains": chain_ids,
+            "claims": {"total": len(claims), **counts},
+            "value_event_definitions": value_events,
+            "non_goals": len(non_goals),
+            "growovo_import": f"mkt context import --file {envelope_path} --by <operator>",
+            "next_step": (
+                "把 envelope_file 交给 Growovo：`mkt context import --file <envelope> --by <operator>`；"
+                "Growovo 会重算 payload 文件的 sha256 与 content_sha256 比对。"
+                "payload 文件必须与 envelope 一起保留在原路径。"
+                "本导出只传递研究前提与证据引用：hypothesis 不会被升级为已验证事实。"
+            ),
+        }
+    except FileExistsError as exc:
+        print(
+            f"导出文件已存在，不会覆盖：{exc.filename}；"
+            "如需重新导出，请换一个 --version 或 --out 目录。",
+            file=sys.stderr,
+        )
+        return 2
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def cli_deliver(args: Any) -> int:
     try:
         result = deliver(Path(args.study_dir), args.kind)
