@@ -8,9 +8,9 @@
 
 # Askovo
 
-**Bring a product or market question, get back a business plan — built on collected data, not invented judgments.**
+**Review the evidence before committing to a product decision**
 
-**Start here.** You already have a product question and a draft answer. Askovo makes you show the evidence behind each claim, and tells you plainly which claims the evidence cannot support.
+Bring one product decision and the material behind it. Review the sources and counterexamples with the person who owns the decision. If the evidence falls short, Askovo lists what to collect. Reopen the same decision when new evidence arrives.
 
 ```bash
 pipx install askovo

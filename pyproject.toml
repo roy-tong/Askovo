@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "askovo"
 dynamic = ["version"]
-description = "Askovo — scene-to-business reasoning with auditable evidence for PM, research, market, requirements, and business analysis"
+description = "Product decision research with source evidence, counterexamples and follow-up questions for review."
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
@@ -29,7 +29,7 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/roy-tong/askovo"
+Homepage = "https://roy-tong.github.io/Askovo/"
 Repository = "https://github.com/roy-tong/askovo"
 Documentation = "https://github.com/roy-tong/askovo/blob/main/docs/README.md"
 Changelog = "https://github.com/roy-tong/askovo/blob/main/CHANGELOG.md"
