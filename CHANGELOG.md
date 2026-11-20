@@ -1,6 +1,45 @@
 # Changelog
 
 
+## 2.20.0 — 2026-11-20
+
+The 2026-11-19/20 full-scenario end-to-end test: two P0 evidence-trust defects
+fixed, plus the boundary cases from the same run.
+
+### Fixed
+
+- **P0-A zero-corpus studies no longer produce a formal-looking conclusion**:
+  `deliver` refuses to render a validated report when no usable evidence is
+  registered. It writes an evidence-gap note instead, naming which node lacks
+  which evidence class and what would close it. Three distinct errors:
+  `EVIDENCE_EMPTY` (nothing registered), `EVIDENCE_UNQUALIFIED` (records exist
+  but fail eligibility — unusable source, no review, wrong context key) and
+  `EVIDENCE_SOURCE_UNREADABLE` (cited source cannot be read back). A gap note
+  is never labelled as a decision conclusion.
+- **P0-B `evidence_level` is derived, not self-declared**: the grade comes from
+  evidence type, source structure and review history (`IMPORT_LEVEL_CAPS`
+  caps what an import or a user assertion can claim). A user-supplied `E4`/`E5`
+  on a self-report or an unreviewed import stays at its derived ceiling; the
+  derivation basis, method version and review history remain inspectable.
+  Users submit evidence and review opinions; they do not assign grades.
+- **C-07 counter-evidence-first policy rejection is a usable refusal**: a
+  question that the policy refuses on counter-evidence grounds returns the
+  refusal reason, the contradicting evidence and a legal next action, instead
+  of a dead end.
+- **E-08 empty collection window writes a gap note**: a window that returns
+  nothing produces an explicit gap record; it is not silently rendered as a
+  zero-prevalence finding.
+- **X-06 cross-product handoff carries premises only**: the handoff package
+  ships source object, version, scope, key assumptions, counter-evidence,
+  human-review state and evidence references with `shared_registry=false`.
+  Downstream products inherit premises, never Askovo's verdict.
+
+### Tests
+
+- `tests/test_p0_evidence_trust.py` and `tests/test_p0_import_levels.py` cover
+  the refusal paths, the derived-level ceilings and the gap-note content.
+  Full suite: 775 tests pass on Python 3.9–3.12.
+
 ## 2.19.0 — 2026-11-19
 
 The 2026-11-18 end-to-end review: one evidence authority, structured decision
