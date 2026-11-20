@@ -292,10 +292,12 @@ def normalize_industry(reference: str) -> str:
     value = str(reference or "").strip()
     folded = value.casefold()
     for industry in industries():
-        candidates = [industry["id"], industry["label_zh"], industry["label_en"]]
+        candidates = [industry["id"], industry["label_zh"], industry["label_en"],
+                      *industry.get("aliases", [])]
         if folded in {str(item).casefold() for item in candidates}:
             return str(industry["id"])
-    raise ValueError(f"unknown industry {reference!r}; use askovo roles list")
+    available = ", ".join(f"{item['id']}（{item['label_zh']}）" for item in industries())
+    raise ValueError(f"unknown industry {reference!r}; available: {available}")
 
 
 def _keyword_in_text(keyword: str, lowered_text: str) -> bool:
@@ -842,8 +844,8 @@ def validate_catalog() -> list[str]:
         errors.append(f"expected 80 unique role rows, got {len(role_rows)}")
     if lifecycle_ids != expected_lifecycles or len(lifecycle_rows) != 10:
         errors.append("expected exactly L01-L10 lifecycle rows")
-    if len(industry_rows) != 10 or len(industry_ids) != 10:
-        errors.append("expected exactly 10 unique industry contexts")
+    if len(industry_rows) != 11 or len(industry_ids) != 11:
+        errors.append("expected exactly 11 unique industry contexts")
     expected_counts = {"L01": 8, "L02": 16, "L03": 11, "L04": 8, "L05": 12, "L06": 10, "L07": 6, "L08": 5, "L09": 2, "L10": 2}
     for lifecycle_id, expected in expected_counts.items():
         actual = sum(1 for role in role_rows if role.get("lifecycle_id") == lifecycle_id)

@@ -136,7 +136,7 @@ askovo deliver ./study --kind role --role R52 --chain PR02
 askovo deliver ./study --kind lifecycle
 ```
 
-- `list/show` 查询 80 个岗位族的职责、KPI 公式与护栏、SOP 输入/动作/输出/质量门、交付模板、交接和专业边界；`--industry` 加载十类行业上下文。
+- `list/show` 查询 80 个岗位族的职责、KPI 公式与护栏、SOP 输入/动作/输出/质量门、交付模板、交接和专业边界；`--industry` 加载十一类行业上下文，并接受行业别名（如 `ebike`、`电动自行车`）。
 - `recommend` 先识别 `decide/discover/define/design/validate/launch/operate/review` 任务，再按“牵头 → 任务触发 → 能力覆盖 → 当前阶段行业角色”选最小充分团队；`--task`/`--scale` 可覆盖。输出选中岗位、暂缓岗位与原因、真实交接边、输出合同。`--base-domain` 防止行业关键词覆盖 SURE 产品域；AI 可作为硬件行业的能力覆盖层。
 - 输出合同确定主交付物、最多两个支撑产出、格式、篇幅、读者、语气、章节结构、证据呈现、图表、行业优先产出和表达禁忌。软件决策通常 1–3 岗，高风险硬件/医疗验证最多 6 岗。
 - `scaffold` 要求已有主链：空链拒绝、单链自动绑定、多链要求 `--chain`。原子写 `01-sources/role-workbench/`，保存任务/规模/输出合同、目录/行业哈希、角色/SOP/KPI/模板引用、真实 PRxx.node/edge 和项目状态；默认只生成本轮主交付+支撑模板，`--all-templates` 才扩展。不复制岗位定义，不修改主链/判断/证据。已有 workbench 不可用 `--force` 覆盖。KPI baseline/target 均为 null。

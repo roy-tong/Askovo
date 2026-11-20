@@ -48,7 +48,7 @@ SERVER_INSTRUCTIONS = (
     "Start with askovo_route or askovo_do across software / hardware / consumer / automotive / "
     "mobile. The primary spine is scene -> user -> pain -> need -> feature -> product -> business; "
     "collection and analysis only support weak nodes and inferences. askovo_roles provides 80 role "
-    "contracts, KPI/SOP/templates, 10 industry overlays and orchestration-only study workbenches. "
+    "contracts, KPI/SOP/templates, 11 industry overlays and orchestration-only study workbenches. "
     "(1) askovo_do scaffolds the study and product-reasoning.json; askovo_roles scaffold explicitly creates the bound role workbench; (2) askovo_chain renders the "
     "reasoning canvas; (3) askovo_platforms and askovo_collect gather permitted supporting "
     "material; (4) askovo_analyze describes it; (5) askovo_audit checks product/business "
@@ -1192,7 +1192,7 @@ TOOLS: list[dict[str, Any]] = [
                 "role": {"type": "string", "description": "show/template: R09 or a role alias"},
                 "roles": {"type": "array", "items": {"type": "string"}, "description": "scaffold: optional role ids; first is accountable"},
                 "goal": {"type": "string", "description": "recommend: product/business goal"},
-                "industry": {"type": "string", "description": "one of the 10 industry context ids"},
+                "industry": {"type": "string", "description": "one of the 11 industry context ids"},
                 "lifecycle": {"type": "string", "description": "L01-L10"},
                 "stage": {"enum": list(askovo_cli.sure_engine.STAGES)},
                 "task": {"enum": list(askovo_cli.role_catalog.TASK_TYPES), "description": "task type; inferred when omitted"},

@@ -3466,7 +3466,10 @@ def command_capture(args: argparse.Namespace) -> int:
             result = capture_review.accept(
                 Path(args.study_dir), args.capture, by=args.by,
                 evidence_level=args.evidence_level, corpus_role=args.corpus_role,
-                context_key=args.context_key, from_text=args.from_text)
+                context_key=args.context_key, from_text=args.from_text,
+                concept_test=(Path(args.concept_test)
+                              if getattr(args, "concept_test", "") else None),
+                observation=getattr(args, "observation", ""))
         elif action == "reject":
             result = capture_review.reject(
                 Path(args.study_dir), args.capture, by=args.by, reason=args.reason)
@@ -4043,6 +4046,89 @@ def command_check(args: argparse.Namespace) -> int:
         return 0 if audit.status == "pass" else 1
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0 if audit.status == "pass" else 1
+
+
+FAMILY_METRIC_CONTRACT = {
+    "growovo_metric": "developer_activation_rate",
+    "growovo_version": "1.0.0",
+    "verovo_criteria": "buyer-acceptance-v1",
+}
+
+
+def _metric_map_payload(study_dir: Path, chain_id: str) -> dict[str, Any]:
+    reasoning_path = study_dir / "04-findings" / "product-reasoning.json"
+    if not reasoning_path.is_file():
+        raise FileNotFoundError(
+            f"缺少 {reasoning_path}：先用 `askovo chain {study_dir}` 写入七节点主链，再生成指标映射"
+        )
+    reasoning = json.loads(reasoning_path.read_text(encoding="utf-8"))
+    chains = reasoning.get("chains") if isinstance(reasoning, dict) else None
+    if not isinstance(chains, list) or not chains:
+        raise ValueError("product-reasoning.json 没有 chains；先用 `askovo chain` 建立主链")
+    chain: dict[str, Any] | None = None
+    if chain_id:
+        for item in chains:
+            if isinstance(item, dict) and str(item.get("id")) == chain_id:
+                chain = item
+                break
+        if chain is None:
+            available = ", ".join(str(item.get("id")) for item in chains if isinstance(item, dict))
+            raise ValueError(f"找不到链 {chain_id!r}；已有：{available}")
+    else:
+        chain = chains[0] if isinstance(chains[0], dict) else None
+        if chain is None:
+            raise ValueError("product-reasoning.json 的 chains[0] 不是对象")
+    nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
+    need = nodes.get("need") if isinstance(nodes.get("need"), dict) else {}
+    measure = str(need.get("measure") or "").strip()
+    metric_id = str(need.get("metric_id") or "").strip()
+    payload: dict[str, Any] = {
+        "status": "mapped_with_gap",
+        "chain_id": chain.get("id", ""),
+        "askovo_metric_text": measure,
+        "askovo_has_metric_id": bool(metric_id),
+        "askovo_metric_id": metric_id or None,
+        **FAMILY_METRIC_CONTRACT,
+        "shared_registry": False,
+        "consistent": False,
+        "gap": "Askovo 只产出自由文本测量口径，无 metric id；三产品无共享注册表",
+        "convergence_plan": [
+            "统一 metric id 注册表",
+            "把 need.measure 绑定到 metric id",
+            "重跑映射使 consistent=true",
+        ],
+    }
+    if not measure:
+        payload["status"] = "mapped_with_gap"
+        payload["gap"] = "need.measure 为空（主链需求节点未填写测量口径）；" + payload["gap"]
+    return payload
+
+
+def command_metric(args: argparse.Namespace) -> int:
+    study_dir = Path(args.study_dir).resolve()
+    try:
+        payload = _metric_map_payload(study_dir, str(getattr(args, "chain", "") or ""))
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "reason_code": "INPUT_REQUIRED",
+                    "message": str(exc),
+                },
+                ensure_ascii=False,
+                indent=1,
+            )
+        )
+        return 2
+    out = Path(args.out) if getattr(args, "out", "") else study_dir / "04-findings" / "metric-map.json"
+    if not out.is_absolute():
+        out = study_dir / out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    payload["metric_map_file"] = str(out)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
 
 
 def command_connectors(args: argparse.Namespace) -> int:
@@ -5779,8 +5865,16 @@ def build_parser() -> argparse.ArgumentParser:
     capture_accept_parser.add_argument("study_dir")
     capture_accept_parser.add_argument("--capture", required=True, help="capture id from `capture list`")
     capture_accept_parser.add_argument("--by", default="", help="named human reviewer")
-    capture_accept_parser.add_argument("--evidence-level", required=True,
-                                       help="explicit reviewer choice: E0/E1/E2; OCR never assigns a level")
+    capture_accept_parser.add_argument("--evidence-level", default="",
+                                       help="requested cap only: E0/E1/E2, or E3 with --concept-test; "
+                                            "the registered level is derived from the source "
+                                            "structure and the review (a higher request is downgraded)")
+    capture_accept_parser.add_argument("--observation", default="", choices=("", "context", "statement", "practice"),
+                                       help="what the reviewer actually observed: context/statement/"
+                                            "practice; E2 requires practice")
+    capture_accept_parser.add_argument("--concept-test", default="",
+                                       help="JSON record enabling E3: stimulus/sample_size/"
+                                            "response_metric/result")
     capture_accept_parser.add_argument("--corpus-role", default="open_scene")
     capture_accept_parser.add_argument("--context-key", default="")
     capture_accept_parser.add_argument("--from", dest="from_text", default="page", choices=("page", "ocr"),
@@ -6153,6 +6247,16 @@ def build_parser() -> argparse.ArgumentParser:
     chain_parser.add_argument("study_dir")
     chain_parser.set_defaults(func=sure_engine.cli_chain)
 
+    metric_parser = subparsers.add_parser(
+        "metric", help="map the chain's need.measure to the ovo family metric contract (Growovo gauge + Verovo criteria)"
+    )
+    metric_sub = metric_parser.add_subparsers(dest="metric_action", required=True)
+    metric_map = metric_sub.add_parser("map", help="write metric-map.json from the canonical chain")
+    metric_map.add_argument("study_dir")
+    metric_map.add_argument("--chain", default="", help="chain id; defaults to the first chain")
+    metric_map.add_argument("--out", default="", help="output path; defaults to STUDY/04-findings/metric-map.json")
+    metric_map.set_defaults(func=command_metric)
+
     economics_parser = subparsers.add_parser(
         "economics",
         help="project the business node's unit economics (arithmetic projection; null means unknown, never zero)",
@@ -6314,7 +6418,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     roles_parser = subparsers.add_parser(
         "roles",
-        help="80 role families: responsibilities, KPI definitions, SOPs, handoffs, industry contexts and deliverable templates",
+        help="80 role families: responsibilities, KPI definitions, SOPs, handoffs, 11 industry contexts and deliverable templates",
     )
     roles_sub = roles_parser.add_subparsers(dest="action", required=True)
     roles_list = roles_sub.add_parser("list", help="list/search roles and show lifecycle/industry metadata")
@@ -6325,7 +6429,7 @@ def build_parser() -> argparse.ArgumentParser:
     roles_list.set_defaults(func=role_catalog.command_roles)
     roles_show = roles_sub.add_parser("show", help="show one role card with full SOP/KPI/deliverable definitions")
     roles_show.add_argument("role", help="R09, 09, a role name or a common alias")
-    roles_show.add_argument("--industry", help="apply one of the 10 industry context overlays")
+    roles_show.add_argument("--industry", help="apply one of the 11 industry context overlays")
     roles_show.add_argument("--json", action="store_true")
     roles_show.set_defaults(func=role_catalog.command_roles)
     roles_recommend = roles_sub.add_parser("recommend", help="assemble a role team from goal, industry and study stage")
@@ -6431,7 +6535,7 @@ CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "explore",
     "external-research", "do", "domains",
     "methods", "catalog", "platforms", "capture", "collect", "research", "loop", "analyze", "answer", "instruments", "import", "queue",
-    "codebook", "chain", "economics", "psm", "decision", "followup", "decide", "issues", "brief", "delta", "page", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
+    "codebook", "chain", "metric", "economics", "psm", "decision", "followup", "decide", "issues", "brief", "delta", "page", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }
 

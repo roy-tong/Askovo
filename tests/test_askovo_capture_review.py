@@ -141,20 +141,100 @@ class CaptureAcceptTests(ReviewCase):
             self.accept(capture_id, by="第三人")
         self.assertEqual("INTERNAL_ERROR", ctx.exception.reason_code)
 
-    def test_accept_requires_named_human_explicit_level_and_respects_cap(self) -> None:
+    def test_accept_requires_a_named_human_and_derives_the_level(self) -> None:
         capture_id = _mocked_capture(self.study)
         before = (self.study / "02-data/evidence.jsonl").read_bytes()
         with self.assertRaises(capture_review.CaptureReviewError) as ctx:
             capture_review.accept(self.study, capture_id, by="", evidence_level="E1")
         self.assertEqual("AUTH_REQUIRED", ctx.exception.reason_code)
-        with self.assertRaises(capture_review.CaptureReviewError) as ctx:
-            capture_review.accept(self.study, capture_id, by="验收员", evidence_level="")
-        self.assertEqual("INPUT_REQUIRED", ctx.exception.reason_code)
         for level in ("E3", "E4+", "E5"):
             with self.assertRaises(capture_review.CaptureReviewError) as ctx:
                 self.accept(capture_id, evidence_level=level)
             self.assertEqual("POLICY_DENIED", ctx.exception.reason_code)
         self.assertEqual(before, (self.study / "02-data/evidence.jsonl").read_bytes())
+        # The reviewer no longer self-assigns a level: omitting --evidence-level is
+        # valid, and "one voiced page statement" derives E1.
+        result = capture_review.accept(self.study, capture_id, by="验收员")
+        self.assertEqual("accepted", result["status"])
+        self.assertEqual("E1", result["evidence_level"])
+        self.assertEqual("", result["requested_evidence_level"])
+        self.assertFalse(result["level_capped"])
+        self.assertTrue(result["level_basis"])
+        self.assertEqual("askovo-level-derivation/1", result["level_derivation_version"])
+
+    def test_self_reported_high_level_is_capped_by_the_derivation(self) -> None:
+        capture_id = _mocked_capture(self.study)
+        result = self.accept(capture_id, evidence_level="E2")  # no --observation practice
+        self.assertEqual("accepted", result["status"])
+        self.assertEqual("E2", result["requested_evidence_level"])
+        self.assertEqual("E1", result["evidence_level"])
+        self.assertTrue(result["level_capped"])
+        record = next(r for r in self.records() if r["record_id"] == f"cap-{capture_id}")
+        self.assertEqual("E1", record["evidence_level"])
+        self.assertEqual("E2", record["requested_evidence_level"])
+        checked = run_cli("check", str(self.study), "--stage", "evidence", "--format", "json")
+        self.assertEqual(0, checked.returncode, checked.stdout + checked.stderr)
+
+    def test_practice_observation_reaches_e2_only_from_human_read_page_text(self) -> None:
+        practice_id = _mocked_capture(
+            self.study, url="https://www.amazon.com/product-reviews/B001")
+        practice = self.accept(practice_id, evidence_level="E2", observation="practice")
+        self.assertEqual("E2", practice["evidence_level"])
+        self.assertFalse(practice["level_capped"])
+        self.assertIn("practice", practice["level_basis"])
+        ocr_id = _mocked_capture(
+            self.study, url="https://www.amazon.com/product-reviews/B002")
+        ocr = self.accept(ocr_id, evidence_level="E2", observation="practice",
+                          from_text="ocr")
+        self.assertEqual("E1", ocr["evidence_level"])
+        self.assertTrue(ocr["level_capped"])
+        self.assertIn("OCR", ocr["level_basis"])
+        context_id = _mocked_capture(
+            self.study, url="https://www.amazon.com/product-reviews/B003")
+        context = self.accept(context_id, evidence_level="E1", observation="context")
+        self.assertEqual("E0", context["evidence_level"])
+        self.assertTrue(context["level_capped"])
+
+    def test_concept_test_record_is_the_only_route_to_e3(self) -> None:
+        capture_id = _mocked_capture(self.study)
+        concept = self.study / "concept-test.json"
+        concept.write_text(json.dumps({
+            "stimulus": "新的夜间告警设置页",
+            "sample_size": 12,
+            "response_metric": "5 点购买意向均值",
+            "result": "4.1",
+        }, ensure_ascii=False), encoding="utf-8")
+        result = self.accept(capture_id, evidence_level="E3", concept_test=concept)
+        self.assertEqual("E3", result["evidence_level"])
+        self.assertFalse(result["level_capped"])
+        record = next(r for r in self.records() if r["record_id"] == f"cap-{capture_id}")
+        self.assertIn("E3 concept test", record["evidence_basis"])
+        checked = run_cli("check", str(self.study), "--stage", "evidence", "--format", "json")
+        self.assertEqual(0, checked.returncode, checked.stdout + checked.stderr)
+        incomplete = self.study / "concept-test-incomplete.json"
+        incomplete.write_text(json.dumps({"stimulus": "x", "sample_size": 3}, ensure_ascii=False),
+                              encoding="utf-8")
+        second_id = _mocked_capture(
+            self.study, url="https://www.amazon.com/product-reviews/B009")
+        with self.assertRaises(capture_review.CaptureReviewError) as ctx:
+            self.accept(second_id, evidence_level="E3", concept_test=incomplete)
+        self.assertEqual("INPUT_REQUIRED", ctx.exception.reason_code)
+
+    def test_hand_edited_level_fails_the_derivation_audit(self) -> None:
+        capture_id = _mocked_capture(self.study)
+        self.accept(capture_id, evidence_level="E1")
+        rows = self.records()
+        for row in rows:
+            if row["record_id"] == f"cap-{capture_id}":
+                row["evidence_level"] = "E2"
+        (self.study / "02-data/evidence.jsonl").write_text(
+            "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
+        record = next(r for r in self.records() if r["record_id"] == f"cap-{capture_id}")
+        errors = capture_review.validate_evidence_record(self.study, record)
+        self.assertTrue(errors)
+        self.assertIn("does not match the derived level", " ".join(errors))
+        checked = run_cli("check", str(self.study), "--stage", "evidence", "--format", "json")
+        self.assertEqual(1, checked.returncode, checked.stdout + checked.stderr)
 
     def test_unreviewed_candidate_is_not_analyzed_and_manual_ocr_row_fails_audit(self) -> None:
         capture_id = _mocked_capture(self.study)
@@ -258,7 +338,8 @@ class CaptureGoldenChainTests(ReviewCase):
         context_key = reasoning["chains"][0]["context_key"]
         business_statement = reasoning["chains"][0]["nodes"]["business"]["statement"]
 
-        self.accept(capture_id, evidence_level="E2", context_key=context_key)
+        self.accept(capture_id, evidence_level="E2", observation="practice",
+                    context_key=context_key)
         # Acceptance itself authors neither a judgment nor a seven-node conclusion.
         self.assertEqual(reasoning_before, reasoning_path.read_bytes())
         self.assertEqual(judgments_before, judgments_path.read_bytes())

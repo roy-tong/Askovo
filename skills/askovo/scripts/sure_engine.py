@@ -2090,9 +2090,29 @@ def generate_instruments(study_dir: Path) -> list[str]:
     return written
 
 
-def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str]) -> dict[str, Any]:
+def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str],
+                      level_cap: str | None = None) -> dict[str, Any]:
     text = str(raw.get("text") or raw.get("内容") or raw.get("quote") or "")
     record_id = str(raw.get("record_id") or raw.get("id") or f"{defaults['source_family']}-{index:04d}")
+    form = str(raw.get("evidence_form") or defaults["evidence_form"]).strip() or "self_report"
+    cap = level_cap
+    if level_cap:
+        row_cap = IMPORT_LEVEL_CAPS.get(form, "E2")
+        if IMPORT_LEVEL_ORDER[row_cap] < IMPORT_LEVEL_ORDER[level_cap]:
+            cap = row_cap
+    level_declared = str(raw.get("evidence_level") or "").strip().upper()
+    if level_declared and level_declared not in IMPORT_LEVEL_ORDER:
+        raise ImportReviewError(
+            f"record {record_id}: unknown evidence_level {level_declared!r}",
+            "INVALID_INPUT", "E0, E1, E2, E3, E4-, E4+, E5")
+    level = level_declared or defaults.get("evidence_level") or "unclassified"
+    capped_from = ""
+    if cap and level in IMPORT_LEVEL_ORDER and IMPORT_LEVEL_ORDER[level] > IMPORT_LEVEL_ORDER[cap]:
+        capped_from = level
+        level = cap
+    level_basis = f"import derivation: form={form}, cap={cap}"
+    if capped_from:
+        level_basis += f"; declared {capped_from} capped to {cap}"
     record = {
         "record_id": record_id,
         "context_key": str(raw.get("context_key") or defaults.get("context_key") or ""),
@@ -2102,7 +2122,9 @@ def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str])
         "current_substitute": str(raw.get("current_substitute") or "unknown"),
         "friction_cost": str(raw.get("friction_cost") or raw.get("friction") or "unknown"),
         "consequence": str(raw.get("consequence") or "unknown"),
-        "evidence_level": str(raw.get("evidence_level") or defaults.get("evidence_level") or "unclassified"),
+        "evidence_level": level,
+        "level_declared": level_declared or level,
+        "level_basis": level_basis,
         "evidence_basis": str(raw.get("evidence_basis") or "imported; grade before use"),
         "corpus_role": str(raw.get("corpus_role") or defaults.get("corpus_role") or "open_scene"),
         "source_family": str(raw.get("source_family") or raw.get("source") or defaults["source_family"]),
@@ -2252,14 +2274,15 @@ def import_material(
             raw = json.loads(line)
             if not isinstance(raw, dict):
                 raise ValueError(f"JSONL line {index} is not an object")
-            records.append(_normalize_record(raw, index, defaults))
+            records.append(_normalize_record(raw, index, defaults, level_cap=cap))
     elif suffix == ".csv":
         with file_path.open(encoding="utf-8-sig", newline="") as handle:
             for index, row in enumerate(csv.DictReader(handle), start=1):
-                records.append(_normalize_record(dict(row), index, defaults))
+                records.append(_normalize_record(dict(row), index, defaults, level_cap=cap))
     else:
         text = file_path.read_text(encoding="utf-8", errors="ignore")
-        records.append(_normalize_record({"text": text, "record_id": file_path.stem}, 1, defaults))
+        records.append(_normalize_record({"text": text, "record_id": file_path.stem}, 1,
+                                            defaults, level_cap=cap))
 
     evidence_path = study_dir / "02-data" / "evidence.jsonl"
     existing_ids: set[str] = set()
@@ -2292,6 +2315,8 @@ def import_material(
             "evidence_form": evidence_form,
             "corpus_role": corpus_role,
             "level_cap": cap,
+            "row_level_rule": "a row's evidence_level is capped by its evidence form and "
+                              "the command's form; an unknown level rejects the file",
             "note": "operator-reviewed import; the level is capped by the evidence form",
         },
         "source_plan": str(study_dir / "01-sources" / "source-plan.csv"),
@@ -4817,6 +4842,152 @@ def _report_decision_lines(reasoning: dict[str, Any] | None, by_id: dict[str, di
     return lines
 
 
+FORMAL_DELIVERY_KINDS = frozenset({
+    "memo", "report", "mrd", "prd", "brd", "ops", "decision", "signoff",
+    "plan", "analysis", "web", "role",
+})
+EVIDENCE_GATE_VERSION = "askovo-evidence-gate/1"
+_EVIDENCE_SOURCE_PREFIXES = (
+    "01-sources/", "02-data/", "03-analysis/", "04-findings/", "05-audit/", "06-report/",
+)
+
+
+def _study_source_problem(study_dir: Path, source_ref: str) -> str:
+    """Return why a study-relative source reference is unreadable, else ''.
+
+    URLs, platform ids and free-text references are not files; only a
+    study-relative path can be re-opened and compared with the reviewed record.
+    """
+    if not source_ref or "://" in source_ref or not source_ref.startswith(_EVIDENCE_SOURCE_PREFIXES):
+        return ""
+    path = study_dir / source_ref
+    try:
+        if not path.is_file():
+            return "missing"
+        with path.open("rb") as handle:
+            handle.read(1)
+    except OSError as exc:
+        return str(exc)[:160]
+    return ""
+
+
+def evidence_delivery_gate(study_dir: Path, evidence: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Decide whether a formal deliverable may be rendered from this evidence store.
+
+    Delivery is the moment a report can look authoritative. Zero registered
+    evidence, a registered record whose reviewed source file can no longer be
+    read, or a store with no decision-grade record (E1+) must stop formal
+    deliverables: the honest output is an evidence-gap note, never a
+    conclusion-shaped report (review 2026-11-20, P0-A).
+    """
+    study_dir = Path(study_dir).resolve()
+    evidence = evidence if evidence is not None else _evidence_summary(study_dir)
+    records = [record for record in evidence.get("records", []) if isinstance(record, dict)]
+    level_counts: dict[str, int] = {}
+    unreadable: list[dict[str, str]] = []
+    for record in records:
+        level = str(record.get("evidence_level") or "unknown")
+        level_counts[level] = level_counts.get(level, 0) + 1
+        source_ref = str(record.get("source_ref") or "").strip()
+        problem = _study_source_problem(study_dir, source_ref)
+        if problem:
+            unreadable.append({
+                "record_id": str(record.get("record_id") or "<unknown>"),
+                "source_ref": source_ref,
+                "problem": problem,
+            })
+    decision_grade = sum(count for level, count in level_counts.items() if level != "E0")
+    gate: dict[str, Any] = {
+        "gate_version": EVIDENCE_GATE_VERSION,
+        "checked_at": now(),
+        "evidence_count": len(records),
+        "collected_count": int(evidence.get("collected_count") or 0),
+        "level_counts": dict(sorted(level_counts.items())),
+        "decision_grade_count": decision_grade,
+        "unreadable_sources": unreadable,
+        "gaps": [],
+        "reason_code": "",
+        "reason": "",
+        "next_required_action": "",
+    }
+    if not records:
+        gate["reason_code"] = "EVIDENCE_EMPTY"
+        gate["reason"] = (
+            "02-data/evidence.jsonl 中没有已登记证据；采集库存"
+            f"（{gate['collected_count']} 条）不计入依据。"
+        )
+        gate["gaps"].append("没有任何已登记（人工审核）证据记录")
+        gate["next_required_action"] = (
+            "先采集并人工核级证据（`askovo capture` / `askovo import`），"
+            "再运行 `askovo check --stage full`。"
+        )
+    elif unreadable:
+        gate["reason_code"] = "EVIDENCE_SOURCE_UNREADABLE"
+        gate["reason"] = (
+            f"{len(unreadable)} 条已登记证据的原始来源文件缺失或不可读，"
+            "无法证明交付依据仍是人工审核过的那一份。"
+        )
+        gate["gaps"].extend(
+            f"`{item['record_id']}` 的来源 `{item['source_ref']}` 不可读（{item['problem']}）"
+            for item in unreadable
+        )
+        gate["next_required_action"] = (
+            "恢复或重新采集这些来源，重新执行人工审核（`askovo capture accept`），"
+            "再运行 `askovo check --stage full`。"
+        )
+    elif decision_grade == 0:
+        gate["reason_code"] = "EVIDENCE_UNQUALIFIED"
+        gate["reason"] = (
+            f"{len(records)} 条已登记证据全部为 E0（背景/陈述），没有任何 E1+ 可决策证据。"
+        )
+        gate["gaps"].append("全部证据为 E0；缺少至少一条 E1+（自述/行为/接受/付费/留存）证据")
+        gate["next_required_action"] = (
+            "补充或升级到至少 E1+ 证据（`askovo capture accept --observation ...`、"
+            "`askovo import`），再运行 `askovo check --stage full`。"
+        )
+    gate["ok"] = not gate["reason_code"]
+    return gate
+
+
+def _write_evidence_gap(study_dir: Path, kind: str, gate: dict[str, Any]) -> Path:
+    """Write the only honest artifact when the evidence gate blocks delivery."""
+    out_dir = Path(study_dir) / "06-report"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "evidence-gap.md"
+    levels = "、".join(f"{level}×{count}" for level, count in gate["level_counts"].items()) or "无"
+    lines = [
+        "# 证据缺口说明（不是结论）",
+        "",
+        f"> 交付请求：`{kind}`。状态：**blocked** — 未生成正式交付物。",
+        f"> 证据门：`{gate['gate_version']}`；检查时间：{gate['checked_at']}；原因码：`{gate['reason_code']}`。",
+        "",
+        "## 为什么没有生成交付物",
+        "",
+        gate["reason"],
+        "",
+        "## 证据概况",
+        "",
+        f"- 已登记证据：{gate['evidence_count']} 条（等级分布：{levels}）",
+        f"- 可决策证据（E1+）：{gate['decision_grade_count']} 条",
+        f"- 仅采集未评级：{gate['collected_count']} 条（采集 ≠ 证据，不计入依据）",
+        "",
+        "## 缺口",
+        "",
+        *[f"- {item}" for item in gate["gaps"]],
+        "",
+        "## 合法下一动作",
+        "",
+        gate["next_required_action"],
+        "",
+        "## 边界",
+        "",
+        "本文件只说明证据缺口，不构成市场、需求、产品、商业、发布或合规结论；"
+        "补齐证据并重新运行 `askovo check --stage full` 与 `askovo deliver` 后，才会生成正式交付物。",
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
 def _deliver_artifact(
     study_dir: Path,
     kind: str = "memo",
@@ -4845,6 +5016,23 @@ def _deliver_artifact(
     audit_failed = audit_status != "pass"
     out_dir = study_dir / "06-report"
     out_dir.mkdir(parents=True, exist_ok=True)
+    if kind in FORMAL_DELIVERY_KINDS:
+        gate = evidence_delivery_gate(study_dir, evidence=evidence)
+        if not gate["ok"]:
+            gap_path = _write_evidence_gap(study_dir, kind, gate)
+            return {
+                "status": "blocked",
+                "kind": kind,
+                "audit_status": audit_status,
+                "reason_code": gate["reason_code"],
+                "reason": gate["reason"],
+                "evidence_count": gate["evidence_count"],
+                "level_counts": gate["level_counts"],
+                "gap_path": str(gap_path),
+                "next_required_action": gate["next_required_action"],
+                "boundary": "证据门只阻断正式交付物，不评价已有证据质量，也不构成任何结论。",
+                "gate": gate,
+            }
     if kind == "lifecycle":
         workplan_path = study_dir / "01-sources" / "role-workbench" / "workplan.json"
         workplan = load_json(workplan_path) if workplan_path.is_file() else None

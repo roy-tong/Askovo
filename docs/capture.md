@@ -22,8 +22,8 @@ askovo capture page ./cam-study \
 ```bash
 askovo capture list ./cam-study                       # 候选与审核状态
 askovo capture accept ./cam-study \
-  --capture <capture_id> --by "评审人" --evidence-level E1 \
-  [--corpus-role open_scene] [--from page|ocr]
+  --capture <capture_id> --by "评审人" \
+  --observation statement [--evidence-level E1] [--corpus-role open_scene] [--from page|ocr]
 askovo capture reject ./cam-study \
   --capture <capture_id> --by "评审人" --reason "营销文案，不是用户声音"
 ```
@@ -44,8 +44,9 @@ askovo capture reject ./cam-study \
   不要求开源连接器注册表——注册表只治理第三方采集代码；kickstarter/bilibili/weibo 等
   目录开放 CDP 但无可用开源连接器的平台由此才能合法设计研究。脚本化采集仍走注册表与既有枚举。
 
-- `accept` 必须有具名审核人（`--by`）和**显式** `--evidence-level`（OCR/候选永不自动定级），向 `02-data/evidence.jsonl` 追加**恰好一条**记录（`record_id = cap-<capture_id>`），并回链 `capture_id`、capture JSON 与截图路径、URL、页面/OCR/截图哈希——后续 analyze/结论可回溯到采集来源；
-- 等级上限：可见页只允许 `E0/E1/E2`（背景/陈述/页面记录的现状与摩擦）；`E3`（方案接受）及以上直接拒绝（`POLICY_DENIED`）——页面证明不了接受、付费或留存；
+- `accept` 必须有具名审核人（`--by`），向 `02-data/evidence.jsonl` 追加**恰好一条**记录（`record_id = cap-<capture_id>`），并回链 `capture_id`、capture JSON 与截图路径、URL、页面/OCR/截图哈希——后续 analyze/结论可回溯到采集来源；
+- 等级由来源结构与审核过程**推导**，不是审核人自报：`--observation` 说明审核人实际看到了什么（`context` 背景 = E0；`statement` 单页陈述，默认 = E1；`practice` 页面记录的现状/流程/花费 = E2，但 OCR 转写不能支撑 E2，只能是 E1）；可见字符不足 20 的片段一律 E0；`E3` 只由 `--concept-test`（stimulus/sample_size/response_metric/result）推导。`--evidence-level` 只是**上限**：请求高于推导等级时按推导等级登记并返回 `level_capped: true`，请求 E4+/E5 直接拒绝（`POLICY_DENIED`）；
+- 每条记录写入 `level_derivation_version`、`level_basis`、`requested_evidence_level`、`level_observation`；`askovo check` 的证据门会用同一规则复算等级，手改证据行抬高等级会被拒绝；
 - 审核即校验：accept 会核对候选的 schema、ack、平台归属、挑战检查与页面/OCR/截图哈希；候选字节被改动过就拒绝（`INTERNAL_ERROR`）；
 - `accept` 只登记证据，**不生成 demand judgment、不改七节点、不做商业结论**——判断仍由人工经既有 judgment/loop 流程给出；
 - 幂等：重复 accept 返回 `already_accepted` 并复验联接；capture 标记 accepted 但证据记录缺失、或人工手改 OCR 行绕过审核，都会被 `askovo check` 的证据门以 `capture_review.validate_evidence_record` 拒绝；
@@ -59,9 +60,9 @@ askovo capture reject ./cam-study \
 # 1) 采集只产生 candidate；本例 URL 仅为命令形态，不执行采集
 askovo capture page ./cam-study --url "https://www.amazon.com/product-reviews/B0..." --ack-terms --ocr
 
-# 2) 人看页面/截图/OCR 后，署名并显式选择文本来源与等级
+# 2) 人看页面/截图/OCR 后，署名并说明实际观察到什么；等级由来源推导
 askovo capture accept ./cam-study --capture <capture_id> \
-  --by "评审人" --evidence-level E2 --from page \
+  --by "评审人" --observation practice --from page \
   --context-key synthetic-mobile-check
 
 # 3) 现有描述性分析会读到该证据；OCR 不会自动变成结论
