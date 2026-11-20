@@ -139,7 +139,7 @@ askovo deliver ./study --kind lifecycle
 - `list/show` 查询 80 个岗位族的职责、KPI 公式与护栏、SOP 输入/动作/输出/质量门、交付模板、交接和专业边界；`--industry` 加载十一类行业上下文，并接受行业别名（如 `ebike`、`电动自行车`）。
 - `recommend` 先识别 `decide/discover/define/design/validate/launch/operate/review` 任务，再按“牵头 → 任务触发 → 能力覆盖 → 当前阶段行业角色”选最小充分团队；`--task`/`--scale` 可覆盖。输出选中岗位、暂缓岗位与原因、真实交接边、输出合同。`--base-domain` 防止行业关键词覆盖 SURE 产品域；AI 可作为硬件行业的能力覆盖层。
 - 输出合同确定主交付物、最多两个支撑产出、格式、篇幅、读者、语气、章节结构、证据呈现、图表、行业优先产出和表达禁忌。软件决策通常 1–3 岗，高风险硬件/医疗验证最多 6 岗。
-- `scaffold` 要求已有主链：空链拒绝、单链自动绑定、多链要求 `--chain`。原子写 `01-sources/role-workbench/`，保存任务/规模/输出合同、目录/行业哈希、角色/SOP/KPI/模板引用、真实 PRxx.node/edge 和项目状态；默认只生成本轮主交付+支撑模板，`--all-templates` 才扩展。不复制岗位定义，不修改主链/判断/证据。已有 workbench 不可用 `--force` 覆盖。KPI baseline/target 均为 null。
+- `scaffold` 要求已有主链：空链拒绝、单链自动绑定、多链要求 `--chain`。原子写 `01-sources/role-workbench/`，保存任务/规模/输出合同、目录/行业哈希、角色/SOP/KPI/模板引用、真实 PRxx.node/edge 和项目状态；默认只生成本轮主交付+支撑模板，`--all-templates` 才扩展。不复制岗位定义，不修改主链/判断/证据。已有 workbench 默认拒绝覆盖，`--force` 同样拒绝；`--overwrite` 只输出差异预览不写盘，`--overwrite --confirm` 先备份为 `role-workbench.bak-YYYYmmddTHHMMSS` 再原子替换，内容一致时返回 `unchanged`。KPI baseline/target 均为 null。
 - `template` 生成未填写、未复核的工作模板；七节点语义为 `editable=false`，不自动产生市场、需求、产品或商业结论。
 - `deliver --kind role` 从 workplan 绑定或显式链只读生成扁平 `06-report/role-Rxx-Dyy.md`；旧研究多链必须指定 `--chain`。
 - `deliver --kind lifecycle` 生成 `06-report/lifecycle-board.md`，展示十板块交接与实际工作状态。
@@ -168,6 +168,21 @@ askovo chain ./study
 ```
 
 如果缺少 `04-findings/product-reasoning.json` 则创建假设画布，随后渲染 `06-report/product-reasoning.md`。它不会从一句 query 或高频词自动编造七节点。每个节点需要 statement、incoming rationale、status、evidence_ids、assumptions；商业节点还需要市场边界、细分、价格、成本、单位经济、指标和业务门。`decided` 是产品/商业选择，不是发布、商业成功或因果证明。旧六节点文件仍可读取。完整规则见[产品推理主链](product-reasoning.md)。
+
+## chain-node
+
+```bash
+askovo chain-node ./study show                              # 只读：整条链的节点、状态与已绑定证据
+askovo chain-node ./study show --node business --chain 2    # --chain 接受链 id 或 1-based 序号，省略取第一条
+askovo chain-node ./study set --node business --status validated \
+  --statement "..." --note "补到 3 份付费凭证"
+askovo chain-node ./study bind-evidence --node business --evidence E-0007 --evidence E-0012
+askovo chain-node ./study unbind-evidence --node business --evidence E-0007
+```
+
+`set` / `bind-evidence` / `unbind-evidence` 直接写入 `04-findings/product-reasoning.json`（原子写），并为每次真实改动追加一条 `change_log`：`base_version`（如 `chain-v3`）、`new_version`、`decision`（取 `--note`）、`previous`（改动前值）、`affected_refs`（`CHAIN.node`）与 `projection_sync: pending`，因此任何一次判断变化都能回溯到改前状态。`show` 只读，不写盘。
+
+绑定证据只校验 ID 存在；证据是否属于该节点判断类（例如商业节点只能用商业/反证证据）仍由 `askovo check --stage full` 判定。该命令只写真值、不跑审计，输出 `audit_status: not_run`——写成功不等于通过检查；内容无变化返回 `unchanged` 且不写盘。未知链、未知节点、非法状态或未知证据 ID 走 stderr + 退出码 2。改完后重新运行 `askovo deliver`，让报告与新的 `chain-vN` 对齐。
 
 ## platforms
 
@@ -413,6 +428,8 @@ askovo report ./study
 
 多链研究：`--kind plan` 先输出跨链比较表与逐链结论，七环节正文只展开优先级最高的一条；`--kind report` 的“产品决策”一节按链生成状态/依据强度/建议/下一步/失败线，没有 `decided` 链时明确标注为待验证建议，不再留空模板。`--kind analysis` 的漏斗支持 `01-sources/collection-summary.json` 的累计口径。
 
+`--kind plan` 第 0 节“结论与推进建议”有门禁：只有商业环节 `validated`、绑定合格的 E4+/E5 商业证据（成交、付费或可核对的商业行为）、链带 `context_key`，且最近一次 `askovo check --stage full` 通过时才给正式结论；否则输出当前判断、缺口和下一步补证动作，不把假设写成结论。交付文档中尚未提供的字段统一用“缺口 + 影响 + 补法”说明（BRD/MRD/PRD 为“材料缺口”小节），不留占位符或空白模板。
+
 `askovo report` 是用研支撑报告，写 `06-report/research-status.md`；它不与产品/商业 `deliver --kind report` 共用文件。所有交付都从同一七节点主链渲染，不另建语义真值。业务方案是业务用户的默认视图；决策包是决策侧汇总视图；MRD、PRD、BRD 分别对应市场研究/分析、需求研究/分析、商业分析三条工作流，不是三个平行事实库。
 
 `check --stage design/evidence/full` 分别检查设计、证据和完整决策结构；`audit` 另输出逐条需求判断 verdict。返回 1 是合法研究状态，应修复主链/证据缺口或明确下一步，不能绕过。
@@ -434,7 +451,7 @@ askovo economics ./study
 askovo psm ./study --input pricing-survey.csv --currency CNY
 ```
 
-`economics` 从 business 节点的 `pricing` 与 `unit_economics_inputs` 做确定性算术投影，写 `06-report/unit-economics.md`：只对**数值、单位匹配、带 source_ref** 的输入计算；“成本类”合计仅按名称匹配（cost/成本/费用）作为指示性结果；null 表示未知不是零；缺来源的数值列出缺口不进入计算。它是算术检查，不是商业证明——E4/E5 商业证据、财务评审与人工决策独立进行。
+`economics` 从 business 节点的 `pricing` 与 `unit_economics_inputs` 做确定性算术投影，写 `06-report/unit-economics.md`：只对**数值、单位匹配、带 source_ref** 的输入计算；“成本类”合计仅按名称匹配（cost/成本/费用）作为指示性结果；null 表示未知不是零；缺来源的数值列出缺口不进入计算。`pricing` 可选声明 `volume` 与 `revenue`：两者都在时校验“单价×数量=收入”，只给 `volume` 时反算收入，只给 `revenue` 时反算数量，反算结果标注为计算值而非声明值。数值校验用 Decimal，容差取绝对值 0.01 与相对值 0.5% 中的较大者；声明的毛利、毛利率、ROI 与计算值不一致时**只报告，不替用户改数**，报告和 `askovo check` 的 `unit_economics` warn 会列出差异。它是算术检查，不是商业证明——E4/E5 商业证据、财务评审与人工决策独立进行。
 
 `psm` 读取四问 CSV（列名 `too_cheap/cheap/expensive/too_expensive`，也接受 太便宜/便宜/贵/太贵），剔除“太便宜≤便宜≤贵≤太贵”不成立的行，计算 PMC/OPP/IDP/PME 交点与可接受区间，写 `06-report/pricing-psm.md`。**PSM 是陈述意向，不是付费行为**：结果不能直接作为商业节点 validated 证据，竞品标价也不是自有定价证据。问卷可用 `instruments` 的价格工具包生成。
 

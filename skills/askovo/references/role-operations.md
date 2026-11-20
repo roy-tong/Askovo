@@ -35,6 +35,8 @@ askovo roles recommend "warehouse robot process and ROI" --task decide --scale l
 askovo roles scaffold ./study --industry ai_native
 askovo roles scaffold ./study --task define --scale standard
 askovo roles scaffold ./study --role R29 --role R52 --role R72
+askovo roles scaffold ./study --overwrite          # preview added/modified/deleted, write nothing
+askovo roles scaffold ./study --overwrite --confirm # back up, then replace atomically
 askovo roles template R52 --deliverable R52-D01 --output agent-interaction-spec.md
 askovo deliver ./study --kind role --role R52 --deliverable R52-D01
 ```
@@ -182,8 +184,15 @@ directory and atomically renames the complete result to
   `editable=false`.
 
 Reasoning, demand judgments and evidence are compared before/after generation.
-Empty chains are rejected, write failures leave no partial workbench, and an
-existing stateful workbench cannot be overwritten (including with `--force`).
+Empty chains are rejected and write failures leave no partial workbench. An
+existing stateful workbench is never overwritten by default (including with
+`--force`): `--overwrite` stages the rebuild in a temporary directory and
+returns `status: preview` with added/modified/deleted files, changed-line counts
+and a three-line preview, writing nothing; `--overwrite --confirm` moves the old
+workbench to a sibling `role-workbench.bak-<timestamp>` (suffixed `-1`, `-2` on
+a timestamp collision), replaces it atomically, and restores the backup if the
+replace fails. A rebuild whose content is identical returns `status: unchanged`
+and creates no backup.
 Commercial KPI targets additionally require a `business_metric_ref` into the
 canonical business node's `success_metrics`.
 

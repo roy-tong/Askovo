@@ -148,6 +148,12 @@ askovo roles scaffold ./study --role R29 --role R52 --role R72
 
 # 多链：必须明确工作线程
 askovo roles scaffold ./study --chain PR02 --role R29 --role R52
+
+# 已有执行包：只看差异预览，不写盘
+askovo roles scaffold ./study --overwrite
+
+# 确认替换：先备份到 role-workbench.bak-YYYYmmddTHHMMSS，再原子替换
+askovo roles scaffold ./study --overwrite --confirm
 ```
 
 空链拒绝生成；单链自动绑定，多链必须传 `--chain`。系统先在临时目录完整构建，再一次性重命名提交到 `01-sources/role-workbench/`：
@@ -158,7 +164,7 @@ workplan.md         输出合同、RACI、KPI 合同、逐步 SOP、真实交接
 templates/Rxx-Dyy.md 只生成本轮主交付与必要支撑模板
 ```
 
-默认只生成主交付 + 最多两个支撑模板；需要全部岗位模板时显式加 `--all-templates`。KPI baseline/target/窗口/分母/数据源/Owner 初始为 null，SOP 初始为 `not_started`。主链、需求判断和证据在生成前后逐一比较。已有 stateful workbench 默认拒绝覆盖，传 `--force` 也不能抹掉人工状态；写盘失败不留下半套执行包。
+默认只生成主交付 + 最多两个支撑模板；需要全部岗位模板时显式加 `--all-templates`。KPI baseline/target/窗口/分母/数据源/Owner 初始为 null，SOP 初始为 `not_started`。主链、需求判断和证据在生成前后逐一比较。已有 stateful workbench 默认拒绝覆盖，`--force` 也不能抹掉人工状态；`--overwrite` 只在临时目录重建并输出 added/modified/deleted 差异预览（修改项含变更行数、前后 sha256 与新内容前三行），不写盘；`--overwrite --confirm` 才先把旧目录备份到同级 `role-workbench.bak-YYYYmmddTHHMMSS`，再原子替换，替换失败自动恢复备份；若生成内容与现有完全一致则返回 `unchanged`，不写盘也不备份。写盘失败不留下半套执行包。
 
 ### 5.5 单独生成方案模板
 

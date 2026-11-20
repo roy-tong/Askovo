@@ -129,7 +129,7 @@ askovo economics ./study                     # 单位经济投影 → 06-report/
 askovo psm ./study --input pricing.csv --currency CNY   # 价格敏感度 → 06-report/pricing-psm.md
 ```
 
-- `economics` 只做确定性算术：数值、单位匹配、带 source_ref 的输入才进入计算；null=未知不是零；"成本类"合计按名称匹配仅作指示。它是算术检查与补证清单，不是商业证明。
+- `economics` 只做确定性算术：数值、单位匹配、带 source_ref 的输入才进入计算；null=未知不是零；"成本类"合计按名称匹配仅作指示。`pricing` 可声明 `volume` 与 `revenue`，用于校验单价×数量=收入；声明毛利、毛利率、ROI 与计算值不一致时只报告、不修改；`askovo check` 会给出 `unit_economics` warn。它是算术检查与补证清单，不是商业证明。
 - `psm` 计算四问交点（PMC/OPP/IDP/PME）与可接受区间；**陈述意向≠付费行为**，结果不能直接作为商业节点 validated 证据，竞品标价也不是自有定价证据。
 - 两个输出都回写主链的 `pricing`/`unit_economics_inputs`/`gaps` 之后再进入 BRD，不另建商业真值。
 

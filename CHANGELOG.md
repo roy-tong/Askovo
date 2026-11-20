@@ -1,6 +1,65 @@
 # Changelog
 
 
+## 2.20.2 — 2026-11-20
+
+Delivery-truth round from the 2026-11-20 end-to-end business test: what a
+report may call a conclusion, how a gap is stated, and how a chain edit is
+recorded.
+
+### Fixed
+
+- **a report only calls itself a conclusion when the business node earns it**:
+  `deliver` now separates "current judgment" from "conclusion". A conclusion
+  requires a `validated` business node, qualifying E4+/E5 commercial evidence
+  and a clean `check --stage full`. Otherwise the same page states the current
+  judgment, the named gaps and the concrete next evidence action, so a study
+  with no paying evidence can no longer read like a finished decision.
+- **material gaps are stated the same way everywhere**: every rendered document
+  opens with its gaps in `未提供｜影响：…｜补充方式：…` form instead of silently
+  leaving fields blank; empty gap lists are no longer serialized as `[]`, and
+  `_gap_note` / `_gap_or_value` / `_delivery_gap_block` share one wording path.
+- **`roles scaffold` never overwrites a workbench by default**: an existing
+  `01-sources/role-workbench/` is protected. `--overwrite` returns an
+  added/modified/deleted preview (line counts, before/after sha256, first lines)
+  and writes nothing; `--overwrite --confirm` backs the old workbench up to
+  `role-workbench.bak-<timestamp>` before an atomic replace and restores it on
+  failure; identical content returns `unchanged`. `--force` is deprecated and
+  no longer overwrites.
+
+### Added
+
+- **`askovo chain-node`**: edit one canonical chain node in
+  `04-findings/product-reasoning.json` without hand-editing JSON.
+  `show` is read-only; `set` changes statement/rationale/status;
+  `bind-evidence` / `unbind-evidence` manage evidence ids. Every real edit
+  appends a `change_log` entry with `base_version` (`chain-vN`), `new_version`,
+  `decision` (`--note`), `previous`, `affected_refs` and
+  `projection_sync: pending`, so a judgment change can be traced to its
+  pre-edit state. The command writes truth only, never audits
+  (`audit_status: not_run`); binding checks that the evidence id exists, while
+  `check --stage full` still decides whether the evidence class fits the node.
+  No-op edits return `unchanged` without writing.
+- **unit-economics arithmetic check**: `pricing[]` entries may declare `volume`
+  and `revenue`; `askovo check` verifies unit price × volume = revenue in
+  `Decimal` with `max(0.01 absolute, 0.5% relative)` tolerance, back-solves the
+  one missing figure and marks it as computed. Declared margin, gross-margin
+  rate or ROI that contradicts the computed values is reported, never silently
+  rewritten, and `unit_economics` warns surface in `askovo check`.
+
+### Tests
+
+- `tests/test_delivery_conclusion_gate.py` — conclusion only with validated
+  business node + qualifying commercial evidence + clean full audit.
+- `tests/test_delivery_gap_notes.py` — uniform gap wording, no `[]` leakage.
+- `tests/test_chain_node_editing.py` — show/set/bind/unbind, change_log,
+  unchanged no-op, error exits.
+- `tests/test_economics_validation.py` — volume/revenue arithmetic, tolerance
+  edges, computed back-solve, warn-only declared mismatches.
+- `tests/test_role_workbench_overwrite.py` — default/`--force` refusal,
+  preview, backup + atomic replace, `unchanged`.
+- Full suite: 818 tests OK.
+
 ## 2.20.1 — 2026-11-20
 
 A-TRUST-01 and A-WEB-01 from the 2026-11-20 main review.
