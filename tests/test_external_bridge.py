@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -183,7 +184,7 @@ class CommandWhitelistTests(BridgeHelpers, unittest.TestCase):
         script = self.write_script(ENV_DUMP)
         self.write_registry([])
         completed = run_cli(str(self.study), "--authorize", "--json",
-                            "--command", f"{sys.executable} {script} {self.dump_path}")
+                            "--command", " ".join((shlex.quote(sys.executable), shlex.quote(str(script)), shlex.quote(str(self.dump_path)))))
         self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
         body = json.loads(completed.stdout)
         self.assertEqual("POLICY_DENIED", body["reason_code"])
@@ -224,14 +225,14 @@ class CommandWhitelistTests(BridgeHelpers, unittest.TestCase):
         script = self.write_script(ENV_DUMP)
         self.write_registry([])
         completed = run_cli(str(self.study), "--trusted-local", "--json",
-                            "--command", f"{sys.executable} {script} {self.dump_path}")
+                            "--command", " ".join((shlex.quote(sys.executable), shlex.quote(str(script)), shlex.quote(str(self.dump_path)))))
         self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
 
     def test_trusted_local_is_recorded_in_the_run(self) -> None:
         script = self.write_script(ENV_DUMP)
         self.write_registry([])
         completed, record = self.run_entry(
-            "--trusted-local", "--command", f"{sys.executable} {script} {self.dump_path}")
+            "--trusted-local", "--command", " ".join((shlex.quote(sys.executable), shlex.quote(str(script)), shlex.quote(str(self.dump_path)))))
         self.assertEqual(0, completed.returncode, record)
         self.assertTrue(record["trusted_local"])
         self.assertTrue(record["command_sha256"].startswith("sha256:"))
@@ -409,7 +410,7 @@ class LegacyCompatibilityTests(BridgeHelpers, unittest.TestCase):
         script = self.write_script(ENV_DUMP)
         self.write_registry([])
         completed = run_cli(str(self.study), "--authorize", "--json",
-                            "--command", f"{sys.executable} {script} {self.dump_path}")
+                            "--command", " ".join((shlex.quote(sys.executable), shlex.quote(str(script)), shlex.quote(str(self.dump_path)))))
         self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
         body = json.loads(completed.stdout)
         self.assertEqual("POLICY_DENIED", body["reason_code"])

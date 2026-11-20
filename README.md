@@ -115,9 +115,9 @@ askovo decision replay ./study --chain PR01
 
 The second record deterministically applies `hold`, reopens the chain/product/business for validation, lowers confidence one ordinal step, and preserves before/after recommendations, evidence relations and snapshots. `--recommendation "..."` is an optional human override; the system does not invent a replacement product. An ID without a recorded contradiction relation is rejected. Newly mapped evidence is not promoted into a validated judgment or causal proof.
 
-## One chain, 80 role families, 10 industry contexts, five base research packs
+## One chain, 80 role families, 11 industry contexts, five base research packs
 
-Askovo now includes an executable **product-innovation role operating system**, not just a job-title list. It covers 80 role families across opportunity research, user/needs research, product strategy, concept/service design, digital experience, physical engineering, consumer-product development, validation, lifecycle delivery, and ResearchOps/DesignOps. Every role defines its mission, responsibilities, KPI formulas and guardrails, input→action→output→gate SOPs, core deliverables, working templates, handoffs, and human accountabilities. Ten industry overlays adapt the work from consumer software and SaaS to AI, smart/traditional hardware, CPG, apparel/home, industrial robotics, automotive, and medical/health products.
+Askovo now includes an executable **product-innovation role operating system**, not just a job-title list. It covers 80 role families across opportunity research, user/needs research, product strategy, concept/service design, digital experience, physical engineering, consumer-product development, validation, lifecycle delivery, and ResearchOps/DesignOps. Every role defines its mission, responsibilities, KPI formulas and guardrails, input→action→output→gate SOPs, core deliverables, working templates, handoffs, and human accountabilities. Eleven industry overlays adapt the work from consumer software and SaaS to AI, smart/traditional hardware, two-wheel mobility hardware, CPG, apparel/home, industrial robotics, automotive, and medical/health products.
 
 ```bash
 askovo roles list --json
@@ -132,7 +132,7 @@ askovo deliver ./study --kind lifecycle        # 10-module role/workflow board
 
 `do` and `route` recommend a **task-sized** team, not all 80 roles. Askovo classifies the work as decide/discover/define/design/validate/launch/operate/review, selects the minimum sufficient roles, lists deferred roles and reasons, and builds an output contract that sets the primary deliverable, format, length, audience, section structure, evidence display and industry-specific expression. A software decision may need 1–3 roles; hardware validation or regulated work can expand to cross-functional review. After the canonical chain is confirmed, `roles scaffold` atomically creates `01-sources/role-workbench/` with the task/output contract, RACI, bound chain/node targets, SOP quality gates, null KPI targets and only this task's primary/supporting templates (multi-chain studies require `--chain`; `--all-templates` explicitly expands). These are orchestration artifacts only: they never create a second product/market/requirements/business truth or turn SOP completion into demand validation, engineering approval, clinical/safety/compliance sign-off, production readiness, or causal proof. See [Role operating system](docs/role-operating-system.md) (Chinese) and the [Agent role protocol](skills/askovo/references/role-operations.md).
 
-The five SURE base-domain packs still own method routing. The ten industry overlays change professional context without forking the seven-node schema. The following chain projections remain available for their specific readers:
+The five SURE base-domain packs still own method routing. The eleven industry overlays change professional context without forking the seven-node schema. The following chain projections remain available for their specific readers:
 
 | Role | What they get from the same chain | Primary deliverables |
 |---|---|---|
@@ -314,10 +314,11 @@ askovo cost ./study log --task "audit PRD" --minutes 25           # F4 logged hu
 askovo deliver ./study --kind signoff   # F3 stakeholder sign-off page: conclusions + evidence levels + boundaries + signature block
 askovo deliver ./study --kind ops      # user-ops projection
 askovo deliver ./study --kind tracker  # behavior, acceptance, and business metric tracking
+askovo deliver ./study --kind web      # self-contained Web reading surface: 4 reading labels + data/judgment time layering
 askovo report ./study                  # research status: 06-report/research-status.md
 ```
 
-`deliver --kind report` is the single writer of the combined product/business report; `askovo report` writes a separate research-status file. The business plan, decision package, MRD, PRD, BRD, and ops views are all projections of one seven-node chain — not parallel sources of truth.
+`deliver --kind report` is the single writer of the combined product/business report; `askovo report` writes a separate research-status file. The business plan, decision package, MRD, PRD, BRD, and ops views are all projections of one seven-node chain — not parallel sources of truth. `deliver --kind web` (`06-report/web/index.html`) is the same chain arranged for reading: self-contained, no external assets, labels records as 事实 / 自述 and judgments as 推导 / 我的判断 while E0–E5 stay in the method archive, and shows 「now: numbers and charts」 beside 「judgment formed at」 so a fresher evidence store is never dressed up as fresh prose.
 
 With multiple candidate chains, the plan opens with a cross-chain decision table and one conclusion block per chain, then renders the detailed sections once for the priority chain; `--kind report` fills its product-decision section with the same chain states instead of leaving placeholders. When a study aggregates several collection waves, `01-sources/collection-summary.json` supplies the funnel totals. Business strength (●◐○) is node-aware: the commercial node only counts E4+/E5, so counter-evidence cannot make it look observed.
 

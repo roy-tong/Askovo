@@ -79,6 +79,20 @@ except ModuleNotFoundError as exc:  # direct importlib loading used by embedders
     _role_spec.loader.exec_module(role_catalog)
 
 try:
+    import web_surface
+except ModuleNotFoundError as exc:  # direct importlib loading used by embedders/tests
+    if exc.name != "web_surface":
+        raise
+    _web_spec = importlib.util.spec_from_file_location(
+        "askovo_web_surface", Path(__file__).with_name("web_surface.py")
+    )
+    if _web_spec is None or _web_spec.loader is None:  # pragma: no cover
+        raise RuntimeError("cannot load web_surface.py beside sure_engine.py")
+    web_surface = importlib.util.module_from_spec(_web_spec)
+    sys.modules.setdefault("askovo_web_surface", web_surface)
+    _web_spec.loader.exec_module(web_surface)
+
+try:
     import fcntl
 except ImportError:  # pragma: no cover - Windows fallback
     fcntl = None
@@ -2076,9 +2090,29 @@ def generate_instruments(study_dir: Path) -> list[str]:
     return written
 
 
-def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str]) -> dict[str, Any]:
+def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str],
+                      level_cap: str | None = None) -> dict[str, Any]:
     text = str(raw.get("text") or raw.get("内容") or raw.get("quote") or "")
     record_id = str(raw.get("record_id") or raw.get("id") or f"{defaults['source_family']}-{index:04d}")
+    form = str(raw.get("evidence_form") or defaults["evidence_form"]).strip() or "self_report"
+    cap = level_cap
+    if level_cap:
+        row_cap = IMPORT_LEVEL_CAPS.get(form, "E2")
+        if IMPORT_LEVEL_ORDER[row_cap] < IMPORT_LEVEL_ORDER[level_cap]:
+            cap = row_cap
+    level_declared = str(raw.get("evidence_level") or "").strip().upper()
+    if level_declared and level_declared not in IMPORT_LEVEL_ORDER:
+        raise ImportReviewError(
+            f"record {record_id}: unknown evidence_level {level_declared!r}",
+            "INVALID_INPUT", "E0, E1, E2, E3, E4-, E4+, E5")
+    level = level_declared or defaults.get("evidence_level") or "unclassified"
+    capped_from = ""
+    if cap and level in IMPORT_LEVEL_ORDER and IMPORT_LEVEL_ORDER[level] > IMPORT_LEVEL_ORDER[cap]:
+        capped_from = level
+        level = cap
+    level_basis = f"import derivation: form={form}, cap={cap}"
+    if capped_from:
+        level_basis += f"; declared {capped_from} capped to {cap}"
     record = {
         "record_id": record_id,
         "context_key": str(raw.get("context_key") or defaults.get("context_key") or ""),
@@ -2088,7 +2122,9 @@ def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str])
         "current_substitute": str(raw.get("current_substitute") or "unknown"),
         "friction_cost": str(raw.get("friction_cost") or raw.get("friction") or "unknown"),
         "consequence": str(raw.get("consequence") or "unknown"),
-        "evidence_level": str(raw.get("evidence_level") or defaults.get("evidence_level") or "unclassified"),
+        "evidence_level": level,
+        "level_declared": level_declared or level,
+        "level_basis": level_basis,
         "evidence_basis": str(raw.get("evidence_basis") or "imported; grade before use"),
         "corpus_role": str(raw.get("corpus_role") or defaults.get("corpus_role") or "open_scene"),
         "source_family": str(raw.get("source_family") or raw.get("source") or defaults["source_family"]),
@@ -2238,14 +2274,15 @@ def import_material(
             raw = json.loads(line)
             if not isinstance(raw, dict):
                 raise ValueError(f"JSONL line {index} is not an object")
-            records.append(_normalize_record(raw, index, defaults))
+            records.append(_normalize_record(raw, index, defaults, level_cap=cap))
     elif suffix == ".csv":
         with file_path.open(encoding="utf-8-sig", newline="") as handle:
             for index, row in enumerate(csv.DictReader(handle), start=1):
-                records.append(_normalize_record(dict(row), index, defaults))
+                records.append(_normalize_record(dict(row), index, defaults, level_cap=cap))
     else:
         text = file_path.read_text(encoding="utf-8", errors="ignore")
-        records.append(_normalize_record({"text": text, "record_id": file_path.stem}, 1, defaults))
+        records.append(_normalize_record({"text": text, "record_id": file_path.stem}, 1,
+                                            defaults, level_cap=cap))
 
     evidence_path = study_dir / "02-data" / "evidence.jsonl"
     existing_ids: set[str] = set()
@@ -2278,6 +2315,8 @@ def import_material(
             "evidence_form": evidence_form,
             "corpus_role": corpus_role,
             "level_cap": cap,
+            "row_level_rule": "a row's evidence_level is capped by its evidence form and "
+                              "the command's form; an unknown level rejects the file",
             "note": "operator-reviewed import; the level is capped by the evidence form",
         },
         "source_plan": str(study_dir / "01-sources" / "source-plan.csv"),
@@ -2337,6 +2376,32 @@ def _read_jsonl_rows(path: Path) -> list[dict[str, Any]]:
         if isinstance(record, dict):
             rows.append(record)
     return rows
+
+
+def evidence_store_integrity(study_dir: Path) -> dict[str, Any]:
+    """Check that evidence.jsonl can be read without losing records.
+
+    A malformed line is not "one bad row": it means the store may be missing a
+    record the conclusion depends on. The answer path must refuse a trusted
+    conclusion instead of silently skipping it (review 2026-11-18, A-09).
+    """
+    path = Path(study_dir) / "02-data" / "evidence.jsonl"
+    problems: list[dict[str, Any]] = []
+    if not path.is_file():
+        return {"valid": True, "problems": problems, "path": str(path)}
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError as exc:
+            problems.append({"line": lineno, "code": "invalid_json",
+                             "detail": str(exc)[:200]})
+            continue
+        if not isinstance(item, dict):
+            problems.append({"line": lineno, "code": "not_an_object",
+                             "detail": type(item).__name__})
+    return {"valid": not problems, "problems": problems, "path": str(path)}
 
 
 def load_evidence_store(study_dir: Path) -> dict[str, Any]:
@@ -3728,6 +3793,7 @@ def _plan_section(
     quote_limit: int = 2,
     extra_lines: list[str] | None = None,
     used_quotes: set[str] | None = None,
+    qualification: dict[str, Any] | None = None,
 ) -> list[str]:
     lines: list[str] = [f"## {title}", ""]
     if not isinstance(node, dict) or not node:
@@ -3763,6 +3829,9 @@ def _plan_section(
     if metrics:
         lines.append(metrics)
     lines.append(f"依据强度：{marker} {strength_label} —— {strength_detail}")
+    if records:
+        counts = web_surface.label_counts(records, qualification)
+        lines.append(f"证据类型：事实 {counts.get(web_surface.TAG_FACT, 0)} 条 · 自述 {counts.get(web_surface.TAG_SELF, 0)} 条")
     quotes = _plan_quotes(records, limit=quote_limit, used=used_quotes)
     if quotes:
         lines.append("来自语料的声音：")
@@ -4181,7 +4250,7 @@ def _plan_lines(
     by_id = {str(record.get("record_id")): record for record in records}
     chains = reasoning.get("chains", []) if isinstance(reasoning, dict) else []
     chains = [chain for chain in chains if isinstance(chain, dict)]
-
+    qualification = evidence.get("qualification") if isinstance(evidence.get("qualification"), dict) else {}
     lines: list[str] = [
         f"# 业务方案 Business Plan：{study.get('title', '')}",
         "",
@@ -4191,6 +4260,9 @@ def _plan_lines(
         "> 读法：每个判断都标注**依据强度**——● 已观察到（多个来源族观察；相关性未证明独立）· ◐ 有线索（单案例或口头线索）· ○ 假设（尚无采集记录，待验证）——"
         "以及**数据基础**（来源、语料量、时间窗）与**来自语料的声音**（用户原话或典型情况）。"
         "“暂无采集数据”表示还没研究到这一步，不等于没有需求。",
+        "",
+        "> 时间分层：数字与图表截至最新输入时间，判断文字形成于判断链最后一次写入。"
+        "两者不一致时以数字和图表的生成时间为准，并重跑 `askovo deliver <study> --kind plan` 重新生成判断。",
         "",
     ]
     if audit_status != "pass":
@@ -4284,7 +4356,7 @@ def _plan_lines(
             ("什么时候发生（触发）", scene.get("trigger")),
             ("在什么环境下", scene.get("environment")),
             ("用户当时在做什么（任务背景）", scene.get("task_context")),
-        ], used_quotes=used_quotes))
+        ], used_quotes=used_quotes, qualification=qualification))
         user = nodes.get("user", {}) if isinstance(nodes.get("user"), dict) else {}
         segments = []
         business_node = nodes.get("business", {}) if isinstance(nodes.get("business"), dict) else {}
@@ -4296,32 +4368,33 @@ def _plan_lines(
             ("现状", user.get("state")),
             ("在决策中的角色", user.get("decision_role")),
             ("用户分层", segments or None),
-        ], used_quotes=used_quotes))
+        ], used_quotes=used_quotes, qualification=qualification))
         pain = nodes.get("pain", {}) if isinstance(nodes.get("pain"), dict) else {}
         lines.extend(_plan_section("4. 痛点：现在怎么办、痛在哪", pain, by_id, [
             ("现在的替代做法", pain.get("current_substitute")),
             ("代价", pain.get("friction_cost")),
             ("不解决的后果", pain.get("consequence")),
-        ], used_quotes=used_quotes))
+        ], used_quotes=used_quotes, qualification=qualification))
         need = nodes.get("need", {}) if isinstance(nodes.get("need"), dict) else {}
         lines.extend(_plan_section("5. 需求：他们要的到底是什么", need, by_id, [
             ("期望的结果", need.get("desired_outcome")),
             ("约束", need.get("constraints")),
             ("怎么衡量做好了", need.get("measure")),
-        ], used_quotes=used_quotes))
+        ], used_quotes=used_quotes, qualification=qualification))
         feature = nodes.get("feature", {}) if isinstance(nodes.get("feature"), dict) else {}
         lines.extend(_plan_section("6. 产品特性：哪些特性能满足", feature, by_id, [
             ("特性", feature.get("capability")),
             ("生效条件与验收", feature.get("acceptance_conditions")),
             ("考虑过的替代做法", feature.get("alternatives_considered")),
-        ], quote_limit=1, used_quotes=used_quotes, extra_lines=_plan_capability_lines(feature)))
+        ], quote_limit=1, used_quotes=used_quotes, extra_lines=_plan_capability_lines(feature),
+            qualification=qualification))
         product = nodes.get("product", {}) if isinstance(nodes.get("product"), dict) else {}
         lines.extend(_plan_section("7. 产品形态：推演出的产品", product, by_id, [
             ("形态", product.get("form")),
             ("范围", product.get("scope")),
             ("明确不做", product.get("non_goals")),
             ("上线验收", product.get("acceptance_criteria")),
-        ], quote_limit=0))
+        ], quote_limit=0, qualification=qualification))
         gate = business_node.get("gate", {}) if isinstance(business_node.get("gate"), dict) else {}
         success_metrics = []
         for metric in business_node.get("success_metrics", []) if isinstance(business_node.get("success_metrics"), list) else []:
@@ -4354,7 +4427,7 @@ def _plan_lines(
             ("成本结构", business_node.get("cost_drivers")),
             ("成功指标", success_metrics or None),
             ("资源门禁", f"{gate.get('stage', '待确认')}：{gate.get('decision', '待确认')}（负责人：{gate.get('owner', '待确认')}；复审条件：{gate.get('revisit_trigger', '待确认')}）" if gate else None),
-        ], quote_limit=0, extra_lines=_plan_money_evidence(chain_records)))
+        ], quote_limit=0, extra_lines=_plan_money_evidence(chain_records), qualification=qualification))
 
     # ── 9. 风险与下一步 ────────────────────────────────────────
     lines.extend(["## 9. 风险与下一步", ""])
@@ -4769,6 +4842,152 @@ def _report_decision_lines(reasoning: dict[str, Any] | None, by_id: dict[str, di
     return lines
 
 
+FORMAL_DELIVERY_KINDS = frozenset({
+    "memo", "report", "mrd", "prd", "brd", "ops", "decision", "signoff",
+    "plan", "analysis", "web", "role",
+})
+EVIDENCE_GATE_VERSION = "askovo-evidence-gate/1"
+_EVIDENCE_SOURCE_PREFIXES = (
+    "01-sources/", "02-data/", "03-analysis/", "04-findings/", "05-audit/", "06-report/",
+)
+
+
+def _study_source_problem(study_dir: Path, source_ref: str) -> str:
+    """Return why a study-relative source reference is unreadable, else ''.
+
+    URLs, platform ids and free-text references are not files; only a
+    study-relative path can be re-opened and compared with the reviewed record.
+    """
+    if not source_ref or "://" in source_ref or not source_ref.startswith(_EVIDENCE_SOURCE_PREFIXES):
+        return ""
+    path = study_dir / source_ref
+    try:
+        if not path.is_file():
+            return "missing"
+        with path.open("rb") as handle:
+            handle.read(1)
+    except OSError as exc:
+        return str(exc)[:160]
+    return ""
+
+
+def evidence_delivery_gate(study_dir: Path, evidence: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Decide whether a formal deliverable may be rendered from this evidence store.
+
+    Delivery is the moment a report can look authoritative. Zero registered
+    evidence, a registered record whose reviewed source file can no longer be
+    read, or a store with no decision-grade record (E1+) must stop formal
+    deliverables: the honest output is an evidence-gap note, never a
+    conclusion-shaped report (review 2026-11-20, P0-A).
+    """
+    study_dir = Path(study_dir).resolve()
+    evidence = evidence if evidence is not None else _evidence_summary(study_dir)
+    records = [record for record in evidence.get("records", []) if isinstance(record, dict)]
+    level_counts: dict[str, int] = {}
+    unreadable: list[dict[str, str]] = []
+    for record in records:
+        level = str(record.get("evidence_level") or "unknown")
+        level_counts[level] = level_counts.get(level, 0) + 1
+        source_ref = str(record.get("source_ref") or "").strip()
+        problem = _study_source_problem(study_dir, source_ref)
+        if problem:
+            unreadable.append({
+                "record_id": str(record.get("record_id") or "<unknown>"),
+                "source_ref": source_ref,
+                "problem": problem,
+            })
+    decision_grade = sum(count for level, count in level_counts.items() if level != "E0")
+    gate: dict[str, Any] = {
+        "gate_version": EVIDENCE_GATE_VERSION,
+        "checked_at": now(),
+        "evidence_count": len(records),
+        "collected_count": int(evidence.get("collected_count") or 0),
+        "level_counts": dict(sorted(level_counts.items())),
+        "decision_grade_count": decision_grade,
+        "unreadable_sources": unreadable,
+        "gaps": [],
+        "reason_code": "",
+        "reason": "",
+        "next_required_action": "",
+    }
+    if not records:
+        gate["reason_code"] = "EVIDENCE_EMPTY"
+        gate["reason"] = (
+            "02-data/evidence.jsonl 中没有已登记证据；采集库存"
+            f"（{gate['collected_count']} 条）不计入依据。"
+        )
+        gate["gaps"].append("没有任何已登记（人工审核）证据记录")
+        gate["next_required_action"] = (
+            "先采集并人工核级证据（`askovo capture` / `askovo import`），"
+            "再运行 `askovo check --stage full`。"
+        )
+    elif unreadable:
+        gate["reason_code"] = "EVIDENCE_SOURCE_UNREADABLE"
+        gate["reason"] = (
+            f"{len(unreadable)} 条已登记证据的原始来源文件缺失或不可读，"
+            "无法证明交付依据仍是人工审核过的那一份。"
+        )
+        gate["gaps"].extend(
+            f"`{item['record_id']}` 的来源 `{item['source_ref']}` 不可读（{item['problem']}）"
+            for item in unreadable
+        )
+        gate["next_required_action"] = (
+            "恢复或重新采集这些来源，重新执行人工审核（`askovo capture accept`），"
+            "再运行 `askovo check --stage full`。"
+        )
+    elif decision_grade == 0:
+        gate["reason_code"] = "EVIDENCE_UNQUALIFIED"
+        gate["reason"] = (
+            f"{len(records)} 条已登记证据全部为 E0（背景/陈述），没有任何 E1+ 可决策证据。"
+        )
+        gate["gaps"].append("全部证据为 E0；缺少至少一条 E1+（自述/行为/接受/付费/留存）证据")
+        gate["next_required_action"] = (
+            "补充或升级到至少 E1+ 证据（`askovo capture accept --observation ...`、"
+            "`askovo import`），再运行 `askovo check --stage full`。"
+        )
+    gate["ok"] = not gate["reason_code"]
+    return gate
+
+
+def _write_evidence_gap(study_dir: Path, kind: str, gate: dict[str, Any]) -> Path:
+    """Write the only honest artifact when the evidence gate blocks delivery."""
+    out_dir = Path(study_dir) / "06-report"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "evidence-gap.md"
+    levels = "、".join(f"{level}×{count}" for level, count in gate["level_counts"].items()) or "无"
+    lines = [
+        "# 证据缺口说明（不是结论）",
+        "",
+        f"> 交付请求：`{kind}`。状态：**blocked** — 未生成正式交付物。",
+        f"> 证据门：`{gate['gate_version']}`；检查时间：{gate['checked_at']}；原因码：`{gate['reason_code']}`。",
+        "",
+        "## 为什么没有生成交付物",
+        "",
+        gate["reason"],
+        "",
+        "## 证据概况",
+        "",
+        f"- 已登记证据：{gate['evidence_count']} 条（等级分布：{levels}）",
+        f"- 可决策证据（E1+）：{gate['decision_grade_count']} 条",
+        f"- 仅采集未评级：{gate['collected_count']} 条（采集 ≠ 证据，不计入依据）",
+        "",
+        "## 缺口",
+        "",
+        *[f"- {item}" for item in gate["gaps"]],
+        "",
+        "## 合法下一动作",
+        "",
+        gate["next_required_action"],
+        "",
+        "## 边界",
+        "",
+        "本文件只说明证据缺口，不构成市场、需求、产品、商业、发布或合规结论；"
+        "补齐证据并重新运行 `askovo check --stage full` 与 `askovo deliver` 后，才会生成正式交付物。",
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
 def _deliver_artifact(
     study_dir: Path,
     kind: str = "memo",
@@ -4797,6 +5016,23 @@ def _deliver_artifact(
     audit_failed = audit_status != "pass"
     out_dir = study_dir / "06-report"
     out_dir.mkdir(parents=True, exist_ok=True)
+    if kind in FORMAL_DELIVERY_KINDS:
+        gate = evidence_delivery_gate(study_dir, evidence=evidence)
+        if not gate["ok"]:
+            gap_path = _write_evidence_gap(study_dir, kind, gate)
+            return {
+                "status": "blocked",
+                "kind": kind,
+                "audit_status": audit_status,
+                "reason_code": gate["reason_code"],
+                "reason": gate["reason"],
+                "evidence_count": gate["evidence_count"],
+                "level_counts": gate["level_counts"],
+                "gap_path": str(gap_path),
+                "next_required_action": gate["next_required_action"],
+                "boundary": "证据门只阻断正式交付物，不评价已有证据质量，也不构成任何结论。",
+                "gate": gate,
+            }
     if kind == "lifecycle":
         workplan_path = study_dir / "01-sources" / "role-workbench" / "workplan.json"
         workplan = load_json(workplan_path) if workplan_path.is_file() else None
@@ -4887,6 +5123,40 @@ def _deliver_artifact(
                         ])
         return {"status": "written", "path": str(path), "kind": kind}
 
+    if kind == "web":
+        delta_status: dict[str, Any] | None = None
+        try:
+            import research_delta
+            delta_status = research_delta.status(study_dir)
+        except (OSError, ValueError, ImportError):
+            delta_status = None
+        rendered = web_surface.render(
+            study_dir,
+            study=study,
+            reasoning=reasoning,
+            evidence=evidence,
+            audit_info=audit_info,
+            delta_status=delta_status,
+            funnel=_collection_summary(study_dir),
+            helpers={
+                "strength": _plan_strength,
+                "basis": _plan_basis,
+                "source_label": _plan_source_label,
+                "time_span": _plan_time_span,
+            },
+        )
+        return {
+            "status": "written",
+            "path": rendered["path"],
+            "kind": kind,
+            "audit_status": audit_status,
+            "audit_generated_at": audit_info.get("generated_at", ""),
+            "evidence_count": evidence["count"],
+            "product_reasoning": product_reasoning_summary(reasoning),
+            "assets_copied": len(rendered["assets"]),
+            "warnings": rendered["warnings"],
+            "number_stale": rendered["layers"]["number_stale"],
+        }
     titles = {"memo": "决策备忘", "report": "产品推理报告", "mrd": "MRD 市场需求文档", "prd": "PRD 产品需求文档", "brd": "BRD 商业需求文档", "ops": "用户运营交付", "decision": "决策包 Decision Package", "signoff": "干系人签收页", "plan": "业务方案 Business Plan", "analysis": "语料分析 Corpus Analysis"}
     title = titles.get(kind, "交付物")
     if kind == "plan":
@@ -6506,6 +6776,29 @@ def cdp_new_page(cdp_base: str, url: str) -> str:
     return str(ws_url)
 
 
+def cdp_existing_page(cdp_base: str, url: str) -> str:
+    """Attach to an already visible authorized page without navigating it."""
+    _, expected_port = _validate_cdp_base(cdp_base)
+    target = cdp_base.rstrip("/") + "/json/list"
+    with _CDP_OPENER.open(target, timeout=15) as response:
+        payload = _read_limited_json(response)
+    if not isinstance(payload, list):
+        raise RuntimeError("CDP /json/list did not return an array")
+    wanted = url.rstrip("/")
+    for item in payload:
+        if not isinstance(item, dict) or item.get("type") != "page":
+            continue
+        if str(item.get("url") or "").rstrip("/") != wanted:
+            continue
+        ws_url = str(item.get("webSocketDebuggerUrl") or "")
+        _validate_cdp_ws_url(ws_url, expected_port)
+        return ws_url
+    raise RuntimeError(
+        "no already-open visible page exactly matches the capture URL; "
+        "open it in the user browser or omit --attach-existing"
+    )
+
+
 CDP_EXTRACTOR = r"""
 (() => {
   const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
@@ -6688,6 +6981,7 @@ def capture_page(
     *,
     ocr: bool = False,
     wait_seconds: float = 2.0,
+    attach_existing: bool = False,
 ) -> dict[str, Any]:
     """Capture a user-authorized visible page through CDP.
 
@@ -6733,14 +7027,27 @@ def capture_page(
     out_dir.mkdir(parents=True, exist_ok=True)
     client: CDPClient | None = None
     try:
-        ws_url = cdp_new_page(cdp_base, url)
+        ws_url = cdp_existing_page(cdp_base, url) if attach_existing else cdp_new_page(cdp_base, url)
         client = CDPClient(_WebSocket(ws_url))
         client.call("Runtime.enable")
-        time.sleep(max(0.5, wait_seconds))
-        value = client.evaluate(CDP_PAGE_EXTRACTOR)
-        if not isinstance(value, dict):
-            return {"status": "error", "reason": "CDP did not return page content"}
-        final_url = str(value.get("url") or url)
+        # `/json/new` returns before navigation commits. A transient about:blank
+        # is still the requested page loading, not evidence of a scope escape.
+        deadline = time.monotonic() + max(0.5, wait_seconds)
+        while True:
+            time.sleep(min(0.5, max(0.0, deadline - time.monotonic())))
+            value = client.evaluate(CDP_PAGE_EXTRACTOR)
+            if not isinstance(value, dict):
+                return {"status": "error", "reason": "CDP did not return page content"}
+            final_url = str(value.get("url") or url)
+            if final_url != "about:blank" or time.monotonic() >= deadline:
+                break
+        if final_url == "about:blank":
+            return {
+                "status": "blank_render", "platform": platform,
+                "reason": "page navigation did not commit before the capture wait expired; no candidate was written",
+                "final_url": final_url, "terminal_state": "BLOCKED_USER_INPUT",
+                "next_action": "retry once with a longer --wait after confirming the visible page loaded",
+            }
         final_platform = _platform_for_capture_host(
             urllib.parse.urlparse(final_url).hostname or "")
         if final_platform != platform:
@@ -6837,6 +7144,7 @@ def capture_page(
             "final_url": final_url,
             "source_url": final_url,
             "capture_platform": platform,
+            "capture_mode": "attach_existing" if attach_existing else "new_page",
             "title": title,
             "text": text,
             "text_length": len(text),
@@ -7701,6 +8009,84 @@ def _chain_node_states(study_dir: Path) -> dict[str, Any]:
     return {"available": True, "chains": states}
 
 
+def _decision_option_entries(study: dict[str, Any]) -> list[dict[str, str]]:
+    """Normalize declared decision options; direction is explicit data only.
+
+    Supported shapes::
+
+        "options": ["Run a pilot", "Stop"]
+        "option_directions": {"option-A": "go", "option-B": "no_go"}
+        "options": [{"id": "pilot", "label": "Run a pilot", "direction": "go"}]
+
+    A missing direction stays missing. Guessing polarity from words such as
+    "stop" inverts statements like "stop delaying and launch the pilot", so the
+    formal answer never reads direction out of free text.
+    """
+    decision = study.get("decision") if isinstance(study.get("decision"), dict) else {}
+    raw = decision.get("options") or []
+    directions = decision.get("option_directions") \
+        if isinstance(decision.get("option_directions"), dict) else {}
+    entries: list[dict[str, str]] = []
+    for index, item in enumerate(raw):
+        fallback_id = "option-%s" % (chr(ord("A") + index) if index < 26 else index + 1)
+        if isinstance(item, dict):
+            label = str(item.get("label") or item.get("statement") or "").strip()
+            option_id = str(item.get("id") or "").strip() or fallback_id
+            direction = str(item.get("direction")
+                            or directions.get(option_id) or "").strip().lower()
+        else:
+            label = str(item).strip()
+            option_id = fallback_id
+            direction = str(directions.get(option_id) or "").strip().lower()
+        entries.append({
+            "id": option_id,
+            "label": label,
+            "direction": direction if direction in ("go", "no_go") else "",
+        })
+    return entries
+
+
+def _option_direction(entries: list[dict[str, str]],
+                      option_id: str | None) -> tuple[str, str | None]:
+    if not option_id:
+        return "", None
+    for entry in entries:
+        if entry["id"] == option_id:
+            return entry["direction"], entry["label"]
+    return "", None
+
+
+def _select_canonical_chain(chains: list[dict[str, Any]],
+                            records: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, str]:
+    """Pick the chain the current question is decided on; never default to [0].
+
+    One chain is unambiguous. With several, the latest named DecisionRecord
+    names the live chain; without a record the answer asks for an explicit
+    choice instead of projecting whichever chain happens to be first.
+    """
+    if len(chains) == 1:
+        return chains[0], ""
+    if records:
+        latest = max(
+            records,
+            key=lambda item: (_version_int(item.get("version")),
+                              str(item.get("recorded_at") or "")))
+        chain_id = str(latest.get("chain_id") or "")
+        for chain in chains:
+            if str(chain.get("id") or "") == chain_id:
+                return chain, ""
+        return None, "最新 DecisionRecord 指向的链 %r 不在 chains 里" % chain_id
+    return None, ("存在 %d 条推理链，且没有 DecisionRecord 指定当前问题对应哪一条"
+                  % len(chains))
+
+
+def _version_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _canonical_business_decision(study_dir: Path, question: str) -> dict[str, Any]:
     """Project a formal business recommendation from the canonical seven-node chain.
 
@@ -7731,7 +8117,14 @@ def _canonical_business_decision(study_dir: Path, question: str) -> dict[str, An
         base["status"] = "needs_canonical_chain"
         base["next_action"] = "先挂接 demand judgment 与七节点链，再记录负责人 DecisionRecord"
         return base
-    chain = chains[0]
+    chain, selection_problem = _select_canonical_chain(chains, records)
+    if chain is None:
+        base.update(status="needs_chain_selection", reason=selection_problem,
+                    chain_candidates=[str(item.get("id") or "") for item in chains],
+                    next_action=("明确当前问题对应哪条链，再记录负责人 DecisionRecord："
+                                 "askovo decision record %s --chain <CHAIN_ID> --by OWNER"
+                                 % study_dir))
+        return base
     chain_id = str(chain.get("id") or "")
     matching = [item for item in records if str(item.get("chain_id") or "") == chain_id]
     if not matching:
@@ -7739,11 +8132,11 @@ def _canonical_business_decision(study_dir: Path, question: str) -> dict[str, An
             "词汇匹配只作研究辅助；正式业务决定先执行："
             "askovo decision record %s --chain %s --by OWNER" % (study_dir, chain_id))
         return base
-    matching.sort(key=lambda item: int(item.get("version") or 0))
+    matching.sort(key=lambda item: _version_int(item.get("version")))
     decision_record = matching[-1]
     try:
         import decision_brief
-        brief = decision_brief.build(study_dir, question=question)
+        brief = decision_brief.build(study_dir, question=question, chain_id=chain_id)
     except Exception as exc:  # noqa: BLE001 正式投影失败时不能退回词汇 go
         base.update(status="projection_failed", reason="%s: %s" % (type(exc).__name__, exc))
         return base
@@ -7788,31 +8181,14 @@ def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]
         study = {}
     decision = study.get("decision") if isinstance(study.get("decision"), dict) else {}
     question = str(question or decision.get("question") or "").strip()
-    options = [str(item).strip() for item in (decision.get("options") or [])
-               if str(item).strip()]
-    records: list[dict[str, Any]] = []
-    for name in ("02-data/evidence.jsonl",):
-        path = study_dir / name
-        if not path.is_file():
-            continue
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                item = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(item, dict):
-                records.append(item)
-    seen: set[str] = set()
-    unique: list[dict[str, Any]] = []
-    for record in records:
-        key = str(record.get("record_id") or "")
-        if key and key in seen:
-            continue
-        if key:
-            seen.add(key)
-        unique.append(record)
+    option_entries = _decision_option_entries(study)
+    options = [entry["label"] for entry in option_entries if entry["label"]]
+    # One evidence authority: the same qualified store that audit/deliver use.
+    # Reading evidence.jsonl directly let unqualified rows join the lexical
+    # counts and let a corrupt file pass as a smaller corpus (A-09).
+    integrity = evidence_store_integrity(study_dir)
+    store = load_evidence_store(study_dir)
+    unique: list[dict[str, Any]] = list(store["records"])
 
     match_keys = _option_match_keys(options)
     support = [{
@@ -7844,7 +8220,21 @@ def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]
     leading_option: str | None = None
     gaps: list[dict[str, Any]] = []
 
-    if not unique:
+    if not integrity["valid"]:
+        # A corrupt store can hide the record a conclusion depends on. Refuse a
+        # trusted answer instead of quietly answering from fewer rows.
+        answer_status = "invalid_evidence_store"
+        decision_value = lexical_decision = "unanswerable"
+        gaps.append({
+            "gap": ("02-data/evidence.jsonl 有 %d 行无法解析，拒绝给出可信结论；"
+                    "不能把损坏当成语料变少" % len(integrity["problems"])),
+            "next_actions": [
+                "修复或重导证据行（备份原文件后逐行检查 line 字段）",
+                "确认修复后重跑 askovo audit 与 askovo answer",
+            ],
+            "problems": integrity["problems"][:10],
+        })
+    elif not unique:
         gaps.append({"gap": "证据库为空：还没有任何经审核登记的证据",
                      "next_actions": [
                          "粘贴文本：askovo import <study> <file> --source-family paste --evidence-level E1",
@@ -7912,14 +8302,28 @@ def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]
                 "next_actions": [business_decision.get("next_action")
                                  or "完成七节点、审计与负责人 DecisionRecord"],
             })
-    if business_decision.get("kind") == "recommend" \
+    if integrity["valid"] \
+            and business_decision.get("kind") == "recommend" \
             and business_decision.get("status") == "ready" \
             and not business_decision.get("stale"):
-        statement = str(business_decision.get("statement") or "")
-        lowered_statement = statement.lower()
-        no_go = any(marker in lowered_statement or marker in statement
-                    for marker in _STATUS_QUO_MARKERS)
-        decision_value = "no_go" if no_go else "go"
+        # Direction comes from the structured option identity, not from words in
+        # the recommendation text ("停止拖延，立即上线试点" must not read as no_go).
+        direction, direction_label = _option_direction(
+            option_entries, business_decision.get("recommended_option_id"))
+        if direction:
+            decision_value = direction
+        else:
+            decision_value = "continue_research"
+            gaps.append({
+                "gap": ("正式建议指向的选项没有结构化方向：recommended_option_id=%r，"
+                        "option=%r；不做文字关键词推断"
+                        % (business_decision.get("recommended_option_id"),
+                           direction_label)),
+                "next_actions": [
+                    "在 study.json 的 decision.option_directions 为每个选项写 go / no_go，"
+                    "或把 options 改成带 id/label/direction 的对象后重跑 answer",
+                ],
+            })
 
     supporting_levels = sorted({
         ref["evidence_level"]
@@ -7941,6 +8345,15 @@ def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]
         },
         "business_decision": business_decision,
         "support": support,
+        "option_directions": {
+            entry["id"]: entry["direction"]
+            for entry in option_entries if entry["direction"]},
+        "evidence_store": {
+            "valid": integrity["valid"],
+            "qualified_records": len(unique),
+            "problems": integrity["problems"][:10],
+            "note": "答案与 audit/deliver 共用同一合格证据集；损坏行不静默跳过",
+        },
         "evidence_summary": {
             "records": len(unique),
             "by_evidence_level": dict(sorted(level_counts.items())),
@@ -7968,8 +8381,11 @@ def answer_study(study_dir: Path, question: str | None = None) -> dict[str, Any]
         f"> 正式业务决策：`{business_decision.get('kind')}` / `{business_decision.get('status')}`；"
         f"当前建议：`{decision_value}`；批准：**否**。"
         f"依据：{business_decision.get('canonical_ref')}。")
-    if answer_status == "unanswerable":
-        lines.append("> 词汇辅助：**不可回答**——证据库没有可用匹配，缺口如下；不会编造结论。")
+    if answer_status in ("unanswerable", "invalid_evidence_store"):
+        lines.append("> 词汇辅助：**拒绝给出结论**——"
+                     + ("证据文件有无法解析的行，先修复再回答。"
+                        if answer_status == "invalid_evidence_store"
+                        else "证据库没有可用匹配，缺口如下；不会编造结论。"))
     else:
         label = {"supported": "证据支持", "supported_low_n": "低样本支持",
                  "contested": "存在反证", "inconclusive": "并列未决"}[answer_status]

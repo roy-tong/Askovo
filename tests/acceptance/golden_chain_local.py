@@ -11,7 +11,7 @@ end on a local machine:
   handshake with the production WebSocket client and serves a controlled
   "amazon review page"; the screenshot is a locally rendered PNG and the OCR
   is a REAL macOS Vision run over that screenshot (swift ocr_image.swift)
-- human review: `capture accept --by NAME --evidence-level E1`
+- human review: `capture accept --by NAME --observation statement` (the level is derived)
 - conclusion: `analyze` + `answer`; opposite corpora must flip the conclusion;
   no evidence must yield unanswerable + gap list; out-of-scope pages must be
   refused at the capture entrance; a hand-appended capture row must fail audit.
@@ -361,7 +361,7 @@ def main() -> int:
         capture_id = captured.get("capture_id", "")
         listed = run_cli("capture", "list", str(study_b))
         accepted = run_cli("capture", "accept", str(study_b), "--capture", str(capture_id),
-                           "--by", "验收员（本地验收）", "--evidence-level", "E1")
+                           "--by", "验收员（本地验收）", "--observation", "statement")
         analyzed_b = run_cli("analyze", str(study_b), "--question", QUESTION)
         answered_b = run_cli("answer", str(study_b))
         answer_b = json.loads((study_b / "04-findings/research-answer.json").read_text(encoding="utf-8"))

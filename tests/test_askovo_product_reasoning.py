@@ -637,12 +637,14 @@ class ProductReasoningTests(unittest.TestCase):
     def test_decision_package_uses_fresh_audit_not_stale_artifacts(self) -> None:
         (self.target / "02-data/evidence.jsonl").write_text("", encoding="utf-8")
         delivered = run_cli("deliver", str(self.target), "--kind", "decision")
-        self.assertEqual(0, delivered.returncode, delivered.stdout + delivered.stderr)
+        self.assertEqual(1, delivered.returncode, delivered.stdout + delivered.stderr)
         payload = json.loads(delivered.stdout)
-        self.assertEqual("fail", payload["audit_status"])
-        text = (self.target / "06-report/decision-package.md").read_text(encoding="utf-8")
-        self.assertIn("审计未通过", text)
-        self.assertNotIn("产品/商业选择记录", text)
+        self.assertEqual("blocked", payload["status"])
+        self.assertEqual("EVIDENCE_EMPTY", payload["reason_code"])
+        # 证据门阻断时不落正式决策包，不能用旧审计产物冒充新结论
+        self.assertFalse((self.target / "06-report/decision-package.md").exists())
+        gap = (self.target / "06-report/evidence-gap.md").read_text(encoding="utf-8")
+        self.assertIn("不是结论", gap)
 
         signed = run_cli("deliver", str(self.target), "--kind", "signoff")
         self.assertEqual(1, signed.returncode, signed.stdout + signed.stderr)

@@ -33,7 +33,7 @@ askovo --help
 | `instruments <study>` | 生成访谈/观察/任务/感官/价格/Beta/安全工具包 | 0/2 |
 | `import <study> <file>` | 导入 JSONL/CSV/文本为证据 | 0/2 |
 | `codebook <study>` | 生成六类结论的编码本 | 0/2 |
-| `deliver <study>` | 业务方案 plan / 决策包 / MRD / PRD / BRD / 运营 / 岗位 role / 生命周期 lifecycle 等同一主链投影 | 0/1/2 |
+| `deliver <study>` | 业务方案 plan / 决策包 / MRD / PRD / BRD / 运营 / 岗位 role / 生命周期 lifecycle / Web 阅读面 web 等同一主链投影 | 0/1/2 |
 | `report <study>` | 中文研究状态报告（UXR 视角）→ `06-report/research-status.md` | 0/2 |
 | `signals <study>` | 从 evidence.jsonl 计算确定性语料信号 | 0/2 |
 | `lexicon <study>` | 未命名体验模式：词表产出与充分性检查 | 0/1/2 |
@@ -136,7 +136,7 @@ askovo deliver ./study --kind role --role R52 --chain PR02
 askovo deliver ./study --kind lifecycle
 ```
 
-- `list/show` 查询 80 个岗位族的职责、KPI 公式与护栏、SOP 输入/动作/输出/质量门、交付模板、交接和专业边界；`--industry` 加载十类行业上下文。
+- `list/show` 查询 80 个岗位族的职责、KPI 公式与护栏、SOP 输入/动作/输出/质量门、交付模板、交接和专业边界；`--industry` 加载十一类行业上下文，并接受行业别名（如 `ebike`、`电动自行车`）。
 - `recommend` 先识别 `decide/discover/define/design/validate/launch/operate/review` 任务，再按“牵头 → 任务触发 → 能力覆盖 → 当前阶段行业角色”选最小充分团队；`--task`/`--scale` 可覆盖。输出选中岗位、暂缓岗位与原因、真实交接边、输出合同。`--base-domain` 防止行业关键词覆盖 SURE 产品域；AI 可作为硬件行业的能力覆盖层。
 - 输出合同确定主交付物、最多两个支撑产出、格式、篇幅、读者、语气、章节结构、证据呈现、图表、行业优先产出和表达禁忌。软件决策通常 1–3 岗，高风险硬件/医疗验证最多 6 岗。
 - `scaffold` 要求已有主链：空链拒绝、单链自动绑定、多链要求 `--chain`。原子写 `01-sources/role-workbench/`，保存任务/规模/输出合同、目录/行业哈希、角色/SOP/KPI/模板引用、真实 PRxx.node/edge 和项目状态；默认只生成本轮主交付+支撑模板，`--all-templates` 才扩展。不复制岗位定义，不修改主链/判断/证据。已有 workbench 不可用 `--force` 覆盖。KPI baseline/target 均为 null。
@@ -408,7 +408,8 @@ askovo report ./study
 - `prd`：需求研究与分析后的特性、产品范围、非目标和验收，写 `06-report/prd.md`；
 - `brd`：商业分析投影，包含市场、收入、成本、单位经济、指标和业务门，写 `06-report/brd.md`；
 - `ops`：场景×用户分群、痛点/异议和运营回流，写 `06-report/user-ops.md`；
-- `tracker`：从特性/产品验收和商业成功指标生成带 chain/node ID 的跟踪行，写 `06-report/postlaunch-tracker.csv`。
+- `tracker`：从特性/产品验收和商业成功指标生成带 chain/node ID 的跟踪行，写 `06-report/postlaunch-tracker.csv`；
+- `web`：Web 阅读面，写 `06-report/web/index.html`——同一条主链的自包含阅读页：事实/自述/推导/我的判断四类标签、数字与判断形成时间的分层展示、证据墙（原文/来源/引用环节/本地截图/原帖链接）、来源与节点分布图、可复用打法；E0–E5 与资格标记只进页尾方法档案，不新增结论。详见 [Web 阅读面](web-surface.md)。
 
 多链研究：`--kind plan` 先输出跨链比较表与逐链结论，七环节正文只展开优先级最高的一条；`--kind report` 的“产品决策”一节按链生成状态/依据强度/建议/下一步/失败线，没有 `decided` 链时明确标注为待验证建议，不再留空模板。`--kind analysis` 的漏斗支持 `01-sources/collection-summary.json` 的累计口径。
 

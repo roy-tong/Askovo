@@ -1,6 +1,114 @@
 # Changelog
 
 
+## 2.20.0 — 2026-11-20
+
+The 2026-11-19/20 full-scenario end-to-end test: two P0 evidence-trust defects
+fixed, plus the boundary cases from the same run.
+
+### Fixed
+
+- **P0-A zero-corpus studies no longer produce a formal-looking conclusion**:
+  `deliver` refuses to render a validated report when no usable evidence is
+  registered. It writes an evidence-gap note instead, naming which node lacks
+  which evidence class and what would close it. Three distinct errors:
+  `EVIDENCE_EMPTY` (nothing registered), `EVIDENCE_UNQUALIFIED` (records exist
+  but fail eligibility — unusable source, no review, wrong context key) and
+  `EVIDENCE_SOURCE_UNREADABLE` (cited source cannot be read back). A gap note
+  is never labelled as a decision conclusion.
+- **P0-B `evidence_level` is derived, not self-declared**: the grade comes from
+  evidence type, source structure and review history (`IMPORT_LEVEL_CAPS`
+  caps what an import or a user assertion can claim). A user-supplied `E4`/`E5`
+  on a self-report or an unreviewed import stays at its derived ceiling; the
+  derivation basis, method version and review history remain inspectable.
+  Users submit evidence and review opinions; they do not assign grades.
+- **C-07 counter-evidence-first policy rejection is a usable refusal**: a
+  question that the policy refuses on counter-evidence grounds returns the
+  refusal reason, the contradicting evidence and a legal next action, instead
+  of a dead end.
+- **E-08 empty collection window writes a gap note**: a window that returns
+  nothing produces an explicit gap record; it is not silently rendered as a
+  zero-prevalence finding.
+- **X-06 cross-product handoff carries premises only**: the handoff package
+  ships source object, version, scope, key assumptions, counter-evidence,
+  human-review state and evidence references with `shared_registry=false`.
+  Downstream products inherit premises, never Askovo's verdict.
+
+### Tests
+
+- `tests/test_p0_evidence_trust.py` and `tests/test_p0_import_levels.py` cover
+  the refusal paths, the derived-level ceilings and the gap-note content.
+  Full suite: 775 tests pass on Python 3.9–3.12.
+
+## 2.19.0 — 2026-11-19
+
+The 2026-11-18 end-to-end review: one evidence authority, structured decision
+direction, explicit chain choice, visible-page capture and separate owner adoption.
+
+### Added
+
+- **`askovo deliver --kind web` renders a reading surface, not another list**:
+  `06-report/web/index.html` is a self-contained page (inline CSS/SVG, no
+  external scripts, fonts or images, `noindex`) ordered for a business reader —
+  how to read, now vs. when the judgment was formed, conclusions, the seven
+  nodes, an evidence wall, distribution charts, reusable playbook, risks,
+  method archive and boundaries. Every section is the same canonical chain; the
+  renderer never writes `study.json`, judgments or evidence.
+- **Four reading labels over the E0–E5 grades**: records project to
+  事实 / 自述 (from `behavior_kind` first, then the E level; E4+ price intent and
+  attention metrics keep their honest reading), nodes and conclusions to
+  推导 / 我的判断. Grades, `behavior_kind`, `measurement_integrity` and
+  `claim_eligibility` stay in the page's method archive, so the body reads like
+  a business document without losing the audit trail. `plan.md` reuses the same
+  `label_for` for its per-section 「证据类型：事实 N 条 · 自述 N 条」 line.
+- **Numbers and judgments are dated separately**: the page shows 「现在：数字与
+  图表」 next to 「判断形成于」, plus delta version, audit status and a re-run
+  command. When the evidence store is newer than the chain it raises 数字已更新，
+  结论文字尚未重算 instead of presenting old prose as current; `plan.md` carries
+  the matching 时间分层 notice.
+
+Tests: `tests/test_web_surface.py`.
+
+### Fixed
+
+- **`answer` reads the qualified evidence store** (`load_evidence_store` +
+  `is_qualified_evidence`) instead of raw `evidence.jsonl` lines: a registered
+  row without a valid `evidence_level` can no longer join the lexical support
+  counts, and the answer's record count matches audit/deliver.
+- **A corrupt evidence file refuses a trusted answer**: malformed or non-object
+  lines yield `answer_status=invalid_evidence_store`, `decision=unanswerable`
+  and the offending line numbers; a ready DecisionRecord cannot override it.
+- **Formal go/no-go comes from the option identity**: `study.decision` may
+  declare `option_directions` (option id → `go`/`no_go`) or object options with
+  `id`/`label`/`direction`. Free-text polarity scanning is gone, so a statement
+  such as “停止拖延，立即上线试点” no longer flips to `no_go`. A missing
+  direction returns `continue_research` with a gap, never a guess.
+- **Multi-chain studies never default to `chains[0]`**: `answer` and
+  `decision brief` select the chain named by the latest DecisionRecord, or
+  refuse with `needs_chain_selection` and the candidate ids; `brief --chain`
+  names one explicitly.
+- **Capture can attach to the user's exact visible page**: `capture page
+  --attach-existing` selects an already-open URL through loopback CDP without
+  navigating or creating a tab. The normal new-page route still returns its
+  validated websocket, waits for navigation to leave `about:blank`, and records
+  `blank_render` without a candidate if loading does not commit.
+- **Owner adoption is separate from recommendation and delivery**: `decision
+  adopt` requires the current DecisionRecord, accountable owner, exact scope and
+  an observable receipt/source. The append-only adoption receipt is projected in
+  the brief's `decision_lifecycle`; neither a brief nor `decided` implies
+  adoption, implementation, commercial success or causality.
+- **GitHub REST issue exports remain importable**: a REST `comments` integer is
+  preserved as `comments_count` with no invented comment bodies; exports that
+  contain full comment objects retain the reviewed comment whitelist.
+- **The synthetic sample tracks `VERSION` again**: the release bump left
+  `examples/sample-study/study.json` on `2.18.2`, so the CI single-source
+  version assertion failed on every Python version. The sample now reads
+  `2.19.0`, matching `VERSION`, the CLI, the package and the MCP server.
+
+Tests: `tests/test_askovo_answer_semantics.py`,
+`tests/test_decision_adoption.py`, `tests/test_issue_rest_export.py`, and the
+new-page/attach-existing regressions in `tests/test_askovo_cdp.py`.
+
 ## 2.18.2 — 2026-11-18
 
 The 2026-11-09 end-to-end UX walkthrough (12 findings) rebased onto 2.18.1.

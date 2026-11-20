@@ -39,7 +39,10 @@ import decision_brief  # noqa: E402
 import research_delta  # noqa: E402
 import issue_structuring  # noqa: E402
 import capture_review  # noqa: E402
+import capture_plan  # noqa: E402
+import decision_followup  # noqa: E402
 import role_catalog  # noqa: E402
+import evidence_page  # noqa: E402
 
 research_loop.bind_cli(sys.modules[__name__])
 
@@ -2978,6 +2981,7 @@ def command_brief(args: argparse.Namespace) -> int:
             study_dir,
             task_id=str(getattr(args, "task", "") or ""),
             question=str(getattr(args, "question", "") or ""),
+            chain_id=str(getattr(args, "chain", "") or ""),
             output_dir=(Path(str(args.output)).resolve()
                         if str(getattr(args, "output", "") or "").strip() else None),
         )
@@ -2999,6 +3003,53 @@ def command_brief(args: argparse.Namespace) -> int:
         print(json.dumps({key: value for key, value in document.items() if key != "markdown"},
                          ensure_ascii=False, indent=2))
     return 1 if document.get("artifact_status") == "stale" else 0
+
+
+def command_page(args: argparse.Namespace) -> int:
+    """A-05 single-judgment evidence page: an L0 read-only projection (PRD §3 A-05).
+
+    Exit 1 means the page is `failed`, `stale` or `empty`: a source is
+    unreadable, the reference is broken, the inputs drifted, or no chain is
+    selected (several candidates without a DecisionRecord). Exit 2 means the
+    write was refused (target exists) or the build raised.
+    """
+    study_dir = Path(str(getattr(args, "study_dir", "") or "")).resolve()
+    try:
+        page = evidence_page.build_evidence_page(
+            study_dir,
+            str(getattr(args, "chain", "") or ""),
+            str(getattr(args, "node", "") or ""),
+        )
+        html_path = ""
+        target = str(getattr(args, "html", "") or "").strip()
+        if target:
+            out = Path(target).resolve()
+            if out.exists():
+                print(json.dumps({
+                    "status": "refused",
+                    "reason_code": "INPUT_REQUIRED",
+                    "detail": "OUTPUT_EXISTS",
+                    "reason": "输出文件已存在；页面不覆盖既有文件，请换一个路径。",
+                    "path": str(out),
+                }, ensure_ascii=False, indent=2))
+                return 2
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(evidence_page.render_html(page), encoding="utf-8")
+            html_path = str(out)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(json.dumps({"status": "error", "reason": "%s: %s" % (type(exc).__name__, exc)},
+                         ensure_ascii=False, indent=2))
+        return 2
+    if bool(getattr(args, "json", False)):
+        payload = dict(page)
+        payload["html_path"] = html_path
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(evidence_page.render_summary(page))
+        if html_path:
+            print("\nHTML：%s" % html_path)
+        print("\n命令仅供人工复制执行；本页不执行任何写操作。")
+    return 1 if page.get("state") in ("failed", "stale", "empty") else 0
 
 
 def command_issues(args: argparse.Namespace) -> int:
@@ -3127,6 +3178,16 @@ def command_decision(args: argparse.Namespace) -> int:
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
+        if args.action == "adopt":
+            result = decision_review.adopt_decision(
+                study_dir,
+                record_id=args.record_id or "",
+                by=args.by,
+                scope=args.scope or "",
+                adoption_evidence=args.adoption_evidence or [],
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
         if args.action == "list":
             result = decision_review.list_decision_records(study_dir, chain_id=args.chain or "")
             print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -3141,6 +3202,68 @@ def command_decision(args: argparse.Namespace) -> int:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
             print(result["markdown"])
+        return 0
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(json.dumps({"status": "error", "reason": "%s: %s" % (type(exc).__name__, exc)},
+                         ensure_ascii=False, indent=2))
+        return 2
+
+
+def command_followup(args: argparse.Namespace) -> int:
+    """Append and project decision follow-ups; never writes canonical reasoning."""
+    study_dir = Path(args.study_dir).resolve()
+    try:
+        if args.action == "add":
+            result = decision_followup.append_followup(
+                study_dir,
+                decision_id=args.decision,
+                choice_state=args.choice,
+                owner_ref=args.owner,
+                source_ref=args.source,
+                delivery_state=args.delivery_state or "unknown",
+                delivery_refs=args.delivery_ref or [],
+                outcome_state=args.outcome_state or "unknown",
+                outcome_events=[json.loads(item) for item in args.event or []],
+                observation_window=(
+                    {"start": args.window_start, "end": args.window_end}
+                    if args.window_start or args.window_end else None
+                ),
+                attribution=args.attribution or "",
+                causality_state=args.causality or "not_claimed",
+                reviewer=args.reviewer or "",
+                reviewed_at=args.reviewed_at or "",
+                note=args.note or "",
+                notification_authorized=bool(args.notification_authorized),
+                notification_ref=args.notification_ref or "",
+                at=args.at or "",
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        if args.action == "import":
+            payload = json.loads(Path(args.events).read_text(encoding="utf-8"))
+            events = payload.get("events") if isinstance(payload, dict) else payload
+            result = decision_followup.import_outcome_events(
+                study_dir, decision_id=args.decision, events=events or [], at=args.at or "")
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        if args.action == "receipt":
+            if getattr(args, "write", False):
+                result = decision_followup.write_receipt(
+                    study_dir, args.decision, out_dir=args.out_dir or None, at=args.at or "")
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+                return 0
+            receipt = decision_followup.build_receipt(
+                study_dir, args.decision, at=args.at or "")
+            if args.html:
+                print(decision_followup.render_receipt_html(receipt))
+                return 0
+            if args.json:
+                print(json.dumps(receipt, ensure_ascii=False, indent=2))
+                return 0
+            print(decision_followup.render_receipt_md(receipt))
+            return 0
+        result = decision_followup.list_followups(study_dir, decision_id=args.decision or "")
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(json.dumps({"status": "error", "reason": "%s: %s" % (type(exc).__name__, exc)},
@@ -3174,8 +3297,145 @@ def command_deliver(args: argparse.Namespace) -> int:
     return 1 if result.get("status") == "blocked" else 0
 
 
+def _split_choices(value: Any) -> list:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value]
+    return [item.strip() for item in str(value).split(",") if item.strip()]
+
+
+def command_capture_plan(args: argparse.Namespace) -> int:
+    action = str(getattr(args, "plan_action", "") or "")
+    try:
+        if action == "build":
+            plan = capture_plan.build_plan(
+                Path(args.study_dir), args.chain,
+                plan_version=args.version or "1",
+                objective=args.objective or "",
+                research_question=args.research_question or "",
+                methods=_split_choices(args.methods),
+                target_participants={
+                    "segment": args.participant_segment or "",
+                    "criteria": args.participant_criteria or "",
+                    "count": args.participant_count,
+                },
+                consent={
+                    "boundary": args.consent_boundary or "",
+                    "recording": args.consent_recording or "",
+                    "withdrawal": args.consent_withdrawal or "",
+                    "data_handling": args.consent_data_handling or "",
+                },
+                stop_conditions=list(args.stop or []),
+                triggers=list(args.trigger or []),
+                window={"start": args.window_start or "",
+                        "end": args.window_end or ""},
+                at=args.at)
+            out = Path(args.out) if args.out else (
+                Path(args.study_dir) / capture_plan.PLANS_SUBDIR
+                / plan["plan_id"])
+            stored = capture_plan.store_plan(plan, out)
+            files = capture_plan.write_plan(stored["plan"], out)
+            print(json.dumps({
+                "status": "built" if stored["status"] == "created" else "unchanged",
+                "plan_id": plan["plan_id"],
+                "plan_version": plan["plan_version"],
+                "plan_hash": stored["plan_hash"],
+                "state": stored["plan"]["state"],
+                "path": stored["path"],
+                "files": {key: str(value) for key, value in files.items()},
+                "effects": plan["effects"],
+            }, ensure_ascii=False, indent=2))
+            return 0
+
+        plan_path = Path(args.plan)
+        plan = capture_plan.load_plan(plan_path)
+        if action == "show":
+            print(json.dumps({"status": "ok", "plan": plan},
+                             ensure_ascii=False, indent=2))
+            return 0
+        if action == "render":
+            out = Path(args.out) if args.out else plan_path.parent
+            files = capture_plan.write_plan(plan, out)
+            print(json.dumps({
+                "status": "ok", "path": str(plan_path),
+                "files": {key: str(value) for key, value in files.items()},
+            }, ensure_ascii=False, indent=2))
+            return 0
+        if action == "submit":
+            updated = capture_plan.submit_for_review(
+                plan, actor=args.actor, at=args.at, note=args.note or "")
+        elif action == "review":
+            updated = capture_plan.record_review(
+                plan, reviewer=args.reviewer, decision=args.decision,
+                at=args.at, note=args.note or "", ref=args.ref or "")
+        elif action == "authorize":
+            updated = capture_plan.authorize(
+                plan, authorized_by=args.by, authorized_at=args.at,
+                authorization_ref=args.ref or "")
+        elif action == "start":
+            updated = capture_plan.start_collection(
+                plan, actor=args.actor, at=args.at)
+        elif action == "import":
+            payload = capture_plan.load_json(Path(args.candidates))
+            if isinstance(payload, dict):
+                payload = payload.get("candidates")
+            updated = capture_plan.import_candidates(
+                plan, payload, at=args.at)
+        elif action == "withdraw":
+            updated = capture_plan.withdraw_authorization(
+                plan, actor=args.actor, reason=args.reason, at=args.at)
+        elif action == "close":
+            updated = capture_plan.close_plan(
+                plan, actor=args.actor, at=args.at, note=args.note or "")
+        elif action == "counter":
+            updated = capture_plan.record_counter_evidence(
+                plan,
+                {"ref": args.ref or "", "summary": args.summary,
+                 "source_ref": args.source_ref or "",
+                 "observed_at": args.observed_at or ""},
+                at=args.at, note=args.note or "")
+        else:
+            raise capture_plan.CapturePlanError(
+                f"unknown capture plan action {action!r}", "ACTION_UNKNOWN")
+        capture_plan.save_plan(updated, plan_path)
+        result = {
+            "status": "ok",
+            "action": action,
+            "plan_id": updated.get("plan_id"),
+            "plan_version": updated.get("plan_version"),
+            "plan_hash": capture_plan.plan_hash(updated),
+            "state": updated.get("state"),
+            "path": str(plan_path),
+        }
+        if action == "import":
+            last = updated.get("last_import") or {}
+            result["added"] = last.get("added", 0)
+            result["duplicates"] = last.get("duplicates", 0)
+        if action == "authorize":
+            result["authorization"] = updated["authorization"]["status"]
+        if action == "review":
+            result["review"] = (updated.get("review") or [{}])[-1]
+    except capture_plan.CapturePlanError as exc:
+        print(json.dumps({"status": "error", "reason": str(exc),
+                          "reason_code": exc.reason_code,
+                          "suggestion": exc.suggestion,
+                          "missing": getattr(exc, "missing", [])},
+                         ensure_ascii=False, indent=2))
+        return 1
+    except (OSError, ValueError, RuntimeError, KeyError) as exc:
+        print(json.dumps({"status": "error",
+                          "reason": f"{type(exc).__name__}: {exc}"[:500]},
+                         ensure_ascii=False, indent=2))
+        return 1
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def command_capture(args: argparse.Namespace) -> int:
     action = str(getattr(args, "capture_action", "") or "page")
+    if action == "plan":
+        return command_capture_plan(args)
     if action == "page":
         # P0.4 unified governance: capture goes through the same design gate as
         # collect; a second, laxer collection entrance is not allowed.
@@ -3188,7 +3448,8 @@ def command_capture(args: argparse.Namespace) -> int:
         try:
             result = sure_engine.capture_page(
                 Path(args.study_dir), args.url, cdp_base, bool(args.ack_terms),
-                ocr=bool(args.ocr), wait_seconds=float(args.wait))
+                ocr=bool(args.ocr), wait_seconds=float(args.wait),
+                attach_existing=bool(getattr(args, "attach_existing", False)))
         except (OSError, ValueError, RuntimeError, ConnectionError) as exc:
             result = {"status": "error", "reason": str(exc)[:500]}
         print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -3205,7 +3466,10 @@ def command_capture(args: argparse.Namespace) -> int:
             result = capture_review.accept(
                 Path(args.study_dir), args.capture, by=args.by,
                 evidence_level=args.evidence_level, corpus_role=args.corpus_role,
-                context_key=args.context_key, from_text=args.from_text)
+                context_key=args.context_key, from_text=args.from_text,
+                concept_test=(Path(args.concept_test)
+                              if getattr(args, "concept_test", "") else None),
+                observation=getattr(args, "observation", ""))
         elif action == "reject":
             result = capture_review.reject(
                 Path(args.study_dir), args.capture, by=args.by, reason=args.reason)
@@ -3782,6 +4046,89 @@ def command_check(args: argparse.Namespace) -> int:
         return 0 if audit.status == "pass" else 1
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0 if audit.status == "pass" else 1
+
+
+FAMILY_METRIC_CONTRACT = {
+    "growovo_metric": "developer_activation_rate",
+    "growovo_version": "1.0.0",
+    "verovo_criteria": "buyer-acceptance-v1",
+}
+
+
+def _metric_map_payload(study_dir: Path, chain_id: str) -> dict[str, Any]:
+    reasoning_path = study_dir / "04-findings" / "product-reasoning.json"
+    if not reasoning_path.is_file():
+        raise FileNotFoundError(
+            f"缺少 {reasoning_path}：先用 `askovo chain {study_dir}` 写入七节点主链，再生成指标映射"
+        )
+    reasoning = json.loads(reasoning_path.read_text(encoding="utf-8"))
+    chains = reasoning.get("chains") if isinstance(reasoning, dict) else None
+    if not isinstance(chains, list) or not chains:
+        raise ValueError("product-reasoning.json 没有 chains；先用 `askovo chain` 建立主链")
+    chain: dict[str, Any] | None = None
+    if chain_id:
+        for item in chains:
+            if isinstance(item, dict) and str(item.get("id")) == chain_id:
+                chain = item
+                break
+        if chain is None:
+            available = ", ".join(str(item.get("id")) for item in chains if isinstance(item, dict))
+            raise ValueError(f"找不到链 {chain_id!r}；已有：{available}")
+    else:
+        chain = chains[0] if isinstance(chains[0], dict) else None
+        if chain is None:
+            raise ValueError("product-reasoning.json 的 chains[0] 不是对象")
+    nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
+    need = nodes.get("need") if isinstance(nodes.get("need"), dict) else {}
+    measure = str(need.get("measure") or "").strip()
+    metric_id = str(need.get("metric_id") or "").strip()
+    payload: dict[str, Any] = {
+        "status": "mapped_with_gap",
+        "chain_id": chain.get("id", ""),
+        "askovo_metric_text": measure,
+        "askovo_has_metric_id": bool(metric_id),
+        "askovo_metric_id": metric_id or None,
+        **FAMILY_METRIC_CONTRACT,
+        "shared_registry": False,
+        "consistent": False,
+        "gap": "Askovo 只产出自由文本测量口径，无 metric id；三产品无共享注册表",
+        "convergence_plan": [
+            "统一 metric id 注册表",
+            "把 need.measure 绑定到 metric id",
+            "重跑映射使 consistent=true",
+        ],
+    }
+    if not measure:
+        payload["status"] = "mapped_with_gap"
+        payload["gap"] = "need.measure 为空（主链需求节点未填写测量口径）；" + payload["gap"]
+    return payload
+
+
+def command_metric(args: argparse.Namespace) -> int:
+    study_dir = Path(args.study_dir).resolve()
+    try:
+        payload = _metric_map_payload(study_dir, str(getattr(args, "chain", "") or ""))
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "reason_code": "INPUT_REQUIRED",
+                    "message": str(exc),
+                },
+                ensure_ascii=False,
+                indent=1,
+            )
+        )
+        return 2
+    out = Path(args.out) if getattr(args, "out", "") else study_dir / "04-findings" / "metric-map.json"
+    if not out.is_absolute():
+        out = study_dir / out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    payload["metric_map_file"] = str(out)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
 
 
 def command_connectors(args: argparse.Namespace) -> int:
@@ -5509,6 +5856,8 @@ def build_parser() -> argparse.ArgumentParser:
     capture_page_parser.add_argument("--ack-terms", action="store_true", help="acknowledge platform terms and your authorization to view this page")
     capture_page_parser.add_argument("--ocr", action="store_true", help="run local macOS Vision OCR on the screenshot")
     capture_page_parser.add_argument("--wait", type=float, default=2.0, help="seconds to wait before capture")
+    capture_page_parser.add_argument("--attach-existing", action="store_true",
+                                     help="attach to an exact already-open visible page; do not navigate or create a tab")
     capture_list_parser = capture_sub.add_parser("list", help="list capture candidates and their review status")
     capture_list_parser.add_argument("study_dir")
     capture_accept_parser = capture_sub.add_parser(
@@ -5516,8 +5865,16 @@ def build_parser() -> argparse.ArgumentParser:
     capture_accept_parser.add_argument("study_dir")
     capture_accept_parser.add_argument("--capture", required=True, help="capture id from `capture list`")
     capture_accept_parser.add_argument("--by", default="", help="named human reviewer")
-    capture_accept_parser.add_argument("--evidence-level", required=True,
-                                       help="explicit reviewer choice: E0/E1/E2; OCR never assigns a level")
+    capture_accept_parser.add_argument("--evidence-level", default="",
+                                       help="requested cap only: E0/E1/E2, or E3 with --concept-test; "
+                                            "the registered level is derived from the source "
+                                            "structure and the review (a higher request is downgraded)")
+    capture_accept_parser.add_argument("--observation", default="", choices=("", "context", "statement", "practice"),
+                                       help="what the reviewer actually observed: context/statement/"
+                                            "practice; E2 requires practice")
+    capture_accept_parser.add_argument("--concept-test", default="",
+                                       help="JSON record enabling E3: stimulus/sample_size/"
+                                            "response_metric/result")
     capture_accept_parser.add_argument("--corpus-role", default="open_scene")
     capture_accept_parser.add_argument("--context-key", default="")
     capture_accept_parser.add_argument("--from", dest="from_text", default="page", choices=("page", "ocr"),
@@ -5528,6 +5885,105 @@ def build_parser() -> argparse.ArgumentParser:
     capture_reject_parser.add_argument("--capture", required=True)
     capture_reject_parser.add_argument("--by", default="", help="named human reviewer")
     capture_reject_parser.add_argument("--reason", default="", help="why this page is not evidence")
+    plan_parser = capture_sub.add_parser(
+        "plan", help="build, authorize and track a bounded evidence capture plan; "
+                     "a plan is never evidence and candidates still need named review")
+    plan_sub = plan_parser.add_subparsers(dest="plan_action", required=True)
+
+    plan_build_parser = plan_sub.add_parser(
+        "build", help="freeze a draft plan from one chain's next_test")
+    plan_build_parser.add_argument("study_dir")
+    plan_build_parser.add_argument("--chain", required=True)
+    plan_build_parser.add_argument("--out", default="", help="output dir (default 04-findings/capture-plans/<plan_id>)")
+    plan_build_parser.add_argument("--version", default="1")
+    plan_build_parser.add_argument("--objective", default="")
+    plan_build_parser.add_argument("--research-question", default="")
+    plan_build_parser.add_argument("--methods", default="", help="comma list: interview,survey,diary,task_observation")
+    plan_build_parser.add_argument("--participant-segment", default="")
+    plan_build_parser.add_argument("--participant-criteria", default="")
+    plan_build_parser.add_argument("--participant-count", type=int, default=None)
+    plan_build_parser.add_argument("--consent-boundary", default="")
+    plan_build_parser.add_argument("--consent-recording", default="")
+    plan_build_parser.add_argument("--consent-withdrawal", default="")
+    plan_build_parser.add_argument("--consent-data-handling", default="")
+    plan_build_parser.add_argument("--stop", action="append", default=[], help="stop condition (repeatable)")
+    plan_build_parser.add_argument("--trigger", action="append", default=[], help="re-authorization trigger (repeatable)")
+    plan_build_parser.add_argument("--window-start", default="")
+    plan_build_parser.add_argument("--window-end", default="")
+    plan_build_parser.add_argument("--at", default="")
+    plan_build_parser.set_defaults(func=command_capture_plan)
+
+    plan_submit_parser = plan_sub.add_parser("submit", help="submit a draft plan for named review")
+    plan_submit_parser.add_argument("plan")
+    plan_submit_parser.add_argument("--actor", required=True)
+    plan_submit_parser.add_argument("--note", default="")
+    plan_submit_parser.add_argument("--at", default="")
+    plan_submit_parser.set_defaults(func=command_capture_plan)
+
+    plan_review_parser = plan_sub.add_parser("review", help="record one named human review decision")
+    plan_review_parser.add_argument("plan")
+    plan_review_parser.add_argument("--reviewer", required=True)
+    plan_review_parser.add_argument("--decision", required=True, choices=capture_plan.REVIEW_DECISIONS)
+    plan_review_parser.add_argument("--note", default="")
+    plan_review_parser.add_argument("--ref", default="")
+    plan_review_parser.add_argument("--at", default="")
+    plan_review_parser.set_defaults(func=command_capture_plan)
+
+    plan_authorize_parser = plan_sub.add_parser(
+        "authorize", help="authorize a reviewed plan; missing stop conditions or consent block it")
+    plan_authorize_parser.add_argument("plan")
+    plan_authorize_parser.add_argument("--by", required=True)
+    plan_authorize_parser.add_argument("--ref", default="")
+    plan_authorize_parser.add_argument("--at", default="")
+    plan_authorize_parser.set_defaults(func=command_capture_plan)
+
+    plan_start_parser = plan_sub.add_parser("start", help="mark an authorized plan as collecting")
+    plan_start_parser.add_argument("plan")
+    plan_start_parser.add_argument("--actor", required=True)
+    plan_start_parser.add_argument("--at", default="")
+    plan_start_parser.set_defaults(func=command_capture_plan)
+
+    plan_import_parser = plan_sub.add_parser(
+        "import", help="import notes as candidates (evidence_level stays null)")
+    plan_import_parser.add_argument("plan")
+    plan_import_parser.add_argument("--candidates", required=True, help="JSON array or {candidates: [...]}")
+    plan_import_parser.add_argument("--at", default="")
+    plan_import_parser.set_defaults(func=command_capture_plan)
+
+    plan_withdraw_parser = plan_sub.add_parser("withdraw", help="withdraw authorization; candidates become unusable")
+    plan_withdraw_parser.add_argument("plan")
+    plan_withdraw_parser.add_argument("--actor", required=True)
+    plan_withdraw_parser.add_argument("--reason", required=True)
+    plan_withdraw_parser.add_argument("--at", default="")
+    plan_withdraw_parser.set_defaults(func=command_capture_plan)
+
+    plan_close_parser = plan_sub.add_parser("close", help="close a plan; no further imports")
+    plan_close_parser.add_argument("plan")
+    plan_close_parser.add_argument("--actor", required=True)
+    plan_close_parser.add_argument("--note", default="")
+    plan_close_parser.add_argument("--at", default="")
+    plan_close_parser.set_defaults(func=command_capture_plan)
+
+    plan_counter_parser = plan_sub.add_parser(
+        "counter", help="append counter evidence; the frozen source snapshot is never rewritten")
+    plan_counter_parser.add_argument("plan")
+    plan_counter_parser.add_argument("--summary", required=True)
+    plan_counter_parser.add_argument("--ref", default="")
+    plan_counter_parser.add_argument("--source-ref", default="")
+    plan_counter_parser.add_argument("--observed-at", default="")
+    plan_counter_parser.add_argument("--note", default="")
+    plan_counter_parser.add_argument("--at", default="")
+    plan_counter_parser.set_defaults(func=command_capture_plan)
+
+    plan_render_parser = plan_sub.add_parser("render", help="re-render the plan documents")
+    plan_render_parser.add_argument("plan")
+    plan_render_parser.add_argument("--out", default="")
+    plan_render_parser.set_defaults(func=command_capture_plan)
+
+    plan_show_parser = plan_sub.add_parser("show", help="print the stored plan JSON")
+    plan_show_parser.add_argument("plan")
+    plan_show_parser.set_defaults(func=command_capture_plan)
+
     capture_parser.set_defaults(func=command_capture)
 
     research_parser = subparsers.add_parser(
@@ -5671,9 +6127,28 @@ def build_parser() -> argparse.ArgumentParser:
                               help="output format (default json; both are written to 06-report/)")
     brief_parser.add_argument("--task", default="", help="optional decide task id to bind")
     brief_parser.add_argument("--question", default="", help="override the decision question")
+    brief_parser.add_argument("--chain", default="",
+                              help="chain id to project when the study has several chains")
     brief_parser.add_argument("--output", default="",
                               help="output directory (default: <study>/06-report)")
     brief_parser.set_defaults(func=command_brief)
+
+    page_parser = subparsers.add_parser(
+        "page",
+        help="single-judgment evidence page: an L0 read-only projection of one chain node "
+             "(supporting/counter evidence, reasoning edges, gaps, falsification, review signals)",
+    )
+    page_parser.add_argument("study_dir")
+    page_parser.add_argument("--chain", default="",
+                             help="chain id to project when the study has several chains")
+    page_parser.add_argument("--node", default="",
+                             help="node id (scene/user/pain/need/feature/product/business); "
+                                  "default: scene")
+    page_parser.add_argument("--html", default="",
+                             help="write a self-contained HTML page here (refuses to overwrite)")
+    page_parser.add_argument("--json", action="store_true",
+                             help="print the full projection as JSON")
+    page_parser.set_defaults(func=command_page)
 
     issues_parser = subparsers.add_parser(
         "issues",
@@ -5772,6 +6247,16 @@ def build_parser() -> argparse.ArgumentParser:
     chain_parser.add_argument("study_dir")
     chain_parser.set_defaults(func=sure_engine.cli_chain)
 
+    metric_parser = subparsers.add_parser(
+        "metric", help="map the chain's need.measure to the ovo family metric contract (Growovo gauge + Verovo criteria)"
+    )
+    metric_sub = metric_parser.add_subparsers(dest="metric_action", required=True)
+    metric_map = metric_sub.add_parser("map", help="write metric-map.json from the canonical chain")
+    metric_map.add_argument("study_dir")
+    metric_map.add_argument("--chain", default="", help="chain id; defaults to the first chain")
+    metric_map.add_argument("--out", default="", help="output path; defaults to STUDY/04-findings/metric-map.json")
+    metric_map.set_defaults(func=command_metric)
+
     economics_parser = subparsers.add_parser(
         "economics",
         help="project the business node's unit economics (arithmetic projection; null means unknown, never zero)",
@@ -5790,14 +6275,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     decision_parser = subparsers.add_parser(
         "decision",
-        help="record, list and replay versioned DecisionRecords inside product-reasoning.json",
+        help="record, adopt, list and replay decisions; adoption is a separate owner receipt",
     )
-    decision_parser.add_argument("action", choices=("record", "list", "replay"))
+    decision_parser.add_argument("action", choices=("record", "adopt", "list", "replay"))
     decision_parser.add_argument("study_dir")
     decision_parser.add_argument("--chain", "--chain-id", dest="chain", default="", help="existing chain id, required for record")
-    decision_parser.add_argument("--record-id", default="", help="replay one DecisionRecord id")
+    decision_parser.add_argument("--record-id", default="", help="replay/adopt one DecisionRecord id")
     decision_parser.add_argument("--version", type=int, help="replay a specific version")
-    decision_parser.add_argument("--by", "--decision-maker", dest="by", default="", help="record: named decision-maker")
+    decision_parser.add_argument("--by", "--decision-maker", dest="by", default="", help="record: decision-maker; adopt: accountable owner")
+    decision_parser.add_argument("--scope", default="", help="adopt: exact scope the owner adopted")
+    decision_parser.add_argument("--adoption-evidence", action="append", default=[],
+                                 help="adopt: observable receipt/source; repeatable, never inferred from a brief")
     decision_parser.add_argument("--decision", default="", help="record: chosen action; defaults to the chain gate")
     decision_parser.add_argument("--hypothesis", default="", help="record: declared study hypothesis id")
     decision_parser.add_argument("--observation", action="append", default=[],
@@ -5819,11 +6307,53 @@ def build_parser() -> argparse.ArgumentParser:
     decision_parser.add_argument("--json", action="store_true", help="replay JSON instead of readable Markdown")
     decision_parser.set_defaults(func=command_decision)
 
+    followup_parser = subparsers.add_parser(
+        "followup",
+        help="append decision follow-ups (choice/delivery/outcome) and read the receipt projection",
+    )
+    followup_parser.add_argument("action", choices=("add", "import", "receipt", "list"))
+    followup_parser.add_argument("study_dir")
+    followup_parser.add_argument("--decision", default="", help="existing DecisionRecord id, e.g. DR-PR01-001")
+    followup_parser.add_argument("--choice", choices=decision_followup.CHOICE_STATES, default="",
+                                 help="add: accepted/rejected/deferred")
+    followup_parser.add_argument("--owner", default="", help="add: person accountable for following up")
+    followup_parser.add_argument("--source", default="", help="add: receipt or note this follow-up comes from")
+    followup_parser.add_argument("--delivery-state", choices=decision_followup.DELIVERY_STATES, default="unknown",
+                                 help="add: delivery is a separate axis; shipped needs a reference")
+    followup_parser.add_argument("--delivery-ref", action="append", default=[],
+                                 help="add: local receipt/path; repeatable. External URLs stay unverified")
+    followup_parser.add_argument("--outcome-state", choices=decision_followup.OUTCOME_STATES, default="unknown",
+                                 help="add: observed requires at least one complete event")
+    followup_parser.add_argument("--event", action="append", default=[],
+                                 help="add: observed outcome event as JSON; repeatable")
+    followup_parser.add_argument("--window-start", default="", help="add: observation window start (ISO time)")
+    followup_parser.add_argument("--window-end", default="", help="add: observation window end (ISO time)")
+    followup_parser.add_argument("--attribution", default="",
+                                 help="add: attribution basis; never turns observation into causality")
+    followup_parser.add_argument("--causality", choices=decision_followup.CAUSALITY_STATES, default="not_claimed")
+    followup_parser.add_argument("--reviewer", default="")
+    followup_parser.add_argument("--reviewed-at", default="")
+    followup_parser.add_argument("--note", default="", help="add: reason; required for rejected/deferred")
+    followup_parser.add_argument("--notification-authorized", action="store_true",
+                                 help="add: record a local authorization only; this CLI has no outbound channel")
+    followup_parser.add_argument("--notification-ref", default="",
+                                 help="add: authorization reference; required when authorized")
+    followup_parser.add_argument("--events", default="",
+                                 help='import: JSON file with a list or {"events": [...]}')
+    followup_parser.add_argument("--markdown", action="store_true", help="receipt: readable Markdown (default)")
+    followup_parser.add_argument("--json", action="store_true", help="receipt: receipt JSON")
+    followup_parser.add_argument("--html", action="store_true", help="receipt: self-contained HTML")
+    followup_parser.add_argument("--write", action="store_true",
+                                 help="receipt: write receipt.json/md/html under 06-report")
+    followup_parser.add_argument("--out-dir", default="", help="receipt: override the receipt output directory")
+    followup_parser.add_argument("--at", default="", help="deterministic timestamp for tests/replays")
+    followup_parser.set_defaults(func=command_followup)
+
     deliver_parser = subparsers.add_parser(
         "deliver", help="assemble the business plan, decision package, MRD, PRD, BRD, memo and tracker deliverables"
     )
     deliver_parser.add_argument("study_dir")
-    deliver_parser.add_argument("--kind", choices=("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis", "role", "lifecycle"), default="memo")
+    deliver_parser.add_argument("--kind", choices=("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis", "role", "lifecycle", "web"), default="memo")
     deliver_parser.add_argument("--role", help="kind=role: role id/name whose deliverable is projected from the canonical chain")
     deliver_parser.add_argument("--deliverable", help="kind=role: deliverable id/name; defaults to the role's first")
     deliver_parser.add_argument("--industry", help="kind=role: override the study industry context")
@@ -5888,7 +6418,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     roles_parser = subparsers.add_parser(
         "roles",
-        help="80 role families: responsibilities, KPI definitions, SOPs, handoffs, industry contexts and deliverable templates",
+        help="80 role families: responsibilities, KPI definitions, SOPs, handoffs, 11 industry contexts and deliverable templates",
     )
     roles_sub = roles_parser.add_subparsers(dest="action", required=True)
     roles_list = roles_sub.add_parser("list", help="list/search roles and show lifecycle/industry metadata")
@@ -5899,7 +6429,7 @@ def build_parser() -> argparse.ArgumentParser:
     roles_list.set_defaults(func=role_catalog.command_roles)
     roles_show = roles_sub.add_parser("show", help="show one role card with full SOP/KPI/deliverable definitions")
     roles_show.add_argument("role", help="R09, 09, a role name or a common alias")
-    roles_show.add_argument("--industry", help="apply one of the 10 industry context overlays")
+    roles_show.add_argument("--industry", help="apply one of the 11 industry context overlays")
     roles_show.add_argument("--json", action="store_true")
     roles_show.set_defaults(func=role_catalog.command_roles)
     roles_recommend = roles_sub.add_parser("recommend", help="assemble a role team from goal, industry and study stage")
@@ -6005,7 +6535,7 @@ CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "explore",
     "external-research", "do", "domains",
     "methods", "catalog", "platforms", "capture", "collect", "research", "loop", "analyze", "answer", "instruments", "import", "queue",
-    "codebook", "chain", "economics", "psm", "decision", "decide", "issues", "brief", "delta", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
+    "codebook", "chain", "metric", "economics", "psm", "decision", "followup", "decide", "issues", "brief", "delta", "page", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }
 

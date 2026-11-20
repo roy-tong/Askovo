@@ -309,6 +309,26 @@ class CollectionAndAnalysisTests(unittest.TestCase):
         self.assertEqual(3, analysis["by_platform"]["reddit"])
         self.assertTrue(analysis["question_matches"])
 
+        # P0-A：只有采集库存、没有已登记证据时，正式交付必须被阻断
+        blocked = run_cli("deliver", str(self.target), "--kind", "memo")
+        self.assertEqual(1, blocked.returncode, blocked.stdout)
+        blocked_payload = json.loads(blocked.stdout)
+        self.assertEqual("blocked", blocked_payload["status"])
+        self.assertEqual("EVIDENCE_EMPTY", blocked_payload["reason_code"])
+        gap = (self.target / "06-report/evidence-gap.md").read_text(encoding="utf-8")
+        self.assertIn("不是结论", gap)
+        self.assertFalse((self.target / "06-report/memo.md").exists())
+
+        # 登记一条人工核级证据后才允许正式交付
+        with (self.target / "02-data/evidence.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({
+                "record_id": "ev-manual-1",
+                "evidence_level": "E2",
+                "source_family": "interview",
+                "source_ref": "manual-interview-01",
+                "context_key": "night-alert",
+            }) + "\n")
+
         delivered = run_cli("deliver", str(self.target), "--kind", "memo")
         self.assertEqual(0, delivered.returncode, delivered.stderr)
         memo = (self.target / "06-report/memo.md").read_text(encoding="utf-8")

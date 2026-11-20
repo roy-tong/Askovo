@@ -562,5 +562,51 @@ class BriefDecideIntegrationTests(BriefHelpers, unittest.TestCase):
         self.assertIn("product-reasoning.json", json.dumps(document["canonical_refs"]))
 
 
+class BriefChainSelectionTests(BriefHelpers, unittest.TestCase):
+    """A-04: several candidate chains follow the decision, never chains[0]."""
+
+    def _add_second_chain(self, *, records: bool) -> None:
+        def add(payload: dict) -> None:
+            second = json.loads(json.dumps(payload["chains"][0]))
+            second["id"] = "PR02"
+            second["title"] = "LATEST-DECISION-PR02"
+            second["nodes"]["scene"]["statement"] = "SCENE-FROM-LATEST-PR02"
+            second["nodes"]["business"]["statement"] = "BUSINESS-FROM-LATEST-PR02"
+            payload["chains"].append(second)
+            if records:
+                payload["decision_records"] = [
+                    {"record_id": "DR-OLD", "chain_id": "PR01", "version": 1,
+                     "recorded_at": "2026-11-18T09:00:00+08:00",
+                     "decision_maker": "reviewer", "decision": "old",
+                     "next_action": "old", "chain_fingerprint": "old"},
+                    {"record_id": "DR-NEW", "chain_id": "PR02", "version": 2,
+                     "recorded_at": "2026-11-19T09:00:00+08:00",
+                     "decision_maker": "reviewer", "decision": "new",
+                     "next_action": "new", "chain_fingerprint": "new"},
+                ]
+
+        self._edit_reasoning(add)
+
+    def test_follows_the_newest_decision_record(self) -> None:
+        self._add_second_chain(records=True)
+        completed, document = self.brief()
+        self.assertEqual(0, completed.returncode, document)
+        self.assertEqual("PR02", document["chain"]["id"])
+        self.assertEqual("decision", document["chain"]["selection"])
+        self.brief("--format", "md")
+        markdown = self.markdown_path().read_text(encoding="utf-8")
+        self.assertIn("#chains/PR02", markdown)
+        self.assertNotIn("Supervised mobile verification for fixed-camera blind spots",
+                         markdown)
+
+    def test_refuses_to_default_to_first_chain(self) -> None:
+        self._add_second_chain(records=False)
+        completed, payload = self.brief()
+        self.assertEqual(2, completed.returncode, payload)
+        self.assertEqual("refused", payload["status"])
+        self.assertEqual("INPUT_REQUIRED", payload["reason_code"])
+        self.assertIn("--chain", payload["suggestion"])
+
+
 if __name__ == "__main__":
     unittest.main()

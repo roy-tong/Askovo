@@ -42,6 +42,7 @@ study/
     ├── user-ops.md               deliver --kind ops：用户运营投影
     ├── role-Rxx-Dyy.md           deliver --kind role：绑定主链的岗位只读投影
     ├── lifecycle-board.md        deliver --kind lifecycle：十板块岗位导航
+    ├── web/index.html            deliver --kind web：自包含 Web 阅读面（四类标签 + 时间分层）
     └── postlaunch-tracker.csv    deliver --kind tracker：验收与回流跟踪
 ```
 

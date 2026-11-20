@@ -67,11 +67,13 @@ def make_study(study: Path, chain_count: int = 1) -> dict:
 
 
 class RoleCatalogTests(unittest.TestCase):
-    def test_complete_80_role_10_stage_10_industry_contract(self) -> None:
+    def test_complete_80_role_10_stage_11_industry_contract(self) -> None:
         self.assertEqual([], roles.validate_catalog())
         self.assertEqual(80, len(roles.roles()))
         self.assertEqual(10, len(roles.lifecycles()))
-        self.assertEqual(10, len(roles.industries()))
+        self.assertEqual(11, len(roles.industries()))
+        self.assertEqual("mobility_hardware", roles.normalize_industry("ebike"))
+        self.assertEqual("mobility_hardware", roles.normalize_industry("电动自行车"))
         self.assertEqual({f"R{number:02d}" for number in range(1, 81)}, set(roles.role_index()))
         expected_names = (
             "市场研究", "产业与行业研究", "类目与品类研究", "竞品与竞争情报", "趋势与未来研究", "技术与专利情报", "政策与法规研究", "商业与经济可行性",
@@ -131,7 +133,7 @@ class RoleCatalogTests(unittest.TestCase):
         self.assertEqual(0, listed.returncode, listed.stderr)
         payload = json.loads(listed.stdout)
         self.assertEqual(8, payload["count"])
-        self.assertEqual(10, len(payload["industries"]))
+        self.assertEqual(11, len(payload["industries"]))
         shown = run_cli("roles", "show", "R29", "--industry", "ai_native", "--json")
         self.assertEqual(0, shown.returncode, shown.stderr)
         role = json.loads(shown.stdout)
@@ -267,6 +269,14 @@ class RoleCatalogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             study = Path(directory) / "study"
             reasoning = make_study(study)
+            # P0-A：正式交付需要至少一条已登记的可决策证据
+            (study / "02-data" / "evidence.jsonl").write_text(json.dumps({
+                "record_id": "ev-role-1",
+                "evidence_level": "E2",
+                "source_family": "interview",
+                "source_ref": "role-interview-01",
+                "context_key": "role-test",
+            }) + "\n", encoding="utf-8")
             scaffolded = run_cli("roles", "scaffold", str(study), "--role", "R52", "--json")
             self.assertEqual(0, scaffolded.returncode, scaffolded.stderr)
             workplan_path = study / "01-sources" / "role-workbench" / "workplan.json"

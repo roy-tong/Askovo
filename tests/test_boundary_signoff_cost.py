@@ -167,5 +167,7 @@ class SignoffOnFreshStudyTests(unittest.TestCase):
             payload = json.loads(done.stdout)
             self.assertEqual("blocked", payload["status"])
             self.assertEqual("fail", payload["audit_status"])
-            self.assertIn("cannot be issued", payload["reason"])
+            # 空研究在证据门即被阻断，签核层不会产出任何文件
+            self.assertEqual("EVIDENCE_EMPTY", payload["reason_code"])
+            self.assertIn("不是结论", (study / "06-report" / "evidence-gap.md").read_text(encoding="utf-8"))
             self.assertFalse((study / "06-report" / "signoff.md").exists())

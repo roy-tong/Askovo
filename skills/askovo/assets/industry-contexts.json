@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-04",
+  "updated_at": "2026-11-20",
   "description": "Industry context overlays for role orchestration. They do not replace the five SURE domain packs or the seven-node reasoning schema.",
   "industries": [
     {
@@ -849,6 +849,105 @@
         "HMI与人因研究报告",
         "模拟器/场地/道路验证",
         "安全/法规与生产准备"
+      ]
+    },
+    {
+      "id": "mobility_hardware",
+      "label_zh": "两轮出行 / 微型代步硬件",
+      "label_en": "Two-wheel mobility / micromobility hardware",
+      "base_domain": "hardware",
+      "aliases": [
+        "ebike",
+        "e-bike",
+        "电动自行车",
+        "两轮出行",
+        "滑板车",
+        "mobility"
+      ],
+      "keywords": [
+        "ebike",
+        "e-bike",
+        "电动自行车",
+        "电助力",
+        "两轮",
+        "滑板车",
+        "代步",
+        "micromobility",
+        "mobility"
+      ],
+      "default_lifecycle": "L05",
+      "decision_focus": [
+        "骑行场景与路况",
+        "整车与电控集成",
+        "续航/安全/法规与售后"
+      ],
+      "stakeholders": [
+        "通勤骑行者",
+        "家庭用户",
+        "门店与维修",
+        "车队/共享运营",
+        "法规与安全人员"
+      ],
+      "research_practices": [
+        "骑行情境访谈",
+        "样车路试",
+        "门店观察",
+        "竞品拆解",
+        "售后工单分析"
+      ],
+      "design_inputs": [
+        "车型与使用边界",
+        "电控与电池规格",
+        "人机与装配要求",
+        "安全与法规清单",
+        "售后与备件计划"
+      ],
+      "prototype_forms": [
+        "油泥/外形模型",
+        "工程样车",
+        "小批试产",
+        "量产验证车"
+      ],
+      "verification_layers": [
+        "场景价值",
+        "骑行可用性与人机",
+        "整车可靠性与耐久",
+        "电池/电气安全与法规",
+        "量产与售后准备"
+      ],
+      "mandatory_gates": [
+        "样车路试不可替代真实通勤证据",
+        "电池与电气安全独立复核",
+        "法规认证与量产放行不由产品选择替代"
+      ],
+      "human_accountabilities": [
+        "整车工程师确认结构与电控",
+        "安全人员确认电池与电气风险",
+        "质量确认量产与售后准备"
+      ],
+      "claim_boundaries": [
+        "短时试骑不证明长期通勤留存",
+        "门店意向不证明付费",
+        "单城市路试不证明全国路况"
+      ],
+      "core_roles": [
+        "R25",
+        "R30",
+        "R56",
+        "R61",
+        "R62",
+        "R63",
+        "R75"
+      ],
+      "compatible_base_domains": [
+        "hardware",
+        "consumer"
+      ],
+      "output_exemplars": [
+        "车型需求与场景报告",
+        "路试/可用性报告",
+        "安全与法规检查单",
+        "量产与售后准备评审"
       ]
     },
     {

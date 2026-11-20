@@ -121,6 +121,13 @@ def _load(path: Path) -> Any:
 
 
 def _records(study_dir: Path) -> List[Dict[str, Any]]:
+    """Every registered evidence row (citation resolution, staleness).
+
+    Registration is not qualification: a counter record deliberately keeps
+    ``evidence_level=unclassified`` and must still resolve when the chain cites
+    it. Qualification is applied separately in :func:`_qualified_ids`, so
+    grounding/support never counts an unqualified row (A-09).
+    """
     path = study_dir / "02-data" / "evidence.jsonl"
     if not path.is_file():
         return []
@@ -135,6 +142,17 @@ def _records(study_dir: Path) -> List[Dict[str, Any]]:
         if isinstance(item, dict):
             records.append(item)
     return records
+
+
+def _qualified_ids(study_dir: Path) -> set:
+    """The one qualification rule, shared with audit/deliver/answer."""
+    try:
+        from sure_engine import is_qualified_evidence
+    except ImportError:  # standalone import without the CLI on sys.path
+        return {str(item.get("record_id")) for item in _records(study_dir)
+                if item.get("record_id")}
+    return {str(item.get("record_id")) for item in _records(study_dir)
+            if is_qualified_evidence(item)}
 
 
 def _text(record: Dict[str, Any]) -> str:
@@ -683,8 +701,51 @@ def _research_facts(study: Dict[str, Any], records: List[Dict[str, Any]]) -> Dic
 # public API
 # --------------------------------------------------------------------------- #
 
+def _decision_records(study_dir: Path) -> List[Dict[str, Any]]:
+    """Canonical DecisionRecords; an unreadable artifact degrades to no record.
+
+    Chain selection must read the same records ``askovo decision`` lists, not
+    the evidence store: evidence rows carry no ``chain_id`` and made the brief
+    refuse even after a DecisionRecord was written.
+    """
+    try:
+        payload = decision_review.list_decision_records(study_dir)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return []
+    return [item for item in payload.get("records") or [] if isinstance(item, dict)]
+
+
+def _select_chain(chains: List[Dict[str, Any]], records: List[Dict[str, Any]],
+                  chain_id: str = "") -> Tuple[Dict[str, Any], str]:
+    """Project the chain the question is actually decided on (A-04, one rule).
+
+    Delegates to :func:`decision_review.select_chain` so the brief, the
+    evidence page and the web surface cannot disagree about which candidate
+    is current.
+    """
+    chain, source = decision_review.select_chain(chains, chain_id=chain_id,
+                                                 records=records)
+    if chain is not None:
+        return chain, source
+    if source == "missing":
+        raise BriefError(
+            "chain %r not found in product-reasoning.json" % chain_id,
+            "INPUT_REQUIRED", "list chains with `askovo chain <study>`")
+    if source == "missing_decision":
+        raise BriefError(
+            "the latest DecisionRecord names a chain that is not in product-reasoning.json",
+            "INPUT_REQUIRED",
+            "record a decision on an existing chain with `askovo decide`")
+    raise BriefError(
+        "study has %d chains; a brief must name one"
+        % len(chains), "INPUT_REQUIRED",
+        "pass --chain <CHAIN_ID> or record a DecisionRecord; candidates: "
+        + ", ".join(str(item.get("id") or "?") for item in chains))
+
+
 def build(study_dir: Path, *, task_id: str = "", question: str = "",
-          review_payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+          review_payload: Optional[Dict[str, Any]] = None,
+          chain_id: str = "") -> Dict[str, Any]:
     """Project the canonical chain into one ``askovo.decision-brief/1`` document."""
     study_dir = Path(study_dir).resolve()
     study = _load(study_dir / "study.json")
@@ -700,9 +761,10 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
         raise BriefError(
             "canonical product-reasoning.json has no chain; a brief would have nothing to project",
             "INPUT_REQUIRED", "run `askovo chain STUDY` and write the seven-node chain first")
-    chain = chains[0]
     records = _records(study_dir)
+    chain, chain_source = _select_chain(chains, _decision_records(study_dir), chain_id)
     record_by_id = {str(item.get("record_id")): item for item in records if item.get("record_id")}
+    qualified_ids = _qualified_ids(study_dir)
     findings: List[Dict[str, Any]] = []
     recorded_review = _load(study_dir / REVIEW_REF)
     # The brief projects the **recorded** review; it only generates one when none
@@ -731,7 +793,7 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
 
     # A19: a decision with no evidence behind it (nothing cited, or no audited
     # support) can only hold. It must never be rendered as a validated recommendation.
-    cited = [value for value in _chain_evidence_ids(chain) if value in record_by_id]
+    cited = [value for value in _chain_evidence_ids(chain) if value in qualified_ids]
     grounded = bool(cited) and supported > 0
     nodes = chain.get("nodes") if isinstance(chain.get("nodes"), dict) else {}
     business = nodes.get("business") if isinstance(nodes.get("business"), dict) else {}
@@ -763,6 +825,7 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
     ]
     decision = study.get("decision") if isinstance(study.get("decision"), dict) else {}
     owner = decision.get("owner")
+    lifecycle = decision_review.decision_lifecycle(reasoning, chain)
 
     if needs_re_review:
         decision_status = "needs_review"
@@ -784,14 +847,14 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
         supporting_states.get("causal"), dict) else {}
     delivery_state = "blocked" if stale else "partial"
     states = {
-        "decision_state": "not_approved",
+        "decision_state": "adopted" if lifecycle["adoption_state"] == "adopted" else "not_approved",
         "delivery_state": delivery_state,
         "outcome_state": str(outcome.get("status") or "not_measured").replace("-", "_"),
         "causality_state": str(causal.get("status") or "not_claimed").replace("-", "_"),
         "independent": True,
         "note": (
-            "四态彼此独立：decision_state 只表示是否有人批准；delivery_state 只表示交付物是否"
-            "可交付；outcome_state 只表示观察到的结果；causality_state 只表示因果是否被声明"
+            "四态彼此独立：decision_state 只在另有负责人采用回执时为 adopted；delivery_state "
+            "只表示交付物是否可交付；outcome_state 只表示观察到的结果；causality_state 只表示因果是否被声明"
         ),
     }
 
@@ -830,6 +893,12 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
         "kind": KIND,
         "task_id": task_id or None,
         "study_id": str(study.get("study_id") or ""),
+        "chain": {
+            "id": str(chain.get("id") or ""),
+            "title": str(chain.get("title") or ""),
+            "status": str(chain.get("status") or ""),
+            "selection": chain_source,
+        },
         "generated_at": _now(),
         "canonical_ref": CANONICAL_REF,
         "canonical_refs": [
@@ -872,6 +941,7 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
         "verification_actions": _verification_actions(chain, review_payload, owner, findings),
         "prd_acceptance": prd_acceptance,
         "states": states,
+        "decision_lifecycle": lifecycle,
         "decision_state": states["decision_state"],
         "delivery_state": states["delivery_state"],
         "outcome_state": states["outcome_state"],
@@ -908,7 +978,11 @@ def build(study_dir: Path, *, task_id: str = "", question: str = "",
             "source_families": sorted({
                 str(item.get("source_family")) for item in records if item.get("source_family")}),
         },
-        "next_required_action": _next_required_action(stale, decision_status),
+        "next_required_action": (
+            "负责人采用已记录；继续跟踪实施与业务结果，采用不等于结果已发生"
+            if lifecycle["adoption_state"] == "adopted" and not stale
+            else _next_required_action(stale, decision_status)
+        ),
         "boundary": BOUNDARY,
     }
     document["next_validation"] = document["verification_actions"]
@@ -1027,7 +1101,19 @@ def render_markdown(document: Dict[str, Any]) -> str:
     lines.extend(["", f"## 9. {SECTION_TITLES['states']}", ""])
     for key in ("decision_state", "delivery_state", "outcome_state", "causality_state"):
         lines.append(f"- {key}：`{states.get(key)}`")
+    lifecycle = document.get("decision_lifecycle") or {}
     lines.extend([
+        "",
+        "### 建议、记录与采用（独立状态）",
+        "",
+        f"- 建议：`{lifecycle.get('recommendation_state') or 'unknown'}`；"
+        f"决定记录：`{lifecycle.get('record_state') or 'unknown'}`"
+        f"（{lifecycle.get('decision_record_id') or '无'}）",
+        f"- 负责人采用：`{lifecycle.get('adoption_state') or 'not_observed'}`"
+        f"（{lifecycle.get('adoption_id') or '无'}；负责人：{lifecycle.get('adopted_by') or '未记录'}）",
+        f"- 采用范围：{lifecycle.get('scope') or '未记录'}；"
+        f"采用回执：{'；'.join(lifecycle.get('adoption_evidence') or []) or '未记录'}",
+        "- Brief 或 DecisionRecord 不自动等于采用；采用也不自动等于实施、商业结果或因果。",
         "",
         "## 数字与来源",
         "",
@@ -1080,7 +1166,8 @@ def write(study_dir: Path, document: Dict[str, Any],
 
 
 def build_and_write(study_dir: Path, *, task_id: str = "", question: str = "",
-                    output_dir: Optional[Path] = None) -> Dict[str, Any]:
+                    output_dir: Optional[Path] = None,
+                    chain_id: str = "") -> Dict[str, Any]:
     """Project and persist in one call."""
-    document = build(study_dir, task_id=task_id, question=question)
+    document = build(study_dir, task_id=task_id, question=question, chain_id=chain_id)
     return write(study_dir, document, output_dir)
