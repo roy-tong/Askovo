@@ -1,6 +1,8 @@
 # Askovo: implementation status
 
-Reviewed 2026-11-04 against the **v2.16.1 release**. Available means local implementation, not production validation on every platform.
+**Release update, 2026-11-20 · [v2.20.0](../CHANGELOG.md).** Evidence grades follow the source and its review history. An empty, ineligible or unreadable evidence set produces a gap note explaining what the decision owner needs to supply.
+
+Earlier baseline reviewed 2026-11-04 against the **v2.16.1 release**. Available means local implementation, not production validation on every platform.
 
 | Feature | Scope | Status |
 |---|---|---|
