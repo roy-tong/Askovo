@@ -56,6 +56,18 @@ Node-specific fields:
 | product | Coherent offer with form, scope, non-goals, and acceptance boundary | `form`, `scope`, `non_goals`, `acceptance_criteria` |
 | business | Market boundary, segments, payer, positioning, revenue/pricing/cost hypotheses, market-estimate method, unit economics, metrics, and resource gate | `market_definition`, `geographies`, `time_window`, `included_markets`, `excluded_markets`, `target_segment`, `segments`, `payer`, `positioning`, `revenue_model`, `pricing_hypothesis`, `pricing`, `channels`, `competitive_alternatives`, `cost_drivers`, `market_estimates`, `unit_economics_inputs`, `success_metrics`, `non_goals`, `gate` |
 
+Use the canonical CLI writer for supported task fields instead of editing the JSON by hand:
+
+```bash
+askovo chain-node STUDY set --node feature \
+  --field acceptance_conditions \
+  --value-json '["The previous decision can be reopened"]'
+askovo chain-node STUDY set --node pain --field current_substitute \
+  --value-json '"Manual checking"'
+```
+
+`--field` validates both the allowlisted name and JSON value type; the writer preserves the old value in `change_log` and leaves semantic audit unchanged. Text fields require non-empty strings; acceptance, alternatives, assumptions, constraints, scope and non-goal fields use JSON arrays. Evidence binding and independent review remain separate operations.
+
 A feature request is both a demand signal and a candidate solution, never sufficient proof of the Need node. Rewrite the need without solution vocabulary, then compare the original request with other candidates.
 
 Evidence on a node does not prove its incoming inference. Pay particular attention to `pain → need`, `need → feature`, and `feature → product`. For the `pain → need` edge the CLI enforces one minimum: a validated need node must cite at least one E2 record (observed substitute, workaround, or failure). Stated pain alone (E1) keeps the need at `needs-validation` — words are a signal, observed effort is a stronger one.

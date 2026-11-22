@@ -7,3 +7,5 @@ Pages: / (landing, capability boundaries table, need-validation method with a fi
 English mirror (/en/, same six pages, reciprocal hreflang, x-default points at the Chinese page): /en/index.html · /en/first-look.html · /en/claims.html · /en/faq.html · /en/glossary.html · /en/guides/need-validation.html.
 
 Canonical repo and full agent entry: https://github.com/roy-tong/askovo (see repo-root llms.txt for commands, protocols, and data contracts). Synthetic demo proves structure self-consistency only — never real demand, market size, release readiness, or commercial truth.
+
+- [Replay a synthetic decision after a mapped contradiction](https://roy-tong.github.io/Askovo/examples/decision-replay.html)

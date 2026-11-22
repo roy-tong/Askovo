@@ -10,6 +10,10 @@
 
 **决定要不要做一个功能，先看支持和反对的证据**
 
+[![Agent Skill](https://img.shields.io/badge/Agent_Skill-Askovo-111111)](skills/askovo/SKILL.md)
+[![CI](https://github.com/roy-tong/askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/askovo/actions/workflows/tests.yml)
+[![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
+
 把一个待定的产品选择和已有材料交给 Askovo。逐条查看支持依据、反例和来源，再由负责人决定做、缓做或放弃。缺少合格证据时，Askovo 会列出需要补的材料；补齐后可以复审同一个决定。
 
 ```bash
@@ -44,10 +48,6 @@ askovo proof export ./study --out ./proof-bundle --by "artifact-reviewer"
 
 导出器只检查 P1 Brief 投影。独立语义复核（P3）和实际决定采用（P4）在另有合格证据前保持 `UNCHECKED`，所以导出成功不是整包通过。
 
-[![Agent Skill](https://img.shields.io/badge/Agent_Skill-Askovo-111111)](skills/askovo/SKILL.md)
-[![CI](https://github.com/roy-tong/askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/askovo/actions/workflows/tests.yml)
-[![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
-
 ## 30 秒证明它能工作
 
 ```bash
@@ -66,6 +66,8 @@ askovo decision --help   # 版本化决策、反证触发的安全暂停与回�
 也可以直接写：`askovo "手机相机夜景和续航" --dry-run`。`--dry-run` 只路由、不写文件；`demo` 运行内置合成样例。
 
 预期关键结果：`status: pass`、`supported: 1`、`overclaims: 0`。这只证明合成样例的结构、推理链和证据引用自洽，**不证明真实需求、产品质量、市场规模或发布可行性**。
+
+要看一个具体决定怎样被复审，[重放已登记反证如何让建议安全暂停](https://roy-tong.github.io/Askovo/examples/decision-replay.html)，而不是继续维护旧答案。示例为合成数据，反证必须事先登记。
 
 ## 研究问题 → 决策结果：一次完整交付长什么样
 

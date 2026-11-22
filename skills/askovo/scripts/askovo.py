@@ -6640,6 +6640,8 @@ def build_parser() -> argparse.ArgumentParser:
     chain_node_set.add_argument("--statement", default=None)
     chain_node_set.add_argument("--rationale", default=None)
     chain_node_set.add_argument("--status", default=None, help=f"one of: {', '.join(sure_engine.CHAIN_NODE_STATUSES)}")
+    chain_node_set.add_argument("--field", default=None, help="typed task field; see supported fields in docs/cli.md")
+    chain_node_set.add_argument("--value-json", default=None, help="JSON value for --field; arrays for list-valued fields")
     chain_node_set.add_argument("--note", default="", help="why this edit is made; recorded in change_log.decision")
     chain_node_set.set_defaults(func=sure_engine.cli_chain_node)
 

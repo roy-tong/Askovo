@@ -10,6 +10,10 @@
 
 **Review the evidence before committing to a product decision**
 
+[![Agent Skill](https://img.shields.io/badge/Agent_Skill-Askovo-111111)](skills/askovo/SKILL.md)
+[![CI](https://github.com/roy-tong/askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/askovo/actions/workflows/tests.yml)
+[![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
+
 Bring one product decision and the material behind it. Review the sources and counterexamples with the person who owns the decision. If the evidence falls short, Askovo lists what to collect. Reopen the same decision when new evidence arrives.
 
 ```bash
@@ -44,10 +48,6 @@ askovo proof export ./study --out ./proof-bundle --by "artifact-reviewer"
 
 The exporter checks the P1 brief projection. Independent semantic review (P3) and actual decision adoption (P4) remain `UNCHECKED` until separate qualified evidence arrives, so a successful export is not a blanket PASS.
 
-[![Agent Skill](https://img.shields.io/badge/Agent_Skill-Askovo-111111)](skills/askovo/SKILL.md)
-[![CI](https://github.com/roy-tong/askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/askovo/actions/workflows/tests.yml)
-[![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
-
 ## Proof it works in 30 seconds
 
 ```bash
@@ -73,6 +73,8 @@ python3 -m venv .venv && .venv/bin/pip install askovo
 You can also route directly: `askovo "SaaS subscription churn is dropping, want to know why users don't renew" --dry-run`. `--dry-run` only routes and writes nothing; `demo` runs the built-in synthetic sample. Router keyword tables are Chinese-first — English queries work, and `--domain` pins the product type whenever English keywords don't match.
 
 Expected key results: `status: pass`, `supported: 1`, `overclaims: 0`. This only proves that the synthetic sample is self-consistent in structure, chain, and evidence references. It proves **nothing about real demand, product quality, market size, or release readiness**.
+
+For a concrete decision task, [replay how one registered contradiction pauses the recommendation](https://roy-tong.github.io/Askovo/en/examples/decision-replay.html) instead of silently defending the old answer. The example is synthetic and its counter-evidence must already be registered.
 
 ## From research question to decision result: what a full delivery looks like
 

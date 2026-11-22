@@ -10914,6 +10914,14 @@ def _chain_node_payload(
     return result
 
 
+CHAIN_NODE_FIELD_TYPES = {
+    "current_substitute": str, "friction_cost": str, "consequence": str,
+    "desired_outcome": str, "measure": str, "capability": str, "form": str, "scope": str,
+    "assumptions": list, "constraints": list, "alternatives_considered": list,
+    "acceptance_conditions": list, "non_goals": list, "acceptance_criteria": list,
+}
+
+
 def cli_chain_node(args: Any) -> int:
     """Edit one node of the canonical chain; writes truth + change_log, never audits."""
     try:
@@ -10978,8 +10986,28 @@ def cli_chain_node(args: Any) -> int:
                         f"--{field_name} 不能为空；若该节点不再适用，请用 --status deprioritized 并说明原因"
                     )
                 updates[field_name] = value
+            field_name = str(getattr(args, "field", "") or "").strip()
+            raw_json = getattr(args, "value_json", None)
+            if field_name:
+                if field_name not in CHAIN_NODE_FIELD_TYPES:
+                    raise ValueError("不支持的字段 %r；可用：%s" % (
+                        field_name, ", ".join(sorted(CHAIN_NODE_FIELD_TYPES))))
+                if raw_json is None:
+                    raise ValueError("--field 需要同时提供 --value-json")
+                try:
+                    typed_value = json.loads(raw_json)
+                except json.JSONDecodeError as exc:
+                    raise ValueError("--value-json 必须是有效 JSON：%s" % exc) from exc
+                expected = CHAIN_NODE_FIELD_TYPES[field_name]
+                if not isinstance(typed_value, expected) or (
+                        expected is str and not typed_value.strip()):
+                    raise ValueError("--field %s 需要%s" % (
+                        field_name, "非空字符串" if expected is str else "JSON 数组"))
+                updates[field_name] = typed_value
+            elif raw_json is not None:
+                raise ValueError("--value-json 只能与 --field 一起使用")
             if not updates:
-                raise ValueError("set 至少需要 --statement、--rationale 或 --status 之一")
+                raise ValueError("set 至少需要字段值、--statement、--rationale 或 --status 之一")
             previous: dict[str, Any] = {}
             changed: list[str] = []
             for field_name, value in updates.items():

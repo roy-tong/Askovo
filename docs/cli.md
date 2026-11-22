@@ -527,3 +527,16 @@ askovo platforms "..." --json | jq '.recommended[] | {id, decision, bulk}'
 | `ASKOVO_DECIDE_HOME` | `askovo decide` 的 workspace 默认目录（未设置时用 `./askovo-decide`） |
 
 所有平台采集必须遵守平台条款、速率限制、数据权利与保留规则。没有合规通道时只接受授权导出/历史数据集。
+
+## 受控编辑七节点字段
+
+`chain-node set` 除 `--statement/--rationale/--status` 外，可用 `--field` 与 `--value-json` 修改常用任务字段，不需要手工编辑内部 JSON：
+
+```bash
+askovo chain-node STUDY set --node feature \
+  --field acceptance_conditions \
+  --value-json '["可回退原决定", "保留反证来源"]' \
+  --note "补齐验收条件"
+```
+
+字符串字段包括 `current_substitute`、`friction_cost`、`consequence`、`desired_outcome`、`measure`、`capability`、`form`、`scope`；数组字段包括 `assumptions`、`constraints`、`alternatives_considered`、`acceptance_conditions`、`non_goals`、`acceptance_criteria`。字段、JSON 语法和类型都会校验；相同值不写文件。所有变更进入链的 append-only `change_log`，仍需 `askovo check STUDY --stage full` 重新审计，编辑不等于门禁通过。
