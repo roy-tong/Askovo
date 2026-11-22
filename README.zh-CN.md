@@ -34,7 +34,7 @@ Askovo 面向产品经理、用户研究、业务分析人员，以及转型全�
 
 质量约束在引擎里：每条结论内部带证据等级，结论超出证据时 `askovo audit` 直接说出来（退出码 1 可进 CI）。面向业务的交付物里，这些等级只出现在文末方法档案——正文讲的是业务逻辑本身，尚无数据的判断会如实标注"暂无采集数据"。
 
-[官网](https://roy-tong.github.io/Askovo/) · [快速开始](docs/quickstart.md) · [产品与商业推理主链](docs/product-reasoning.md) · [岗位方法论](docs/product-methodology.md) · [平台与连接器](docs/connectors.md)
+[官网](https://roy-tong.github.io/Askovo/) · [OVO Discord](https://discord.gg/UqrM8MCXb) · [X / @elliwoodtong](https://x.com/elliwoodtong) · [快速开始](docs/quickstart.md) · [产品与商业推理主链](docs/product-reasoning.md) · [岗位方法论](docs/product-methodology.md) · [平台与连接器](docs/connectors.md)
 
 ## OVO 家族：Prove Anything
 
