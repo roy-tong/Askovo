@@ -121,6 +121,8 @@ askovo decision replay ./study --chain PR01
 
 第二条记录按确定性规则改为 `hold`，把主链/产品/商业重开为待验证，置信度降一级，并保留改前/改后建议、证据关系与快照。`--recommendation "..."` 只是可选人工覆盖，系统不会编一个新产品。只有 ID、没有已记录矛盾关系会被拒绝。新映射证据不会因此被提升为 validated 判断或因果证明。
 
+[打开合成 safe-hold / replay 证明页并下载任务模板](https://roy-tong.github.io/Askovo/examples/decision-replay.html)。
+
 ## 一条主链，80 个岗位族，11 类行业上下文，五个基础研究域
 
 Askovo 新增的是可执行的**产品创新岗位操作系统**，不是岗位名称附录。80 个岗位族覆盖机会研究、用户/需求研究、产品战略、概念/服务设计、数字体验、实体工程、消费品研发、分层验证、生命周期交付及 ResearchOps/DesignOps。每岗都有使命、职责、KPI 公式与护栏、输入→动作→输出→质量门 SOP、核心交付、工作模板、交接和人类专业边界；十一类行业上下文覆盖消费软件、企业软件、AI、智能/传统硬件、两轮出行硬件、快消、服装家居、工业机器人、汽车和医疗健康。
@@ -206,7 +208,18 @@ askovo collect ./study --platform reddit --query "night alert" --limit 100
 askovo analyze ./study --question "夜间误报"
 ```
 
-`source-plan.csv` 用 `reasoning_nodes` 标明每条路线服务哪个节点，避免为了凑数据量而采集。真实采集前仍必须通过 Design gate、来源授权和适配器检查。
+`source-plan.csv` 用 `reasoning_nodes` 标明每条路线服务哪个节点，避免为了凑数据量而采集。真实采集前仍必须通过 Design gate、来源授权和适配器检查。`askovo plan --sample-size` 接受 1–100,000 条严格主样本上限，按整数精确分配配额；海外论坛／社媒计划会通过声明式第一方 CDP 路由纳入 Discord 和 Instagram，而不是伪装成 API 连接器。
+
+对用户已登录浏览器里已经打开的页面，不需要 API key，也不需要导出 Cookie：
+
+```bash
+askovo collect ./study --platform instagram --query "夜间误报替代方案" \
+  --cdp-url http://127.0.0.1:9222 \
+  --url "https://www.instagram.com/p/visible/" \
+  --attach-existing --ack-terms --limit 50
+```
+
+`--attach-existing` 要求 URL 精确匹配，不新开标签页。Instagram 评论和 Discord 消息使用专用 DOM 提取器，保留全文与来源层级，并像其他采集器一样写 raw／normalized／manifest。平台条款、Design、scope、挑战页、超时和掉登录停止规则仍然有效。
 
 `analyze` 只做归一化、去重、分布、高频候选词和问题匹配片段；它不会自动生成场景、需求、特性或产品结论。
 
@@ -222,7 +235,7 @@ askovo deliver ./study --kind analysis
 askovo deliver ./study --kind plan
 ```
 
-capture 必须通过 Design gate、显式平台 scope、enabled adapter、注册表复审、回环调试端点和授权默认端口页面检查；CDP 例外对平台目录标记 `cdp: true` 的集合开放（当前 amazon / instagram / bilibili / weibo / kickstarter / discord / x / tiktok）。其它 host、YouTube、blocked 路线、跳离批准平台与挑战页都会被拒绝。capture/OCR 永远只产生 `candidate`；只有具名审核人执行 `capture accept` 并显式选择 E0/E1/E2，才向 `evidence.jsonl` 追加一条规范化证据，同时保留 URL、capture JSON、截图、页面/OCR/截图 hash、reviewer 和审核时间。证据审计会拒绝手工追加的未审核 capture 行。
+capture 必须通过 Design gate、显式平台 scope、enabled adapter、注册表复审、回环调试端点和授权默认端口页面检查；CDP 例外对平台目录标记 `cdp: true` 的集合开放（当前 github / reddit / youtube / hackernews / amazon / instagram / bilibili / weibo / kickstarter / discord / x / tiktok）。其它 host、blocked 路线、跳离批准平台与挑战页都会被拒绝。capture/OCR 永远只产生 `candidate`；只有具名审核人执行 `capture accept` 并显式选择 E0/E1/E2，才向 `evidence.jsonl` 追加一条规范化证据，同时保留 URL、capture JSON、截图、页面/OCR/截图 hash、reviewer 和审核时间。证据审计会拒绝手工追加的未审核 capture 行。
 
 `accept` **不会**写需求判断、七节点、决策记录或做/缓做/不做结论。人工仍须把证据登记到对应需求判断与合适的链节点；随后 analysis 与 plan 只投影同一条主链，并附上 `记录 → 来源 URL/capture/截图/hash → 审核人/时间` 回链表。详见 [CDP 抓取与审核](docs/capture.md) 和机器可读的[交付合同](docs/delivery-contract.json)。付费 API/商业 provider 路线会在 plan/collect 预检返回 `terminal_state=BLOCKED_USER_INPUT`、`requires_procurement=true`、`user_action` 和 `transaction_executed=false`；Askovo 不自动采购。
 
@@ -361,11 +374,11 @@ askovo platforms "家用摄像头夜间告警的用户抱怨" --domain hardware 
 
 ### 采集、队列与可复现性
 
-- GitHub 使用官方 Search API；Reddit 使用官方 Data API；其他平台使用授权导出、历史数据集或本地 fixture。
+- GitHub 和 Reddit 优先使用官方 API；GitHub、Reddit、YouTube、Hacker News、Instagram、Discord 及其他已注册平台也可走声明式授权可见页 CDP 传输；其他来源使用授权导出、历史数据集或本地 fixture。
 - 每次采集保存 raw envelope、normalized 和 manifest，记录访问依据、权利、条数、丢弃原因、限制和偏差。
 - SQLite 队列支持多 worker、租约回收、失败退避、限速和断点续跑。
-- CDP 仅限平台目录标记 `cdp: true` 的授权可见页面（当前 amazon / instagram / bilibili / weibo / kickstarter / discord / x / tiktok）；YouTube 和 blocked 平台不使用它，不绕过验证码，登录会话仅由用户手工完成，不代输凭据、不导 Cookie。
-- 实战经验是数据而不是散文：[`assets/platform-field-notes.json`](skills/askovo/assets/platform-field-notes.json) 逐条记录平台限制、症状、现场验证过的解法、验证等级以及编码该机制的运行时助手。`askovo platforms "<需求>" --field-notes` 直接看推荐平台的坑；产物路径、helper 引用或 `cdp` 标记腐烂时 `askovo doctor` 会失败。其中可执行的部分是 `runtime_policies`，由 `connectors/cdp_strategy.py` 在运行时执行（一 cell 一次 goto、超时熔断、会话限时、预算留头）；`askovo platforms "<需求>" --policies` 直接看每个站点实际承受的预算。
+- CDP 仅限平台目录标记 `cdp: true` 的授权可见页面（当前 github / reddit / youtube / hackernews / amazon / instagram / bilibili / weibo / kickstarter / discord / x / tiktok）；有 API 不排除 CDP，但 blocked 平台不使用它。不绕过验证码，登录会话仅由用户手工完成，不代输凭据、不导 Cookie。
+- 实战经验是数据而不是散文：[`assets/platform-field-notes.json`](skills/askovo/assets/platform-field-notes.json) 逐条记录平台限制、症状、现场验证过的解法、验证等级以及编码该机制的运行时助手。`askovo platforms "<需求>" --field-notes` 直接看推荐平台的坑；产物路径、helper 引用或 `cdp` 标记腐烂时 `askovo doctor` 会失败。其中可执行的部分是 `runtime_policies`，由 `connectors/cdp_strategy.py` 在运行时执行（一 cell 一次 goto、超时熔断、会话限时、预算留头）；`askovo platforms "<需求>" --policies` 直接看每个站点实际承受的预算。采集侧策略在同一注册表的 `collection_policies`：每平台允许的访问方式、请求预算、分级的停止信号与带日期来源，由 `askovo platforms "<需求>" --collection-policies` 渲染；访问方式超出平台目录、预算比运行时更松、缺 `block` 级信号、或 blocked 平台没有排除理由时，`askovo doctor` 都会失败。
 
 详见 [平台与连接器](docs/connectors.md) 和 [CLI 参考](docs/cli.md)。
 

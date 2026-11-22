@@ -500,22 +500,34 @@ class PlanSignalsReportTests(unittest.TestCase):
             )
             self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
             payload = json.loads(completed.stdout)
-            self.assertEqual(["reddit", "youtube"], payload["feasible_platforms"])
+            self.assertEqual(
+                ["reddit", "discord", "github", "hackernews", "x", "instagram", "youtube"],
+                payload["feasible_platforms"],
+            )
             self.assertEqual(100000, sum(payload["platform_quotas"].values()))
-            blocked_x = next(item for item in payload["unavailable_platforms"]
-                             if item["platform"] == "x")
-            self.assertEqual("BLOCKED_USER_INPUT", blocked_x["terminal_state"])
-            self.assertTrue(blocked_x["requires_procurement"])
-            self.assertFalse(blocked_x["transaction_executed"])
+            # x is reachable through the first-party CDP transport even without a
+            # procured API tier; API availability never excludes CDP.
+            self.assertEqual([], payload["unavailable_platforms"])
 
             study = json.loads((target / "study.json").read_text(encoding="utf-8"))
             self.assertEqual(1000, study["quality_gates"]["min_evidence_records"])
             self.assertEqual(["overseas", "us"], study["scope"]["markets"])
-            self.assertEqual(["reddit", "youtube"], study["scope"]["allowed_sources"])
+            self.assertEqual(
+                ["reddit", "discord", "github", "hackernews", "x", "instagram", "youtube"],
+                study["scope"]["allowed_sources"],
+            )
             self.assertEqual(100000, study["plan"]["sample_target"])
             self.assertTrue(study["source_adapters"]["reddit"]["enabled"])
-            self.assertFalse(study["source_adapters"]["x"]["enabled"])
+            self.assertTrue(study["source_adapters"]["x"]["enabled"])
+            self.assertEqual(
+                "cdp-authorized-visible-page", study["source_adapters"]["x"]["connector_id"]
+            )
+            self.assertEqual(
+                "cdp_authorized_visible_page", study["source_adapters"]["x"]["access_basis"]
+            )
             self.assertTrue(study["source_adapters"]["youtube"]["enabled"])
+            self.assertTrue(study["source_adapters"]["instagram"]["enabled"])
+            self.assertTrue(study["source_adapters"]["discord"]["enabled"])
 
             with (target / "01-sources/reddit-routes.csv").open(encoding="utf-8-sig", newline="") as handle:
                 reddit_rows = list(csv_module.DictReader(handle))
@@ -525,7 +537,7 @@ class PlanSignalsReportTests(unittest.TestCase):
             )
             with (target / "01-sources/source-plan.csv").open(encoding="utf-8-sig", newline="") as handle:
                 plan_rows = list(csv_module.DictReader(handle))
-            self.assertEqual(10, len(plan_rows))
+            self.assertEqual(35, len(plan_rows))
             self.assertEqual(
                 payload["platform_quotas"]["youtube"],
                 sum(
@@ -538,7 +550,7 @@ class PlanSignalsReportTests(unittest.TestCase):
             feasibility = json.loads(
                 (target / "01-sources/feasibility.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(2, len([p for p in feasibility["platforms"] if p["status"] == "enabled"]))
+            self.assertEqual(7, len([p for p in feasibility["platforms"] if p["status"] == "enabled"]))
             tasks = (target / "01-sources/tasks.md").read_text(encoding="utf-8")
             self.assertIn("reddit-praw", tasks)
             self.assertIn("2026-09-30", tasks)
@@ -561,23 +573,26 @@ class PlanSignalsReportTests(unittest.TestCase):
             target = Path(directory) / "time-window"
             base_args = (
                 "plan", str(target), "--goal", "AI glasses complaints", "--region", "overseas",
-                "--sample-size", "1000", "--platform-types", "social",
+                "--sample-size", "1000", "--platform-types", "crowdfunding",
             )
             invalid = run_cli(*base_args, "--time-window", "not-a-window")
             self.assertEqual(2, invalid.returncode)
             self.assertFalse(target.exists())
             valid = run_cli(*base_args, "--time-window", "2025-01-01:2026-08-31")
-            # social/overseas resolves to x only; its live route needs the paid
-            # API tier, so the plan completes with zero feasible platforms and
-            # an explicit requires_procurement block (never a silent success).
-            self.assertEqual(3, valid.returncode, valid.stdout + valid.stderr)
+            # Kickstarter is reachable through the CDP transport, so the plan
+            # completes with one feasible platform and a single-source warning;
+            # the time-window validation itself is covered by the invalid case.
+            self.assertEqual(0, valid.returncode, valid.stdout + valid.stderr)
             payload = json.loads(valid.stdout)
-            self.assertEqual("planned_without_feasible_platforms", payload["status"])
-            blocked_x = next(item for item in payload["unavailable_platforms"]
-                             if item["platform"] == "x")
-            self.assertEqual("BLOCKED_USER_INPUT", blocked_x["terminal_state"])
-            self.assertTrue(blocked_x["requires_procurement"])
-            self.assertFalse(blocked_x["transaction_executed"])
+            self.assertEqual("planned", payload["status"])
+            self.assertEqual(["kickstarter"], payload["feasible_platforms"])
+            self.assertEqual([], payload["unavailable_platforms"])
+            self.assertTrue(any("only enabled platform" in line for line in payload["warnings"]))
+            study = json.loads((target / "study.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                {"start": "2025-01-01", "end": "2026-08-31"},
+                study["scope"]["source_time_window"],
+            )
 
     def test_plan_cn_ecommerce_fails_visibly_without_workaround(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -677,11 +692,12 @@ class PlanSignalsReportTests(unittest.TestCase):
                 "--sample-size",
                 "2000",
                 "--platform-types",
-                "social",
+                "crowdfunding",
             )
-            # social/overseas resolves to the paid x route only: the workspace is
-            # still created (report must describe it honestly), with exit 3.
-            self.assertEqual(3, planned.returncode, planned.stdout + planned.stderr)
+            # Kickstarter is feasible via the CDP transport, so the workspace is
+            # created normally; report must still describe the unfilled design
+            # honestly instead of hiding it.
+            self.assertEqual(0, planned.returncode, planned.stdout + planned.stderr)
             completed = run_cli("report", str(target))
             self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
             payload = json.loads(completed.stdout)

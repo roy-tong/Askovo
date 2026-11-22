@@ -172,24 +172,29 @@ class CaptureTests(unittest.TestCase):
             set(json.loads((ROOT / "docs/delivery-contract.json").read_text(
                 encoding="utf-8"))["candidate_inputs"]["cdp_page"]["approved_platforms"]))
 
-    def test_capture_never_opens_generic_web_reddit_or_youtube(self):
+    def test_capture_rejects_generic_web_but_accepts_registered_platforms(self):
         with tempfile.TemporaryDirectory() as directory:
             study = self._sample_study(Path(directory) / "study")
             document = json.loads((study / "study.json").read_text(encoding="utf-8"))
-            document["scope"]["allowed_sources"] = ["web", "reddit", "x", "youtube"]
+            document["scope"]["allowed_sources"] = [
+                "web", "github", "reddit", "youtube", "hackernews", "x",
+            ]
             (study / "study.json").write_text(
                 json.dumps(document, ensure_ascii=False), encoding="utf-8")
-            for url in ("https://internal-intranet.example.org/wiki/page",
-                        "https://www.reddit.com/r/somebody/thread",
-                        "https://www.youtube.com/watch?v=1"):
+            result = engine.capture_page(
+                study, "https://internal-intranet.example.org/wiki/page",
+                "http://127.0.0.1:9222", True)
+            self.assertEqual("cdp_not_allowed", result["status"])
+            for url in (
+                "https://github.com/roy-tong/askovo",
+                "https://www.reddit.com/r/somebody/thread",
+                "https://www.youtube.com/watch?v=1",
+                "https://news.ycombinator.com/item?id=1",
+                "https://x.com/user/status/1",
+            ):
                 with self.subTest(url=url):
                     result = engine.capture_page(study, url, "http://127.0.0.1:9222", True)
-                    self.assertEqual("cdp_not_allowed", result["status"])
-            # x is now a CDP-enabled user-session platform: the scope gate passes
-            # and the next check is the enabled-adapter requirement.
-            x_result = engine.capture_page(study, "https://x.com/user/status/1",
-                                           "http://127.0.0.1:9222", True)
-            self.assertEqual("adapter_disabled", x_result["status"])
+                    self.assertEqual("adapter_disabled", result["status"])
             document["scope"]["allowed_sources"] = ["amazon"]
             document["source_adapters"] = {"amazon": {"enabled": True}}
             (study / "study.json").write_text(

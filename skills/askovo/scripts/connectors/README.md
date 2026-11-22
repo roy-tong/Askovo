@@ -347,7 +347,7 @@ python3 rotation.py --plan discord,reddit,youtube   # 一轮的公平顺序
 python3 rotation.py --selftest                      # 离线自检
 ```
 
-CDP 平台的间隔与会话要求直接读注册表 `runtime_policies`（调用参数显式覆盖仍优先），红迪/YouTube 等纯归档路线保留下面这份现场表——调度器和采集器不会再对「同一个站点能多快碰」各说一套。
+CDP 平台的间隔与会话要求直接读注册表 `runtime_policies`（调用参数显式覆盖仍优先），Reddit/YouTube 的 API／归档路线保留下面这份现场表；它们也可按平台目录选择 CDP 可见页路线——调度器和采集器不会再对「同一个站点能多快碰」各说一套。
 
 边界：轮转只降低每站点频率，不绕过平台限制、挑战页或登录墙；身份/代理永不轮换。策略与验证状态的机器可读版本见 [`../../references/platform-field-notes.md`](../../references/platform-field-notes.md#cross-platform-strategies)；每平台执行预算见 `cdp_strategy.py` 与 `askovo platforms "<需求>" --policies`。
 

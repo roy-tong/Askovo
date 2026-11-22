@@ -142,7 +142,7 @@ class RotationConsistencyTests(unittest.TestCase):
         import rotation  # noqa: WPS433
 
         self.assertEqual(3.0, rotation.build_cadences(["reddit"])[0].min_interval)
-        self.assertEqual(2.5, rotation.build_cadences(["youtube"])[0].min_interval)
+        self.assertEqual(3.0, rotation.build_cadences(["youtube"])[0].min_interval)
 
 
 class PageTriageTests(unittest.TestCase):

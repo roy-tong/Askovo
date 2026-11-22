@@ -268,6 +268,7 @@ def _build_collect(arguments: dict[str, Any]) -> argparse.Namespace:
         cdp_url=_optional_string(arguments, "cdp_url"),
         url=_optional_string(arguments, "url"),
         ack_terms=_boolean(arguments, "ack_terms"),
+        attach_existing=_boolean(arguments, "attach_existing"),
     )
 
 
@@ -463,6 +464,27 @@ def _build_codebook(arguments: dict[str, Any]) -> argparse.Namespace:
     return _namespace(study_dir=_string(arguments.get("study_dir"), "study_dir"))
 
 
+def _command_observation(args: argparse.Namespace) -> int:
+    action = str(args.action)
+    if action not in ("validate", "record", "list", "export"):
+        raise ValueError("action must be validate, record, list or export")
+    return int(getattr(askovo_cli.observation, "cmd_" + action)(args))
+
+
+def _build_observation(arguments: dict[str, Any]) -> argparse.Namespace:
+    action = _string(arguments.get("action"), "action")
+    if action not in ("validate", "record", "list", "export"):
+        raise ValueError("action must be validate, record, list or export")
+    return _namespace(
+        action=action,
+        file=_optional_string(arguments, "file") or "",
+        store=_optional_string(arguments, "store") or "",
+        study=_optional_string(arguments, "study") or "",
+        replace=_boolean(arguments, "replace", False),
+        json=_boolean(arguments, "json", True),
+    )
+
+
 def _build_proof_export(arguments: dict[str, Any]) -> argparse.Namespace:
     classification = _optional_string(arguments, "classification") or "private"
     if classification not in ("private", "synthetic", "public-redacted"):
@@ -615,7 +637,7 @@ TOOLS: list[dict[str, Any]] = [
                 "study_dir": {"type": "string", "description": "absolute path for the new study workspace"},
                 "goal": {"type": "string", "description": "research target: product, user, or scene"},
                 "region": {"enum": ["cn", "overseas", "global"]},
-                "sample_size": {"type": "integer", "minimum": 1},
+                "sample_size": {"type": "integer", "minimum": 1, "maximum": 100000},
                 "platform_types": {"type": "string", "description": _PLATFORM_TYPES_TEXT},
                 "mode": {
                     "enum": ["standard", "unnamed-experience"],
@@ -834,8 +856,8 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "askovo_collect",
         "description": (
-            "Run a supported collector (github/reddit) or a local fixture/export, with quota, "
-            "run manifest and dedup. Defaults to dry-run. Blocked platforms return exit 3."
+            "Run a supported collector, authorized visible-page CDP transport, or local fixture/export, "
+            "with quota, run manifest and dedup. Defaults to dry-run. Blocked platforms return exit 3."
         ),
         "inputSchema": {
             "type": "object",
@@ -849,6 +871,10 @@ TOOLS: list[dict[str, Any]] = [
                 "cdp_url": {"type": "string", "description": "Chrome DevTools endpoint, e.g. http://127.0.0.1:9222"},
                 "url": {"type": "string", "description": "authorized visible page URL for CDP"},
                 "ack_terms": {"type": "boolean", "default": False},
+                "attach_existing": {
+                    "type": "boolean", "default": False,
+                    "description": "attach to the exact already-open authorized page without opening a new tab",
+                },
             },
             "required": ["study_dir", "platform", "query"],
         },
@@ -1250,6 +1276,20 @@ TOOLS.append({
 })
 
 TOOLS.append({
+    "name": "askovo_observation",
+    "description": "Validate, record, list or export the shared product-observation contract; E2 candidates still need human review.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {"enum": ["validate", "record", "list", "export"]},
+            "file": {"type": "string"}, "store": {"type": "string"},
+            "study": {"type": "string"}, "replace": {"type": "boolean", "default": False},
+        },
+        "required": ["action"],
+    },
+})
+
+TOOLS.append({
     "name": "askovo_proof_export",
     "description": ("Export a read-only Prove Anything Proof Bundle from a study. "
                     "P1 checks the brief projection; independent semantic review and external adoption stay UNCHECKED."),
@@ -1282,6 +1322,7 @@ TOOL_BUILDERS = {
     "askovo_chain": (askovo_cli.sure_engine.cli_chain, _build_codebook),
     "askovo_deliver": (askovo_cli.command_deliver, _build_deliver),
     "askovo_proof_export": (askovo_cli.command_proof, _build_proof_export),
+    "askovo_observation": (_command_observation, _build_observation),
     "askovo_methods": (askovo_cli.sure_engine.cli_methods, _build_methods),
     "askovo_domains": (askovo_cli.sure_engine.cli_domains, _build_domains),
     "askovo_queue_add": (askovo_cli.sure_engine.cli_queue_add, _build_queue_add),

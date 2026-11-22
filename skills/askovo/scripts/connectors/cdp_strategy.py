@@ -43,7 +43,7 @@ import re
 import socket
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -173,6 +173,7 @@ class RuntimePolicy:
     requires_session: bool = False
     challenge_policy: str = CHALLENGE_POLICY
     blank_render_status: str = BLANK_RENDER_STATUS
+    collection_stop_rules: Tuple[str, ...] = ()
     source: str = "registry"
 
     def to_dict(self) -> Dict[str, Any]:
@@ -189,6 +190,7 @@ class RuntimePolicy:
             "requires_session": self.requires_session,
             "challenge_policy": self.challenge_policy,
             "blank_render_status": self.blank_render_status,
+            "collection_stop_rules": list(self.collection_stop_rules),
             "source": self.source,
         }
 
@@ -343,8 +345,31 @@ def build_policy(platform: str, section: Optional[Mapping[str, Any]] = None) -> 
 
 
 def policy_for(platform: str, section: Optional[Mapping[str, Any]] = None) -> RuntimePolicy:
-    """The enforced policy for one platform (defaults when it has no override)."""
-    return build_policy(platform, section)
+    """Merge runtime defaults with a collection policy, only in the stricter direction."""
+    base = build_policy(platform, section)
+    try:
+        registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+        entry = (registry.get("collection_policies") or {}).get("platforms", {}).get(str(platform))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PolicyError(f"cannot read collection policy for {platform}: {exc}") from exc
+    if entry is None:
+        return base
+    budget = entry.get("budget") if isinstance(entry, dict) else None
+    stop_rules = entry.get("stop_rules") if isinstance(entry, dict) else None
+    if not isinstance(budget, dict) or not isinstance(stop_rules, list) or not all(
+            isinstance(rule, str) for rule in stop_rules):
+        raise PolicyError(f"{platform}: malformed collection policy")
+    if not all(_number(budget.get(key)) for key in
+               ("cadence_seconds", "session_minutes", "budget_fraction")):
+        raise PolicyError(f"{platform}: collection budget must contain numeric limits")
+    return replace(
+        base,
+        cadence_seconds=max(base.cadence_seconds, float(budget["cadence_seconds"])),
+        session_minutes=min(base.session_minutes, float(budget["session_minutes"])),
+        budget_fraction=min(base.budget_fraction, float(budget["budget_fraction"])),
+        collection_stop_rules=tuple(stop_rules),
+        source=base.source + "+collection_policy",
+    )
 
 
 def effective_budget(cap_seconds: float, platform: str = "*",

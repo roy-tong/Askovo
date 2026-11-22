@@ -316,8 +316,10 @@ normalization losses. Three rules catch almost all of them:
 - `scripts/connectors/collect_cdp_kickstarter.py` — CDP visible pages, no login
 - `scripts/connectors/collect_cdp_discord.py` — CDP user session, real wheel events
 - `scripts/connectors/README.md` §4b — CDP collector usage, boundaries, envelope conversion
-- X / Instagram / TikTok methods above are documented here only; connectors
-  land when their extraction paths are verified end-to-end.
+- X / TikTok methods above are documented here only; their dedicated connectors
+  land when extraction paths are verified end-to-end. Instagram and Discord DOM
+  extraction are bundled in `sure_engine.CDP_EXTRACTORS` for `askovo collect`;
+  Instagram's field-verification status remains `partially_verified`.
 - The parallel-lane pattern (background archives + dual-tab pipeline) is an
   operating method, not a script: it composes whatever collectors a study
   already has, and each lane keeps its own extractor and its own persisted

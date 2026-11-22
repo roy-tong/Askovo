@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "generated_at": "2026-11-17",
+  "generated_at": "2026-11-21",
   "source": {
     "study": "Golf-device research campaign (multi-platform expansion)",
     "period": "2026-11",
@@ -45,7 +45,7 @@
         "date": "2026-11-17",
         "evidence": "≈3.9k windows / 100k records in one day"
       },
-      "cdp": false
+      "cdp": true
     },
     {
       "id": "reddit-empty-window-honesty",
@@ -61,7 +61,7 @@
         "date": "2026-11-17",
         "evidence": "r/GolfEquipment 2021–23 backfill"
       },
-      "cdp": false
+      "cdp": true
     },
     {
       "id": "youtube-ytdlp-po-token-block",
@@ -77,7 +77,7 @@
         "date": "2026-11-17",
         "evidence": "≈3.8k comments across five query waves"
       },
-      "cdp": false
+      "cdp": true
     },
     {
       "id": "youtube-comment-entity-payload",
@@ -93,7 +93,7 @@
         "date": "2026-11-17",
         "evidence": "five waves, 2024+ shape"
       },
-      "cdp": false
+      "cdp": true
     },
     {
       "id": "youtube-relative-timestamps",
@@ -110,7 +110,7 @@
         "date": "2026-11-17",
         "evidence": "en/zh/ko/ja relative strings in the field corpus"
       },
-      "cdp": false
+      "cdp": true
     },
     {
       "id": "kickstarter-cloudflare-direct-fetch",
@@ -454,7 +454,7 @@
         "date": "2026-11-17",
         "evidence": "pullpush_keyword.py aborted after explicit commercial rate-limit body; curl reproduced it once"
       },
-      "cdp": false
+      "cdp": true
     },
     {
       "id": "reddit-archive-client-contention",
@@ -470,7 +470,7 @@
         "date": "2026-11-17",
         "evidence": "golf-main ran twice concurrently for 3h at zero throughput; after kill+single restart the channel recovered"
       },
-      "cdp": false,
+      "cdp": true,
       "helper": "connectors.common.single_writer_state"
     },
     {
@@ -503,7 +503,7 @@
         "date": "2026-11-17",
         "evidence": "wave7 KR/JP queries returned localized videos with Korean/Japanese comments on first run"
       },
-      "cdp": false
+      "cdp": true
     },
     {
       "id": "discord-membership-gated-history",
@@ -996,5 +996,1306 @@
         ]
       }
     }
+  },
+  "collection_policies": {
+    "schema_version": "1.0",
+    "generated_at": "2026-11-21",
+    "review_by": "2027-02-21",
+    "note": "Collection-side policy: access route, request budget, detection signals, stop rules and dated sources per platform. It compiles platform-catalog.json decisions plus public terms read on the dates in sources. A policy bounds how a run touches a site; it never grants access, never outranks platform-catalog.json, and never authorizes a challenge bypass, identity rotation, proxy pool or credential shortcut. Human-readable rationale: skills/askovo/references/collection-strategy.md.",
+    "levels": {
+      "block": "Stop the platform for this run and record the gap.",
+      "throttle": "Wait for the stated reset or slow to the stated cadence; never retry at the same rate.",
+      "watch": "Record and continue; re-check before the next run."
+    },
+    "excluded": [
+      {
+        "platform": "zhihu",
+        "decision": "blocked",
+        "reason": "Catalog decision is blocked: authorized_export only, no bulk route, no CDP approval. A collection policy would imply a route that does not exist."
+      },
+      {
+        "platform": "xiaohongshu",
+        "decision": "blocked",
+        "reason": "Catalog decision is blocked: authorized_export only. Engagement and note pages are not an approved collection surface."
+      },
+      {
+        "platform": "jd",
+        "decision": "blocked",
+        "reason": "Catalog decision is blocked: authorized_export only; product pages and reviews are not an approved collection surface."
+      },
+      {
+        "platform": "taobao",
+        "decision": "blocked",
+        "reason": "Catalog decision is blocked: authorized_export only; no public or bulk route is approved."
+      }
+    ],
+    "platforms": {
+      "reddit": {
+        "access_modes": [
+          "official_api",
+          "historical_archive"
+        ],
+        "budget": {
+          "cadence_seconds": 3.0,
+          "session_minutes": 60.0,
+          "budget_fraction": 0.7
+        },
+        "signals": [
+          {
+            "id": "http-429-rate-limit",
+            "level": "throttle",
+            "detect": "429 with X-RateLimit-Used / X-RateLimit-Reset on oauth.reddit.com; 100 queries per minute per OAuth client is the documented ceiling.",
+            "action": "Wait for the reset header, then resume at the 3 s cadence. Two consecutive 429s end the platform for the run; never raise cadence to recover lost volume."
+          },
+          {
+            "id": "http-403-unauthenticated",
+            "level": "block",
+            "detect": "403 on the OAuth host without a valid token, or immediately after a token expires mid-run.",
+            "action": "Stop; refresh through the user-owned OAuth flow or pivot to historical_archive. Never spoof a user agent or reuse another client's credentials (Data API Terms 2.8)."
+          },
+          {
+            "id": "public-api-shutdown",
+            "level": "block",
+            "detect": "Calendar gate: new API requests closed 2026-10-31, unregistered clients cut 2027-01-12, public API retired 2027-03 per the 2026-09-30 schedule; RSS retired 2026-11-13.",
+            "action": "Migrate every Reddit channel to the archive channel plus the user's own authorized export before 2027-01-12. No plan may assume public JSON or RSS after 2027-03."
+          },
+          {
+            "id": "terms-scope-violation",
+            "level": "block",
+            "detect": "A request pattern that amounts to model training on Reddit content, or bulk redistribution (Data API Terms 2.4 / 3.1).",
+            "action": "Stop and require a written commercial agreement. Studies quote excerpts as evidence; they never ship a Reddit corpus."
+          },
+          {
+            "id": "content-removed",
+            "level": "watch",
+            "detect": "Comment body reads [removed] / [deleted], or a previously listed thing now 404s.",
+            "action": "Record as removed and exclude from prevalence denominators; keep the tombstone."
+          }
+        ],
+        "observed": [
+          {
+            "id": "reddit-oauth-100-qpm",
+            "claim": "One OAuth client is capped at 100 queries per minute measured as a 10-minute sliding average; the X-RateLimit headers are authoritative, the published number is only a ceiling.",
+            "threshold": "100 queries/minute per OAuth client, 10-minute sliding window",
+            "window_seconds": 600,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://www.citerocket.com/guides/rate-limits",
+              "https://data365.co/blog/reddit-api-limits"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "reddit-anon-json-403",
+            "claim": "Anonymous .json endpoints now answer 403 'You've been blocked by network security.' with retry-after: 0; the zero is a wall, not a clearance signal, so there is no anonymous fallback left.",
+            "threshold": "0 anonymous .json requests",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://www.citerocket.com/guides/rate-limits",
+              "https://data365.co/blog/reddit-api-limits"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "reddit-young-account-write-throttle",
+            "claim": "A young or low-karma account gets roughly one write per 15 minutes; the refusal arrives in json.errors as RATELIMIT 'you are doing that too much. try again in 9 minutes' while HTTP may still be 200.",
+            "threshold": "1 write / 15 minutes for a new or low-karma account",
+            "window_seconds": 900,
+            "suggested_cadence_seconds": 2700.0,
+            "confidence": "high",
+            "source_urls": [
+              "https://certifiedkarma.com/blog/reddit-doing-that-too-much",
+              "https://www.soar.sh/blog/reddit-error-doing-that-too-much"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "reddit-subreddit-karma-gate",
+            "claim": "Subreddit admission scales with size: under 5k subscribers no gate, 50k-500k needs 200-500 combined karma over 2-4 weeks, large subreddits 500-2000+ over 3-6 months; removals are silent and the post still looks alive while logged in.",
+            "threshold": "200-500 combined karma for a 50k-500k subreddit",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://warmstart.app/guides/reddit-karma-requirements",
+              "https://www.subredditanalyzer.com/how-much-karma-do-you-need-to-post-on-reddit"
+            ],
+            "as_of": "2026-07-08"
+          },
+          {
+            "id": "reddit-crosspost-dilution",
+            "claim": "The same link pushed into 2-3 subreddits in one day draws silent removal and shadowban risk; self-promotion ratios are enforced per subreddit, not globally.",
+            "threshold": "at most 2 subreddits per week for one link",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "medium",
+            "source_urls": [
+              "https://www.soar.sh/blog/self-promotion-rules-by-subreddit-database",
+              "https://www.ogsmedia.com/reddit-shadowban/"
+            ],
+            "as_of": "2026-11-21"
+          }
+        ],
+        "stop_rules": [
+          "Session cap: stop the platform when session_minutes is reached; cooldown 30 min before the next touch.",
+          "One goto per cell: a cell that did not render on the first goto is recorded as a gap, not retried.",
+          "Budget headroom: stop at budget_fraction of the planned volume; the remainder is tomorrow's work.",
+          "Mode exclusivity: one exclusive mode per session; never mix collect with post/reply actions.",
+          "PullPush is retired as a backup: it sits behind a commercial wall (field note reddit-pullpush-commercial-wall).",
+          "Deep-window backfill that starts returning 422 'slow down' is a stop condition for the window, not a signal to parallelise."
+        ],
+        "sources": [
+          {
+            "url": "https://redditinc.com/policies/data-api-terms",
+            "as_of": "2026-07-20",
+            "grade": "official",
+            "claim": "2.4 forbids use of Reddit data for ML/AI training; 2.8 forbids misrepresenting user agent or OAuth identity; 2.9 lets Reddit set rate limits; 3.1 routes commercial or over-limit use to a separate agreement; 3.2 forbids circumvention."
+          },
+          {
+            "url": "https://reduck.ai/use-cases/reddit-api-alternatives",
+            "as_of": "2026-11-21",
+            "grade": "craft",
+            "claim": "2026-09-30 schedule: new API requests closed 2026-10-31, unregistered apps cut 2027-01-12, public API retired 2027-03; RSS retired 2026-11-13."
+          },
+          {
+            "url": "https://boomreddit.com/glossary/reddit-api/",
+            "as_of": "2026-11-21",
+            "grade": "craft",
+            "claim": "Second independent summary of the same shutdown schedule."
+          },
+          {
+            "url": "repo:skills/askovo/assets/platform-field-notes.json",
+            "as_of": "2026-11-17",
+            "grade": "craft",
+            "claim": "Arctic Shift windows answer 422/429/403 under backfill pressure; reset-header backoff kept a ~3.9k-window run honest."
+          }
+        ],
+        "unverified": [
+          "The 2026-09-30 announcement post was not read directly; the schedule rests on two secondary summaries.",
+          "Per-client quota after 2027-01-12 registration is not published."
+        ]
+      },
+      "amazon": {
+        "access_modes": [
+          "historical_dataset",
+          "seller_api",
+          "associates_api"
+        ],
+        "budget": {
+          "cadence_seconds": 3.0,
+          "session_minutes": 90.0,
+          "budget_fraction": 0.7
+        },
+        "signals": [
+          {
+            "id": "paapi-retired",
+            "level": "block",
+            "detect": "Any call still pointed at Product Advertising API 5.0: deprecated 2026-04-30, shut down 2026-05-15.",
+            "action": "Remove PA-API from every plan. Use an approved Creators API account, the seller API with the seller's own credentials, or a licensed historical dataset."
+          },
+          {
+            "id": "creators-quota-rejected",
+            "level": "throttle",
+            "detect": "429 / 5xx from the Creators API once the associate quota is spent.",
+            "action": "Wait for the next quota day. The quota belongs to one associate account; opening a second account to double it is not a route."
+          },
+          {
+            "id": "http-503-interstitial",
+            "level": "block",
+            "detect": "503 or a robot interstitial on product pages even with an authorized visible browser.",
+            "action": "Stop the page channel for the run. Product-page scraping is not an authorized route here; record the gap."
+          },
+          {
+            "id": "login-wall",
+            "level": "block",
+            "detect": "Sign-in wall on reviews, order history or seller pages.",
+            "action": "Stop; the session is the account holder's. Never enter credentials, read stored credentials or export cookies."
+          },
+          {
+            "id": "partial-render",
+            "level": "watch",
+            "detect": "Review list renders but pagination stalls on the first page.",
+            "action": "Record the page cap; do not compensate with reload loops."
+          }
+        ],
+        "observed": [
+          {
+            "id": "amazon-paapi-1-tps",
+            "claim": "Product Advertising API 5.0 allows 1 request per second and 8,640 requests per day; excess returns 429 TooManyRequestsException, so the ceiling is below any multi-page crawl.",
+            "threshold": "1 request/second, 8,640 requests/day",
+            "window_seconds": 86400,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://repost.aws/questions/QUaMFKckEsRrqXVbVBEGTpdg/product-advertising-api-429-too-many-requests",
+              "https://webservices.amazon.com/paapi5/documentation/"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "amazon-web-captcha-cadence",
+            "claim": "Public page requests start drawing CAPTCHA interstitials above roughly 20 requests per minute; vendor practice settles at 1-2 requests per minute, which is already slower than the runtime budget.",
+            "threshold": "~20 requests/minute ceiling; 1-2 requests/minute practice",
+            "window_seconds": 60,
+            "suggested_cadence_seconds": 60.0,
+            "confidence": "medium",
+            "source_urls": [
+              "https://krawlx.com/blog/amazon-product-scraping-guide-2026.html",
+              "https://www.ficstar.com/amazon-scraping"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "amazon-robot-wall-self-clear",
+            "claim": "A robot-check interstitial usually clears itself in 45-60 seconds; poking it while it shows extends the block, so the only correct action is to wait once.",
+            "threshold": "45-60 seconds self-clear",
+            "window_seconds": 60,
+            "suggested_cadence_seconds": null,
+            "confidence": "low",
+            "source_urls": [
+              "https://plainenglish.io/web-scraping/inside-amazon-s-2026-six-layer-anti-bot-stack-how-to-scrape-through-it"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "amazon-first-request-failure-is-reputation",
+            "claim": "A failure on the very first request of a session means IP or ASN reputation, not rate limiting; slowing down cannot fix it and retrying only deepens the block.",
+            "threshold": "failure on request #1 = reputation block",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "medium",
+            "source_urls": [
+              "https://plainenglish.io/web-scraping/inside-amazon-s-2026-six-layer-anti-bot-stack-how-to-scrape-through-it",
+              "https://bringits.com/web-data-insights/why-web-scrapers-get-blocked-captchas-403s-fingerprinting-rate-limits/"
+            ],
+            "as_of": "2026-11-21"
+          }
+        ],
+        "stop_rules": [
+          "Session cap: stop the platform when session_minutes is reached; cooldown 30 min before the next touch.",
+          "One goto per cell: a cell that did not render on the first goto is recorded as a gap, not retried.",
+          "Budget headroom: stop at budget_fraction of the planned volume; the remainder is tomorrow's work.",
+          "Mode exclusivity: one exclusive mode per session; never mix collect with post/reply actions.",
+          "Review collection stays inside the runtime 'reviews' exclusive mode.",
+          "A missing quote from a seller is a gap; it is never imputed from a competitor listing."
+        ],
+        "sources": [
+          {
+            "url": "https://webservices.amazon.com/paapi5/documentation/",
+            "as_of": "2026-11-21",
+            "grade": "official",
+            "claim": "PA-API 5.0 is deprecated 2026-04-30 and shut down 2026-05-15; Amazon directs integrations to the Creators API."
+          },
+          {
+            "url": "https://velantio.com/blog/how-to-get-amazon-creators-api-access",
+            "as_of": "2026-11-21",
+            "grade": "craft",
+            "claim": "Creators API access runs through an approved associate account; per-associate quotas are not published."
+          },
+          {
+            "url": "https://www.affiliate-toolkit.com/affiliate-toolkit-3-8-5-amazon-creators-api-support-why-you-need-to-migrate-before-may-15-2026/",
+            "as_of": "2026-11-21",
+            "grade": "craft",
+            "claim": "Migration deadline and the practical failure mode of staying on PA-API."
+          }
+        ],
+        "unverified": [
+          "Creators API per-associate quota values are not published.",
+          "Whether new Associates API keys are still issued in 2026 is unconfirmed."
+        ]
+      },
+      "kickstarter": {
+        "access_modes": [
+          "historical_dataset",
+          "authorized_export",
+          "cdp_visible_page"
+        ],
+        "budget": {
+          "cadence_seconds": 8.0,
+          "session_minutes": 120.0,
+          "budget_fraction": 0.7
+        },
+        "signals": [
+          {
+            "id": "challenge-page",
+            "level": "block",
+            "detect": "Cloudflare 'Just a moment' / JS challenge on project, discover or comments routes.",
+            "action": "Passive wait only inside the runtime challenge window, then stop and record. Never solve the challenge, never rotate identity or user agent."
+          },
+          {
+            "id": "graphql-403",
+            "level": "block",
+            "detect": "POST /graphql answers 403 without the browser session (field-verified).",
+            "action": "Do not treat /graphql as an API route. Collect authorized visible pages or the historical dataset only."
+          },
+          {
+            "id": "login-wall",
+            "level": "block",
+            "detect": "Comments or creator updates require sign-in.",
+            "action": "The account holder may log in by hand if they choose; otherwise record the gate. The agent never enters credentials."
+          },
+          {
+            "id": "partial-render",
+            "level": "watch",
+            "detect": "Project page loads but the comments tab stays empty or stops after the first expand.",
+            "action": "Record the empty tab as a gap, not as zero comments; allow_reload stays false."
+          },
+          {
+            "id": "content-removed",
+            "level": "watch",
+            "detect": "Deleted project or a removed comment.",
+            "action": "Exclude from counts and keep the tombstone."
+          }
+        ],
+        "observed": [
+          {
+            "id": "kickstarter-vendor-rate-assessment",
+            "claim": "No hard request threshold is published; the only quantified figure is a vendor self-assessment of difficulty 2/5, rate-limit severity 3/5 and 1-3 second spacing, which is weaker evidence than a logged failure.",
+            "threshold": "1-3 second spacing (vendor self-assessment)",
+            "window_seconds": null,
+            "suggested_cadence_seconds": 8.0,
+            "confidence": "low",
+            "source_urls": [
+              "https://scraperly.com/scrape/kickstarter",
+              "https://www.scrapingbee.com/blog/how-to-scrape-kickstarter/"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "kickstarter-403-is-credential",
+            "claim": "A 403 on discover/advanced.json or the GraphQL endpoint is almost always a missing or expired cookie or X-Csrf-Token; slowing the rate does not clear it, so it must not be classified as frequency.",
+            "threshold": "403 = credential loss, not rate limit",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "medium",
+            "source_urls": [
+              "https://apis.io/providers/kickstarter/",
+              "https://www.scrapingbee.com/blog/how-to-scrape-kickstarter/"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "kickstarter-client-render-window",
+            "claim": "The discover page builds its campaign cards on the client and needs roughly 7 seconds before the cards exist; reading earlier returns empty cards that look like a block but are only a render race.",
+            "threshold": "~7 seconds to first rendered card",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "medium",
+            "source_urls": [
+              "https://www.scrapingbee.com/blog/how-to-scrape-kickstarter/",
+              "https://scraperly.com/scrape/kickstarter"
+            ],
+            "as_of": "2026-11-21"
+          }
+        ],
+        "stop_rules": [
+          "Session cap: stop the platform when session_minutes is reached; cooldown 30 min before the next touch.",
+          "One goto per cell: a cell that did not render on the first goto is recorded as a gap, not retried.",
+          "Budget headroom: stop at budget_fraction of the planned volume; the remainder is tomorrow's work.",
+          "Mode exclusivity: one exclusive mode per session; never mix collect with post/reply actions.",
+          "Expand 'load more' once per view; expanding it in a loop is rate-control pressure.",
+          "Comments are read in the 'comments' exclusive mode, project copy in 'posts'; never both in one session."
+        ],
+        "sources": [
+          {
+            "url": "https://www.kickstarter.com/terms-of-use",
+            "as_of": "2026-11-21",
+            "grade": "lead",
+            "claim": "Live terms-of-use page; a non-browser fetch returned 403, so the automated-access clause was not read this round."
+          },
+          {
+            "url": "repo:skills/askovo/assets/platform-field-notes.json",
+            "as_of": "2026-11-17",
+            "grade": "craft",
+            "claim": "Direct fetch of project pages hits a Cloudflare JS challenge and /graphql returns 403; only authorized visible pages work."
+          }
+        ],
+        "unverified": [
+          "Kickstarter's 2026 terms revision and its exact automated-access wording are unconfirmed.",
+          "Rate-limit headers on the visible-page route are not exposed; cadence is policy, not an observed ceiling."
+        ]
+      },
+      "instagram": {
+        "access_modes": [
+          "authorized_export",
+          "research_api",
+          "cdp_visible_page"
+        ],
+        "budget": {
+          "cadence_seconds": 10.0,
+          "session_minutes": 40.0,
+          "budget_fraction": 0.6
+        },
+        "signals": [
+          {
+            "id": "login-challenge",
+            "level": "block",
+            "detect": "Checkpoint, 'suspicious activity' interstitial or a 2FA prompt on the account.",
+            "action": "Stop the platform immediately; the account owner resolves it in their own app. Never retry, never switch account."
+          },
+          {
+            "id": "http-429-rate-limit",
+            "level": "throttle",
+            "detect": "429 or 'Please wait a few minutes' on web routes; Graph API allows roughly 200 calls per user per hour.",
+            "action": "Back off to the next scheduled run; never raise cadence to recover lost volume."
+          },
+          {
+            "id": "login-wall",
+            "level": "block",
+            "detect": "Profile, hashtag grid or comments require login.",
+            "action": "Stop; authorized_export and research_api are the routes, not a borrowed session."
+          },
+          {
+            "id": "basic-display-retired",
+            "level": "block",
+            "detect": "Any integration still calling Basic Display endpoints.",
+            "action": "Migrate; Basic Display was retired 2024-12-04."
+          },
+          {
+            "id": "redirect-to-consent",
+            "level": "watch",
+            "detect": "Consent or cookie interstitial swallows the target route.",
+            "action": "Record the cell as not collected; do not click through consent on the user's behalf."
+          },
+          {
+            "id": "shadow-removal",
+            "level": "watch",
+            "detect": "A post visible in a grid disappears from the profile view without a 404.",
+            "action": "Record as removed; do not re-fetch more than once to 'confirm'."
+          }
+        ],
+        "observed": [
+          {
+            "id": "instagram-graph-200-per-hour",
+            "claim": "The Graph API allows 200 calls per user per hour on a rolling window; excess returns '(#4) Application request limit reached', which is 18 seconds of average spacing at the ceiling.",
+            "threshold": "200 calls per user per hour",
+            "window_seconds": 3600,
+            "suggested_cadence_seconds": 18.0,
+            "confidence": "high",
+            "source_urls": [
+              "https://developers.facebook.com/docs/graph-api/overview/rate-limiting/",
+              "https://blog.lots.social/instagram-api-publishing-limits-and-requirements"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "instagram-restart-recharges-limit",
+            "claim": "Instaloader's own troubleshooting states the rate controller assumes a full quota when it starts, so frequent restarts raise the effective request rate and provoke 429 by themselves.",
+            "threshold": "at most 2 process restarts per day",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://instaloader.github.io/troubleshooting.html"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "instagram-action-ceiling-divergence",
+            "claim": "Published action ceilings disagree by an order of magnitude (15-20 follows/hour and 10/hour versus 150/day and 30/day for a new account), so any single number must be divided before use rather than trusted as a target.",
+            "threshold": "15-20 follows/hour vs 150/day; 20 likes/hour; 5 comments/day for a fresh account",
+            "window_seconds": 3600,
+            "suggested_cadence_seconds": 720.0,
+            "confidence": "medium",
+            "source_urls": [
+              "https://prmotion.me/en/post/how-to-bypass-action-block-mitigation-in-instagram-and-protect-automation-from-bans",
+              "https://metricool.com/instagram-limits/",
+              "https://viari.app/en/glossary/daily-action-limits"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "instagram-anonymous-network-penalty",
+            "claim": "Anonymous web reads from cloud, VPN or public proxy addresses are penalised noticeably more than a logged-in session, so an anonymous run cannot be assumed to have the same budget.",
+            "threshold": "anonymous cloud/VPN reads are throttled earlier",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "medium",
+            "source_urls": [
+              "https://instaloader.github.io/troubleshooting.html"
+            ],
+            "as_of": "2026-11-21"
+          }
+        ],
+        "stop_rules": [
+          "Session cap: stop the platform when session_minutes is reached; cooldown 30 min before the next touch.",
+          "One goto per cell: a cell that did not render on the first goto is recorded as a gap, not retried.",
+          "Budget headroom: stop at budget_fraction of the planned volume; the remainder is tomorrow's work.",
+          "Mode exclusivity: one exclusive mode per session; never mix collect with post/reply actions.",
+          "One keyword grid per session; switching locale resets the grid and burns the budget.",
+          "Comment ancestor chains are read once and cached; re-walking them counts against the same budget."
+        ],
+        "sources": [
+          {
+            "url": "https://developers.facebook.com/terms/",
+            "as_of": "2026-11-21",
+            "grade": "official",
+            "claim": "Platform terms govern automated access; collection requires permission, and automated scraping without it is prohibited."
+          },
+          {
+            "url": "https://developers.facebook.com/docs/instagram-platform",
+            "as_of": "2026-11-21",
+            "grade": "official",
+            "claim": "Instagram Basic Display was retired 2024-12-04; the supported path is the Instagram API with Instagram or Facebook Login."
+          },
+          {
+            "url": "https://influenceflow.io/resources/instagram-api-rate-limit-the-complete-developer-and-marketer-guide-for-2026/",
+            "as_of": "2026-11-21",
+            "grade": "craft",
+            "claim": "Graph API ceiling around 200 calls per user per hour; per-endpoint quotas are not published."
+          },
+          {
+            "url": "repo:skills/askovo/assets/platform-field-notes.json",
+            "as_of": "2026-11-17",
+            "grade": "craft",
+            "claim": "Keyword grid beats profile walking; comment ancestor chains and reel captions need separate extraction paths."
+          }
+        ],
+        "unverified": [
+          "The reported 2026-11-20 pause of Meta's commercial terms is secondary and unconfirmed.",
+          "Per-endpoint quotas and checkpoint triggers are not published."
+        ]
+      },
+      "youtube": {
+        "access_modes": [
+          "official_api"
+        ],
+        "budget": {
+          "cadence_seconds": 3.0,
+          "session_minutes": 60.0,
+          "budget_fraction": 0.7
+        },
+        "signals": [
+          {
+            "id": "quota-exhausted",
+            "level": "block",
+            "detect": "quotaExceeded / dailyLimitExceeded from Data API v3; default 10,000 units per day and search.list costs 100 units.",
+            "action": "Stop for the quota day. Treat search as the scarce resource (~100 calls/day) and backfill channels with playlistItems + videos.list at 1 unit."
+          },
+          {
+            "id": "http-403-unauthenticated",
+            "level": "block",
+            "detect": "403 after a key restriction or project mismatch.",
+            "action": "Fix the key/project on the owner side; never rotate keys or projects to evade quota."
+          },
+          {
+            "id": "terms-scope-violation",
+            "level": "block",
+            "detect": "Storing API data beyond the permitted cache period, or using it to build a substitute corpus or train a model.",
+            "action": "Stop; the API Services Terms cap storage and forbid derivative datasets. Cite metrics, not mirrored video data."
+          },
+          {
+            "id": "comments-disabled",
+            "level": "watch",
+            "detect": "commentsDisabled on a video.",
+            "action": "Record and exclude from comment-denominator counts."
+          },
+          {
+            "id": "content-removed",
+            "level": "watch",
+            "detect": "Video returns 404, private, or region-blocked.",
+            "action": "Exclude from counts; keep the tombstone."
+          }
+        ],
+        "observed": [
+          {
+            "id": "youtube-quota-10000-units",
+            "claim": "The Data API grants 10,000 units per day resetting at midnight Pacific; search.list costs 100 units while videos.list costs 1, so the quota is spent by search, not by detail reads.",
+            "threshold": "10,000 units/day; search.list 100 units; videos.list 1 unit",
+            "window_seconds": 86400,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://developers.google.com/youtube/v3/determine_quota_cost"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "youtube-search-budget-30-per-day",
+            "claim": "At 100 units per search, a 3,000-unit daily budget allows 30 searches; the quota returns quotaExceeded and does not refill until the Pacific reset.",
+            "threshold": "30 searches/day at a 3,000-unit budget",
+            "window_seconds": 86400,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://developers.google.com/youtube/v3/determine_quota_cost"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "youtube-bot-check-means-ip-blocked",
+            "claim": "A 'Sign in to confirm you're not a bot' prompt that also appears in a normal browser means the IP is already blocked; a PO token does not recover it, so retrying is wasted budget.",
+            "threshold": "browser also challenged = IP blocked for the day",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://github.com/yt-dlp/yt-dlp/issues/11053",
+              "https://dalvo.io/blog/yt-dlp-sign-in-to-confirm-not-a-bot"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "youtube-caption-rate-limited-ambiguous",
+            "claim": "429 CAPTION_RATE_LIMITED cannot be distinguished from a missing PO token or a multi-audio-track video, so it is not a frequency signal and retrying does not diagnose it.",
+            "threshold": "CAPTION_RATE_LIMITED = coverage gap, not a retry",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "medium",
+            "source_urls": [
+              "https://github.com/yt-dlp/yt-dlp/issues/12475",
+              "https://github.com/yt-dlp/yt-dlp/issues/14195"
+            ],
+            "as_of": "2026-11-21"
+          }
+        ],
+        "stop_rules": [
+          "Session cap: stop the platform when session_minutes is reached; cooldown 30 min before the next touch.",
+          "One goto per cell: a cell that did not render on the first goto is recorded as a gap, not retried.",
+          "Budget headroom: stop at budget_fraction of the planned volume; the remainder is tomorrow's work.",
+          "Mode exclusivity: one exclusive mode per session; never mix collect with post/reply actions.",
+          "Quota is per project per day and resets on Pacific time; two studies sharing one project share one quota.",
+          "The innertube channel is a separate route with its own budget; it never inherits API quota headroom."
+        ],
+        "sources": [
+          {
+            "url": "https://developers.google.com/youtube/terms/api-services-terms-of-service",
+            "as_of": "2026-11-21",
+            "grade": "official",
+            "claim": "API Services Terms govern storage, caching and derivative use of YouTube API data."
+          },
+          {
+            "url": "https://developers.google.com/youtube/terms/developer-policies",
+            "as_of": "2026-11-21",
+            "grade": "official",
+            "claim": "Developer policies prohibit building a substitute for YouTube or scraping around the API."
+          },
+          {
+            "url": "https://developers.google.com/youtube/v3/determine_quota_cost",
+            "as_of": "2026-11-21",
+            "grade": "official",
+            "claim": "Default quota is 10,000 units per day; search.list costs 100 units, read calls such as videos.list cost 1."
+          }
+        ],
+        "unverified": [
+          "Quota-increase audit outcomes are not predictable; plans must fit 10,000 units/day.",
+          "The innertube route is project-internal and not covered by the API terms; treat its volume as unlicensed headroom and keep it small."
+        ]
+      },
+      "x": {
+        "access_modes": [
+          "official_api",
+          "cdp_visible_page"
+        ],
+        "budget": {
+          "cadence_seconds": 10.0,
+          "session_minutes": 45.0,
+          "budget_fraction": 0.6
+        },
+        "signals": [
+          {
+            "id": "guest-token-403",
+            "level": "block",
+            "detect": "403 on guest-token or search endpoints without app auth.",
+            "action": "Stop; use the paid API tier or an authorized visible page. Never rotate guest tokens or app keys."
+          },
+          {
+            "id": "http-429-rate-limit",
+            "level": "throttle",
+            "detect": "429 with x-rate-limit-reset; windows differ per endpoint (commonly 15 minutes).",
+            "action": "Wait for the reset of that endpoint. Track limits per endpoint; a clean endpoint does not mean the account is fine."
+          },
+          {
+            "id": "login-wall",
+            "level": "block",
+            "detect": "Search or profile requires login.",
+            "action": "Stop; requires_session means the account holder logs in by hand. The agent never enters credentials."
+          },
+          {
+            "id": "automation-rule",
+            "level": "block",
+            "detect": "Any plan that posts, replies or bulk-follows from the collection identity.",
+            "action": "Collection is read-only. Posting belongs to Growovo's authorized publisher, not to this run."
+          },
+          {
+            "id": "content-removed",
+            "level": "watch",
+            "detect": "Tweet unavailable or withheld in a region.",
+            "action": "Record and exclude; do not substitute a quote-tweet copy as the original."
+          }
+        ],
+        "observed": [
+          {
+            "id": "x-two-tier-window",
+            "claim": "Read endpoints are limited on both a 15-minute and a 24-hour window; recovering on the short window does not restore the long one, so bursting after a short-window reset buys a multi-hour cooldown.",
+            "threshold": "per-endpoint, 15-minute and 24-hour windows",
+            "window_seconds": 900,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://docs.twexapi.io/fr/guides/twitter-api-429-403-401",
+              "https://api.sorsa.io/blog/twitter-api-rate-limits-2026",
+              "https://climbx.so/blog/x-api-limits"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "x-429-code-88",
+            "claim": "Exceeding a read limit returns 429 with error code 88 'Rate limit exceeded' and an x-rate-limit-reset timestamp; waiting for that timestamp is the only recovery that does not extend the block.",
+            "threshold": "429 code 88 + x-rate-limit-reset",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://docs.twexapi.io/fr/guides/twitter-api-429-403-401",
+              "https://www.networkx.ai/blog/x-twitter-api-limits-in-2026-what-every-automation-user-needs-to-know"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "x-automation-rules",
+            "claim": "The automation rules forbid duplicative or bulk automated posting and cap automated behaviour per account; a post volume plan has to stay inside them regardless of the rate limit.",
+            "threshold": "policy ceiling on automated posting",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://help.x.com/en/rules-and-policies/x-automation"
+            ],
+            "as_of": "2026-11-21"
+          }
+        ],
+        "stop_rules": [
+          "Session cap: stop the platform when session_minutes is reached; cooldown 30 min before the next touch.",
+          "One goto per cell: a cell that did not render on the first goto is recorded as a gap, not retried.",
+          "Budget headroom: stop at budget_fraction of the planned volume; the remainder is tomorrow's work.",
+          "Mode exclusivity: one exclusive mode per session; never mix collect with post/reply actions.",
+          "Windowed search (since/until) is mandatory; infinite scroll stalls and burns the session (field note x-search-infinite-scroll-stall).",
+          "A session-health cooldown applies after a search stall: 30 min before the same account touches X again."
+        ],
+        "sources": [
+          {
+            "url": "https://x.com/en/tos",
+            "as_of": "2026-11-21",
+            "grade": "lead",
+            "claim": "Live terms page; a non-browser fetch failed, so the scraping and automation clauses were not quoted this round."
+          },
+          {
+            "url": "https://developer.x.com/en/portal/products",
+            "as_of": "2026-11-21",
+            "grade": "craft",
+            "claim": "Developer access is sold in paid tiers with per-endpoint limits; the free read tier is gone."
+          },
+          {
+            "url": "repo:skills/askovo/assets/platform-field-notes.json",
+            "as_of": "2026-11-17",
+            "grade": "craft",
+            "claim": "Search infinite scroll stalls under load; windowed since/until queries are the working pattern."
+          }
+        ],
+        "unverified": [
+          "Current per-endpoint limits and prices on the developer portal were not re-read this round.",
+          "X's exact automated-access wording is unconfirmed (page not fetchable without a browser)."
+        ]
+      },
+      "tiktok": {
+        "access_modes": [
+          "research_api",
+          "authorized_export",
+          "cdp_visible_page"
+        ],
+        "budget": {
+          "cadence_seconds": 15.0,
+          "session_minutes": 40.0,
+          "budget_fraction": 0.6
+        },
+        "signals": [
+          {
+            "id": "challenge-page",
+            "level": "block",
+            "detect": "Slider or 'verify you are human' challenge on web routes.",
+            "action": "Passive wait only, then stop and record. Never solve the challenge or rotate identity."
+          },
+          {
+            "id": "login-wall",
+            "level": "block",
+            "detect": "Comments, profile grid or search require login.",
+            "action": "Stop; research_api or an authorized export is the route. The account holder logs in by hand if they choose."
+          },
+          {
+            "id": "http-429-rate-limit",
+            "level": "throttle",
+            "detect": "429 or empty payloads after a burst on web routes.",
+            "action": "Back off to the next run; empty payloads count as throttling, not as zero comments."
+          },
+          {
+            "id": "partial-render",
+            "level": "watch",
+            "detect": "Video page renders but comments stay empty past the first batch.",
+            "action": "Record the cap; allow_reload stays false."
+          },
+          {
+            "id": "content-removed",
+            "level": "watch",
+            "detect": "Video unavailable or comment removed.",
+            "action": "Exclude from counts; keep the tombstone."
+          }
+        ],
+        "observed": [
+          {
+            "id": "tiktok-soft-failure-200",
+            "claim": "Blocks arrive as HTTP 200 with a login wall or verification page rather than 429, so success must be judged by content fingerprint (video items present, plausible count, non-empty title), never by status code.",
+            "threshold": "200 + login wall = soft failure",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://autodev.blog/posts/tiktok-research-article/",
+              "https://scrapebadger.com/blog/tiktok-scraping-apis-in-2026-the-complete-deep-guide"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "tiktok-device-trust",
+            "claim": "A low-trust device identity is throttled or returns empty payloads even when X-Bogus/msToken signatures are valid; empty payloads are therefore a device signal, not a parsing bug.",
+            "threshold": "low-trust device = throttled or empty response",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "medium",
+            "source_urls": [
+              "https://scrapebadger.com/blog/tiktok-scraping-apis-in-2026-the-complete-deep-guide",
+              "https://developers.tiktok.com/doc/research-api-specs-query-videos"
+            ],
+            "as_of": "2026-11-21"
+          }
+        ],
+        "stop_rules": [
+          "Session cap: stop the platform when session_minutes is reached; cooldown 30 min before the next touch.",
+          "One goto per cell: a cell that did not render on the first goto is recorded as a gap, not retried.",
+          "Budget headroom: stop at budget_fraction of the planned volume; the remainder is tomorrow's work.",
+          "Mode exclusivity: one exclusive mode per session; never mix collect with post/reply actions.",
+          "TikTok research API access is institution-gated; a personal account cannot substitute for it.",
+          "One video per cell; the comment pane is expanded once."
+        ],
+        "sources": [
+          {
+            "url": "https://developers.tiktok.com/doc/research-api-specs-query-videos",
+            "as_of": "2026-11-21",
+            "grade": "craft",
+            "claim": "Research API exists and is limited to approved research institutions; endpoint docs were not re-read line by line this round."
+          },
+          {
+            "url": "repo:skills/askovo/assets/platform-field-notes.json",
+            "as_of": "2026-11-17",
+            "grade": "craft",
+            "claim": "A login-verified session is required for comment routes; session health degrades under scrolling."
+          }
+        ],
+        "unverified": [
+          "Whether the research API is open to commercial entities in 2026 is unconfirmed.",
+          "Per-route rate limits on the visible-page channel are not published."
+        ]
+      },
+      "bilibili": {
+        "access_modes": [
+          "public_endpoints",
+          "authorized_export"
+        ],
+        "budget": {
+          "cadence_seconds": 5.0,
+          "session_minutes": 60.0,
+          "budget_fraction": 0.7
+        },
+        "signals": [
+          {
+            "id": "http-412-risk-control",
+            "level": "block",
+            "detect": "HTTP 412 or business code -412 ('request intercepted') from api.bilibili.com.",
+            "action": "Stop the platform for the run; the block typically lasts hours. Do not retry with new headers, cookies or IPs."
+          },
+          {
+            "id": "http-429-rate-limit",
+            "level": "throttle",
+            "detect": "429 or empty data arrays after rapid paging.",
+            "action": "Wait and resume at 5 s cadence; two 429s end the platform for the run."
+          },
+          {
+            "id": "login-wall",
+            "level": "watch",
+            "detect": "Some comment or search endpoints return degraded data without login.",
+            "action": "Record degraded coverage; do not automate login."
+          },
+          {
+            "id": "blank-render",
+            "level": "block",
+            "detect": "A CDP page renders blank because the stack is unsupported.",
+            "action": "Record unsupported_stack and stop the cell; do not retry with a different browser profile."
+          }
+        ],
+        "observed": [
+          {
+            "id": "bilibili-cookie-set-contract",
+            "claim": "Since 2025-11 a request carrying only SESSDATA gets 412 on routes that used to work; a usable session needs bili_jct, buvid3, buvid4 and DedeUserID as well, so a partial cookie set looks exactly like a rate block.",
+            "threshold": "SESSDATA + bili_jct + buvid3 + buvid4 + DedeUserID",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://github.com/DIYgod/RSSHub/issues/20406"
+            ],
+            "as_of": "2026-03-26"
+          },
+          {
+            "id": "bilibili-minus-509",
+            "claim": "API-layer throttling returns {\"code\": -509, \"message\": \"请求过于频繁\"} while the page layer shows a 412 security-policy interstitial; the numeric code is the only reliable signal.",
+            "threshold": "code -509",
+            "window_seconds": null,
+            "suggested_cadence_seconds": 1800.0,
+            "confidence": "medium",
+            "source_urls": [
+              "https://github.com/SocialSisterYi/bilibili-API-collect",
+              "https://blog.gitcode.com/f56f35130957b443be5aa3d7d3c52037.html"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "bilibili-wbi-needs-buvid3",
+            "claim": "WBI signing fails without buvid3, so a missing cookie surfaces as a signature error before it ever surfaces as a rate limit; the run must self-check both at start.",
+            "threshold": "missing buvid3 = signature failure",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "medium",
+            "source_urls": [
+              "https://github.com/SocialSisterYi/bilibili-API-collect",
+              "https://skillhub.360.com/skills/thcjp/bilibili-all-in-one"
+            ],
+            "as_of": "2026-11-21"
+          }
+        ],
+        "stop_rules": [
+          "Session cap: stop the platform when session_minutes is reached; cooldown 30 min before the next touch.",
+          "One goto per cell: a cell that did not render on the first goto is recorded as a gap, not retried.",
+          "Budget headroom: stop at budget_fraction of the planned volume; the remainder is tomorrow's work.",
+          "Mode exclusivity: one exclusive mode per session; never mix collect with post/reply actions.",
+          "Public endpoints are read-only and unauthenticated; a logged-in cookie jar is out of scope.",
+          "Comment paging stops at the documented depth; deeper replies are recorded as a gap."
+        ],
+        "sources": [
+          {
+            "url": "https://github.com/SocialSisterYi/bilibili-API-collect",
+            "as_of": "2026-11-21",
+            "grade": "craft",
+            "claim": "Community API reference documents -412 risk control and endpoint behaviour; not an official contract."
+          },
+          {
+            "url": "repo:skills/askovo/assets/platform-field-notes.json",
+            "as_of": "2026-11-17",
+            "grade": "craft",
+            "claim": "Bilibili pages need a real render stack; blank renders are classified rather than retried."
+          }
+        ],
+        "unverified": [
+          "Bilibili publishes no official rate-limit contract for these endpoints.",
+          "Whether 2026 policy changed the unauthenticated comment depth is unconfirmed."
+        ]
+      },
+      "weibo": {
+        "access_modes": [
+          "authorized_export",
+          "cdp_visible_page"
+        ],
+        "budget": {
+          "cadence_seconds": 10.0,
+          "session_minutes": 45.0,
+          "budget_fraction": 0.7
+        },
+        "signals": [
+          {
+            "id": "login-wall",
+            "level": "block",
+            "detect": "Search or user timeline requires login; requires_session is set.",
+            "action": "Stop; the account holder logs in by hand. The agent never enters credentials or exports cookies."
+          },
+          {
+            "id": "http-403-risk-control",
+            "level": "block",
+            "detect": "403 / 418 with '访问过于频繁' or a verification redirect.",
+            "action": "Stop the platform for the run; cooldown applies. Never retry through a different route or identity."
+          },
+          {
+            "id": "challenge-page",
+            "level": "block",
+            "detect": "Verification or slider interstitial on a weibo.com route.",
+            "action": "Passive wait only; otherwise record and stop."
+          },
+          {
+            "id": "partial-render",
+            "level": "watch",
+            "detect": "Timeline loads but expansion stops after the first page.",
+            "action": "Record the cap; allow_reload stays false."
+          }
+        ],
+        "observed": [
+          {
+            "id": "weibo-200-requests-then-ip-limit",
+            "claim": "Roughly 200 consecutive page requests without a sleep trigger a temporary IP limit that is not a ban; the notice is written into the HTML body and the status code may still be 200.",
+            "threshold": "~200 requests without a pause",
+            "window_seconds": null,
+            "suggested_cadence_seconds": 10.0,
+            "confidence": "medium",
+            "source_urls": [
+              "https://blog.csdn.net/weixin_34116482/article/details/168043455"
+            ],
+            "as_of": "2026-10-15"
+          },
+          {
+            "id": "weibo-200-status-with-block-body",
+            "claim": "The risk layer may answer 200 with an HTML body reading '访问过于频繁，请稍后再试'; status-code-only classification therefore records throttling as success.",
+            "threshold": "200 + '访问过于频繁' body",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "medium",
+            "source_urls": [
+              "https://www.csdn.net/detail/webblog_82829175/104406"
+            ],
+            "as_of": "2026-11-21"
+          }
+        ],
+        "stop_rules": [
+          "Session cap: stop the platform when session_minutes is reached; cooldown 30 min before the next touch.",
+          "One goto per cell: a cell that did not render on the first goto is recorded as a gap, not retried.",
+          "Budget headroom: stop at budget_fraction of the planned volume; the remainder is tomorrow's work.",
+          "Mode exclusivity: one exclusive mode per session; never mix collect with post/reply actions.",
+          "Posts and search are separate exclusive modes; never both in one session.",
+          "Reposts are not independent voices; dedupe by original post id."
+        ],
+        "sources": [
+          {
+            "url": "https://m.weibo.cn/",
+            "as_of": "2026-11-21",
+            "grade": "craft",
+            "claim": "Mobile endpoints answer without an official contract; behaviour is observed, not licensed."
+          },
+          {
+            "url": "repo:skills/askovo/assets/platform-field-notes.json",
+            "as_of": "2026-11-17",
+            "grade": "craft",
+            "claim": "Weibo requires a user-operated login session; collection runs on authorized visible pages."
+          }
+        ],
+        "unverified": [
+          "Weibo's 2026 automation policy was not located in an official, fetchable document.",
+          "Observed throttling thresholds vary by account age and are not published."
+        ]
+      },
+      "discord": {
+        "access_modes": [
+          "cdp_visible_page",
+          "authorized_export"
+        ],
+        "budget": {
+          "cadence_seconds": 20.0,
+          "session_minutes": 40.0,
+          "budget_fraction": 0.6
+        },
+        "signals": [
+          {
+            "id": "guild-gate",
+            "level": "block",
+            "detect": "Join wall or membership gate on a server or channel.",
+            "action": "Stop; joining is not access (strategy join-is-not-access). Record the gate."
+          },
+          {
+            "id": "http-429-rate-limit",
+            "level": "throttle",
+            "detect": "429 with retry_after on the REST route or an opcode-9 gateway disconnect.",
+            "action": "Honour retry_after exactly; two 429s or one gateway disconnect ends the platform for the run."
+          },
+          {
+            "id": "login-wall",
+            "level": "block",
+            "detect": "History or channel list requires login.",
+            "action": "Stop; the session belongs to the account holder."
+          },
+          {
+            "id": "blank-render",
+            "level": "watch",
+            "detect": "Channel renders but older messages never load.",
+            "action": "Record the visible floor as a gap; do not scroll-loop."
+          },
+          {
+            "id": "invite-rot",
+            "level": "watch",
+            "detect": "An invite link expires or points to a different server.",
+            "action": "Re-resolve the invite once, then record it as dead."
+          }
+        ],
+        "observed": [
+          {
+            "id": "discord-global-50-per-second",
+            "claim": "A bot token is limited to 50 requests per second globally; the per-route bucket sizes are not published at all.",
+            "threshold": "50 requests/second per bot token",
+            "window_seconds": 1,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://discord.com/developers/docs/topics/rate-limits"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "discord-bucket-headers-only",
+            "claim": "Per-route bucket sizes are learned only from X-RateLimit-Bucket, X-RateLimit-Remaining and X-RateLimit-Reset-After on a live response, so the first request on a new route is itself the probe and must never be parallelised.",
+            "threshold": "bucket size unknown until first response",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://discord.com/developers/docs/topics/rate-limits",
+              "https://stateful.com/blog/discord-rate-limiting"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "discord-webhook-5-per-5s",
+            "claim": "All webhooks in one channel share 5 requests per 5 seconds, so two different webhooks do not give two budgets.",
+            "threshold": "5 requests / 5 seconds per channel",
+            "window_seconds": 5,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://discord-webhook.com/en/blog/discord-webhook-rate-limits/",
+              "https://discord.com/developers/docs/topics/rate-limits"
+            ],
+            "as_of": "2026-11-21"
+          }
+        ],
+        "stop_rules": [
+          "Session cap: stop the platform when session_minutes is reached; cooldown 30 min before the next touch.",
+          "One goto per cell: a cell that did not render on the first goto is recorded as a gap, not retried.",
+          "Budget headroom: stop at budget_fraction of the planned volume; the remainder is tomorrow's work.",
+          "Mode exclusivity: one exclusive mode per session; never mix collect with post/reply actions.",
+          "One server per lane; the runtime enforces a 20 s cadence and 40 min session for Discord.",
+          "Forum channels are read as card lists, not as chat streams."
+        ],
+        "sources": [
+          {
+            "url": "https://discord.com/developers/docs/topics/rate-limits",
+            "as_of": "2026-11-21",
+            "grade": "craft",
+            "claim": "Discord documents per-route buckets and retry_after; the page was not re-read line by line this round."
+          },
+          {
+            "url": "repo:skills/askovo/assets/platform-field-notes.json",
+            "as_of": "2026-11-17",
+            "grade": "craft",
+            "claim": "Internal API calls are sandboxed; programmatic scrolling is ignored; sessions drop under anti-automation pressure."
+          }
+        ],
+        "unverified": [
+          "Whether Discord's 2026 terms changed the stance on automated reading of visible channels is unconfirmed.",
+          "Gateway close codes observed in the field are not mapped to a documented policy."
+        ]
+      },
+      "github": {
+        "access_modes": [
+          "official_api",
+          "authorized_export"
+        ],
+        "budget": {
+          "cadence_seconds": 3.0,
+          "session_minutes": 60.0,
+          "budget_fraction": 0.7
+        },
+        "signals": [
+          {
+            "id": "http-403-secondary-limit",
+            "level": "throttle",
+            "detect": "403 with 'secondary rate limit' or a Retry-After header; primary ceiling is 5,000 requests/hour authenticated.",
+            "action": "Wait for Retry-After, then resume sequentially. Never fan out across tokens to multiply the ceiling."
+          },
+          {
+            "id": "http-403-unauthenticated",
+            "level": "block",
+            "detect": "60 requests/hour unauthenticated ceiling reached.",
+            "action": "Stop; use the token or GitHub App the owner authorized."
+          },
+          {
+            "id": "abuse-detection",
+            "level": "block",
+            "detect": "Abuse detection triggered by concurrent requests or rapid content creation.",
+            "action": "Stop; make requests sequentially and read-only. Collection never writes to a repository."
+          },
+          {
+            "id": "content-removed",
+            "level": "watch",
+            "detect": "Issue or comment is deleted or a repository is taken down.",
+            "action": "Record and exclude from counts; keep the tombstone."
+          }
+        ],
+        "observed": [
+          {
+            "id": "github-secondary-900-points",
+            "claim": "REST secondary limits allow 900 points per minute and return 403 with retry-after rather than 429; status-code classification reads a throttle as a permission problem.",
+            "threshold": "900 points/minute, 403 + retry-after",
+            "window_seconds": 60,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api",
+              "https://caseywest.com/github-gives-you-two-rate-limits/"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "github-graphql-2000-points",
+            "claim": "GraphQL allows 2,000 points per minute on the same 403 path; a query's cost is not its call count.",
+            "threshold": "2,000 points/minute",
+            "window_seconds": 60,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api"
+            ],
+            "as_of": "2026-11-21"
+          },
+          {
+            "id": "github-concurrency-100",
+            "claim": "Concurrent requests are capped at 100 and exceeding it is a 403; concurrency and rate are two separate ceilings.",
+            "threshold": "100 concurrent requests",
+            "window_seconds": null,
+            "suggested_cadence_seconds": null,
+            "confidence": "high",
+            "source_urls": [
+              "https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api"
+            ],
+            "as_of": "2026-11-21"
+          }
+        ],
+        "stop_rules": [
+          "Session cap: stop the platform when session_minutes is reached; cooldown 30 min before the next touch.",
+          "One goto per cell: a cell that did not render on the first goto is recorded as a gap, not retried.",
+          "Budget headroom: stop at budget_fraction of the planned volume; the remainder is tomorrow's work.",
+          "Mode exclusivity: one exclusive mode per session; never mix collect with post/reply actions.",
+          "Search API has its own 30 requests/minute ceiling; it is not covered by the 5,000/hour core budget.",
+          "Conditional requests (ETag / If-None-Match) are the supported way to stay under the ceiling."
+        ],
+        "sources": [
+          {
+            "url": "https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api",
+            "as_of": "2026-11-21",
+            "grade": "official",
+            "claim": "5,000 requests/hour authenticated, 60/hour unauthenticated, separate search ceiling, and secondary rate limits with Retry-After."
+          }
+        ],
+        "unverified": [
+          "GitHub's acceptable-use policy wording on bulk research collection was not re-read this round."
+        ]
+      }
+    },
+    "observed_note": "observed[] is the community-experience layer: numbers users report after a block, not published limits. A suggested_cadence_seconds may only slow a run down; the engine rejects any entry that would make the budget faster than budget.cadence_seconds. Entries graded low never gate automation."
   }
 }

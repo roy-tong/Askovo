@@ -47,8 +47,10 @@ def _adapter(**overrides):
         "retention_rule": "study-local; deleted with the study",
         "backer_data_policy": "no backer personal data; public page text only",
         "allow_personal_data": False,
+        "min_unique_contexts": 3,
         "min_unique_campaigns": 5,
         "min_unique_creators": 3,
+        "max_context_share": 0.3,
         "max_campaign_share": 0.3,
         "max_creator_share": 0.3,
         "max_single_day_share": 0.25,
@@ -81,16 +83,41 @@ class CdpTransportDesignTests(unittest.TestCase):
         self.assertTrue(any("blocked" in message or "access_basis" in message
                             for message in errors))
 
-    def test_cdp_basis_on_non_cdp_platform_is_rejected(self):
-        reddit_adapter = _adapter(
+    def test_reddit_and_youtube_cdp_transports_pass_design(self):
+        reddit = _adapter(
             min_unique_subreddits=3,
             min_unique_threads=20,
             max_subreddit_share=0.5,
             max_thread_share=0.15,
         )
-        study = {"source_adapters": {"reddit": reddit_adapter}}
+        youtube = _adapter(
+            min_unique_channels=3,
+            min_unique_videos=10,
+            max_channel_share=0.5,
+            max_video_share=0.2,
+        )
+        self.assertEqual([], askovo._validate_reddit_config(
+            {"source_adapters": {"reddit": reddit}}))
+        self.assertEqual([], askovo._validate_youtube_config(
+            {"source_adapters": {"youtube": youtube}}))
+
+    def test_youtube_accepts_the_same_authorized_cdp_transport_contract(self):
+        adapter = _adapter(
+            min_unique_contexts=1, max_context_share=1.0, max_single_day_share=1.0,
+        )
+        self.assertEqual([], askovo._validate_youtube_config(
+            {"source_adapters": {"youtube": adapter}}))
+
+    def test_cdp_basis_on_non_cdp_platform_is_rejected(self):
+        stackoverflow_adapter = _adapter(
+            min_unique_subreddits=3,
+            min_unique_threads=20,
+            max_subreddit_share=0.5,
+            max_thread_share=0.15,
+        )
+        study = {"source_adapters": {"stackoverflow": stackoverflow_adapter}}
         errors = askovo._validate_source_adapter_config(
-            study, "reddit", askovo.REDDIT_CONFIG_REQUIRED, askovo.REDDIT_ACCESS_BASES)
+            study, "stackoverflow", askovo.REDDIT_CONFIG_REQUIRED, askovo.REDDIT_ACCESS_BASES)
         self.assertTrue(any("cdp: true" in message for message in errors), errors)
 
     def test_cdp_transport_requires_engine_revision(self):

@@ -1,6 +1,6 @@
 # 用 CDP 抓取可见页面（文本 + 截图 + OCR）
 
-`askovo capture page` 用用户自己已登录的浏览器（CDP 回环端点，默认 `http://127.0.0.1:9222`）抓取一个**用户有权查看**的页面。它不要求平台 API，也不绕过登录墙或验证码。
+`askovo capture page` 用用户自己已登录的浏览器（CDP 回环端点，默认 `http://127.0.0.1:9222`）抓取一个**用户有权查看**的页面。它不要求平台 API，也不绕过登录墙或验证码。需要逐条采集 Instagram 评论或 Discord 消息时，使用 `askovo collect --attach-existing`；单页候选＋截图／OCR 仍使用本页的 capture 链。
 
 ```bash
 askovo capture page ./cam-study \
@@ -90,9 +90,9 @@ askovo deliver ./cam-study --kind plan
 capture 是**正式采集通道的一个入口**，不是通用浏览器抓取路由，更不是绕过既有采集边界的旁路。它与 `askovo collect --cdp` 完全同口径：
 
 1. **Design gate**：study 未通过 `askovo check --stage design` 时，capture 入口直接拒绝（`design_gate_failed`），与 collect/queue 相同；
-2. **批准平台集合**：CDP 例外只对平台目录标记 `cdp: true` 的集合开放（当前 amazon / instagram / bilibili / weibo / kickstarter / discord / x / tiktok，与 collect 的 CDP 目标白名单一致）；其它任意站点（reddit、YouTube、内网 wiki……）一律 `cdp_not_allowed`——capture 不开放通用 web 采集；
+2. **批准平台集合**：CDP 例外只对平台目录标记 `cdp: true` 的集合开放（当前 github / reddit / youtube / hackernews / amazon / instagram / bilibili / weibo / kickstarter / discord / x / tiktok，与 collect 的 CDP 目标白名单一致）；有官方 API 的平台也可使用这条已声明路线，但其它任意站点（内网 wiki……）一律 `cdp_not_allowed`——capture 不开放通用 web 采集；
 3. **scope.allowed_sources**：批准平台的页面还必须出现在 `study.scope.allowed_sources` 中，否则 `scope_blocked`；
-4. **启用 adapter + 注册表复审**：`study.source_adapters.<platform>.enabled=true` 且连接器政策复审未过期，否则 `adapter_disabled` / `review_expired`（与 collect 相同）；
+4. **启用 adapter**：`study.source_adapters.<platform>.enabled=true`，否则 `adapter_disabled`（与 collect 相同）；连接器政策复审过期不阻断采集，只在 payload `governance.registry_review` / `review_status` 标记 `expired` 并附 `warning`，采集按降频节奏继续、复审另行排期；
 5. **授权页面语义**：默认端口 http(s)、无凭据 URL；跳转离开批准平台即停止；出现验证码/挑战页时只做被动等待（用户在同一个浏览器里手工完成或页面自行清除），超时仍存在则在截图与落盘之前停止（`challenge`），不主动绕过；
 6. **CDP 端点**：只接受 `127.0.0.1`/`::1` 回环地址，不接受远程调试端点。
 

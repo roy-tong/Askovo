@@ -65,6 +65,23 @@ def _status(checks: List[Dict[str, Any]]) -> str:
     return "PASS"
 
 
+def _safe_brief(value: Any) -> Any:
+    if isinstance(value, list):
+        return [_safe_brief(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    safe = {}
+    for key, item in value.items():
+        if key in ("excerpt", "text_excerpt", "quote", "source_quote_span"):
+            continue
+        if key in ("source_url", "source_ref"):
+            record_id = value.get("record_id")
+            safe[key] = "evidence:%s" % record_id if record_id else None
+            continue
+        safe[key] = _safe_brief(item)
+    return safe
+
+
 def export_proof(study_dir: str | Path, out_dir: str | Path, *, by: str,
                  task_id: str = "", classification: str = "private") -> Dict[str, Any]:
     if not by.strip():
@@ -73,6 +90,8 @@ def export_proof(study_dir: str | Path, out_dir: str | Path, *, by: str,
         raise ProofExportError("unknown proof classification", "INPUT_REQUIRED")
     study_dir = Path(study_dir).resolve()
     out_dir = Path(out_dir).resolve()
+    if out_dir == study_dir or study_dir in out_dir.parents:
+        raise ProofExportError("output directory must be outside the source study", "OUTPUT_INSIDE_STUDY")
     if out_dir.exists():
         raise ProofExportError("output directory already exists; choose a new path", "OUTPUT_EXISTS")
     if not (study_dir / "study.json").is_file():
@@ -81,10 +100,11 @@ def export_proof(study_dir: str | Path, out_dir: str | Path, *, by: str,
     temp = Path(tempfile.mkdtemp(prefix=out_dir.name + ".tmp-", dir=str(out_dir.parent)))
     try:
         study = json.loads((study_dir / "study.json").read_text(encoding="utf-8"))
+        started_at = _now()
         review_payload = None
         if not (study_dir / "05-audit" / "decision-review.json").is_file():
             review_payload = decision_review.build_review(study_dir)
-        brief = decision_brief.build(study_dir, task_id=task_id, review_payload=review_payload)
+        brief = _safe_brief(decision_brief.build(study_dir, task_id=task_id, review_payload=review_payload))
         brief["canonical_refs"] = [
             str(Path(value).relative_to(study_dir)) if str(value).startswith(str(study_dir))
             else Path(value).name
@@ -126,12 +146,12 @@ def export_proof(study_dir: str | Path, out_dir: str | Path, *, by: str,
                     "自动批准产品决定", "证明市场需求、商业成功或因果",
                 ],
             }],
-            "approved_by": str(decision.get("owner") or "declared-decision-owner"),
+            "approved_by": by,
         }
         steps = [{
             "step_id": "project-decision-brief",
             "action": "project_decision_brief",
-            "started_at": generated_at,
+            "started_at": started_at,
             "ended_at": generated_at,
             "status": "ok",
             "tool": "askovo decision_brief.build",
@@ -141,7 +161,7 @@ def export_proof(study_dir: str | Path, out_dir: str | Path, *, by: str,
             "schema": "ovo.execution-trace/1",
             "trace_id": trace_id,
             "contract_id": contract_id,
-            "started_at": generated_at,
+            "started_at": started_at,
             "finished_at": generated_at,
             "actor": "askovo proof export",
             "steps": steps,
@@ -231,11 +251,23 @@ def export_proof(study_dir: str | Path, out_dir: str | Path, *, by: str,
                 "valid_until": None,
             },
         ]
+        checks.append({
+            "check_id": "replay-readiness",
+            "level": "P1",
+            "status": "INDETERMINATE",
+            "claim": "第三方仅凭包内材料重放同一 Brief",
+            "checker": {"name": "askovo replay manifest", "version": "1",
+                        "independence": "executor_observed"},
+            "evidence_refs": [],
+            "scope": "包内输入、历史轨迹与重放环境",
+            "reason": "canonical 输入和原始研究历史未随包复制；需要外部授权输入",
+            "valid_until": None,
+        })
         checks_doc = {"schema": CHECKS_SCHEMA, "contract_id": contract_id, "checks": checks}
         replay = {
             "schema": REPLAY_SCHEMA,
             "contract_id": contract_id,
-            "status": "AVAILABLE",
+            "status": "UNAVAILABLE",
             "commands": [
                 {"name": "rebuild-brief", "argv": ["askovo", "brief", "${STUDY_DIR}"]},
                 {"name": "validate-proof", "argv": ["python3", "-m", "ovo_acceptance", "proof", "${PROOF_DIR}"]},
@@ -244,7 +276,10 @@ def export_proof(study_dir: str | Path, out_dir: str | Path, *, by: str,
                 {"ref": entry["source_ref"], "sha256": entry["source_hash"]}
                 for entry in entries if entry["kind"] == "source_document"
             ],
-            "missing": [],
+            "missing": [relative for relative in (
+                "study.json", "04-findings/product-reasoning.json",
+                "04-findings/demand-judgments.json", "02-data/evidence.jsonl",
+            ) if (study_dir / relative).is_file()] + ["原始授权、采集与审核历史"],
         }
         proof = {
             "schema": PROOF_SCHEMA,
@@ -263,7 +298,11 @@ def export_proof(study_dir: str | Path, out_dir: str | Path, *, by: str,
                 {"artifact_id": "decision-brief-md", "path": "artifacts/decision-brief.md",
                  "sha256": _digest(brief_md), "classification": classification},
             ],
-            "replay": {"manifest": "replay/manifest.json", "status": "AVAILABLE", "missing": []},
+            "replay": {"manifest": "replay/manifest.json", "status": "UNAVAILABLE",
+                       "missing": [relative for relative in (
+                           "study.json", "04-findings/product-reasoning.json",
+                           "04-findings/demand-judgments.json", "02-data/evidence.jsonl",
+                       ) if (study_dir / relative).is_file()] + ["原始授权、采集与审核历史"]},
             "limitations": list(brief.get("limitations") or []) + [
                 "Proof Bundle 不批准产品决定，不证明商业结果或因果",
                 "P3 独立语义复核与 P4 外部采用保持未检查，直到另有合格回执",

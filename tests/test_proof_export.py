@@ -103,6 +103,38 @@ class ProofExportTests(unittest.TestCase):
         self.assertIn("OUTPUT_EXISTS", completed.stderr + completed.stdout)
         self.assertEqual("keep", (self.out / "keep.txt").read_text(encoding="utf-8"))
 
+    def test_evidence_excerpts_and_source_urls_do_not_leak_into_proof(self) -> None:
+        evidence = self.study / "02-data/evidence.jsonl"
+        rows = [json.loads(line) for line in evidence.read_text(encoding="utf-8").splitlines()]
+        rows[0]["text"] = "PRIVATE-EVIDENCE-SENTINEL"
+        rows[0]["source_url"] = "https://example.com/PRIVATE-SOURCE-SENTINEL"
+        evidence.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+        for classification in ("private", "public-redacted"):
+            with self.subTest(classification=classification):
+                out = self.tmp / ("proof-" + classification)
+                completed = run_cli("proof", "export", str(self.study), "--out", str(out),
+                                    "--by", "reviewer", "--classification", classification)
+                self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
+                exported = "\n".join(path.read_text(encoding="utf-8") for path in out.rglob("*") if path.is_file())
+                self.assertNotIn("PRIVATE-EVIDENCE-SENTINEL", exported)
+                self.assertNotIn("PRIVATE-SOURCE-SENTINEL", exported)
+
+    def test_replay_is_unavailable_when_canonical_inputs_are_not_packed(self) -> None:
+        completed = run_cli("proof", "export", str(self.study), "--out", str(self.out), "--by", "reviewer")
+        self.assertEqual(completed.returncode, 0)
+        replay = json.loads((self.out / "replay/manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual("UNAVAILABLE", replay["status"])
+        self.assertIn("04-findings/product-reasoning.json", replay["missing"])
+        proof = json.loads((self.out / "proof.json").read_text(encoding="utf-8"))
+        self.assertEqual("UNAVAILABLE", proof["replay"]["status"])
+
+    def test_output_inside_source_study_is_refused(self) -> None:
+        out = self.study / "proof-bundle"
+        completed = run_cli("proof", "export", str(self.study), "--out", str(out), "--by", "reviewer")
+        self.assertEqual(2, completed.returncode)
+        self.assertIn("OUTPUT_INSIDE_STUDY", completed.stderr + completed.stdout)
+        self.assertFalse(out.exists())
+
     def test_mcp_export_uses_the_same_implementation(self) -> None:
         mcp_out = self.tmp / "mcp-proof"
         request = {

@@ -84,14 +84,24 @@ class CDPTermsTests(unittest.TestCase):
         self.assertEqual("planned", payload["status"])
         self.assertEqual("cdp", payload["transport"])
 
-    def test_cdp_is_not_allowed_for_api_platforms(self) -> None:
-        completed = run_cli(
-            "collect", str(self.study), "--platform", "github", "--query", "camera",
-            "--cdp-url", "http://127.0.0.1:9222", "--url", "https://github.com",
-            "--ack-terms",
-        )
-        self.assertEqual(4, completed.returncode)
-        self.assertIn("cdp_not_allowed", completed.stdout)
+    def test_cdp_dry_run_supports_api_platforms(self) -> None:
+        targets = {
+            "github": "https://github.com/roy-tong/askovo",
+            "reddit": "https://www.reddit.com/r/productmanagement/",
+            "youtube": "https://www.youtube.com/watch?v=visible",
+            "hackernews": "https://news.ycombinator.com/item?id=1",
+        }
+        for platform, url in targets.items():
+            with self.subTest(platform=platform):
+                completed = run_cli(
+                    "collect", str(self.study), "--platform", platform, "--query", "camera",
+                    "--cdp-url", "http://127.0.0.1:9222", "--url", url,
+                    "--ack-terms", "--dry-run",
+                )
+                self.assertEqual(0, completed.returncode, completed.stderr + completed.stdout)
+                payload = json.loads(completed.stdout)
+                self.assertEqual("planned", payload["status"])
+                self.assertEqual("cdp", payload["transport"])
 
     def test_collect_platform_forwards_run_id_to_cdp(self) -> None:
         with mock.patch.object(sure_engine, "collect_cdp", return_value={"status": "planned"}) as collector:
@@ -111,6 +121,14 @@ class CDPTermsTests(unittest.TestCase):
 class CDPBoundaryTests(unittest.TestCase):
     def test_target_url_matrix(self) -> None:
         sure_engine._validate_cdp_target("amazon", "https://www.amazon.com/product-reviews/B0")
+        for platform, url in (
+            ("github", "https://github.com/roy-tong/askovo"),
+            ("reddit", "https://old.reddit.com/r/productmanagement/"),
+            ("youtube", "https://www.youtube.com/watch?v=visible"),
+            ("hackernews", "https://news.ycombinator.com/item?id=1"),
+        ):
+            with self.subTest(platform=platform):
+                sure_engine._validate_cdp_target(platform, url)
         for url in (
             "file:///etc/passwd",
             "http://169.254.169.254/latest/meta-data",
@@ -206,10 +224,12 @@ class CDPBoundaryTests(unittest.TestCase):
             for thread in threads:
                 thread.join(timeout=2)
 
-    def test_x_enabled_youtube_still_api_only(self) -> None:
+    def test_api_platforms_can_also_use_cdp(self) -> None:
         platforms = sure_engine.platform_index()
-        self.assertTrue(platforms["x"].get("cdp", False))
-        self.assertFalse(platforms["youtube"].get("cdp", False))
+        for platform in ("x", "github", "reddit", "youtube", "hackernews"):
+            with self.subTest(platform=platform):
+                self.assertTrue(platforms[platform].get("cdp", False))
+                self.assertIn("cdp_visible_page", platforms[platform]["access_modes"])
 
     def test_cdp_whitelist_matches_catalog(self) -> None:
         # Two-layer registration: the runtime host whitelist and the catalog

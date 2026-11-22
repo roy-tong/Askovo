@@ -44,6 +44,7 @@ import decision_followup  # noqa: E402
 import role_catalog  # noqa: E402
 import evidence_page  # noqa: E402
 import proof_export  # noqa: E402
+import observation  # noqa: E402
 
 research_loop.bind_cli(sys.modules[__name__])
 
@@ -92,6 +93,7 @@ PLAN_ROLE_WEIGHTS = {
     "control": 0.10,
 }
 PLAN_MAX_PLATFORM_SHARE = 0.65
+PLAN_SAMPLE_TARGET_CAP = 100000
 PLAN_MODES = ("standard", "unnamed_experience")
 GROUNDING_PATHS = {
     "edge_language",
@@ -107,12 +109,16 @@ PLAN_PLATFORM_BIAS = {
     "reddit": "Subreddit self-selection and search ranking bias",
     "x": "Public-post reach bias; reposts are distribution, not demand",
     "youtube": "Creator-selection bias; comments skew toward engaged viewers",
+    "instagram": "Creator and hashtag sampling bias; visible comments are not all followers",
+    "discord": "Server and channel self-selection; engaged owner communities are overrepresented",
+    "github": "Developer/OSS self-selection; issue reporters over-represent active users",
+    "hackernews": "Technical/early-adopter skew; comment ranking bias",
     "amazon": "Historical reviews through 2023-09 only; purchase-verified skew",
     "jd": "No reviewed connector; route unavailable",
     "taobao": "No reviewed connector; route unavailable",
-    "kickstarter": "No reviewed connector; route unavailable",
+    "kickstarter": "Authorized visible pages only; creator/backer self-selection",
     "zhihu": "No reviewed connector; route unavailable",
-    "weibo": "No reviewed connector; route unavailable",
+    "weibo": "Authorized visible pages only; moderation and account self-selection bias",
     "bilibili": "No reviewed connector; route unavailable",
     "modian": "No reviewed connector; route unavailable",
 }
@@ -231,6 +237,20 @@ CDP_TRANSPORT_CONNECTOR_ID = "cdp-authorized-visible-page"
 CDP_TRANSPORT_ACCESS_BASIS = "cdp_authorized_visible_page"
 CDP_TRANSPORT_LICENSE = "MIT"
 CDP_COLLECTION_MODE = "authorized_visible_page"
+CDP_CONFIG_REQUIRED = {
+    "enabled",
+    "researcher_role",
+    "collection_mode",
+    "access_basis",
+    "terms_reviewed_at",
+    "retention_rule",
+    "allow_personal_data",
+    "min_unique_contexts",
+    "max_context_share",
+    "max_single_day_share",
+    "require_original_source",
+    "treat_ai_summaries_as_discovery_only",
+} | CONNECTOR_CONFIG_REQUIRED
 X_REQUIRED = {
     "source_platform",
     "source_url",
@@ -644,36 +664,21 @@ def _source_adapter_config(
     return config if isinstance(config, dict) else None
 
 
+def _is_cdp_adapter(config: dict[str, Any] | None) -> bool:
+    """First-party CDP transport is identified by form, not by platform name."""
+    return isinstance(config, dict) and (
+        config.get("access_basis") == CDP_TRANSPORT_ACCESS_BASIS
+        and config.get("connector_id") == CDP_TRANSPORT_CONNECTOR_ID
+    )
+
+
 def _validate_reddit_config(study: dict[str, Any] | None) -> list[str]:
+    errors = _validate_source_adapter_config(
+        study, "reddit", REDDIT_CONFIG_REQUIRED, REDDIT_ACCESS_BASES
+    )
     config = _reddit_config(study)
-    if config is None:
-        return ["missing study.json source_adapters.reddit"]
-    errors: list[str] = []
-    missing = _missing_fields(config, REDDIT_CONFIG_REQUIRED)
-    if missing:
-        errors.append("reddit adapter missing: " + ", ".join(missing))
+    if errors or config is None:
         return errors
-    if config.get("enabled") is not True:
-        errors.append("source_adapters.reddit.enabled must be true")
-    if config.get("researcher_role") != "external_third_party":
-        errors.append("reddit researcher_role must be external_third_party")
-    if config.get("collection_mode") not in REDDIT_COLLECTION_MODES:
-        errors.append(
-            "reddit collection_mode must be one of: "
-            + ", ".join(sorted(REDDIT_COLLECTION_MODES))
-        )
-    if config.get("access_basis") not in REDDIT_ACCESS_BASES:
-        errors.append(
-            "reddit access_basis must be one of: " + ", ".join(sorted(REDDIT_ACCESS_BASES))
-        )
-    if config.get("require_original_source") is not True:
-        errors.append("reddit require_original_source must be true")
-    if config.get("treat_ai_summaries_as_discovery_only") is not True:
-        errors.append("reddit AI summaries must be discovery-only")
-    try:
-        datetime.fromisoformat(str(config.get("terms_reviewed_at", ""))[:10])
-    except ValueError:
-        errors.append("reddit terms_reviewed_at must be an ISO date")
     try:
         if int(config.get("min_unique_subreddits", 0)) < 1:
             errors.append("reddit min_unique_subreddits must be at least 1")
@@ -787,10 +792,6 @@ def _validate_cdp_transport_config(adapter_name: str, config: dict[str, Any]) ->
             "by the platform catalog (cdp: true required)"
         )
         return errors
-    if sure_engine.platform_review_expired(adapter_name):
-        errors.append(
-            f"{adapter_name} connector policy review is expired; re-review before capture"
-        )
     if config.get("collection_mode") != CDP_COLLECTION_MODE:
         errors.append(
             f"{adapter_name} CDP transport requires collection_mode={CDP_COLLECTION_MODE}"
@@ -855,6 +856,29 @@ def _validate_source_adapter_config(
     return errors
 
 
+def _validate_cdp_source_config(
+    study: dict[str, Any] | None, adapter_name: str
+) -> list[str]:
+    errors = _validate_source_adapter_config(
+        study, adapter_name, CDP_CONFIG_REQUIRED, {CDP_TRANSPORT_ACCESS_BASIS}
+    )
+    config = _source_adapter_config(study, adapter_name)
+    if errors or config is None:
+        return errors
+    if config.get("allow_personal_data") is not False:
+        errors.append(f"{adapter_name} allow_personal_data must be false")
+    try:
+        if int(config.get("min_unique_contexts", 0)) < 1:
+            errors.append(f"{adapter_name} min_unique_contexts must be at least 1")
+        for field_name in ("max_context_share", "max_single_day_share"):
+            value = float(config.get(field_name, 0))
+            if not 0 < value <= 1:
+                errors.append(f"{adapter_name} {field_name} must be in (0, 1]")
+    except (TypeError, ValueError):
+        errors.append(f"{adapter_name} numeric thresholds must be valid numbers")
+    return errors
+
+
 def _record_connector_errors(
     record: dict[str, Any], study: dict[str, Any] | None, adapter_name: str
 ) -> list[str]:
@@ -875,6 +899,9 @@ def _record_connector_errors(
 
 
 def _validate_x_config(study: dict[str, Any] | None) -> list[str]:
+    config = _source_adapter_config(study, "x")
+    if _is_cdp_adapter(config):
+        return _validate_cdp_source_config(study, "x")
     errors = _validate_source_adapter_config(study, "x", X_CONFIG_REQUIRED, X_ACCESS_BASES)
     config = _source_adapter_config(study, "x")
     if errors or config is None:
@@ -894,6 +921,9 @@ def _validate_x_config(study: dict[str, Any] | None) -> list[str]:
 
 
 def _validate_youtube_config(study: dict[str, Any] | None) -> list[str]:
+    config = _source_adapter_config(study, "youtube")
+    if _is_cdp_adapter(config):
+        return _validate_cdp_source_config(study, "youtube")
     errors = _validate_source_adapter_config(
         study, "youtube", YOUTUBE_CONFIG_REQUIRED, YOUTUBE_ACCESS_BASES
     )
@@ -947,6 +977,9 @@ def _validate_marketplace_config(
 
 
 def _validate_kickstarter_config(study: dict[str, Any] | None) -> list[str]:
+    config = _source_adapter_config(study, "kickstarter")
+    if _is_cdp_adapter(config):
+        return _validate_cdp_source_config(study, "kickstarter")
     errors = _validate_source_adapter_config(
         study,
         "kickstarter",
@@ -1220,15 +1253,29 @@ def _check_design(audit: Audit, paths: dict[str, Path]) -> dict[str, Any] | None
         for row in source_rows
     )
     if x_planned:
+        x_config = _source_adapter_config(study if isinstance(study, dict) else None, "x")
         x_errors = _validate_x_config(study if isinstance(study, dict) else None)
+        x_via_cdp = _is_cdp_adapter(x_config)
         audit.add(
             "x_source_design",
             "fail" if x_errors else "pass",
             "; ".join(x_errors)
             if x_errors
-            else "X access basis, retention rule and event/conversation gates are explicit",
+            else (
+                "X CDP access, retention and concentration gates are explicit"
+                if x_via_cdp
+                else "X access basis, retention rule and event/conversation gates are explicit"
+            ),
             "design",
         )
+        if x_via_cdp and not x_errors and sure_engine.platform_review_expired("x"):
+            audit.add(
+                "x_policy_review",
+                "warn",
+                "X platform policy review is expired; capture continues at reduced cadence "
+                "with a scheduled re-review",
+                "design",
+            )
     youtube_planned = any(
         str(row.get("source_family", "")).strip().lower() == "youtube" for row in source_rows
     )
@@ -1268,20 +1315,76 @@ def _check_design(audit: Audit, paths: dict[str, Path]) -> dict[str, Any] | None
         for row in source_rows
     )
     if kickstarter_planned:
+        kickstarter_config = _source_adapter_config(
+            study if isinstance(study, dict) else None, "kickstarter"
+        )
         kickstarter_errors = _validate_kickstarter_config(
             study if isinstance(study, dict) else None
         )
+        kickstarter_via_cdp = _is_cdp_adapter(kickstarter_config)
         audit.add(
             "kickstarter_source_design",
             "fail" if kickstarter_errors else "pass",
             "; ".join(kickstarter_errors)
             if kickstarter_errors
             else (
-                "Kickstarter access basis, backer-data boundary, campaign hierarchy "
-                "and concentration gates are explicit"
+                "Kickstarter CDP access, retention and concentration gates are explicit"
+                if kickstarter_via_cdp
+                else (
+                    "Kickstarter access basis, backer-data boundary, campaign hierarchy "
+                    "and concentration gates are explicit"
+                )
             ),
             "design",
         )
+        if (
+            kickstarter_via_cdp
+            and not kickstarter_errors
+            and sure_engine.platform_review_expired("kickstarter")
+        ):
+            audit.add(
+                "kickstarter_policy_review",
+                "warn",
+                "Kickstarter platform policy review is expired; capture continues at reduced "
+                "cadence with a scheduled re-review",
+                "design",
+            )
+
+    cdp_adapter_names = sorted(
+        {
+            str(row.get("source_family", "")).strip().lower()
+            for row in source_rows
+        }
+        - {"", "x", "twitter", "kickstarter"}
+    )
+    for adapter_name in cdp_adapter_names:
+        adapter_config = _source_adapter_config(
+            study if isinstance(study, dict) else None, adapter_name
+        )
+        if not _is_cdp_adapter(adapter_config):
+            continue
+        adapter_errors = _validate_cdp_source_config(
+            study if isinstance(study, dict) else None, adapter_name
+        )
+        audit.add(
+            f"{adapter_name}_source_design",
+            "fail" if adapter_errors else "pass",
+            "; ".join(adapter_errors)
+            if adapter_errors
+            else f"{adapter_name} CDP access, retention and concentration gates are explicit",
+            "design",
+        )
+        if (
+            not adapter_errors
+            and sure_engine.platform_review_expired(adapter_name)
+        ):
+            audit.add(
+                f"{adapter_name}_policy_review",
+                "warn",
+                f"{adapter_name} platform policy review is expired; capture continues at "
+                "reduced cadence with a scheduled re-review",
+                "design",
+            )
 
     plan_mode = ""
     if isinstance(study, dict) and isinstance(study.get("plan"), dict):
@@ -3586,12 +3689,37 @@ def _write_report(audit: Audit) -> tuple[Path, Path]:
     return json_path, md_path
 
 
+def _cdp_adapter_config() -> dict[str, Any]:
+    """Adapter declaration for the first-party CDP transport on any platform."""
+    return {
+        "enabled": True,
+        "researcher_role": "external_third_party",
+        "connector_id": CDP_TRANSPORT_CONNECTOR_ID,
+        "connector_revision": ASKOVO_VERSION,
+        "connector_license": CDP_TRANSPORT_LICENSE,
+        "collection_mode": CDP_COLLECTION_MODE,
+        "access_basis": CDP_TRANSPORT_ACCESS_BASIS,
+        "policy_status": "approved_for_study",
+        "terms_reviewed_at": "待填写",
+        "data_rights_reviewed_at": "待填写",
+        "data_rights_basis": "待填写",
+        "retention_rule": "待填写",
+        "allow_personal_data": False,
+        "min_unique_contexts": 3,
+        "max_context_share": 0.5,
+        "max_single_day_share": 0.35,
+        "require_original_source": True,
+        "treat_ai_summaries_as_discovery_only": True,
+    }
+
+
 def _create_workspace(
     target: Path,
     study_id: str,
     title: str,
     decision: str,
     platforms: list[str],
+    cdp_platforms: set[str] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     template = Path(__file__).resolve().parents[1] / "assets" / "study-template"
     if not template.is_dir():
@@ -3615,6 +3743,7 @@ def _create_workspace(
     study["title"] = title
     study["method_version"] = ASKOVO_VERSION
     study["decision"]["question"] = decision
+    cdp_platforms = set(cdp_platforms or ())
     platform_templates: list[str] = []
     for platform in sorted(set(platforms)):
         source = template.parent / f"{platform}-route-template.csv"
@@ -3622,8 +3751,15 @@ def _create_workspace(
         shutil.copyfile(source, destination)
         platform_templates.append(str(destination))
         adapters = study.get("source_adapters", {})
-        if isinstance(adapters, dict) and isinstance(adapters.get(platform), dict):
+        if not isinstance(adapters, dict):
+            continue
+        if platform in cdp_platforms:
+            adapters[platform] = _cdp_adapter_config()
+            continue
+        if isinstance(adapters.get(platform), dict):
             adapters[platform]["enabled"] = True
+            if adapters[platform].get("connector_id") == CDP_TRANSPORT_CONNECTOR_ID:
+                adapters[platform]["connector_revision"] = ASKOVO_VERSION
     study_path.write_text(json.dumps(study, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return study, platform_templates
 
@@ -4354,6 +4490,147 @@ def _platform_prerequisites(connector: dict[str, Any]) -> list[str]:
     return items
 
 
+CDP_RISK_NOTE = (
+    "authorized visible page only: on a challenge, rate limit or logout, stop that route, "
+    "record the gap and resume later at a lower daily cadence; never bypass a challenge, "
+    "rotate identity or use a proxy pool"
+)
+CDP_RECOMMENDED_CADENCE = (
+    "start at 50 records/day per platform; halve the daily target on any challenge or rate "
+    "limit and split remaining quota across days instead of closing the study"
+)
+
+
+def _cdp_route_allowed(meta: Any, catalog_entry: dict[str, Any]) -> bool:
+    """CDP is allowed by an explicit map route or a catalog visible-page mode."""
+    if catalog_entry.get("decision") == "blocked" or not catalog_entry.get("cdp"):
+        return False
+    if isinstance(meta, dict) and meta.get("transport") == "cdp":
+        return True
+    modes = {str(mode) for mode in catalog_entry.get("access_modes", [])}
+    return "cdp_visible_page" in modes
+
+
+def _cdp_route(
+    platform: str, meta: Any, catalog_entry: dict[str, Any]
+) -> dict[str, Any]:
+    route: dict[str, Any] = {
+        "route": "cdp",
+        "transport": "cdp",
+        "connector_id": CDP_TRANSPORT_CONNECTOR_ID,
+        "connector_revision": sure_engine.VERSION,
+        "connector_license": CDP_TRANSPORT_LICENSE,
+        "registry_decision": "cdp_visible_page",
+        "access_basis": CDP_TRANSPORT_ACCESS_BASIS,
+        "collection_mode": CDP_COLLECTION_MODE,
+        "status": "unavailable",
+    }
+    if not _cdp_route_allowed(meta, catalog_entry):
+        route["reason"] = "platform catalog does not permit the declared CDP route"
+        return route
+    route["prerequisites"] = [str(value) for value in catalog_entry.get("limits", [])] + [
+        "user-operated logged-in browser session; explicit --ack-terms; visible text only",
+    ]
+    route["risk_note"] = CDP_RISK_NOTE
+    route["recommended_cadence"] = CDP_RECOMMENDED_CADENCE
+    route["fallback"] = (
+        "if the visible-page route is challenged, use an official API or authorized export "
+        "where one exists, or record the gap and continue with other platforms"
+    )
+    if sure_engine.platform_review_expired(platform):
+        route["status"] = "review_required"
+        route["reason"] = (
+            "platform policy review is expired; live capture continues at reduced cadence "
+            "with a scheduled re-review"
+        )
+    else:
+        route["status"] = "ready"
+    return route
+
+
+def _api_route(
+    target: Path,
+    platform: str,
+    meta: Any,
+    catalog_entry: dict[str, Any],
+    registry: dict[str, Any],
+) -> dict[str, Any]:
+    connector_id = str(meta.get("connector_id") or "") if isinstance(meta, dict) else ""
+    route: dict[str, Any] = {
+        "route": "official_api",
+        "transport": "official_api",
+        "status": "unavailable",
+    }
+    if not connector_id:
+        route["status_detail"] = "no_reviewed_connector"
+        route["reason"] = (
+            str(meta.get("status_note", "no reviewed connector"))
+            if isinstance(meta, dict)
+            else "platform missing from platform map"
+        )
+        return route
+    connector = registry.get(connector_id)
+    if connector is None:
+        route["status_detail"] = "missing_from_registry"
+        route["reason"] = f"connector {connector_id} is not in the reviewed registry"
+        return route
+    decision = str(connector.get("decision", ""))
+    route.update(
+        {
+            "connector_id": connector_id,
+            "connector_revision": str(connector.get("reviewed_revision", "")),
+            "connector_license": str(connector.get("license", "")),
+            "registry_decision": decision,
+        }
+    )
+    if decision not in {"supported", "historical_only"}:
+        route["status"] = "blocked"
+        route["reason"] = "; ".join(str(v) for v in connector.get("limits", [])) or (
+            "registry decision is blocked"
+        )
+        return route
+    route["prerequisites"] = _platform_prerequisites(connector)
+    if decision == "historical_only":
+        route["constraints"] = [
+            f"historical data only: {', '.join(map(str, connector.get('usable_scope', [])))}"
+        ]
+    procurement_block = sure_engine._procurement_preflight(target, platform, catalog_entry)
+    if procurement_block is not None:
+        route.update(procurement_block)
+        route["status"] = "requires_input"
+        return route
+    if sure_engine.connector_review_expired(connector):
+        route["status"] = "review_required"
+        route["reason"] = str(
+            connector.get("policy_watch", {}).get("recheck_by") or "policy review expired"
+        )
+        return route
+    route["status"] = "ready"
+    return route
+
+
+def _primary_route(
+    meta: Any, api_route: dict[str, Any], cdp_route: dict[str, Any]
+) -> dict[str, Any]:
+    """Choose a primary route without making either route exclusive.
+
+    An explicit CDP map entry stays primary; otherwise a ready official API wins,
+    then a CDP route, then the API route so its blocked reason stays visible.
+    """
+    viable = {"ready", "review_required"}
+    if (
+        isinstance(meta, dict)
+        and meta.get("transport") == "cdp"
+        and cdp_route.get("status") in viable
+    ):
+        return cdp_route
+    if api_route.get("status") in viable:
+        return api_route
+    if cdp_route.get("status") in viable:
+        return cdp_route
+    return api_route
+
+
 def _write_plan_proposal(
     target: Path,
     args: argparse.Namespace,
@@ -4500,6 +4777,13 @@ def command_plan(args: argparse.Namespace) -> int:
     if args.sample_size < 1:
         print("--sample-size must be a positive integer", file=sys.stderr)
         return 2
+    if args.sample_size > PLAN_SAMPLE_TARGET_CAP:
+        print(
+            f"--sample-size must not exceed {PLAN_SAMPLE_TARGET_CAP}; "
+            "split larger studies into separately audited collection windows",
+            file=sys.stderr,
+        )
+        return 2
 
     region_entry = platform_map["regions"].get(args.region, {})
     candidates: list[tuple[str, str]] = []
@@ -4517,50 +4801,63 @@ def command_plan(args: argparse.Namespace) -> int:
             "quota": 0,
         }
         meta = platform_map["platforms"].get(platform)
-        connector_id = str(meta.get("connector_id") or "") if isinstance(meta, dict) else ""
-        if not connector_id:
-            entry["status"] = "no_reviewed_connector"
-            entry["reason"] = (
-                str(meta.get("status_note", "no reviewed connector"))
-                if isinstance(meta, dict)
-                else "platform missing from platform map"
-            )
-            resolved.append(entry)
-            continue
-        connector = registry.get(connector_id)
-        if connector is None:
-            entry["status"] = "missing_from_registry"
-            entry["reason"] = f"connector {connector_id} is not in the reviewed registry"
-            resolved.append(entry)
-            continue
-        decision = str(connector.get("decision", ""))
-        entry["connector_id"] = connector_id
-        entry["connector_revision"] = str(connector.get("reviewed_revision", ""))
-        entry["connector_license"] = str(connector.get("license", ""))
-        entry["registry_decision"] = decision
-        procurement_block = sure_engine._procurement_preflight(
-            target, platform, sure_engine.platform_index().get(platform, {}))
-        if decision in {"supported", "historical_only"} and procurement_block is not None:
-            # A reviewed client library is not proof that the user already owns
-            # the paid API/provider access. Keep it out of the feasible plan.
-            entry.update(procurement_block)
-            entry["status"] = "blocked"
-        elif decision in {"supported", "historical_only"} and sure_engine.connector_review_expired(connector):
-            entry["status"] = "review_expired"
-            entry["reason"] = str(connector.get("policy_watch", {}).get("recheck_by") or "policy review expired")
-        elif decision in {"supported", "historical_only"}:
+        catalog_entry = sure_engine.platform_index().get(platform, {})
+        api_route = _api_route(target, platform, meta, catalog_entry, registry)
+        cdp_route = _cdp_route(platform, meta, catalog_entry)
+        routes = [api_route, cdp_route]
+        primary = _primary_route(meta, api_route, cdp_route)
+        entry["routes"] = routes
+        entry["primary_route"] = primary["route"]
+        entry["access_status"] = primary["status"]
+        for key in (
+            "connector_id",
+            "connector_revision",
+            "connector_license",
+            "registry_decision",
+            "transport",
+            "access_basis",
+            "prerequisites",
+            "constraints",
+            "reason_code",
+            "blocked_reason_code",
+            "terminal_state",
+            "requires_procurement",
+            "user_action",
+            "transaction_executed",
+        ):
+            if key in primary:
+                entry[key] = primary[key]
+        if primary["status"] in {"ready", "review_required"}:
             entry["status"] = "enabled"
-            entry["quota"] = 0
-            entry["prerequisites"] = _platform_prerequisites(connector)
-            if decision == "historical_only":
-                entry["constraints"] = [
-                    f"historical data only: {', '.join(map(str, connector.get('usable_scope', [])))}"
-                ]
+            if primary["status"] == "review_required":
+                entry["review_status"] = "expired"
+                entry.setdefault("prerequisites", []).append(
+                    "policy review expired: schedule re-review; capture continues at reduced cadence"
+                )
+            if primary["route"] == "cdp":
+                entry["risk_note"] = CDP_RISK_NOTE
+                entry["recommended_cadence"] = CDP_RECOMMENDED_CADENCE
+                entry["fallback"] = (
+                    "if the browser route is challenged, switch to an official API or "
+                    "authorized export where one exists; otherwise record the gap"
+                )
         else:
-            entry["status"] = "blocked"
-            entry["reason"] = "; ".join(str(v) for v in connector.get("limits", [])) or (
-                "registry decision is blocked"
-            )
+            entry["reason"] = str(primary.get("reason", ""))
+            if primary["route"] == "cdp":
+                entry["status"] = "blocked"
+            elif primary["status"] == "unavailable":
+                entry["status"] = str(
+                    primary.get("status_detail", "no_reviewed_connector")
+                )
+            else:
+                entry["status"] = "blocked"
+            alternatives = [
+                route["route"]
+                for route in routes
+                if route is not primary and route["status"] in {"ready", "review_required"}
+            ]
+            if alternatives:
+                entry["alternative_routes"] = alternatives
         resolved.append(entry)
 
     enabled = [item for item in resolved if item["status"] == "enabled"]
@@ -4654,7 +4951,16 @@ def command_plan(args: argparse.Namespace) -> int:
     decision_question = args.decision or f"待填写：围绕「{args.goal}」明确一个要改变的具体产品决定"
     try:
         study, _ = _create_workspace(
-            target, study_id, title, decision_question, [item["platform"] for item in enabled]
+            target,
+            study_id,
+            title,
+            decision_question,
+            [item["platform"] for item in enabled],
+            {
+                item["platform"]
+                for item in enabled
+                if item.get("primary_route") == "cdp"
+            },
         )
     except (FileNotFoundError, OSError, json.JSONDecodeError) as exc:
         print(str(exc), file=sys.stderr)
@@ -4728,8 +5034,9 @@ def command_plan(args: argparse.Namespace) -> int:
             else []
         ),
         "meaning": (
-            "Feasibility reflects registry decisions only. Each enabled platform still needs "
-            "study-specific access, policy, and data-rights review before collection."
+            "Feasibility reflects reviewed registry and declared CDP catalog decisions. "
+            "Each enabled platform still needs study-specific access, policy, and "
+            "data-rights review before collection."
         ),
     }
     (target / "01-sources" / "feasibility.json").write_text(
@@ -5872,6 +6179,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--policies", action="store_true",
         help="show the enforced CDP runtime budgets (cell goto, timeout cooldown, session time-box)",
     )
+    platforms_parser.add_argument(
+        "--collection-policies", action="store_true",
+        help="show collection-side policy cards (access modes, budget, stop signals, dated sources)",
+    )
     platforms_parser.add_argument("--json", action="store_true")
     platforms_parser.set_defaults(func=sure_engine.cli_platforms)
 
@@ -5887,6 +6198,10 @@ def build_parser() -> argparse.ArgumentParser:
     collect_parser.add_argument("--cdp-url", help="Chrome DevTools endpoint, e.g. http://127.0.0.1:9222")
     collect_parser.add_argument("--url", help="authorized visible page URL for CDP")
     collect_parser.add_argument("--ack-terms", action="store_true", help="acknowledge platform terms and authorized session")
+    collect_parser.add_argument(
+        "--attach-existing", action="store_true",
+        help="attach to the exact already-open authorized page instead of opening a new tab",
+    )
     collect_parser.set_defaults(func=command_collect)
 
     capture_parser = subparsers.add_parser(
@@ -6380,6 +6695,37 @@ def build_parser() -> argparse.ArgumentParser:
     context_export.add_argument("--time-window", default="", help="optional scope.time_window")
     context_export.set_defaults(func=sure_engine.cli_context_export)
 
+    observation_parser = subparsers.add_parser(
+        "observation",
+        help="record product behaviour observations with explicit scope and untested conditions",
+    )
+    observation_sub = observation_parser.add_subparsers(
+        dest="observation_action", required=True)
+    observation_record = observation_sub.add_parser(
+        "record", help="validate one observation file and store it append-only")
+    observation_record.add_argument("file")
+    observation_record.add_argument("--store", required=True, help="observation store directory")
+    observation_record.add_argument("--replace", action="store_true",
+                                    help="overwrite an un-reviewed file with the same id")
+    observation_record.add_argument("--json", action="store_true")
+    observation_record.set_defaults(func=observation.cmd_record)
+    observation_list = observation_sub.add_parser(
+        "list", help="list stored observations with their scope")
+    observation_list.add_argument("--store", required=True)
+    observation_list.add_argument("--json", action="store_true")
+    observation_list.set_defaults(func=observation.cmd_list)
+    observation_validate = observation_sub.add_parser(
+        "validate", help="check one observation file without storing it")
+    observation_validate.add_argument("file")
+    observation_validate.add_argument("--json", action="store_true")
+    observation_validate.set_defaults(func=observation.cmd_validate)
+    observation_export = observation_sub.add_parser(
+        "export", help="append claim lines to STUDY/01-sources/observations.jsonl (E2 only)")
+    observation_export.add_argument("--store", required=True)
+    observation_export.add_argument("--study", required=True)
+    observation_export.add_argument("--json", action="store_true")
+    observation_export.set_defaults(func=observation.cmd_export)
+
     metric_parser = subparsers.add_parser(
         "metric", help="map the chain's need.measure to the ovo family metric contract (Growovo gauge + Verovo criteria)"
     )
@@ -6671,7 +7017,7 @@ CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "explore",
     "external-research", "do", "domains",
     "methods", "catalog", "platforms", "capture", "collect", "research", "loop", "analyze", "answer", "instruments", "import", "queue",
-    "codebook", "chain", "chain-node", "context", "metric", "economics", "psm", "decision", "followup", "decide", "issues", "proof", "brief", "delta", "page", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
+    "codebook", "chain", "chain-node", "context", "observation", "metric", "economics", "psm", "decision", "followup", "decide", "issues", "proof", "brief", "delta", "page", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }
 

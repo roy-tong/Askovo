@@ -151,7 +151,7 @@ Reddit 的 2026 公共 Data API 过渡会改变研究访问方式：现有应用
 
 ## CDP 受限传输层
 
-对于没有通用批量 API、但你可以用本人浏览器合法查看的页面，提供 CDP（Chrome DevTools Protocol）传输：
+对于你可以用本人浏览器合法查看、且平台目录已批准 CDP 的页面，提供 CDP（Chrome DevTools Protocol）传输；是否有 API 不构成平台排除条件：
 
 ```bash
 askovo collect ./study --platform amazon --query "night alert" \
@@ -166,9 +166,9 @@ askovo collect ./study --platform amazon --query "night alert" \
 - 命中验证码/机器人检查：等待被动自动清除，或人工完成后重跑；需要交互的挑战立即 `challenge` 停止，不绕过；
 - 不伪造指纹、不用代理池、不做无限翻页；
 - `--ack-terms` 必须由人确认平台条款、账号授权、数据用途与保留；
-- 当前开放（平台目录 `cdp: true` 的集合）：amazon、instagram、bilibili、weibo、kickstarter、discord、x、tiktok。YouTube 保持只走官方 API（免登录评论语料有 innertube 连接器，无需浏览器）；其余 blocked 平台（小红书/知乎/京东/淘宝）仍不开放；
+- 当前开放（平台目录 `cdp: true` 的集合）：github、reddit、youtube、hackernews、amazon、instagram、bilibili、weibo、kickstarter、discord、x、tiktok。官方 API 仍是优先路线（YouTube 免登录评论语料也可走 innertube 连接器），但有 API 不再排除 CDP；其余 blocked 平台（小红书/知乎/京东/淘宝）仍不开放；
 - 登录态平台（discord/x/tiktok/instagram）的会话**仅由用户在浏览器里手工登录**，agent 不代输凭据；多平台轮转作业、慢速节奏等反自动化纪律见 `skills/askovo/references/cdp-collection-playbook.md`；每平台的执行预算（一 cell 一次 goto、超时熔断、会话限时、预算留头）见 `connectors/cdp_strategy.py` 与 `askovo platforms "<需求>" --policies`；
 - 仅允许回环 CDP 端点、默认端口 HTTP(S) 平台 URL，返回 WebSocket 也必须留在同一回环端口；
 - 平台条款可能仍然禁止自动化采集；Askovo 只提供技术通道和留痕，不替用户承担合规判断。
 
-适配器与传输是两回事：GitHub/Reddit 走官方 API；Amazon/Instagram 等优先授权导出/历史数据集，CDP 是受限兜底；本地 fixture 只用于已授权导出，并同样先通过 design gate 与 scope 检查。
+适配器与传输是两回事：GitHub/Reddit 优先走官方 API，也可按研究范围选择已声明的 CDP 可见页路线；Amazon/Instagram 等优先授权导出/历史数据集，CDP 是受限兜底；本地 fixture 只用于已授权导出，并同样先通过 design gate 与 scope 检查。
