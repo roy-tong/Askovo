@@ -1,14 +1,12 @@
 # Changelog
 
-## Unreleased — 2026-11-22
+## 2.21.0 — 2026-11-22
 
 ### Added
 
 - **`askovo chain-node STUDY set --node NODE --field FIELD --value-json JSON`** edits typed task fields through the canonical writer, with field/type validation, idempotent writes and append-only change history. Arrays cover acceptance conditions, alternatives, assumptions, constraints and scope/non-goal lists; no manual JSON editing is needed for these fields.
 
 - **`askovo proof export STUDY --out NEW_DIR --by NAME`** and MCP `askovo_proof_export` project the canonical study into a read-only Prove Anything Proof Bundle. Source files remain byte-identical; only Decision Brief artifacts are copied, P3 semantic review and P4 adoption stay UNCHECKED, stale briefs become EXPIRED, and existing outputs are never overwritten. The common `ovo_acceptance proof` validator accepts the synthetic export with no structural errors.
-## Unreleased — 2026-11-21
-
 ### Added
 
 - **CDP transport for API-capable platforms**: GitHub, Reddit, YouTube and
@@ -71,7 +69,7 @@
 
 - `tests/test_cdp_source_expansion.py` covers the 100,000-record allocation and
   cap, route/adapters, existing-page full-text collection, dedicated extractors,
-  MCP parity and Skill authorization wording. Full suite: 857 tests OK.
+  MCP parity and Skill authorization wording. Full suite: 879 tests OK for the 2.21.0 candidate.
 
 
 ## 2.20.3 — 2026-11-20
