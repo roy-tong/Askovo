@@ -9,3 +9,6 @@ English mirror (/en/, same six pages, reciprocal hreflang, x-default points at t
 Canonical repo and full agent entry: https://github.com/roy-tong/askovo (see repo-root llms.txt for commands, protocols, and data contracts). Synthetic demo proves structure self-consistency only — never real demand, market size, release readiness, or commercial truth.
 
 - [Replay a synthetic decision after a mapped contradiction](https://roy-tong.github.io/Askovo/examples/decision-replay.html)
+
+- [OVO Discord community](https://discord.gg/UqrM8MCXb)
+- [OVO product updates on X](https://x.com/elliwoodtong)
