@@ -32,6 +32,10 @@ Quality is enforced under the hood: every conclusion carries an internal evidenc
 
 [Website](https://roy-tong.github.io/Askovo/) · [Quickstart](docs/quickstart.md) · [CDP capture](docs/capture.md) · [Product & business reasoning chain](docs/product-reasoning.md) · [Role methodology](docs/product-methodology.md) · [Platforms & connectors](docs/connectors.md)
 
+## OVO family: Prove Anything
+
+Askovo remains an independent product. In the OVO family, **Prove Anything** is the family-level result-proof protocol candidate: an agent saying “done” is a claim to verify, not proof by itself. **Verified Capability Factory (VCF)** is a gated research candidate, not an Askovo dependency. Askovo continues to own its research chain, counter-evidence, unknowns and human decision records; no family protocol upgrades them into market or commercial truth.
+
 [![Agent Skill](https://img.shields.io/badge/Agent_Skill-Askovo-111111)](skills/askovo/SKILL.md)
 [![CI](https://github.com/roy-tong/askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/askovo/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
