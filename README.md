@@ -36,6 +36,14 @@ Quality is enforced under the hood: every conclusion carries an internal evidenc
 
 Askovo remains an independent product. In the OVO family, **Prove Anything** is the family-level result-proof protocol candidate: an agent saying “done” is a claim to verify, not proof by itself. **Verified Capability Factory (VCF)** is a gated research candidate, not an Askovo dependency. Askovo continues to own its research chain, counter-evidence, unknowns and human decision records; no family protocol upgrades them into market or commercial truth.
 
+Export a read-only Proof Bundle without modifying the study:
+
+```bash
+askovo proof export ./study --out ./proof-bundle --by "artifact-reviewer"
+```
+
+The exporter checks the P1 brief projection. Independent semantic review (P3) and actual decision adoption (P4) remain `UNCHECKED` until separate qualified evidence arrives, so a successful export is not a blanket PASS.
+
 [![Agent Skill](https://img.shields.io/badge/Agent_Skill-Askovo-111111)](skills/askovo/SKILL.md)
 [![CI](https://github.com/roy-tong/askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/askovo/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)

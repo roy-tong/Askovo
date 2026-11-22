@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`askovo proof export STUDY --out NEW_DIR --by NAME`** and MCP `askovo_proof_export` project the canonical study into a read-only Prove Anything Proof Bundle. Source files remain byte-identical; only Decision Brief artifacts are copied, P3 semantic review and P4 adoption stay UNCHECKED, stale briefs become EXPIRED, and existing outputs are never overwritten. The common `ovo_acceptance proof` validator accepts the synthetic export with no structural errors.
+
 
 ## 2.20.3 — 2026-11-20
 

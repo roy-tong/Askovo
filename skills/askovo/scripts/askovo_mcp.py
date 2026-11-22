@@ -463,6 +463,19 @@ def _build_codebook(arguments: dict[str, Any]) -> argparse.Namespace:
     return _namespace(study_dir=_string(arguments.get("study_dir"), "study_dir"))
 
 
+def _build_proof_export(arguments: dict[str, Any]) -> argparse.Namespace:
+    classification = _optional_string(arguments, "classification") or "private"
+    if classification not in ("private", "synthetic", "public-redacted"):
+        raise ValueError("classification must be private, synthetic or public-redacted")
+    return _namespace(
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        out=_string(arguments.get("out"), "out"),
+        by=_string(arguments.get("by"), "by"),
+        task=_optional_string(arguments, "task") or "",
+        classification=classification,
+    )
+
+
 def _build_deliver(arguments: dict[str, Any]) -> argparse.Namespace:
     kind = arguments.get("kind", "memo")
     if kind not in ("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis", "role", "lifecycle", "web"):
@@ -1236,6 +1249,23 @@ TOOLS.append({
     },
 })
 
+TOOLS.append({
+    "name": "askovo_proof_export",
+    "description": ("Export a read-only Prove Anything Proof Bundle from a study. "
+                    "P1 checks the brief projection; independent semantic review and external adoption stay UNCHECKED."),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "study_dir": {"type": "string"},
+            "out": {"type": "string", "description": "new output directory; never overwritten"},
+            "by": {"type": "string", "description": "named artifact reviewer"},
+            "task": {"type": "string", "description": "optional decide task id"},
+            "classification": {"enum": ["private", "synthetic", "public-redacted"], "default": "private"},
+        },
+        "required": ["study_dir", "out", "by"],
+    },
+})
+
 TOOL_BUILDERS = {
     "askovo_route": (askovo_cli.sure_engine.cli_route, _build_route),
     "askovo_do": (askovo_cli.sure_engine.cli_do, _build_do),
@@ -1251,6 +1281,7 @@ TOOL_BUILDERS = {
     "askovo_codebook": (askovo_cli.sure_engine.cli_codebook, _build_codebook),
     "askovo_chain": (askovo_cli.sure_engine.cli_chain, _build_codebook),
     "askovo_deliver": (askovo_cli.command_deliver, _build_deliver),
+    "askovo_proof_export": (askovo_cli.command_proof, _build_proof_export),
     "askovo_methods": (askovo_cli.sure_engine.cli_methods, _build_methods),
     "askovo_domains": (askovo_cli.sure_engine.cli_domains, _build_domains),
     "askovo_queue_add": (askovo_cli.sure_engine.cli_queue_add, _build_queue_add),

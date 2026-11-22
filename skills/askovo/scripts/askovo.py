@@ -43,6 +43,7 @@ import capture_plan  # noqa: E402
 import decision_followup  # noqa: E402
 import role_catalog  # noqa: E402
 import evidence_page  # noqa: E402
+import proof_export  # noqa: E402
 
 research_loop.bind_cli(sys.modules[__name__])
 
@@ -2992,6 +2993,25 @@ def command_delta(args: argparse.Namespace) -> int:
         print(json.dumps({key: value for key, value in document.items() if key != "markdown"},
                          ensure_ascii=False, indent=2))
     return 1 if document.get("stale") else 0
+
+
+def command_proof(args: argparse.Namespace) -> int:
+    try:
+        result = proof_export.export_proof(
+            Path(args.study_dir).resolve(), Path(args.out).resolve(),
+            by=str(args.by or ""), task_id=str(getattr(args, "task", "") or ""),
+            classification=str(getattr(args, "classification", "private") or "private"),
+        )
+    except proof_export.ProofExportError as exc:
+        print(json.dumps({"status": "refused", "reason_code": exc.reason_code,
+                          "reason": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        return 2
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(json.dumps({"status": "error", "reason_code": "INPUT_REQUIRED",
+                          "reason": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        return 2
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
 
 
 def command_brief(args: argparse.Namespace) -> int:
@@ -6142,6 +6162,18 @@ def build_parser() -> argparse.ArgumentParser:
     delta_parser.add_argument("--decision-id", default="", help="approve: decision id (default DS-<nnn>)")
     delta_parser.set_defaults(func=command_delta)
 
+    proof_parser = subparsers.add_parser(
+        "proof", help="export a read-only Prove Anything Proof Bundle from the canonical study")
+    proof_sub = proof_parser.add_subparsers(dest="proof_action", required=True)
+    proof_export_parser = proof_sub.add_parser("export", help="write a new proof-bundle directory")
+    proof_export_parser.add_argument("study_dir")
+    proof_export_parser.add_argument("--out", required=True, help="new output directory; never overwritten")
+    proof_export_parser.add_argument("--by", required=True, help="named artifact reviewer")
+    proof_export_parser.add_argument("--task", default="", help="optional decide task id")
+    proof_export_parser.add_argument(
+        "--classification", choices=("private", "synthetic", "public-redacted"), default="private")
+    proof_export_parser.set_defaults(func=command_proof)
+
     brief_parser = subparsers.add_parser(
         "brief",
         help="decision brief: the nine-section PRD §2.3 projection of the canonical chain, "
@@ -6639,7 +6671,7 @@ CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "explore",
     "external-research", "do", "domains",
     "methods", "catalog", "platforms", "capture", "collect", "research", "loop", "analyze", "answer", "instruments", "import", "queue",
-    "codebook", "chain", "chain-node", "context", "metric", "economics", "psm", "decision", "followup", "decide", "issues", "brief", "delta", "page", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
+    "codebook", "chain", "chain-node", "context", "metric", "economics", "psm", "decision", "followup", "decide", "issues", "proof", "brief", "delta", "page", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }
 

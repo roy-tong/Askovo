@@ -36,6 +36,14 @@ Askovo 面向产品经理、用户研究、业务分析人员，以及转型全�
 
 Askovo 仍是可独立使用的产品。OVO 族级的 **Prove Anything** 是结果证明协议候选：Agent 说“完成了”，只是一项待验证的声明。**Verified Capability Factory（VCF）** 是受阶段门约束的研究候选，不是 Askovo 的当前依赖。Askovo 继续拥有自己的研究主链、反证、未知项与人工决策记录；族级协议不会把这些内容自动升级为市场或商业事实。
 
+只读导出 Proof Bundle，源 study 不会被修改：
+
+```bash
+askovo proof export ./study --out ./proof-bundle --by "artifact-reviewer"
+```
+
+导出器只检查 P1 Brief 投影。独立语义复核（P3）和实际决定采用（P4）在另有合格证据前保持 `UNCHECKED`，所以导出成功不是整包通过。
+
 [![Agent Skill](https://img.shields.io/badge/Agent_Skill-Askovo-111111)](skills/askovo/SKILL.md)
 [![CI](https://github.com/roy-tong/askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/askovo/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
