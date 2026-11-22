@@ -59,7 +59,7 @@ NODE_INTENT = {
 }
 CHAIN_INTENT = {"problem": "problem", "solution": "solution", "commercial": "commercial"}
 COLLECTED = {"collected"}
-FATAL_RESULTS = {"review_expired", "lease_lost"}
+FATAL_RESULTS = {"lease_lost"}
 GAP_STATES = ("open", "collected", "analyzed", "resolved", "unresolvable")
 ASSESS_VERDICTS = ("resolved", "unresolvable")
 ANALYSIS_RELATIVE = Path("04-findings/loop-analysis")

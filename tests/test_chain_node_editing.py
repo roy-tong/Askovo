@@ -219,6 +219,30 @@ class ChainNodeEditingTest(unittest.TestCase):
         self.assertTrue(payload["next_step"])
         self.assertEqual(before, digest(self.reasoning_path))
 
+    def test_set_supports_typed_task_fields_without_manual_json(self) -> None:
+        completed = run_cli(
+            "chain-node", str(self.study), "set", "--node", "feature",
+            "--field", "acceptance_conditions",
+            "--value-json", '["可回退原决定", "保留反证来源"]',
+            "--note", "补齐验收条件，不再手改内部 JSON",
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertEqual(["acceptance_conditions"], json.loads(completed.stdout)["changed_fields"])
+        self.assertEqual(["可回退原决定", "保留反证来源"],
+                         self.load_node("feature")["acceptance_conditions"])
+        chain = json.loads(self.reasoning_path.read_text(encoding="utf-8"))["chains"][0]
+        self.assertEqual("pending", chain["change_log"][0]["projection_sync"])
+
+    def test_typed_field_rejects_invalid_json_without_rewrite(self) -> None:
+        before = digest(self.reasoning_path)
+        completed = run_cli(
+            "chain-node", str(self.study), "set", "--node", "feature",
+            "--field", "acceptance_conditions", "--value-json", "not-json",
+        )
+        self.assertEqual(2, completed.returncode)
+        self.assertIn("JSON", completed.stderr)
+        self.assertEqual(before, digest(self.reasoning_path))
+
     def test_chain_next_step_points_at_chain_node(self) -> None:
         result = run_cli("chain", str(self.study))
         self.assertEqual(0, result.returncode, result.stderr)

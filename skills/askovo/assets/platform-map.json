@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-27",
+  "updated_at": "2026-11-22",
   "scope": "Maps a research region and platform type to concrete platforms, then resolves each platform against the reviewed connector registry. The map encodes availability, not permission: every enabled platform still needs study-specific access, policy, and data-rights review before collection.",
   "platform_types": {
     "forum": "Long-form discussion communities, Q&A threads, and interest boards",
@@ -12,8 +12,8 @@
   "regions": {
     "overseas": {
       "platforms_by_type": {
-        "forum": ["reddit"],
-        "social": ["x"],
+        "forum": ["reddit", "discord", "github", "hackernews"],
+        "social": ["x", "instagram"],
         "video": ["youtube"],
         "ecommerce": ["amazon"],
         "crowdfunding": ["kickstarter"]
@@ -30,8 +30,8 @@
     },
     "global": {
       "platforms_by_type": {
-        "forum": ["reddit"],
-        "social": ["x"],
+        "forum": ["reddit", "discord", "github", "hackernews"],
+        "social": ["x", "instagram"],
         "video": ["youtube"],
         "ecommerce": ["amazon", "jd", "taobao"],
         "crowdfunding": ["kickstarter"]
@@ -41,7 +41,11 @@
   "platforms": {
     "reddit": {"connector_id": "reddit-praw"},
     "x": {"connector_id": "x-tweepy"},
+    "instagram": {"transport": "cdp"},
+    "discord": {"transport": "cdp"},
     "youtube": {"connector_id": "youtube-google-api-python-client"},
+    "github": {"transport": "cdp"},
+    "hackernews": {"transport": "cdp", "connector_id": "hackernews-api"},
     "amazon": {"connector_id": "amazon-reviews-2023"},
     "jd": {"connector_id": "jd-comment-spider"},
     "taobao": {"connector_id": "taobao-review-playwright"},

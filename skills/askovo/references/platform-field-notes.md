@@ -42,8 +42,10 @@ one, and it never authorizes a challenge bypass or a credential shortcut.
 | `channel_verified` | Page renders over the channel; the run was not executed |
 
 Never upgrade a status without a run to point at. `partially_verified` and
-`login_verified` are honest states here — X / Instagram / TikTok methods are
-documented and deliberately have no collector.
+`login_verified` are honest states here. X / TikTok methods are documented and
+deliberately have no dedicated collector. Instagram DOM extraction is bundled in
+`sure_engine.CDP_EXTRACTORS`, but its field status remains `partially_verified`;
+bundling code is not evidence of a completed live run.
 
 ## How the engine consumes it
 
@@ -165,6 +167,34 @@ and a session drop is a human re-login. The same layer detects a membership
 gate (`detect_membership_gate`): a joinable but member-verified server is
 recorded as a coverage gap, never worked around. A policy bounds how a run
 touches a site; it never authorizes access.
+
+## Collection policy: what one run may spend
+
+`runtime_policies` bound how the browser channel touches a site;
+`collection_policies` bound what any collection run may cost, including API and
+archive channels. Each platform records:
+
+| Field | Meaning |
+|---|---|
+| `access_modes` | catalog subset only; a policy can narrow access, never add it |
+| `budget` | `cadence_seconds`, `session_minutes`, `budget_fraction` — never looser than the runtime policy |
+| `signals` | `block` / `throttle` / `watch` with a detection rule and the action that follows |
+| `stop_rules` | what ends the platform for the run, not a retry recipe |
+| `sources` | `official` / `craft` / `lead` with `as_of`; at least one of the first two |
+| `observed` | community-reported limits: `claim`, `threshold`, `window_seconds`, `suggested_cadence_seconds`, `confidence` and dated `source_urls`; a suggestion may only be slower than `budget.cadence_seconds` |
+| `unverified` | what was not confirmed; an empty list is honest, a guessed claim is not |
+
+```bash
+askovo platforms "<need>" --collection-policies   # per-platform policy cards
+askovo platforms "<need>" --json                  # collection_policy per entry
+askovo doctor                                      # collection-policies gate
+```
+
+Catalog-blocked platforms carry no card: they appear under `excluded` with the
+reason, and doctor fails if a blocked platform has no exclusion note. The
+rationale, the cross-platform signal table and the four excluded techniques
+(captcha bypass, fingerprint spoofing, proxy pools, sock-puppet accounts, AI
+humanisation) are in `references/collection-strategy.md`.
 
 ## Index by platform
 

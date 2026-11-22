@@ -266,7 +266,7 @@ askovo collect ./study --platform amazon --query "..." \
 
 ### `cdp_not_allowed`
 
-CDP 只对 amazon、instagram、bilibili、weibo 的授权可见页面开放；X/YouTube 只走官方 API。调试端点必须是回环地址，目标必须是默认端口 HTTP(S) 平台 URL。
+CDP 只对平台目录 `cdp: true` 的授权可见页面开放（当前 github、reddit、youtube、hackernews、amazon、instagram、bilibili、weibo、kickstarter、discord、x、tiktok）；官方 API 仍是优先路线，blocked 平台不开放。调试端点必须是回环地址，目标必须是默认端口 HTTP(S) 平台 URL。
 
 ### CDP 连接失败
 

@@ -154,7 +154,7 @@ askovo plan ./existing-study --goal "补设计" --region overseas \
   --sample-size 100000 --platform-types forum,social --force
 ```
 
-新目录：写入 study.json、配额、可行性、采集任务与 `01-sources/source-plan.csv`。
+新目录：写入 study.json、配额、可行性、采集任务与 `01-sources/source-plan.csv`。`--sample-size` 范围为 1–100,000，表示去重、全文、时间和相关性筛选后的严格主样本上限，不是原始抓取行数；海外 forum/social 会纳入 Discord 和 Instagram 的声明式 CDP 路由，并为每个平台分配五种证据用途的整数配额。
 
 已有工位加 `--force`：**只写提案，不改真值文件**——输出到 `01-sources/plan-proposal/`：
 `plan-proposal.json`、`source-plan.proposed.csv`、`tasks.proposed.md`。`study.json`、
@@ -193,6 +193,7 @@ askovo platforms "Kickstarter 众筹评论" --field-notes            # 平台实
 askovo platforms "Discord 社区抱怨" --platform discord --field-notes  # 单平台完整表
 askovo platforms "Discord 和 Kickstarter 的多平台采集" --strategies   # 多平台轮转策略（不变量/机制/验证）
 askovo platforms "Discord 社区抱怨" --policies                        # CDP 运行时预算（goto/熔断/会话上限）
+askovo platforms "Reddit 和 Kickstarter 的用户抱怨" --collection-policies  # 采集侧策略卡（访问方式/预算/信号/来源）
 ```
 
 输出推荐平台、适配分、访问方式、批量能力、限制、偏差，以及不可直接采集的平台与原因。`--bulk` 优先支持批量的来源。
@@ -200,6 +201,8 @@ askovo platforms "Discord 社区抱怨" --policies                        # CDP 
 `--field-notes` 渲染 `skills/askovo/assets/platform-field-notes.json` 里的实战限制与解法（含跨平台实践）；`--platform <id>` 收窄到单个目录平台或 source type（如 `vertical_forum`），未知 id 退出码 2，已知但不在当前推荐集的平台（如 `app_store`）仍返回其笔记/策略而不是报未知；`--json` 的每个推荐条目带 `field_notes`，顶层另有 `field_notes`。笔记**不是许可**：能否采集仍由平台目录、study scope 与 Design gate 决定。
 
 `--policies` 渲染注册表 `runtime_policies` 编译出的 CDP 运行时预算：每站点最小间隔、会话上限、超时熔断、单 cell goto 数、预算留头系数与模式互斥。`--json` 的每个 CDP 推荐条目带 `runtime_policy`，`--policies` 时顶层另有 `runtime_policies`。预算是**执行约束**（`connectors/cdp_strategy.py` 的 `SessionGuard`），不是访问许可。
+
+`--collection-policies` 渲染注册表 `collection_policies` 编译出的采集策略卡：每平台允许的访问方式、站点间隔、会话上限、量级留头、分级的检测信号（`block`/`throttle`/`watch`）与触发动作、停止规则、社区经验条数（`observed[]` 的 high/medium/low 分布），以及每条判断的来源（`official`/`craft`/`lead` 分级 + `as_of` 日期）。`--json` 的每个推荐条目带 `collection_policy`，`--collection-policies` 时顶层另有 `collection_policies`。策略**不是许可**：访问方式必须是平台目录的子集，预算不得比运行时策略更松，经验值只能比预算更慢（更快即校验失败），目录里 blocked 的平台只出现在 `excluded` 里且没有策略卡；`askovo doctor` 校验这些不变量。口径说明见 [`references/collection-strategy.md`](../skills/askovo/references/collection-strategy.md)。
 
 ## collect
 
@@ -210,13 +213,17 @@ askovo collect ./study --platform reddit --query "night alert" --limit 100 --fix
 askovo collect ./study --platform github --query "..." --dry-run
 askovo collect ./study --platform amazon --query "night alert" \
   --cdp-url http://127.0.0.1:9222 --url "https://www.amazon.com/product-reviews/B0..." --ack-terms
+askovo collect ./study --platform instagram --query "night alert workaround" \
+  --cdp-url http://127.0.0.1:9222 --url "https://www.instagram.com/p/visible/" \
+  --attach-existing --ack-terms --limit 50
 ```
 
 - 非 dry-run 采集先执行 design gate；失败返回 `1` 和 `design_gate_failed`。平台还必须在 `scope.allowed_sources` 中，live/CDP 必须启用 adapter。
 - GitHub：官方 Search API；`GITHUB_TOKEN` 可选。
-- Reddit：官方 Data API；需要 `ASKOVO_REDDIT_CLIENT_ID`、`ASKOVO_REDDIT_CLIENT_SECRET`、可选 `ASKOVO_REDDIT_USER_AGENT`；registry 复核过期会返回 `review_expired`。
+- Reddit：官方 Data API；需要 `ASKOVO_REDDIT_CLIENT_ID`、`ASKOVO_REDDIT_CLIENT_SECRET`、可选 `ASKOVO_REDDIT_USER_AGENT`；registry 复核过期不再阻断，返回结果带 `review_status: "expired"` 与降频提醒。
+- 官方 API 可用不等于必须走 API：x、kickstarter、github、hackernews、youtube、weibo 等平台可用 `--cdp-url` 走授权可见页路线（需 Design gate、启用 adapter、`--ack-terms` 与批准 URL）；API 路线保留在 plan 的 `routes` 中，采购要求只影响该路线，不关闭整个平台。
 - `--fixture`：离线 JSONL/CSV，用于授权导出、历史数据集和测试；每行必须是 JSON object。
-- 其他平台没有内置适配器时返回 `3`，并给出导入/授权导出路径。
+- 其他平台既没有内置适配器、也没有显式 `--cdp-url` 路由时返回 `3`，并给出导入/授权导出路径。
 - `blocked` 平台直接返回 `3`，不提供绕过方式。
 - 每次采集写 `01-sources/manifests/<run_id>.json`，raw envelope 写 `02-data/raw/<platform>/`，归一化记录追加 `02-data/normalized.jsonl`；平台内按 ID + 文本 hash 双键去重，冲突写入 `blocked_or_dropped` 与 warnings。
 
@@ -232,7 +239,9 @@ askovo collect ./study --platform amazon --query "night alert" \
 - 需要 Chrome 以 `--remote-debugging-port=9222` 启动，且使用你本人已登录的 profile；
 - 只抓当前页面可见文本；命中验证码/机器人检查立即停止；
 - `--ack-terms` 是人工确认平台条款、账号授权、用途与保留；没有它返回 `4`；
-- 仅平台目录 `cdp: true` 集合开放（当前 amazon/instagram/bilibili/weibo/kickstarter/discord/x/tiktok）；YouTube 只走官方 API，其余 blocked 平台不开放；
+- `--attach-existing` 精确复用用户浏览器里已经打开的同 URL 页面，不新开标签页；找不到精确匹配即停止。显式 CDP 路由不会先被付费 API 采购门拦截，但掉登录返回 `session_drop`，必须由用户手工重登；
+- Instagram 评论和 Discord 消息使用专用 DOM 提取器，保留全文、来源 URL、频道／账号、内容类型和时间；Discord/Instagram 滚动使用真实 wheel 事件；
+- 仅平台目录 `cdp: true` 集合开放（当前 github/reddit/youtube/hackernews/amazon/instagram/bilibili/weibo/kickstarter/discord/x/tiktok）；官方 API 仍是优先路线，但有 API 不排除 CDP，其余 blocked 平台不开放；
 - CDP 仅允许回环端点与默认端口 HTTP(S) 平台 URL，WebSocket 不得跳到其他主机或端口；
 - 不伪造指纹、不绕验证码、不做无限翻页。
 
@@ -470,6 +479,16 @@ askovo deliver ./study --kind signoff
 
 `deliver --kind signoff` 从主链生成干系人签收一页纸：结论摘要、每节点判断与证据等级分布、未验证假设、边界声明、空白签收栏。超证据表述仍由 `check` 拦截；本页与主链不一致时以主链为准。三者均有 MCP 对应工具（`askovo_boundary` / `askovo_cost` / `askovo_deliver kind=signoff`）。
 
+## decision record / replay（版本化反证复审）
+
+```bash
+askovo decision record ./study --chain PR01 --by "产品负责人"
+askovo decision record ./study --chain PR01 --by "产品负责人" --contradiction R05
+askovo decision replay ./study --chain PR01 --json
+```
+
+反证 ID 必须已登记、context 相同、带 provenance 和 contradicts 映射。第二条记录触发 `deterministic_safe_hold`，重开产品与商业验证并保留前后快照；不自动编造替代建议或升级因果状态。合成端到端证明和任务模板见 [决策重放页](../website/examples/decision-replay.html)。
+
 ## review（决策复盘）
 
 ```bash
@@ -508,3 +527,16 @@ askovo platforms "..." --json | jq '.recommended[] | {id, decision, bulk}'
 | `ASKOVO_DECIDE_HOME` | `askovo decide` 的 workspace 默认目录（未设置时用 `./askovo-decide`） |
 
 所有平台采集必须遵守平台条款、速率限制、数据权利与保留规则。没有合规通道时只接受授权导出/历史数据集。
+
+## 受控编辑七节点字段
+
+`chain-node set` 除 `--statement/--rationale/--status` 外，可用 `--field` 与 `--value-json` 修改常用任务字段，不需要手工编辑内部 JSON：
+
+```bash
+askovo chain-node STUDY set --node feature \
+  --field acceptance_conditions \
+  --value-json '["可回退原决定", "保留反证来源"]' \
+  --note "补齐验收条件"
+```
+
+字符串字段包括 `current_substitute`、`friction_cost`、`consequence`、`desired_outcome`、`measure`、`capability`、`form`、`scope`；数组字段包括 `assumptions`、`constraints`、`alternatives_considered`、`acceptance_conditions`、`non_goals`、`acceptance_criteria`。字段、JSON 语法和类型都会校验；相同值不写文件。所有变更进入链的 append-only `change_log`，仍需 `askovo check STUDY --stage full` 重新审计，编辑不等于门禁通过。

@@ -1,5 +1,76 @@
 # Changelog
 
+## 2.21.0 — 2026-11-22
+
+### Added
+
+- **`askovo chain-node STUDY set --node NODE --field FIELD --value-json JSON`** edits typed task fields through the canonical writer, with field/type validation, idempotent writes and append-only change history. Arrays cover acceptance conditions, alternatives, assumptions, constraints and scope/non-goal lists; no manual JSON editing is needed for these fields.
+
+- **`askovo proof export STUDY --out NEW_DIR --by NAME`** and MCP `askovo_proof_export` project the canonical study into a read-only Prove Anything Proof Bundle. Source files remain byte-identical; only Decision Brief artifacts are copied, P3 semantic review and P4 adoption stay UNCHECKED, stale briefs become EXPIRED, and existing outputs are never overwritten. The common `ovo_acceptance proof` validator accepts the synthetic export with no structural errors.
+### Added
+
+- **CDP transport for API-capable platforms**: GitHub, Reddit, YouTube and
+  Hacker News now support the same governed authorized-visible-page CDP route
+  as the existing CDP platforms. Official APIs remain preferred; Design, scope,
+  adapter, human acknowledgement, loopback and challenge-stop gates are unchanged.
+- **Collection policy layer (`collection_policies`)**: one entry per acquirable
+  platform recording allowed access modes, a request budget (cadence, session
+  cap, headroom), graded detection signals, stop rules and dated sources.
+  `askovo platforms "<need>" --collection-policies` renders the cards and
+  `--json` adds `collection_policy` to each recommendation; `askovo doctor`'s
+  new `collection-policies` gate fails when a policy invents an access mode
+  outside `platform-catalog.json`, costs more than the enforced runtime budget,
+  lacks a `block`-level signal or rests only on `lead` sources, or when a
+  catalog-blocked platform has no exclusion note. Each platform also carries an
+  `observed[]` community-experience list (claim, threshold, window, confidence,
+  dated source URLs); the engine rejects any entry whose suggested cadence is
+  faster than the budget, so experience can only slow a run down. The prose
+  rationale ships as `references/collection-strategy.md` (§2.1).
+- **Executable Instagram / Discord CDP source plans**: overseas `forum,social`
+  planning now allocates exact quotas to both platforms, copies five-role route
+  templates, and declares the first-party `cdp-authorized-visible-page`
+  transport instead of requiring a nonexistent API connector. `--sample-size`
+  is explicitly capped at 100,000 strict-primary target records; larger studies
+  must be split into separately audited windows.
+- **Existing logged-in page collection**: `askovo collect --attach-existing`
+  attaches to the exact already-open URL without creating a tab, reading stored
+  credentials, or exporting cookies. MCP exposes the same flag, dry-run output
+  preserves the complete CDP command, and an explicit CDP route is no longer
+  stopped by the paid-API procurement preflight.
+- **Dedicated Instagram / Discord DOM extraction**: visible comments/messages
+  retain full text, source URL, channel/account, content type and timestamps;
+  session platforms use real wheel events for lazy loading. Raw envelopes,
+  normalized records and run manifests keep the existing provenance contract.
+
+### Fixed
+
+- **Policy-review expiry no longer blocks collection**: an expired platform
+  review is a freshness warning, not a stop. `capture page` and `collect`
+  return `review_status: "expired"` with a warning that asks for reduced
+  cadence, split batches and a scheduled re-review, while the run continues on
+  the authorized visible-page route. `research_loop` no longer treats
+  `review_expired` as fatal.
+- **API procurement no longer excludes the CDP route**: `x` and `kickstarter`
+  design checks accept the first-party `cdp-authorized-visible-page` transport
+  before their paid-connector enums, and `plan` scaffolds that adapter for every
+  platform whose primary route is CDP (GitHub, Hacker News, X, Kickstarter,
+  Instagram, Discord, Weibo). Official APIs stay preferred where available;
+  the absence of a purchased API tier only closes that route, not the platform.
+- **Contradictory agent authorization guidance**: the Skill now describes one
+  CDP allowlist everywhere and does not request a second generic pilot approval
+  when the original request already authorized logged-in-browser CDP and Design
+  has passed. Explicit terms acknowledgement, Design/scope/adapter checks,
+  challenge stops and API-first routing remain unchanged.
+- **Study design for the new CDP routes**: Instagram and Discord require access,
+  rights, retention, no-personal-data and source-concentration declarations;
+  documentation no longer claims that registry-only planning governs them.
+
+### Tests
+
+- `tests/test_cdp_source_expansion.py` covers the 100,000-record allocation and
+  cap, route/adapters, existing-page full-text collection, dedicated extractors,
+  MCP parity and Skill authorization wording. Full suite: 879 tests OK for the 2.21.0 candidate.
+
 
 ## 2.20.3 — 2026-11-20
 

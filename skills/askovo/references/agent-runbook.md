@@ -44,7 +44,7 @@ python3 scripts/askovo.py plan /ABSOLUTE/PATH/TO/STUDY \
   --decision "是否为维修工程师制作 AI 眼镜远程指导原型"
 ```
 
-`plan` resolves the region and platform types against `assets/platform-map.json` and the connector registry, enables only non-blocked platforms, allocates the sample across platforms and evidence roles, scales route targets, and writes `01-sources/feasibility.json` plus `01-sources/tasks.md`. Exit code 3 means no requested platform has an enabled connector: deliver the gap report, do not substitute a commercial service, merchant API, or login-based scraper. The plan output is a draft contract — section 3 review is still required.
+`plan` resolves the region and platform types against `assets/platform-map.json`, the connector registry and declared first-party CDP routes; it enables only non-blocked platforms, allocates the sample across platforms and evidence roles, scales route targets, and writes `01-sources/feasibility.json` plus `01-sources/tasks.md`. `--sample-size` is capped at 100,000 and represents the strict-primary target, not raw rows. Exit code 3 means no requested platform has an enabled route: deliver the gap report, do not substitute a commercial service, merchant API, or undeclared login-based scraper. The plan output is a draft contract — section 3 review is still required.
 
 For a frontier experience users cannot yet name, add `--mode unnamed-experience`: complete the Phase 0 grounding tasks listed in `tasks.md` (edge-language mining, substitute-behavior archaeology, psychophysical dimension mapping, cross-domain anchors, first-principles derivation) until `lexicon.csv` passes the design gate, then derive route queries from the retained terms. Method details: [unnamed-experience-research.md](unnamed-experience-research.md).
 
@@ -61,7 +61,7 @@ python3 scripts/askovo.py init /ABSOLUTE/PATH/TO/STUDY \
   --platform amazon
 ```
 
-Valid values are `reddit`, `x`, `youtube`, `amazon`, `jd`, `taobao`, and `kickstarter`. Repeat `--platform` only for sources actually in scope. Omit the flags when none applies. Platform flags copy and enable route templates; they do not approve access, data rights, policy dates, retention, queries, or source-plan roles.
+Valid values are `reddit`, `x`, `youtube`, `instagram`, `discord`, `amazon`, `jd`, `taobao`, and `kickstarter`. Repeat `--platform` only for sources actually in scope. Omit the flags when none applies. Platform flags copy and enable route templates; they do not approve access, data rights, policy dates, retention, queries, or source-plan roles.
 
 The command refuses to overwrite a non-empty directory. It creates:
 
@@ -91,7 +91,7 @@ Use these paths as the inter-Agent handoff contract. Do not invent parallel fold
 
 Fill every placeholder in `study.json`, all seven product/business reasoning nodes, and every configured evidence role in `source-plan.csv`. Each node needs a non-placeholder statement and incoming rationale; feature includes alternatives, product includes scope/non-goals, and business includes market boundary, segments, payer, pricing/cost hypotheses, market-estimate method, unit-economics inputs, metrics, and gate. Mark each route with the `reasoning_nodes` it supports. If the rationale is unknown, keep it open and design a falsification step rather than inventing a link.
 
-If a platform is planned, first run `askovo.py connectors --platform PLATFORM --include-blocked`. Read `open-source-connectors.md`, `connector-contract.md`, the matching shared adapter, and the platform reference. Copy the route template into `01-sources/`, enable its `study.json.source_adapters` block, and fill connector ID/revision/license, access basis, policy status, platform and data-rights review dates, data-rights basis, retention rule, hierarchy minimums, and concentration caps. Only `supported` and `historical_only` registry decisions may run. The generic source plan remains the stage-gate summary; the platform route matrix is the reproducible query manifest.
+If a platform is planned, first run `askovo.py connectors --platform PLATFORM --include-blocked` for scripted routes, or inspect the platform catalog for a declared first-party CDP route. Read `open-source-connectors.md`, `connector-contract.md`, the matching shared adapter, and the platform reference. Copy the route template into `01-sources/`, enable its `study.json.source_adapters` block, and fill connector ID/revision/license, access basis, policy status, platform and data-rights review dates, data-rights basis, retention rule, hierarchy minimums, and concentration caps. Only `supported` and `historical_only` registry decisions, or declared CDP transports on `cdp: true` catalog platforms, may run. The generic source plan remains the stage-gate summary; the platform route matrix is the reproducible query manifest.
 
 For each hypothesis, write an observable falsifier. Bad: `用户可能不需要。` Good: `若维修人员在高频任务中能在 30 秒内用手机完成同一操作，且概念测试中没有 E3 接受证据，则停止该方向。`
 

@@ -6270,6 +6270,17 @@ def doctor() -> int:
         ))
     except (OSError, json.JSONDecodeError, ValueError, RuntimeError) as exc:
         checks.append(("cdp-runtime-policies", False, str(exc)))
+    try:
+        collection_issues = collection_policy_problems()
+        collection_count = len(collection_policy_catalog())
+        checks.append((
+            "collection-policies",
+            not collection_issues,
+            f"{collection_count} platforms" if not collection_issues
+            else "; ".join(collection_issues[:3]),
+        ))
+    except (OSError, json.JSONDecodeError, ValueError, RuntimeError) as exc:
+        checks.append(("collection-policies", False, str(exc)))
     ids = {str(item.get("id")) for item in catalog.get("methods", []) if isinstance(item, dict)}
     missing: list[str] = []
     for name, pack in packs.items():
@@ -6487,6 +6498,12 @@ STRATEGY_REQUIRED = (
     "verification", "enforcement",
 )
 
+COLLECTION_POLICY_REQUIRED = ("access_modes", "budget", "signals", "stop_rules", "sources")
+COLLECTION_SIGNAL_LEVELS = ("block", "throttle", "watch")
+COLLECTION_SOURCE_GRADES = ("official", "craft", "lead")
+COLLECTION_OBSERVED_CONFIDENCE = ("high", "medium", "low")
+COLLECTION_PRIORITY_PLATFORMS = ("reddit", "amazon", "kickstarter", "instagram", "youtube")
+
 
 def _resolve_helper_problem(note_id: str, helper: Any) -> str | None:
     """Validate a ``connectors.<module>.<attr>`` reference, or return None."""
@@ -6637,6 +6654,426 @@ def runtime_policy_problems() -> list[str]:
     return problems
 
 
+# ---------------------------------------------------------------------------
+# Collection policy: what one data-collection run may spend per platform
+#
+# The operating strategies say how to rotate; collection policies say what a
+# run may cost: allowed access modes, cadence, session and volume budget, the
+# signals that force a stop, and the dated sources behind every claim. They sit
+# in the same registry as the field notes so planning, doctor and every
+# projection read one copy. A policy is a budget, never a permission: the
+# access decision stays in platform-catalog.json.
+
+
+def _policy_day(value: Any) -> datetime | None:
+    try:
+        return datetime.strptime(str(value), "%Y-%m-%d")
+    except (TypeError, ValueError):
+        return None
+
+
+def collection_policy_section() -> dict[str, Any]:
+    """The collection-policy layer, or ``{}`` when the registry has none."""
+    data = field_notes_catalog()
+    section = data.get("collection_policies")
+    if section is None:
+        return {}
+    if not isinstance(section, dict):
+        raise ValueError(f"invalid collection_policies section in {FIELD_NOTES_PATH}")
+    return section
+
+
+def collection_policy_catalog() -> dict[str, dict[str, Any]]:
+    """Platform id -> collection policy entry."""
+    platforms = collection_policy_section().get("platforms")
+    if platforms is None:
+        return {}
+    if not isinstance(platforms, dict):
+        raise ValueError(f"invalid collection_policies.platforms in {FIELD_NOTES_PATH}")
+    catalog: dict[str, dict[str, Any]] = {}
+    for key, value in platforms.items():
+        if not isinstance(value, dict):
+            raise ValueError(f"collection_policies.platforms[{key!r}] must be an object")
+        catalog[str(key)] = value
+    return catalog
+
+
+def collection_policy_for(platform: str, section: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """One platform's policy with the layer's dates attached (``None`` if absent)."""
+    section = collection_policy_section() if section is None else section
+    platforms = section.get("platforms") if isinstance(section, dict) else None
+    if not isinstance(platforms, dict):
+        return None
+    entry = platforms.get(str(platform))
+    if not isinstance(entry, dict):
+        return None
+    enriched = dict(entry)
+    enriched["platform"] = str(platform)
+    enriched["generated_at"] = section.get("generated_at")
+    enriched["review_by"] = section.get("review_by")
+    return enriched
+
+
+def collection_policy_problems() -> list[str]:
+    """Collection-policy consistency (empty means consistent).
+
+    The layer must not invent access: platform ids resolve to the catalog or a
+    declared source type, access modes stay inside the catalog's list, every
+    blocked platform is excluded with a reason, and no budget may be looser
+    than the runtime policy the connectors actually enforce.
+    """
+    problems: list[str] = []
+    try:
+        section = collection_policy_section()
+        data = field_notes_catalog()
+        catalog = platform_index()
+        runtime = _cdp_strategy()
+    except (OSError, json.JSONDecodeError, ValueError, RuntimeError) as exc:
+        return [str(exc)]
+    if not section:
+        return [f"collection_policies section is missing from {FIELD_NOTES_PATH.name}"]
+    if str(section.get("schema_version")) != "1.0":
+        problems.append("collection_policies.schema_version must be '1.0'")
+    generated = _policy_day(section.get("generated_at"))
+    review = _policy_day(section.get("review_by"))
+    if generated is None:
+        problems.append("collection_policies.generated_at must be YYYY-MM-DD")
+    if review is None:
+        problems.append("collection_policies.review_by must be YYYY-MM-DD")
+    elif generated is not None and review <= generated:
+        problems.append("collection_policies.review_by must be later than generated_at")
+    levels = section.get("levels")
+    if not isinstance(levels, dict):
+        problems.append("collection_policies.levels must be an object")
+    else:
+        unlabelled = [
+            level for level in COLLECTION_SIGNAL_LEVELS
+            if not str(levels.get(level) or "").strip()
+        ]
+        if unlabelled:
+            problems.append(f"collection_policies.levels missing {', '.join(unlabelled)}")
+
+    blocked = {pid for pid, item in catalog.items() if item.get("decision") == "blocked"}
+    excluded = section.get("excluded")
+    excluded_ids: set[str] = set()
+    if not isinstance(excluded, list):
+        problems.append("collection_policies.excluded must be a list")
+    else:
+        for index, item in enumerate(excluded):
+            if not isinstance(item, dict):
+                problems.append(f"collection_policies.excluded[{index}] must be an object")
+                continue
+            pid = str(item.get("platform") or "")
+            if not pid:
+                problems.append(f"collection_policies.excluded[{index}] missing platform")
+                continue
+            excluded_ids.add(pid)
+            if not str(item.get("reason") or "").strip():
+                problems.append(f"collection_policies.excluded[{index}] ({pid}) missing reason")
+            if pid not in blocked:
+                problems.append(
+                    f"collection_policies.excluded {pid} is not blocked in the platform catalog"
+                )
+    uncovered = sorted(blocked - excluded_ids)
+    if uncovered:
+        problems.append(
+            "blocked platforms have no exclusion note: " + ", ".join(uncovered)
+        )
+
+    platforms = section.get("platforms")
+    if not isinstance(platforms, dict) or not platforms:
+        problems.append("collection_policies.platforms must be a non-empty object")
+        return problems
+    declared = set((data.get("source_types") or {}).keys())
+    known = set(catalog) | declared
+    for platform, entry in platforms.items():
+        pid = str(platform)
+        label = f"collection_policies.platforms[{pid!r}]"
+        if pid not in known:
+            problems.append(f"{label} is not a catalog platform or source type")
+        if not isinstance(entry, dict):
+            problems.append(f"{label} must be an object")
+            continue
+        missing = [key for key in COLLECTION_POLICY_REQUIRED if entry.get(key) in (None, "", [], {})]
+        if missing:
+            problems.append(f"{label} missing {', '.join(missing)}")
+            continue
+        catalog_entry = catalog.get(pid) or {}
+        allowed_modes = {str(mode) for mode in catalog_entry.get("access_modes", [])}
+        modes = entry.get("access_modes")
+        if not isinstance(modes, list) or not modes:
+            problems.append(f"{label}: access_modes must be a non-empty list")
+        else:
+            unknown = sorted({str(mode) for mode in modes} - allowed_modes)
+            if unknown:
+                problems.append(
+                    f"{label}: access_modes outside the platform catalog: {', '.join(unknown)}"
+                )
+        budget = entry.get("budget")
+        numbers: dict[str, float] = {}
+        if not isinstance(budget, dict):
+            problems.append(f"{label}: budget must be an object")
+        else:
+            for key in ("cadence_seconds", "session_minutes", "budget_fraction"):
+                value = budget.get(key)
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    problems.append(f"{label}: budget.{key} must be a number")
+                    continue
+                numbers[key] = float(value)
+            if "cadence_seconds" in numbers and numbers["cadence_seconds"] < 1:
+                problems.append(f"{label}: budget.cadence_seconds must be >= 1")
+            if "session_minutes" in numbers and numbers["session_minutes"] < 1:
+                problems.append(f"{label}: budget.session_minutes must be >= 1")
+            if "budget_fraction" in numbers and not 0 < numbers["budget_fraction"] <= 1:
+                problems.append(f"{label}: budget.budget_fraction must be in (0, 1]")
+            if len(numbers) == 3:
+                try:
+                    enforced = runtime.policy_for(pid)
+                except (ValueError, RuntimeError) as exc:
+                    problems.append(f"{label}: cannot read the runtime policy ({exc})")
+                else:
+                    if numbers["cadence_seconds"] < enforced.cadence_seconds - 1e-9:
+                        problems.append(
+                            f"{label}: cadence_seconds {numbers['cadence_seconds']:g} is looser "
+                            f"than the runtime policy ({enforced.cadence_seconds:g})"
+                        )
+                    if numbers["session_minutes"] > enforced.session_minutes + 1e-9:
+                        problems.append(
+                            f"{label}: session_minutes {numbers['session_minutes']:g} is looser "
+                            f"than the runtime policy ({enforced.session_minutes:g})"
+                        )
+                    if numbers["budget_fraction"] > enforced.budget_fraction + 1e-9:
+                        problems.append(
+                            f"{label}: budget_fraction {numbers['budget_fraction']:g} is looser "
+                            f"than the runtime policy ({enforced.budget_fraction:g})"
+                        )
+        signals = entry.get("signals")
+        if not isinstance(signals, list) or not signals:
+            problems.append(f"{label}: signals must be a non-empty list")
+        else:
+            seen: set[str] = set()
+            for index, signal in enumerate(signals):
+                if not isinstance(signal, dict):
+                    problems.append(f"{label}: signals[{index}] must be an object")
+                    continue
+                sid = str(signal.get("id") or "")
+                if not sid:
+                    problems.append(f"{label}: signals[{index}] missing id")
+                    continue
+                if sid in seen:
+                    problems.append(f"{label}: duplicate signal id {sid}")
+                seen.add(sid)
+                if str(signal.get("level")) not in COLLECTION_SIGNAL_LEVELS:
+                    problems.append(
+                        f"{label}: signal {sid} level must be one of "
+                        f"{'/'.join(COLLECTION_SIGNAL_LEVELS)}"
+                    )
+                for key in ("detect", "action"):
+                    if not str(signal.get(key) or "").strip():
+                        problems.append(f"{label}: signal {sid} missing {key}")
+            if not any(str(item.get("level")) == "block" for item in signals if isinstance(item, dict)):
+                problems.append(f"{label}: needs at least one block-level signal")
+        stop_rules = entry.get("stop_rules")
+        if not isinstance(stop_rules, list) or not stop_rules:
+            problems.append(f"{label}: stop_rules must be a non-empty list")
+        sources = entry.get("sources")
+        if not isinstance(sources, list) or not sources:
+            problems.append(f"{label}: sources must be a non-empty list")
+        else:
+            grades: set[str] = set()
+            for index, source in enumerate(sources):
+                if not isinstance(source, dict):
+                    problems.append(f"{label}: sources[{index}] must be an object")
+                    continue
+                grade = str(source.get("grade") or "")
+                if grade not in COLLECTION_SOURCE_GRADES:
+                    problems.append(
+                        f"{label}: sources[{index}] grade must be one of "
+                        f"{'/'.join(COLLECTION_SOURCE_GRADES)}"
+                    )
+                else:
+                    grades.add(grade)
+                if _policy_day(source.get("as_of")) is None:
+                    problems.append(f"{label}: sources[{index}] as_of must be YYYY-MM-DD")
+                for key in ("url", "claim"):
+                    if not str(source.get(key) or "").strip():
+                        problems.append(f"{label}: sources[{index}] missing {key}")
+            if sources and not grades & {"official", "craft"}:
+                problems.append(f"{label}: sources need at least one official or craft source")
+        observed = entry.get("observed")
+        if observed is None:
+            problems.append(f"{label}: observed must be present (may be empty)")
+        elif not isinstance(observed, list):
+            problems.append(f"{label}: observed must be a list")
+        else:
+            seen_observed: set[str] = set()
+            floor = numbers.get("cadence_seconds")
+            for index, item in enumerate(observed):
+                if not isinstance(item, dict):
+                    problems.append(f"{label}: observed[{index}] must be an object")
+                    continue
+                oid = str(item.get("id") or "")
+                tag = f"observed {oid}" if oid else f"observed[{index}]"
+                if not oid:
+                    problems.append(f"{label}: observed[{index}] missing id")
+                elif oid in seen_observed:
+                    problems.append(f"{label}: duplicate observed id {oid}")
+                else:
+                    seen_observed.add(oid)
+                for key in ("claim", "threshold"):
+                    if not str(item.get(key) or "").strip():
+                        problems.append(f"{label}: {tag} missing {key}")
+                confidence = str(item.get("confidence") or "")
+                if confidence not in COLLECTION_OBSERVED_CONFIDENCE:
+                    problems.append(
+                        f"{label}: {tag} confidence must be one of "
+                        f"{'/'.join(COLLECTION_OBSERVED_CONFIDENCE)}"
+                    )
+                if _policy_day(item.get("as_of")) is None:
+                    problems.append(f"{label}: {tag} as_of must be YYYY-MM-DD")
+                window = item.get("window_seconds")
+                if window is not None and (
+                    not isinstance(window, int) or isinstance(window, bool) or window < 0
+                ):
+                    problems.append(
+                        f"{label}: {tag} window_seconds must be a non-negative integer or null"
+                    )
+                suggested = item.get("suggested_cadence_seconds")
+                if suggested is not None:
+                    if not isinstance(suggested, (int, float)) or isinstance(suggested, bool):
+                        problems.append(
+                            f"{label}: {tag} suggested_cadence_seconds must be a number or null"
+                        )
+                    elif floor is not None and suggested < floor - 1e-9:
+                        problems.append(
+                            f"{label}: {tag} suggests {float(suggested):g}s, faster than the budget "
+                            f"({floor:g}s) — experience values may only slow a run down"
+                        )
+                urls = item.get("source_urls")
+                if not isinstance(urls, list) or not urls:
+                    problems.append(f"{label}: {tag} source_urls must be a non-empty list")
+                else:
+                    for url_index, url in enumerate(urls):
+                        if not str(url or "").startswith(("http://", "https://")):
+                            problems.append(
+                                f"{label}: {tag} source_urls[{url_index}] must be an http(s) URL"
+                            )
+        if "unverified" not in entry:
+            problems.append(f"{label}: unverified must be present (may be empty)")
+        elif not isinstance(entry.get("unverified"), list):
+            problems.append(f"{label}: unverified must be a list")
+    absent = [pid for pid in COLLECTION_PRIORITY_PLATFORMS if pid not in platforms]
+    if absent:
+        problems.append(
+            "priority platforms have no collection policy: " + ", ".join(absent)
+        )
+    return problems
+
+
+def collection_policies_markdown(platforms: list[str] | None = None) -> str:
+    """Render the collection policy cards for the selected platforms."""
+    section = collection_policy_section()
+    catalog = collection_policy_catalog()
+    if platforms is None:
+        selected = list(catalog)
+    else:
+        selected = [str(item) for item in platforms if str(item).strip()]
+    selected = [item for item in dict.fromkeys(selected) if item in catalog]
+    review_by = section.get("review_by") or "未标注"
+    if not selected:
+        return (
+            "# Askovo 采集策略卡\n\n"
+            "> 本次选择里没有可采集策略（目录里 blocked 的平台没有策略卡）。\n"
+        )
+    lines = [
+        "# Askovo 采集策略卡",
+        "",
+        f"> 策略是**预算**，不是访问许可：能否采集由 `platform-catalog.json` 的 access decision、"
+        f"study scope 与已获批 URL 决定。下次复核：**{review_by}**。"
+        "挑战页只被动等待或人工完成；不绕过、不伪造指纹、不用代理池、不养马甲、不做 AI 人性化。",
+        "",
+        "| 平台 | 访问方式 | 站点间隔 | 会话上限 | 预算 | block 信号 | 停止规则 |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for platform in selected:
+        policy = catalog[platform]
+        budget = policy.get("budget") or {}
+        modes = "、".join(str(mode) for mode in policy.get("access_modes", []))
+        blocks = [
+            str(signal.get("id"))
+            for signal in policy.get("signals", [])
+            if str(signal.get("level")) == "block"
+        ]
+        lines.append(
+            f"| `{platform}` | {modes} | {budget.get('cadence_seconds', '')}s | "
+            f"{budget.get('session_minutes', '')} min | "
+            f"{float(budget.get('budget_fraction') or 0):.0%} | "
+            f"{'、'.join(blocks)} | {len(policy.get('stop_rules') or [])} 条 |"
+        )
+    for platform in selected:
+        policy = catalog[platform]
+        budget = policy.get("budget") or {}
+        lines.extend([
+            "",
+            f"## {platform}",
+            "",
+            f"- 访问方式：{'、'.join(str(mode) for mode in policy.get('access_modes', []))}",
+            f"- 预算：站点间隔 {budget.get('cadence_seconds', '')}s；"
+            f"会话上限 {budget.get('session_minutes', '')} min；"
+            f"量级取计划量的 {float(budget.get('budget_fraction') or 0):.0%}",
+        ])
+        if policy.get("note"):
+            lines.append(f"- 备注：{policy['note']}")
+        counts = {"high": 0, "medium": 0, "low": 0}
+        for item in policy.get("observed") or []:
+            confidence = str(item.get("confidence") or "")
+            if confidence in counts:
+                counts[confidence] += 1
+        total = sum(counts.values())
+        if total:
+            lines.append(
+                f"- 社区经验：{total} 条"
+                f"（high {counts['high']} / medium {counts['medium']} / low {counts['low']}）"
+                "；经验值只用来放慢节奏和提前熔断，low 不进自动门禁"
+            )
+        lines.extend(["", "| 信号 | 级别 | 检测 | 动作 |", "|---|---|---|---|"])
+        for signal in policy.get("signals", []):
+            lines.append(
+                f"| `{signal.get('id')}` | {signal.get('level')} | "
+                f"{signal.get('detect')} | {signal.get('action')} |"
+            )
+        lines.extend(["", "**停止规则**", ""])
+        for rule in policy.get("stop_rules", []):
+            lines.append(f"- {rule}")
+        lines.extend(["", "**来源**", ""])
+        for source in policy.get("sources", []):
+            lines.append(
+                f"- [{source.get('grade')} {source.get('as_of')}] {source.get('url')} — "
+                f"{source.get('claim')}"
+            )
+        unverified = policy.get("unverified") or []
+        if unverified:
+            lines.extend(["", "**未核**", ""])
+            for item in unverified:
+                lines.append(f"- {item}")
+    lines.extend([
+        "",
+        "## 不做",
+        "",
+        "- 验证码/挑战页绕过（含打码与人工打码服务）；",
+        "- 浏览器指纹伪造（含 stealth 补丁与 UA 伪装）；",
+        "- 代理池/住宅代理轮换；",
+        "- 多账号马甲矩阵；",
+        "- 「AI 人性化」行为模拟（随机延迟、鼠标轨迹、拟人打字）。",
+        "",
+        "口径与判据见 `skills/askovo/references/collection-strategy.md`；"
+        "机器可读在 `skills/askovo/assets/platform-field-notes.json` 的 `collection_policies`，"
+        "`askovo doctor` 校验。",
+        "",
+    ])
+    return "\n".join(lines)
+
+
 def strategies_for(platforms: list[str] | tuple[str, ...] | None = None) -> list[dict[str, Any]]:
     """Strategies that apply to the given platforms (``*`` always applies)."""
     wanted = {str(item) for item in (platforms or [])}
@@ -6762,6 +7199,15 @@ def platform_fit(
 ) -> dict[str, Any]:
     claims = claim_types or infer_claim_types(text)
     notes_by_platform = field_notes_index()
+    try:
+        collection_section = collection_policy_section()
+        collection_ids = set(collection_policy_catalog())
+    except (OSError, json.JSONDecodeError, ValueError):
+        collection_section = {}
+        collection_ids = set()
+    collection_policies = {
+        pid: collection_policy_for(pid, collection_section) for pid in collection_ids
+    }
     ranked: list[dict[str, Any]] = []
     blocked: list[dict[str, Any]] = []
     for platform in platform_index().values():
@@ -6856,6 +7302,10 @@ def platform_fit(
                 # The plan carries the enforced runtime budget, not just prose:
                 # one goto per cell, timeout cooldown, session time-box, headroom.
                 entry["runtime_policy"] = _cdp_strategy().policy_for(platform_id).to_dict()
+            if collection_policies.get(platform_id):
+                # What one collection run may spend on this platform: access
+                # modes, cadence, session cap, stop signals and dated sources.
+                entry["collection_policy"] = collection_policies[platform_id]
             ranked.append(entry)
     ranked.sort(key=lambda item: (-item["score"], item["name"]))
     if not ranked:
@@ -6872,6 +7322,11 @@ def platform_fit(
             item["id"]: item["runtime_policy"]
             for item in ranked[:8]
             if item.get("runtime_policy")
+        },
+        "collection_policies": {
+            item["id"]: item["collection_policy"]
+            for item in ranked[:8]
+            if item.get("collection_policy")
         },
         "access_steps": [
             "优先官方 API / 授权导出 / 合规历史数据集；不做未授权抓取",
@@ -6960,12 +7415,18 @@ def _normalize_platform_record(raw: dict[str, Any], platform: str, run_id: str, 
     record_id = str(raw.get("record_id") or raw.get("id") or hashlib.sha256(text.encode()).hexdigest()[:12])
     if not record_id.startswith(platform + ":"):
         record_id = f"{platform}:{record_id}"
-    return {
+    record = {
         "record_id": record_id,
         "platform": platform,
+        "source_platform": platform,
         "source_url": str(raw.get("source_url") or raw.get("url") or raw.get("html_url") or ""),
+        "source_channel": str(raw.get("source_channel") or raw.get("subreddit") or ""),
+        "source_content_type": str(raw.get("source_content_type") or raw.get("content_type") or "unknown"),
+        "parent_id": raw.get("parent_id"),
+        "thread_id": raw.get("thread_id"),
         "author_hash": str(raw.get("author_hash") or _hash_author(str(raw.get("author") or ""))),
         "created_at": str(raw.get("created_at") or ""),
+        "date_precision": str(raw.get("date_precision") or "unknown"),
         "title": title,
         "text": text,
         "rating": raw.get("rating"),
@@ -6979,6 +7440,28 @@ def _normalize_platform_record(raw: dict[str, Any], platform: str, run_id: str, 
         "language": str(raw.get("language") or "unknown"),
         "normalized_text_hash": "sha256:" + hashlib.sha256((text or record_id).encode("utf-8")).hexdigest(),
     }
+    if platform == "youtube":
+        source_url = record["source_url"]
+        video_id = str(raw.get("youtube_video_id") or
+                       urllib.parse.parse_qs(urllib.parse.urlparse(source_url).query).get("v", [""])[0])
+        item_id = str(raw.get("youtube_item_id") or raw.get("id") or record.get("record_id") or "")
+        source_type = record["source_content_type"]
+        content_type = str(raw.get("youtube_content_type") or (
+            ("reply" if raw.get("parent_id") else "top_level_comment")
+            if source_type == "comment" else source_type))
+        record.update({
+            "youtube_video_id": video_id,
+            "youtube_item_id": item_id,
+            "youtube_content_type": content_type,
+            "comment_thread_id": str(raw.get("comment_thread_id") or raw.get("thread_id") or
+                                      (item_id if content_type in {"top_level_comment", "reply"} else "")),
+            "source_query": str(raw.get("source_query") or query),
+            "source_order": raw.get("source_order"),
+            "last_verified_at": str(raw.get("last_verified_at") or record["collected_at"]),
+            "refresh_due_at": str(raw.get("refresh_due_at") or ""),
+            "content_status": str(raw.get("content_status") or "present"),
+        })
+    return record
 
 
 @contextmanager
@@ -7246,6 +7729,10 @@ def _collect_reddit(query: str, limit: int) -> list[dict[str, Any]]:
 
 CDP_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 CDP_TARGET_HOSTS = {
+    "github": ("github.com",),
+    "reddit": ("reddit.com",),
+    "youtube": ("youtube.com", "youtu.be"),
+    "hackernews": ("news.ycombinator.com",),
     "amazon": ("amazon.com", "amazon.ca", "amazon.co.uk", "amazon.de", "amazon.fr", "amazon.co.jp"),
     "instagram": ("instagram.com",),
     "bilibili": ("bilibili.com",),
@@ -7595,10 +8082,134 @@ CDP_EXTRACTOR = r"""
   if (!rows.length && bodyText.length > 80) {
     rows.push({title: document.title, text: bodyText.slice(0, 8000), rating: "", created_at: "", author: "", source_url: location.href, page_url: location.href});
   }
-  return {rows: rows, page_title: document.title};
+  return {rows: rows, page_title: document.title, page_url: location.href, page_text: bodyText};
 })()
 """
 
+
+CDP_INSTAGRAM_EXTRACTOR = r"""
+(() => {
+  const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
+  const bodyText = clean(document.body ? document.body.innerText : "");
+  if (/Robot Check|Enter the characters|验证码|异常流量|not a robot|captcha/i.test(bodyText)) {
+    return {error: "challenge_page"};
+  }
+  const rows = [];
+  const seen = new Set();
+  const add = (row) => {
+    if (!row.text || seen.has(row.id + "|" + row.text)) return;
+    seen.add(row.id + "|" + row.text);
+    rows.push(row);
+  };
+  for (const article of document.querySelectorAll("article")) {
+    const caption = article.querySelector("h1");
+    const authorNode = article.querySelector('a[role="link"]');
+    const time = article.querySelector("time[datetime]");
+    const permalink = time && time.closest('a[href*="/p/"], a[href*="/reel/"]');
+    add({
+      id: ((permalink && permalink.getAttribute("href")) || location.href) + "#caption",
+      title: "Instagram caption",
+      text: clean(caption ? caption.innerText : ""),
+      author: clean(authorNode ? authorNode.innerText : ""),
+      created_at: time ? time.getAttribute("datetime") || "" : "",
+      source_url: permalink ? new URL(permalink.getAttribute("href"), location.href).href : location.href,
+      source_channel: clean(authorNode ? authorNode.innerText : ""),
+      source_content_type: "post",
+      page_url: location.href
+    });
+  }
+  for (const time of document.querySelectorAll("time[datetime]")) {
+    let row = time;
+    for (let depth = 0; depth < 5 && row.parentElement; depth += 1) row = row.parentElement;
+    const text = clean(row.innerText);
+    const authorNode = row.querySelector('a[role="link"]');
+    const permalink = time.closest('a[href*="/p/"], a[href*="/reel/"], a[href*="/comment/"]');
+    const href = permalink ? permalink.getAttribute("href") : location.href;
+    add({
+      id: String(href) + "#" + (time.getAttribute("datetime") || rows.length),
+      title: "Instagram comment",
+      text: text,
+      author: clean(authorNode ? authorNode.innerText : ""),
+      created_at: time.getAttribute("datetime") || "",
+      source_url: new URL(href, location.href).href,
+      source_channel: clean(authorNode ? authorNode.innerText : ""),
+      source_content_type: "comment",
+      page_url: location.href
+    });
+  }
+  if (!rows.length && bodyText.length > 80) {
+    add({id: location.href, title: document.title, text: bodyText, author: "", created_at: "",
+         source_url: location.href, source_channel: "", source_content_type: "page", page_url: location.href});
+  }
+  return {rows: rows, page_title: document.title, page_url: location.href, page_text: bodyText};
+})()
+"""
+
+CDP_DISCORD_EXTRACTOR = r"""
+(() => {
+  const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
+  const bodyText = clean(document.body ? document.body.innerText : "");
+  if (/Robot Check|Enter the characters|验证码|异常流量|not a robot|captcha/i.test(bodyText)) {
+    return {error: "challenge_page"};
+  }
+  const header = document.querySelector("h1, [class*='header-'] h1, section h1");
+  const channel = clean(header ? header.textContent : "");
+  const rows = [];
+  for (const li of document.querySelectorAll('li[id^="chat-messages-"]')) {
+    const id = (li.id.match(/chat-messages-\d+-\d+-(\d+)/) || [])[1] || li.id;
+    const time = li.querySelector("time[datetime]");
+    const author = li.querySelector('[class*="username"], [class*="author"]');
+    const content = li.querySelector('[class*="messageContent"]');
+    rows.push({
+      id: id,
+      title: "Discord message",
+      text: clean(content ? content.innerText : li.innerText),
+      author: clean(author ? author.textContent : ""),
+      created_at: time ? time.getAttribute("datetime") || "" : "",
+      source_url: location.href + "/" + id,
+      source_channel: channel,
+      source_content_type: "message",
+      page_url: location.href
+    });
+  }
+  return {rows: rows, page_title: document.title, page_url: location.href, page_text: bodyText};
+})()
+"""
+
+CDP_YOUTUBE_EXTRACTOR = r"""
+(() => {
+  const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
+  const bodyText = clean(document.body ? document.body.innerText : "");
+  if (/Robot Check|Enter the characters|验证码|异常流量|not a robot|captcha/i.test(bodyText)) {
+    return {error: "challenge_page"};
+  }
+  const videoId = new URL(location.href).searchParams.get("v") || "";
+  const channelNode = document.querySelector("ytd-channel-name #text, ytd-video-owner-renderer a");
+  const channel = clean(channelNode ? channelNode.textContent : "");
+  const rows = [];
+  for (const thread of document.querySelectorAll("ytd-comment-thread-renderer")) {
+    const comment = thread.querySelector("ytd-comment-view-model") || thread;
+    const content = comment.querySelector("#content-text");
+    const author = comment.querySelector("#author-text");
+    const id = thread.getAttribute("data-comment-id") || comment.getAttribute("data-comment-id") ||
+      (comment.querySelector("#published-time-text a") || {}).href || String(rows.length);
+    rows.push({
+      id: id, title: "YouTube comment", text: clean(content ? content.textContent : ""),
+      author: clean(author ? author.textContent : ""), created_at: "",
+      date_precision: "unknown", youtube_video_id: videoId,
+      source_url: location.href, source_channel: channel,
+      source_content_type: "comment", thread_id: videoId, page_url: location.href
+    });
+  }
+  return {rows: rows, page_title: document.title, page_url: location.href, page_text: bodyText};
+})()
+"""
+
+CDP_EXTRACTORS = {
+    "instagram": CDP_INSTAGRAM_EXTRACTOR,
+    "discord": CDP_DISCORD_EXTRACTOR,
+    "youtube": CDP_YOUTUBE_EXTRACTOR,
+}
 
 CDP_PAGE_EXTRACTOR = r"""
 (() => {
@@ -7633,11 +8244,6 @@ CAPTURE_HOST_PLATFORMS: dict[str, tuple[str, ...]] = {
     platform: hosts for platform, hosts in CDP_TARGET_HOSTS.items()
 }
 CAPTURE_HOST_PLATFORMS.update({
-    "github": ("github.com",),
-    "reddit": ("reddit.com", "old.reddit.com"),
-    "x": ("x.com", "twitter.com"),
-    "youtube": ("youtube.com", "youtu.be"),
-    "tiktok": ("tiktok.com",),
     "app_store": ("apps.apple.com",),
     "google_play": ("play.google.com",),
     "hackernews": ("news.ycombinator.com",),
@@ -7676,9 +8282,8 @@ def _capture_scope_failure(study: dict[str, Any], url: str) -> dict[str, Any] | 
             "platform": platform,
             "reason": (
                 f"page host {host} is outside the CDP-enabled platforms "
-                "(amazon/instagram/bilibili/weibo/kickstarter/discord/x/tiktok); "
-                "capture is not a generic browser route and YouTube/blocked platforms "
-                "never use CDP"),
+                f"({'/'.join(CDP_TARGET_HOSTS)}); capture is not a generic browser route "
+                "and blocked platforms never use CDP"),
             "allowed_sources": sorted(allowed_ids),
         }
     return {
@@ -7693,19 +8298,18 @@ def _capture_scope_failure(study: dict[str, Any], url: str) -> dict[str, Any] | 
 
 
 def _capture_adapter_failure(study: dict[str, Any], platform: str) -> dict[str, Any] | None:
-    """Match collect's registry, review and enabled-adapter checks before CDP I/O."""
+    """Match collect's registry and enabled-adapter checks before CDP I/O.
+
+    An expired policy review is a warning, not a stop: capture records the
+    review status and keeps the route open at a reduced cadence while a
+    re-review is scheduled.
+    """
     entry = platform_index().get(platform)
     if not entry or not entry.get("cdp") or entry.get("decision") == "blocked":
         return {
             "status": "cdp_not_allowed", "platform": platform,
-            "reason": "CDP is only enabled for authorized visible pages on the "
-                      "catalog platforms with cdp: true "
-                      "(amazon/instagram/bilibili/weibo/kickstarter/discord/x/tiktok)",
-        }
-    if platform_review_expired(platform):
-        return {
-            "status": "review_expired", "platform": platform,
-            "reason": "connector policy review is expired; re-review the registry before capture",
+            "reason": "CDP is only enabled for authorized visible pages on catalog "
+                      "platforms with cdp: true and an approved target host",
         }
     adapters = study.get("source_adapters") if isinstance(study.get("source_adapters"), dict) else {}
     adapter = adapters.get(platform) if isinstance(adapters, dict) else None
@@ -7929,11 +8533,17 @@ def capture_page(
                 "transport": "cdp",
                 "scope": "allowed_sources_matched",
                 "adapter": "enabled",
-                "registry_review": "current",
+                "registry_review": "expired" if platform_review_expired(platform) else "current",
                 "challenge_check": ("waited_then_passed" if challenge_waited else "passed"),
                 "cdp_loopback": True,
                 "runtime_policy": policy.to_dict(),
             },
+            "review_status": "expired" if platform_review_expired(platform) else "current",
+            "warning": (
+                "platform policy review is expired; capture continues on the authorized "
+                "visible-page route at a reduced cadence and the registry re-review is "
+                "scheduled rather than closing the route"
+            ) if platform_review_expired(platform) else "",
             "evidence_status": "candidate",
             "note": "candidate capture only; named-human accept with an explicit evidence level is required", 
         }
@@ -7954,6 +8564,7 @@ def capture_page(
         return {"status": status, "capture_id": capture_id, "capture": str(json_path),
                 "screenshot": str(image_path), "ocr": payload["ocr"],
                 "platform": platform, "source_url": final_url,
+                "review_status": payload["review_status"],
                 "evidence_status": "candidate", "text_length": len(text)}
     except (TimeoutError, socket.timeout) as exc:
         # A timeout tears the CDP stream and, on a session platform, is the
@@ -7984,6 +8595,7 @@ def collect_cdp(
     wait_seconds: float = 2.5,
     run_id: str | None = None,
     lease_valid: Callable[[], bool] | None = None,
+    attach_existing: bool = False,
 ) -> dict[str, Any]:
     if not ack_terms:
         return {
@@ -8007,25 +8619,64 @@ def collect_cdp(
     policy = strategy.policy_for(platform)
     guard = strategy.SessionGuard(platform, policy=policy)
     guard.begin_cell("collect")
-    guard.navigate()  # one goto per cell: the page is opened exactly once
+    if not attach_existing:
+        guard.navigate()  # one goto per cell: the page is opened exactly once
+    extractor = CDP_EXTRACTORS.get(platform, CDP_EXTRACTOR)
     client: CDPClient | None = None
     rows: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
     try:
-        ws_url = cdp_new_page(cdp_base, url)
+        ws_url = cdp_existing_page(cdp_base, url) if attach_existing else cdp_new_page(cdp_base, url)
         client = CDPClient(_WebSocket(ws_url))
         client.call("Runtime.enable")
         time.sleep(max(0.5, wait_seconds))
         stale_rounds = 0
         for _ in range(max(0, scrolls) + 1):
             guard.check_session()
-            value = client.evaluate(CDP_EXTRACTOR)
+            value = client.evaluate(extractor)
+            page_kind = strategy.classify_page(
+                str(value.get("page_title") or "") if isinstance(value, dict) else "",
+                str(value.get("page_text") or "") if isinstance(value, dict) else "",
+            )
+            if page_kind == "challenge":
+                guard.record_stop("challenge_page")
+                return {
+                    "status": "challenge",
+                    "platform": platform,
+                    "reason": "page title or body shows a challenge; stop without scrolling or writing a run",
+                }
+            if page_kind == "page_not_found":
+                guard.record_stop("page_not_found")
+                return {"status": "page_not_found", "platform": platform,
+                        "reason": "the approved page is not available; do not collect an error page"}
+            if isinstance(value, dict):
+                final_url = str(value.get("page_url") or url)
+                try:
+                    _validate_cdp_target(platform, final_url)
+                except ValueError:
+                    guard.record_stop("scope_violation")
+                    return {"status": "scope_violation", "platform": platform,
+                            "reason": "final page URL left the authorized platform/host; no run was written"}
             if isinstance(value, dict) and value.get("error") == "challenge_page":
                 guard.record_stop("challenge_page")
                 return {
                     "status": "challenge",
                     "platform": platform,
                     "reason": "page shows a challenge/robot check; stop and use an authorized export instead",
+                }
+            if (
+                not rows
+                and isinstance(value, dict)
+                and not value.get("rows")
+                and strategy.looks_logged_out(
+                    str(value.get("page_url") or url), str(value.get("page_text") or "")
+                )
+            ):
+                guard.record_session_drop("login page after navigation")
+                return {
+                    "status": "session_drop",
+                    "platform": platform,
+                    "reason": "the user session is not logged in; a human must log in before retrying",
                 }
             if (
                 not rows
@@ -8062,7 +8713,16 @@ def collect_cdp(
                 # The list stopped growing: stop instead of metronome-scrolling
                 # a page that is not producing (silent extractor failure triage).
                 break
-            client.evaluate("window.scrollBy(0, Math.max(700, Math.floor(window.innerHeight * 0.85)))")
+            if platform in {"discord", "instagram", "x", "tiktok"}:
+                client.call("Input.dispatchMouseEvent", {
+                    "type": "mouseMoved", "x": 640, "y": 360,
+                })
+                client.call("Input.dispatchMouseEvent", {
+                    "type": "mouseWheel", "x": 640, "y": 360,
+                    "deltaX": 0, "deltaY": -900 if platform == "discord" else 900,
+                })
+            else:
+                client.evaluate("window.scrollBy(0, Math.max(700, Math.floor(window.innerHeight * 0.85)))")
             time.sleep(max(0.4, wait_seconds / 2))
     except (TimeoutError, socket.timeout, strategy.SessionExpired, strategy.CircuitOpen) as exc:
         decision = guard.record_failure(exc, str(exc))
@@ -8082,7 +8742,7 @@ def collect_cdp(
             client.close()
     raw_records = [
         {
-            "id": f"{platform}:{hashlib.sha256((row.get('source_url','') + row.get('text','')[:500]).encode()).hexdigest()[:16]}",
+            "id": str(row.get("id") or f"{platform}:{hashlib.sha256((row.get('source_url','') + row.get('text','')[:500]).encode()).hexdigest()[:16]}"),
             "title": row.get("title") or "",
             "text": row.get("text") or "",
             "url": row.get("source_url") or url,
@@ -8090,11 +8750,35 @@ def collect_cdp(
             "created_at": row.get("created_at") or "",
             "context": "cdp_visible_page",
             "rating": row.get("rating") or "",
+            "source_channel": row.get("source_channel") or "",
+            "source_content_type": row.get("source_content_type") or "unknown",
+            "parent_id": row.get("parent_id"),
+            "thread_id": row.get("thread_id"),
             "claim_type": "need",
             "evidence_form": "self_report",
+            "source_order": source_order,
+            "date_precision": row.get("date_precision") or "unknown",
+            "content_status": row.get("content_status") or "present",
+            "last_verified_at": row.get("last_verified_at") or "",
         }
-        for row in rows[:limit]
+        for source_order, row in enumerate(rows[:limit])
     ]
+    try:
+        study = load_json(study_dir / "study.json")
+        adapter = (study.get("source_adapters") or {}).get(platform) or {}
+    except (OSError, json.JSONDecodeError):
+        adapter = {}
+    if platform == "youtube":
+        for raw in raw_records:
+            raw["refresh_due_at"] = str(adapter.get("refresh_due_at") or "")
+    if adapter.get("allow_personal_data") is False:
+        for raw in raw_records:
+            author = str(raw.get("author") or "")
+            pseudonym = _hash_author(author) if author else ""
+            raw["author"] = pseudonym
+            raw["author_hash"] = pseudonym or None
+            if str(raw.get("source_channel") or "") == author:
+                raw["source_channel"] = pseudonym
     if lease_valid is not None and not lease_valid():
         return {"status": "lease_lost", "platform": platform, "reason": "queue lease is no longer owned by this worker"}
     run_id = run_id or _run_id(platform)
@@ -8115,13 +8799,20 @@ def collect_cdp(
         "requested": limit,
         "source_url": url,
         "cdp_base": cdp_base,
+        "capture_mode": "attach_existing" if attach_existing else "new_page",
         "runtime_policy": policy.to_dict(),
         "limits": entry.get("limits", []),
         "bias": entry.get("bias", []),
         "terms_note": "visible page text only; no challenge bypass; platform terms may still restrict collection",
+        "review_status": "expired" if platform_review_expired(platform) else "current",
+        "warnings": [
+            "platform policy review is expired; capture continues on the authorized "
+            "visible-page route at a reduced cadence while the registry re-review is scheduled"
+        ] if platform_review_expired(platform) else [],
     }
     written = _write_run(study_dir, platform, run_id, normalized, manifest, raw_records)
-    return {"status": "collected", "platform": platform, "transport": "cdp", "records": len(normalized), **written}
+    return {"status": "collected", "platform": platform, "transport": "cdp", "records": len(normalized),
+            "review_status": manifest["review_status"], "warnings": manifest["warnings"], **written}
 
 
 def _procurement_preflight(study_dir: Path, platform: str,
@@ -8187,6 +8878,7 @@ def collect_platform(
     url: str | None = None,
     ack_terms: bool = False,
     lease_valid: Callable[[], bool] | None = None,
+    attach_existing: bool = False,
 ) -> dict[str, Any]:
     if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
         raise ValueError("limit must be a positive integer")
@@ -8204,11 +8896,18 @@ def collect_platform(
             "reason": entry.get("notes", "blocked by platform policy"),
             "alternatives": [item["id"] for item in platform_index().values() if item.get("decision") == "supported"][:5],
         }
-    if fixture is None:
+    if fixture is None and not cdp_url:
         procurement_block = _procurement_preflight(study_dir, platform, entry)
         if procurement_block is not None:
             return procurement_block
     run_id = run_id or _run_id(platform)
+    review_expired = platform_review_expired(platform)
+    review_warnings: list[str] = []
+    if review_expired:
+        review_warnings.append(
+            "platform policy review is expired; collection continues on the authorized "
+            "route at a reduced cadence while the registry re-review is scheduled"
+        )
     plan = {
         "platform": platform,
         "query": query,
@@ -8219,20 +8918,26 @@ def collect_platform(
         "decision": entry.get("decision"),
         "run_id": run_id,
         "dry_run": dry_run,
+        "review_status": "expired" if review_expired else "current",
+        "warnings": review_warnings,
     }
     if cdp_url:
         plan["transport"] = "cdp"
         plan["adapter"] = "cdp"
         plan["url"] = url
         plan["ack_terms"] = ack_terms
+        plan["attach_existing"] = attach_existing
     if dry_run:
-        return {"status": "planned", **plan, "next": f"askovo collect {study_dir} --platform {platform} --query {query!r} --limit {limit}"}
-    if platform_review_expired(platform):
-        return {
-            "status": "review_expired",
-            "platform": platform,
-            "reason": "connector policy review is expired; re-review the registry before collection",
-        }
+        next_command = (
+            f"askovo collect {study_dir} --platform {platform} --query {query!r} --limit {limit}"
+        )
+        if cdp_url:
+            next_command += f" --cdp-url {cdp_url} --url {str(url or '')!r}"
+            if ack_terms:
+                next_command += " --ack-terms"
+            if attach_existing:
+                next_command += " --attach-existing"
+        return {"status": "planned", **plan, "next": next_command}
     study = load_json(study_dir / "study.json")
     scope = study.get("scope", {}) if isinstance(study, dict) else {}
     allowed_sources = scope.get("allowed_sources", []) if isinstance(scope, dict) else []
@@ -8256,7 +8961,7 @@ def collect_platform(
     if cdp_url:
         return collect_cdp(
             study_dir, platform, query, url or "", cdp_url, ack_terms, limit,
-            run_id=run_id, lease_valid=lease_valid,
+            run_id=run_id, lease_valid=lease_valid, attach_existing=attach_existing,
         )
     if fixture:
         raw_records: list[dict[str, Any]] = []
@@ -8311,9 +9016,12 @@ def collect_platform(
         "requested": limit,
         "limits": entry.get("limits", []),
         "bias": entry.get("bias", []),
+        "review_status": plan["review_status"],
+        "warnings": plan["warnings"],
     }
     written = _write_run(study_dir, platform, run_id, normalized, manifest, raw_records[:limit])
-    return {"status": "collected", "platform": platform, "records": len(normalized), **written}
+    return {"status": "collected", "platform": platform, "records": len(normalized),
+            "review_status": plan["review_status"], "warnings": plan["warnings"], **written}
 
 
 def _analysis_segments(records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -9207,6 +9915,11 @@ def cli_platforms(args: Any) -> int:
     if platform_filter:
         plan["recommended"] = [item for item in plan["recommended"] if item["id"] == platform_filter]
         plan["blocked"] = [item for item in plan["blocked"] if item["id"] == platform_filter]
+        for section in ("runtime_policies", "collection_policies"):
+            if isinstance(plan.get(section), dict):
+                plan[section] = {
+                    key: value for key, value in plan[section].items() if key == platform_filter
+                }
         plan["platform_filter"] = platform_filter
         known = sorted(set(platform_index()) | set(field_notes_index()))
         if platform_filter not in known:
@@ -9236,6 +9949,13 @@ def cli_platforms(args: Any) -> int:
             for platform in strategy_platforms
             if platform in declared or catalog.get(platform, {}).get("cdp")
         }
+    if getattr(args, "collection_policies", False):
+        catalog = collection_policy_catalog()
+        plan["collection_policies"] = {
+            platform: collection_policy_for(platform)
+            for platform in strategy_platforms
+            if platform in catalog
+        }
     if getattr(args, "json", False):
         print(json.dumps(plan, ensure_ascii=False, indent=2))
     elif getattr(args, "field_notes", False):
@@ -9244,6 +9964,8 @@ def cli_platforms(args: Any) -> int:
         print(strategies_markdown(plan["strategies"]))
     elif getattr(args, "policies", False):
         print(runtime_policies_markdown(list(plan["runtime_policies"])))
+    elif getattr(args, "collection_policies", False):
+        print(collection_policies_markdown(list(plan["collection_policies"])))
     else:
         print(platform_markdown(plan))
     return 0
@@ -9261,6 +9983,7 @@ def cli_collect(args: Any) -> int:
             cdp_url=args.cdp_url,
             url=args.url,
             ack_terms=args.ack_terms,
+            attach_existing=bool(getattr(args, "attach_existing", False)),
         )
     except (OSError, ValueError, json.JSONDecodeError, RuntimeError, ConnectionError, urllib.error.URLError) as exc:
         print(str(exc), file=sys.stderr)
@@ -10191,6 +10914,14 @@ def _chain_node_payload(
     return result
 
 
+CHAIN_NODE_FIELD_TYPES = {
+    "current_substitute": str, "friction_cost": str, "consequence": str,
+    "desired_outcome": str, "measure": str, "capability": str, "form": str, "scope": str,
+    "assumptions": list, "constraints": list, "alternatives_considered": list,
+    "acceptance_conditions": list, "non_goals": list, "acceptance_criteria": list,
+}
+
+
 def cli_chain_node(args: Any) -> int:
     """Edit one node of the canonical chain; writes truth + change_log, never audits."""
     try:
@@ -10255,8 +10986,28 @@ def cli_chain_node(args: Any) -> int:
                         f"--{field_name} 不能为空；若该节点不再适用，请用 --status deprioritized 并说明原因"
                     )
                 updates[field_name] = value
+            field_name = str(getattr(args, "field", "") or "").strip()
+            raw_json = getattr(args, "value_json", None)
+            if field_name:
+                if field_name not in CHAIN_NODE_FIELD_TYPES:
+                    raise ValueError("不支持的字段 %r；可用：%s" % (
+                        field_name, ", ".join(sorted(CHAIN_NODE_FIELD_TYPES))))
+                if raw_json is None:
+                    raise ValueError("--field 需要同时提供 --value-json")
+                try:
+                    typed_value = json.loads(raw_json)
+                except json.JSONDecodeError as exc:
+                    raise ValueError("--value-json 必须是有效 JSON：%s" % exc) from exc
+                expected = CHAIN_NODE_FIELD_TYPES[field_name]
+                if not isinstance(typed_value, expected) or (
+                        expected is str and not typed_value.strip()):
+                    raise ValueError("--field %s 需要%s" % (
+                        field_name, "非空字符串" if expected is str else "JSON 数组"))
+                updates[field_name] = typed_value
+            elif raw_json is not None:
+                raise ValueError("--value-json 只能与 --field 一起使用")
             if not updates:
-                raise ValueError("set 至少需要 --statement、--rationale 或 --status 之一")
+                raise ValueError("set 至少需要字段值、--statement、--rationale 或 --status 之一")
             previous: dict[str, Any] = {}
             changed: list[str] = []
             for field_name, value in updates.items():

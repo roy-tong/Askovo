@@ -30,7 +30,7 @@ class CadenceTests(unittest.TestCase):
     def test_default_cadences_follow_the_field_numbers(self) -> None:
         cadences = {item.platform: item for item in rotation.build_cadences(["reddit", "youtube", "discord", "x"])}
         self.assertEqual(3.0, cadences["reddit"].min_interval)
-        self.assertEqual(2.5, cadences["youtube"].min_interval)
+        self.assertEqual(3.0, cadences["youtube"].min_interval)
         self.assertEqual(20.0, cadences["discord"].min_interval)
         self.assertTrue(cadences["discord"].requires_session)
         self.assertFalse(cadences["reddit"].requires_session)
@@ -70,11 +70,11 @@ class RotationSchedulerTests(unittest.TestCase):
 
     def test_round_order_prefers_the_fastest_cadence(self) -> None:
         scheduler, _ = self.make()
-        self.assertEqual(["youtube", "reddit", "discord"], scheduler.plan_round())
+        self.assertEqual(["reddit", "youtube", "discord"], scheduler.plan_round())
 
     def test_plan_round_limit(self) -> None:
         scheduler, _ = self.make()
-        self.assertEqual(["youtube", "reddit"], scheduler.plan_round(limit=2))
+        self.assertEqual(["reddit", "youtube"], scheduler.plan_round(limit=2))
 
     def test_per_site_minimum_interval_blocks_a_second_hit(self) -> None:
         scheduler, _ = self.make()
@@ -171,7 +171,7 @@ class RotationSchedulerTests(unittest.TestCase):
         )
         self.assertEqual(0, completed.returncode, completed.stderr)
         payload = json.loads(completed.stdout)
-        self.assertEqual(["youtube", "reddit", "discord"], payload["round"])
+        self.assertEqual(["reddit", "youtube", "discord"], payload["round"])
 
 
 class StrategyRegistryTests(unittest.TestCase):

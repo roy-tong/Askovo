@@ -321,7 +321,7 @@ class CaptureReviewCliTests(ReviewCase):
         (study_path := self.study / "study.json").write_text(
             json.dumps(document, ensure_ascii=False), encoding="utf-8")
         completed = run_cli("capture", "page", str(self.study), "--url",
-                            "https://www.reddit.com/r/x", "--ack-terms")
+                            "https://internal-intranet.example.org/wiki/page", "--ack-terms")
         self.assertEqual(1, completed.returncode, completed.stdout + completed.stderr)
         self.assertEqual("cdp_not_allowed", json.loads(completed.stdout)["status"])
 

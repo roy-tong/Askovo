@@ -75,8 +75,6 @@ def _runtime_policy(platform: str):
     try:
         import cdp_strategy  # local import: no hard dependency for archive-only users
         section = cdp_strategy.load_runtime_policies()
-        if platform not in (section.get("platforms") or {}):
-            return None
         return cdp_strategy.policy_for(platform, section)
     except Exception:  # pragma: no cover - registry missing during a copied script
         return None
@@ -414,7 +412,7 @@ def _selftest() -> int:
     )
 
     # Fair rotation order starts with the fastest cadence, human-gated last.
-    check("plan-order", scheduler.plan_round()[:2] == ["youtube", "reddit"], str(scheduler.plan_round()))
+    check("plan-order", scheduler.plan_round()[:2] == ["reddit", "youtube"], str(scheduler.plan_round()))
 
     # Per-site minimum interval: second hit waits, rotation to another site does not.
     scheduler.acquire("reddit")

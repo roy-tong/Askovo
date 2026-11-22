@@ -1272,8 +1272,8 @@ def render_decision_replay(payload: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def review(study_dir: Path) -> Dict[str, Any]:
-    """Build the decision review, write JSON/Markdown and return the summary."""
+def build_review(study_dir: Path) -> Dict[str, Any]:
+    """Build the decision review without writing into the study."""
     study_dir = Path(study_dir).resolve()
     cli = research_loop.cli_module()
     payload = cli.audit_payload(study_dir)
@@ -1330,6 +1330,14 @@ def review(study_dir: Path) -> Dict[str, Any]:
             "财务/市场评审和业务签收。"
         ),
     }
+    return review_payload
+
+
+def review(study_dir: Path) -> Dict[str, Any]:
+    """Build the decision review, write JSON/Markdown and return the summary."""
+    study_dir = Path(study_dir).resolve()
+    review_payload = build_review(study_dir)
+    items = review_payload["items"]
     json_path = study_dir / REVIEW_JSON
     md_path = study_dir / REVIEW_MD
     json_path.parent.mkdir(parents=True, exist_ok=True)

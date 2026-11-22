@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "generated_at": "2026-11-17",
+  "generated_at": "2026-11-22",
   "platforms": [
     {
       "id": "github",
@@ -23,7 +23,8 @@
       ],
       "access_modes": [
         "official_api",
-        "authorized_export"
+        "authorized_export",
+        "cdp_visible_page"
       ],
       "auth": "token_optional",
       "bulk": "yes",
@@ -40,7 +41,8 @@
         "English/technical skew",
         "Issue reporters over-represent active users"
       ],
-      "notes": "Official REST/GraphQL API；公开仓库与 issue/discussion 可采，遵守 API 条款与速率限制。"
+      "notes": "优先 Official REST/GraphQL API；用户有权查看的页面也可走授权可见页 CDP，遵守平台条款与速率限制，不绕挑战页。",
+      "cdp": true
     },
     {
       "id": "reddit",
@@ -65,7 +67,8 @@
       ],
       "access_modes": [
         "official_api",
-        "historical_archive"
+        "historical_archive",
+        "cdp_visible_page"
       ],
       "auth": "oauth",
       "bulk": "yes",
@@ -83,7 +86,8 @@
         "Upvote/ranking bias",
         "Deleted/removed content missing"
       ],
-      "notes": "Official Reddit Data API 需审批应用；历史归档（PullPush/Arctic Shift）只作补充并记录来源与时点。窗口回填采集器 collect_arctic_windows.py：显式窗口列表 + 窗内 after 游标深翻页 + 429/403/422 分类退避 + state 断点，适合多社区×多月的历史回填。"
+      "notes": "优先 Official Reddit Data API；历史归档只作补充并记录来源与时点。用户有权查看的页面也可走授权可见页 CDP，不代登录、不绕挑战页。窗口回填采集器 collect_arctic_windows.py：显式窗口列表 + 窗内 after 游标深翻页 + 429/403/422 分类退避 + state 断点。",
+      "cdp": true
     },
     {
       "id": "x",
@@ -148,7 +152,8 @@
         "usability"
       ],
       "access_modes": [
-        "official_api"
+        "official_api",
+        "cdp_visible_page"
       ],
       "auth": "oauth",
       "bulk": "limited",
@@ -168,7 +173,8 @@
         "Comment ranking bias",
         "Video performance confounds"
       ],
-      "notes": "Official YouTube Data API 为准；评论/元数据按配额采集，字幕与转写需权利确认；不使用浏览器自动化。免登录评论通道走 innertube 连接器 collect_youtube_innertube.py（search/next/continuation 直连，绕开 yt-dlp 的 PO token 拦截；发布时间为相对文本，created_at 为近似值并标注 date_precision=approximate）。"
+      "notes": "优先 Official YouTube Data API 或免登录 innertube 连接器；用户有权查看的页面也可走授权可见页 CDP。评论/元数据按配额采集，字幕与转写需权利确认；CDP 不代登录、不绕挑战页，平台条款仍须人工确认。",
+      "cdp": true
     },
     {
       "id": "instagram",
@@ -190,13 +196,14 @@
       ],
       "access_modes": [
         "authorized_export",
-        "research_api"
+        "research_api",
+        "cdp_visible_page"
       ],
       "auth": "oauth_business",
       "bulk": "limited",
       "freshness": "high",
       "decision": "limited",
-      "adapter": "none",
+      "adapter": "cdp",
       "limits": [
         "No general public hashtag/content bulk API",
         "Scraping violates Meta terms",
@@ -207,7 +214,7 @@
         "Hashtag sampling bias",
         "Deleted content missing"
       ],
-      "notes": "仅用授权创作者/企业导出或符合资格的 Meta Content Library；不做公开批量抓取。",
+      "notes": "授权创作者/企业导出、符合资格的 Meta Content Library，或用户已登录浏览器内的授权可见页面 CDP；用户手工登录，不代输凭据、不读凭据、不导 Cookie。平台条款仍可能限制自动化，采集前必须显式确认；不绕挑战页。",
       "cdp": true
     },
     {
@@ -384,7 +391,8 @@
         "acceptance"
       ],
       "access_modes": [
-        "official_api"
+        "official_api",
+        "cdp_visible_page"
       ],
       "auth": "none",
       "bulk": "yes",
@@ -399,7 +407,8 @@
         "Technical/early-adopter bias",
         "Comment ranking"
       ],
-      "notes": "Algolia 公共 API；适合技术产品发现，不代表大众。"
+      "notes": "优先 Algolia 公共 API；用户有权查看的页面也可走授权可见页 CDP。适合技术产品发现，不代表大众。",
+      "cdp": true
     },
     {
       "id": "stackoverflow",

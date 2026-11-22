@@ -58,7 +58,7 @@
 - 人工金标准与关键字段一致性要求：
 - 标为 `validated` 时是否强制要求反证：
 
-若使用 Reddit、X、YouTube、Amazon、京东、淘宝/天猫或 Kickstarter，先从机器清单选择未被阻断的 GitHub 开源连接器。填写连接器 ID、固定 commit、代码许可证、访问依据、平台条款与数据权利复核日期、数据使用依据、保留/刷新规则、原始链接要求，以及对应的平台层级与集中度门槛。平台检索路线另存为 `01-sources/<platform>-routes.csv`，每次采集另存 `01-sources/manifests/<collection_run_id>.json`。没有可用连接器时保留 blocked 路线，不得换成商业服务、商家接口或登录爬虫。
+若使用 Reddit、X、YouTube、Amazon、京东、淘宝/天猫或 Kickstarter，先从机器清单选择未被阻断的 GitHub 开源连接器。填写连接器 ID、固定 commit、代码许可证、访问依据、平台条款与数据权利复核日期、数据使用依据、保留/刷新规则、原始链接要求，以及对应的平台层级与集中度门槛。平台检索路线另存为 `01-sources/<platform>-routes.csv`，每次采集另存 `01-sources/manifests/<collection_run_id>.json`。没有可用连接器且平台目录未声明 CDP 路线时保留 blocked 路线，不得换成商业服务、商家接口或未声明的登录爬虫；已声明 CDP 路线仍须通过 Design、scope、adapter 与人工条款确认。
 
 ## 7. 停止与重新启动
 

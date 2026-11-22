@@ -10,6 +10,10 @@
 
 **Review the evidence before committing to a product decision**
 
+[![Agent Skill](https://img.shields.io/badge/Agent_Skill-Askovo-111111)](skills/askovo/SKILL.md)
+[![CI](https://github.com/roy-tong/askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/askovo/actions/workflows/tests.yml)
+[![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
+
 Bring one product decision and the material behind it. Review the sources and counterexamples with the person who owns the decision. If the evidence falls short, Askovo lists what to collect. Reopen the same decision when new evidence arrives.
 
 ```bash
@@ -32,9 +36,17 @@ Quality is enforced under the hood: every conclusion carries an internal evidenc
 
 [Website](https://roy-tong.github.io/Askovo/) · [Quickstart](docs/quickstart.md) · [CDP capture](docs/capture.md) · [Product & business reasoning chain](docs/product-reasoning.md) · [Role methodology](docs/product-methodology.md) · [Platforms & connectors](docs/connectors.md)
 
-[![Agent Skill](https://img.shields.io/badge/Agent_Skill-Askovo-111111)](skills/askovo/SKILL.md)
-[![CI](https://github.com/roy-tong/askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/askovo/actions/workflows/tests.yml)
-[![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
+## OVO family: Prove Anything
+
+Askovo remains an independent product. In the OVO family, **Prove Anything** is the family-level result-proof protocol candidate: an agent saying “done” is a claim to verify, not proof by itself. **Verified Capability Factory (VCF)** is a gated research candidate, not an Askovo dependency. Askovo continues to own its research chain, counter-evidence, unknowns and human decision records; no family protocol upgrades them into market or commercial truth.
+
+Export a read-only Proof Bundle without modifying the study:
+
+```bash
+askovo proof export ./study --out ./proof-bundle --by "artifact-reviewer"
+```
+
+The exporter checks the P1 brief projection. Independent semantic review (P3) and actual decision adoption (P4) remain `UNCHECKED` until separate qualified evidence arrives, so a successful export is not a blanket PASS.
 
 ## Proof it works in 30 seconds
 
@@ -61,6 +73,8 @@ python3 -m venv .venv && .venv/bin/pip install askovo
 You can also route directly: `askovo "SaaS subscription churn is dropping, want to know why users don't renew" --dry-run`. `--dry-run` only routes and writes nothing; `demo` runs the built-in synthetic sample. Router keyword tables are Chinese-first — English queries work, and `--domain` pins the product type whenever English keywords don't match.
 
 Expected key results: `status: pass`, `supported: 1`, `overclaims: 0`. This only proves that the synthetic sample is self-consistent in structure, chain, and evidence references. It proves **nothing about real demand, product quality, market size, or release readiness**.
+
+For a concrete decision task, [replay how one registered contradiction pauses the recommendation](https://roy-tong.github.io/Askovo/en/examples/decision-replay.html) instead of silently defending the old answer. The example is synthetic and its counter-evidence must already be registered.
 
 ## From research question to decision result: what a full delivery looks like
 
@@ -115,6 +129,8 @@ askovo decision replay ./study --chain PR01
 ```
 
 The second record deterministically applies `hold`, reopens the chain/product/business for validation, lowers confidence one ordinal step, and preserves before/after recommendations, evidence relations and snapshots. `--recommendation "..."` is an optional human override; the system does not invent a replacement product. An ID without a recorded contradiction relation is rejected. Newly mapped evidence is not promoted into a validated judgment or causal proof.
+
+[Open the synthetic safe-hold and replay proof with its task template](https://roy-tong.github.io/Askovo/en/examples/decision-replay.html).
 
 ## One chain, 80 role families, 11 industry contexts, five base research packs
 
@@ -201,7 +217,18 @@ askovo collect ./study --platform reddit --query "night alert" --limit 100
 askovo analyze ./study --question "night false alerts"
 ```
 
-`source-plan.csv` marks which chain node each route serves via `reasoning_nodes`, so you never collect just to pump volume. Real collection still requires the Design gate, source authorization, and adapter checks.
+`source-plan.csv` marks which chain node each route serves via `reasoning_nodes`, so you never collect just to pump volume. Real collection still requires the Design gate, source authorization, and adapter checks. `askovo plan --sample-size` accepts an audited strict-primary ceiling of 1–100,000 records and allocates exact whole-record quotas; overseas forum/social plans include Discord and Instagram through declared first-party CDP routes, not pretend API connectors.
+
+For a page already open in the user's logged-in browser, collection needs no API key and no cookie export:
+
+```bash
+askovo collect ./study --platform instagram --query "night alert workaround" \
+  --cdp-url http://127.0.0.1:9222 \
+  --url "https://www.instagram.com/p/visible/" \
+  --attach-existing --ack-terms --limit 50
+```
+
+`--attach-existing` requires an exact URL match and does not open a new tab. Instagram comments and Discord messages use dedicated DOM extractors, preserve full text and source hierarchy, and write the same raw/normalized/manifest artifacts as other collectors. Platform terms, Design, scope, challenge, timeout, and session-drop stops still apply.
 
 `analyze` only normalizes, deduplicates, computes distributions, frequent candidate terms, and question-matched snippets; it never auto-generates scene, need, feature, or product conclusions.
 
@@ -217,7 +244,7 @@ askovo deliver ./study --kind analysis
 askovo deliver ./study --kind plan
 ```
 
-Capture requires the Design gate, explicit platform scope, an enabled adapter, a current registry review, a loopback debugger, and an authorized default-port page on a catalog platform with `cdp: true` (currently amazon / instagram / bilibili / weibo / kickstarter / discord / x / tiktok); other hosts, YouTube, blocked routes, redirects away from the approved platform, and challenge pages are refused. Capture and OCR always produce `candidate` material. Only `capture accept` with a named reviewer and an explicit E0/E1/E2 level appends one normalized record to `evidence.jsonl`, retaining URL, capture JSON, screenshot, page/OCR/screenshot hashes, reviewer, and review time. The evidence audit rejects hand-appended unreviewed capture rows.
+Capture requires the Design gate, explicit platform scope, an enabled adapter, a current registry review, a loopback debugger, and an authorized default-port page on a catalog platform with `cdp: true` (currently github / reddit / youtube / hackernews / amazon / instagram / bilibili / weibo / kickstarter / discord / x / tiktok); other hosts, blocked routes, redirects away from the approved platform, and challenge pages are refused. Capture and OCR always produce `candidate` material. Only `capture accept` with a named reviewer and an explicit E0/E1/E2 level appends one normalized record to `evidence.jsonl`, retaining URL, capture JSON, screenshot, page/OCR/screenshot hashes, reviewer, and review time. The evidence audit rejects hand-appended unreviewed capture rows.
 
 Acceptance does **not** write a demand judgment, a seven-node chain, a decision record, or a do / defer / do-not-do conclusion. A human must still register the evidence in the linked judgment and appropriate chain nodes; `analysis` and `plan` then render the same chain with a `record → source URL/capture/screenshot/hash → reviewer/time` back-link table. See [CDP capture and review](docs/capture.md) and the machine-readable [delivery contract](docs/delivery-contract.json). Paid API/provider routes stop at plan/collect preflight with `terminal_state=BLOCKED_USER_INPUT`, `requires_procurement=true`, a user action, and `transaction_executed=false`; Askovo never procures access automatically.
 
@@ -356,11 +383,11 @@ Answers "where is the data, can it be obtained compliantly, which reasoning node
 
 ### Collection, queues, and reproducibility
 
-- GitHub goes through the official Search API; Reddit through the official Data API; everything else uses authorized exports, historical datasets, or local fixtures.
+- GitHub and Reddit prefer their official APIs; GitHub, Reddit, YouTube, Hacker News, Instagram, Discord and other registered platforms can also use declared visible-page CDP transport; other sources use authorized exports, historical datasets, or local fixtures.
 - Every collection run stores raw envelopes, normalized records, and a manifest recording access basis, rights, counts, discard reasons, restrictions, and bias.
 - A SQLite queue supports multiple workers, lease recovery, failure backoff, rate limits, and resumable runs.
-- CDP is limited to authorized visible pages on catalog platforms with `cdp: true` (currently amazon / instagram / bilibili / weibo / kickstarter / discord / x / tiktok); YouTube and blocked platforms never use it, captchas and platform controls are never actively bypassed, and login sessions are user-operated only — the agent never enters credentials or exports cookies.
-- Field experience is data, not prose: [`assets/platform-field-notes.json`](skills/askovo/assets/platform-field-notes.json) records every platform restriction with its symptom, field-verified solution, verification status and the runtime helper that encodes it. `askovo platforms "<need>" --field-notes` surfaces the traps for the recommended platforms, and `askovo doctor` fails when an artifact, helper reference or `cdp` flag rots. The enforceable subset lives in `runtime_policies` and runs through `connectors/cdp_strategy.py` (one goto per cell, timeout circuit breaker, session time-box, budget headroom); `askovo platforms "<need>" --policies` renders the budget each site actually sees.
+- CDP is limited to authorized visible pages on catalog platforms with `cdp: true` (currently github / reddit / youtube / hackernews / amazon / instagram / bilibili / weibo / kickstarter / discord / x / tiktok); API support does not exclude CDP, but blocked platforms never use it. Captchas and platform controls are never actively bypassed, and login sessions are user-operated only — the agent never enters credentials or exports cookies.
+- Field experience is data, not prose: [`assets/platform-field-notes.json`](skills/askovo/assets/platform-field-notes.json) records every platform restriction with its symptom, field-verified solution, verification status and the runtime helper that encodes it. `askovo platforms "<need>" --field-notes` surfaces the traps for the recommended platforms, and `askovo doctor` fails when an artifact, helper reference or `cdp` flag rots. The enforceable subset lives in `runtime_policies` and runs through `connectors/cdp_strategy.py` (one goto per cell, timeout circuit breaker, session time-box, budget headroom); `askovo platforms "<need>" --policies` renders the budget each site actually sees. Collection-side policy sits beside it in `collection_policies` — access modes, request budget, graded stop signals and dated sources per platform — rendered by `askovo platforms "<need>" --collection-policies`; `askovo doctor` rejects an access mode outside the catalog, a budget looser than the runtime policy, a platform with no `block` signal, or a blocked platform without an exclusion note.
 
 See [Platforms & connectors](docs/connectors.md) and the [CLI reference](docs/cli.md) (Chinese).
 
