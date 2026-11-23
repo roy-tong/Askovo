@@ -1,0 +1,79 @@
+name: Decision task result
+description: Share what happened after running one decision review; synthetic and sanitized tasks only
+title: "[Decision result] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to report a decision task, not to request a feature.
+        This is a public issue. Do not include private customer material, credentials, raw interviews or confidential documents. Link only synthetic or explicitly shareable evidence.
+        Maintaining the original decision can be a valid result; changing your mind is not the success metric.
+  - type: input
+    id: version
+    attributes:
+      label: Askovo version
+      description: Output of `askovo --version`
+    validations:
+      required: true
+  - type: dropdown
+    id: task_type
+    attributes:
+      label: Task type
+      options:
+        - Synthetic replay
+        - Own decision with public material
+        - Own decision with sanitized evidence
+    validations:
+      required: true
+  - type: textarea
+    id: decision
+    attributes:
+      label: Decision, options and initial leaning
+      description: What had to be decided, which options were considered, what the owner initially leaned toward, and what was out of scope.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What Askovo returned
+      description: Summarize the recommendation, supporting evidence, counter-evidence and unknowns. Add a public proof or replay link if available; do not paste private source text.
+    validations:
+      required: true
+  - type: dropdown
+    id: disposition
+    attributes:
+      label: Actual owner disposition
+      options:
+        - Maintained the original decision after review
+        - Changed the decision
+        - Deferred the decision
+        - Collected more evidence first
+        - No real owner decision yet / synthetic only
+    validations:
+      required: true
+  - type: input
+    id: human_minutes
+    attributes:
+      label: Human review time in minutes
+      description: Include source review and corrections. Use `unknown` if not measured; do not estimate a precise number.
+  - type: dropdown
+    id: second_use
+    attributes:
+      label: Has the same decision been revisited?
+      options:
+        - Not yet
+        - Yes, with new evidence
+        - Yes, without a recommendation change
+        - Not applicable / synthetic only
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Evidence boundaries
+      options:
+        - label: This issue contains only synthetic or explicitly shareable material
+          required: true
+        - label: I have not presented a recorded decision as demand, market, causal or business proof
+          required: true
