@@ -133,7 +133,7 @@ Reddit 的 2026 公共 Data API 过渡会改变研究访问方式：现有应用
 | `collect_arctic_windows.py` | Arctic Shift 归档（免登录） | 显式窗口计划回填：窗内游标深翻页 + 每窗 cap + state 断点 |
 | `collect_youtube_innertube.py` | YouTube innertube（免登录） | search→next→continuation 评论采集，兼容 2024+ 新结构，时间标 `date_precision=approximate` |
 | `collect_cdp_kickstarter.py` | CDP 可见页（免登录） | Cloudflare 被动等待 + load-more 展开 + DOM 提取，评论/更新帖两模式 |
-| `collect_cdp_discord.py` | CDP 用户会话（需手工登录） | 先 `--list-channels` 列频道名再点名采；真实滚轮事件触发懒加载 + 慢速节奏 + 每轮持久化，文字/论坛频道 |
+| `collect_cdp_discord.py` | CDP 用户会话（需手工登录） | 先 `--list-channels` 列频道名再点名采；真实滚轮事件触发懒加载 + 慢速节奏 + 每轮持久化，文字/论坛频道；零消息且聊天区未确认渲染时记 `empty_unconfirmed` 缺口，需人工确认后 `--confirm-empty` |
 
 收编工具 ≠ 路线放行：能否使用仍由平台目录与四门审查决定（见工具箱 README 第 6 节）。
 

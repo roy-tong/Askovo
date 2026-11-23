@@ -48,6 +48,7 @@ import argparse
 import importlib.util
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -73,15 +74,19 @@ PAGE_STATE = r"""
 })()
 """
 
-EXTRACT_COMMENTS = r"""
+EXTRACT_COMMENTS_TEMPLATE = r"""
 (() => {
   const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
   const body = clean(document.body ? document.body.innerText : "");
   if (/%s/.test(body)) return {error: "challenge_page"};
+  const after = %d;
   const out = [];
+  let index = 0;
   for (const li of document.querySelectorAll("li")) {
     const card = li.querySelector("div.border-box");
     if (!card) continue;
+    index += 1;
+    if (index <= after) continue;  // skip before innerText forces layout
     const links = Array.from(card.querySelectorAll('a[href*="comment="]'));
     const href = links.length ? links[0].getAttribute("href") || "" : "";
     const time = card.querySelector("time");
@@ -95,9 +100,23 @@ EXTRACT_COMMENTS = r"""
   }
   const more = Array.from(document.querySelectorAll("button"))
     .find(b => /load more/i.test(clean(b.textContent)));
-  return {comments: out, more: !!more, page_title: document.title};
+  return {comments: out, total: index, more: !!more, page_title: document.title};
 })()
-""" % CHALLENGE_TEXT
+"""
+
+
+def comments_expression(skip: int = 0) -> str:
+    """Build the comment extractor that reads only cards after ``skip``.
+
+    "Load more" appends older cards at the bottom, so the first ``skip`` cards
+    are already harvested. Reading their ``innerText`` again forces a layout
+    for every one of them and makes a long thread quadratic; the positional
+    tail costs only the new cards.
+    """
+    return EXTRACT_COMMENTS_TEMPLATE % (CHALLENGE_TEXT, max(0, int(skip)))
+
+
+EXTRACT_COMMENTS = comments_expression(0)
 
 LOAD_MORE_CLICK = r"""
 (() => {
@@ -162,29 +181,53 @@ def expand_and_extract(client, max_clicks: int, click_burst: int,
                        ) -> Tuple[List[Dict[str, Any]], str]:
     """Click 'load more' until the count stops growing; keep the largest snapshot.
 
-    A timeout stops the expansion and returns the best harvest so the caller can
-    persist it (an un-persisted round is a lost round).
+    Each re-read asks the DOM only for cards appended since the last read, so a
+    long thread costs O(new cards) per burst instead of O(all cards). A timeout
+    stops the expansion and returns the best harvest so the caller can persist
+    it (an un-persisted round is a lost round).
     """
     best: List[Dict[str, Any]] = []
+    index: Dict[str, int] = {}
+    dom_total = 0
 
-    def snapshot() -> List[Dict[str, Any]]:
-        nonlocal best
-        value = client.evaluate(EXTRACT_COMMENTS, timeout=guard.cell_budget(60.0))
+    def absorb(rows: List[Any]) -> int:
+        added = 0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            key = str(row.get("href") or "")
+            if not key:
+                key = "|".join((str(row.get("author") or ""), str(row.get("time") or ""),
+                                str(row.get("text") or "")[:120]))
+            if key in index:
+                best[index[key]] = row  # refresh text/timestamps in place
+            else:
+                index[key] = len(best)
+                best.append(row)
+                added += 1
+        return added
+
+    def snapshot() -> int:
+        nonlocal dom_total
+        value = client.evaluate(comments_expression(dom_total),
+                                timeout=guard.cell_budget(60.0))
         if not isinstance(value, dict) or value.get("error"):
-            return best
-        comments = value.get("comments") or []
-        if len(comments) > len(best):
-            best = comments
-        return comments
+            return len(best)
+        absorb(value.get("comments") or [])
+        total = value.get("total")
+        if isinstance(total, int) and total > dom_total:
+            dom_total = total
+        return len(best)
 
     try:
         snapshot()  # expand nothing first: a partial list must not look complete
         cdp_runtime.bounded_load_more(
             lambda: bool(client.evaluate(LOAD_MORE_CLICK, timeout=guard.cell_budget(30.0))),
-            lambda: len(snapshot()),
+            snapshot,
             max_clicks=max_clicks,
             burst=click_burst,
             pause_seconds=burst_pause,
+            initial_rows=len(best),
         )
     except cdp_strategy.TIMEOUT_ERRORS as exc:
         guard.record_timeout(str(exc))
@@ -193,6 +236,35 @@ def expand_and_extract(client, max_clicks: int, click_burst: int,
         guard.record_failure(exc, str(exc))
         return best, "circuit_open" if isinstance(exc, cdp_strategy.CircuitOpen) else "session_time_box"
     return best, "ok"
+
+
+def _expected_host(url: str) -> str:
+    """Return the bare host a navigation should commit to ("" when unknown)."""
+    host = (urllib.parse.urlparse(str(url)).hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def wait_for_document(client, expected_host: str, budget: float = 4.0,
+                      poll: float = 0.5,
+                      guard: "cdp_strategy.SessionGuard" = None) -> None:
+    """Poll until the fresh tab commits to the expected host; ceiling, not cost.
+
+    A fixed post-navigation sleep pays the slowest render every time. Polling
+    returns as soon as the document commits and stops at the same ceiling.
+    """
+    deadline = time.monotonic() + max(0.0, budget)
+    while True:
+        value = client.evaluate(
+            '(() => ({host: location.host, state: document.readyState}))()',
+            timeout=guard.cell_budget(30.0) if guard else None)
+        host = value.get("host") if isinstance(value, dict) else ""
+        host = str(host or "").lower()
+        if expected_host and (host == expected_host or host.endswith("." + expected_host)):
+            if value.get("state") == "complete":
+                return
+        if time.monotonic() >= deadline:
+            return
+        time.sleep(max(0.05, poll))
 
 
 def collect_comments(cdp_base: str, url: str, project: str, out_path: Path,
@@ -207,7 +279,7 @@ def collect_comments(cdp_base: str, url: str, project: str, out_path: Path,
         client = sure_engine.CDPClient(
             sure_engine._WebSocket(sure_engine.cdp_new_page(cdp_base, url)))
         client.call("Runtime.enable", timeout=guard.cell_budget(30.0))
-        time.sleep(4.0)
+        wait_for_document(client, _expected_host(url), 4.0, 0.5, guard)
         wait_for_page(client, challenge_wait, 2.0, guard)
         state, _ = page_state(client, guard)
         if state in {"blank_render", "page_not_found"}:
@@ -252,7 +324,7 @@ def collect_posts(cdp_base: str, url: str, project: str, out_path: Path,
         client = sure_engine.CDPClient(
             sure_engine._WebSocket(sure_engine.cdp_new_page(cdp_base, url)))
         client.call("Runtime.enable", timeout=guard.cell_budget(30.0))
-        time.sleep(4.0)
+        wait_for_document(client, _expected_host(url), 4.0, 0.5, guard)
         wait_for_page(client, challenge_wait, 2.0, guard)
         value = client.evaluate(EXTRACT_POSTS, timeout=guard.cell_budget(30.0))
         posts = (value or {}).get("posts") or []
@@ -268,7 +340,7 @@ def collect_posts(cdp_base: str, url: str, project: str, out_path: Path,
                 post_client = sure_engine.CDPClient(
                     sure_engine._WebSocket(sure_engine.cdp_new_page(cdp_base, post["url"])))
                 post_client.call("Runtime.enable", timeout=guard.cell_budget(30.0))
-                time.sleep(3.0)
+                wait_for_document(post_client, _expected_host(post["url"]), 3.0, 0.5, guard)
                 wait_for_page(post_client, challenge_wait, 2.0, guard)
                 state, _ = page_state(post_client, guard)
                 if state == "page_not_found":

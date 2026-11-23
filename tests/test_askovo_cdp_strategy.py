@@ -20,6 +20,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "skills/askovo/scripts/askovo.py"
@@ -529,6 +530,252 @@ class CollectorWiringTests(unittest.TestCase):
         finally:
             (discord.sure_engine.cdp_new_page, discord.sure_engine._WebSocket,
              discord.sure_engine.CDPClient, discord.time.sleep) = saved
+
+    def test_discord_zero_rows_without_a_rendered_pane_is_a_gap(self) -> None:
+        discord = _load("collect_cdp_discord_empty_test", CONNECTORS / "collect_cdp_discord.py")
+
+        class _Client:
+            def __init__(self, ws): pass
+            def call(self, method, params=None, **kwargs): return {}
+            def evaluate(self, expression, **kwargs):
+                return {"channel": "help", "n": 0, "ready": False,
+                        "body": "Server sidebar only", "url": "https://discord.com/channels/1/2"}
+            def close(self): pass
+
+        saved = (discord.sure_engine.cdp_new_page, discord.sure_engine._WebSocket,
+                 discord.sure_engine.CDPClient, discord.time.sleep)
+        discord.sure_engine.cdp_new_page = lambda base, url: "ws://127.0.0.1:9222/devtools/page/1"
+        discord.sure_engine._WebSocket = lambda url: object()
+        discord.sure_engine.CDPClient = _Client
+        discord.time.sleep = lambda seconds: None
+        try:
+            with tempfile.TemporaryDirectory() as tmp, \
+                    mock.patch.object(sys, "argv", [
+                        "collect_cdp_discord.py", "--url",
+                        "https://discord.com/channels/1/2",
+                        "--out", str(Path(tmp) / "discord.json")]):
+                self.assertEqual(2, discord.main())
+                self.assertFalse((Path(tmp) / "discord.json").exists())
+                journal = json.loads(
+                    (Path(tmp) / "discord.session.json").read_text(encoding="utf-8"))
+                self.assertEqual("empty_unconfirmed", journal["stopped"])
+        finally:
+            (discord.sure_engine.cdp_new_page, discord.sure_engine._WebSocket,
+             discord.sure_engine.CDPClient, discord.time.sleep) = saved
+
+    def test_discord_confirmed_empty_channel_is_a_finding(self) -> None:
+        discord = _load("collect_cdp_discord_confirm_test", CONNECTORS / "collect_cdp_discord.py")
+
+        class _Client:
+            def __init__(self, ws): pass
+            def call(self, method, params=None, **kwargs): return {}
+            def evaluate(self, expression, **kwargs):
+                return {"channel": "announcements", "n": 0, "ready": True,
+                        "body": "No messages yet", "url": "https://discord.com/channels/1/3"}
+            def close(self): pass
+
+        saved = (discord.sure_engine.cdp_new_page, discord.sure_engine._WebSocket,
+                 discord.sure_engine.CDPClient, discord.time.sleep)
+        discord.sure_engine.cdp_new_page = lambda base, url: "ws://127.0.0.1:9222/devtools/page/1"
+        discord.sure_engine._WebSocket = lambda url: object()
+        discord.sure_engine.CDPClient = _Client
+        discord.time.sleep = lambda seconds: None
+        try:
+            with tempfile.TemporaryDirectory() as tmp, \
+                    mock.patch.object(sys, "argv", [
+                        "collect_cdp_discord.py", "--url",
+                        "https://discord.com/channels/1/3",
+                        "--out", str(Path(tmp) / "discord.json"), "--confirm-empty"]):
+                self.assertEqual(0, discord.main())
+                payload = json.loads(
+                    (Path(tmp) / "discord.json").read_text(encoding="utf-8"))
+                self.assertEqual([], payload["channels"]["announcements"])
+        finally:
+            (discord.sure_engine.cdp_new_page, discord.sure_engine._WebSocket,
+             discord.sure_engine.CDPClient, discord.time.sleep) = saved
+
+    def test_discord_reprobes_a_slow_pane_before_judging_it(self) -> None:
+        discord = _load("collect_cdp_discord_grace_test", CONNECTORS / "collect_cdp_discord.py")
+
+        class _Client:
+            replies = [
+                {"channel": "help", "n": 0, "ready": False, "body": "shell",
+                 "url": "https://discord.com/channels/1/2"},
+                {"channel": "help", "n": 2, "ready": True, "body": "help",
+                 "url": "https://discord.com/channels/1/2",
+                 "messages": [{"id": "1", "t": "2026-01-01", "text": "a", "author": "u"},
+                              {"id": "2", "t": "2026-01-02", "text": "b", "author": "v"}]},
+            ]
+            seen = 0
+
+            def __init__(self, ws): pass
+            def call(self, method, params=None, **kwargs): return {}
+            def evaluate(self, expression, **kwargs):
+                value = self.replies[min(self.seen, len(self.replies) - 1)]
+                self.seen += 1
+                return value
+            def close(self): pass
+
+        saved = (discord.sure_engine.cdp_new_page, discord.sure_engine._WebSocket,
+                 discord.sure_engine.CDPClient, discord.time.sleep)
+        discord.sure_engine.cdp_new_page = lambda base, url: "ws://127.0.0.1:9222/devtools/page/1"
+        discord.sure_engine._WebSocket = lambda url: object()
+        discord.sure_engine.CDPClient = _Client
+        discord.time.sleep = lambda seconds: None
+        try:
+            with tempfile.TemporaryDirectory() as tmp, \
+                    mock.patch.object(sys, "argv", [
+                        "collect_cdp_discord.py", "--url",
+                        "https://discord.com/channels/1/2",
+                        "--out", str(Path(tmp) / "discord.json")]):
+                self.assertEqual(0, discord.main())
+                payload = json.loads(
+                    (Path(tmp) / "discord.json").read_text(encoding="utf-8"))
+                self.assertEqual(2, len(payload["channels"]["help"]))
+        finally:
+            (discord.sure_engine.cdp_new_page, discord.sure_engine._WebSocket,
+             discord.sure_engine.CDPClient, discord.time.sleep) = saved
+
+    def test_render_wait_is_a_ceiling_not_a_fixed_cost(self) -> None:
+        discord = _load("collect_cdp_discord_poll_test", CONNECTORS / "collect_cdp_discord.py")
+
+        class _Client:
+            def __init__(self):
+                self.probes = 0
+                self.extracts = 0
+
+            def evaluate(self, expression, **kwargs):
+                if "document.body" in expression:  # full extractor
+                    self.extracts += 1
+                    return {"channel": "help", "n": 2, "ready": True,
+                            "url": "https://discord.com/channels/1/2", "body": "help",
+                            "messages": [{"id": "1"}, {"id": "2"}]}
+                self.probes += 1
+                return {"n": 0, "ready": False} if self.probes == 1 else {"n": 2, "ready": True}
+
+        naps: list = []
+        client = _Client()
+        value = discord.wait_until_ready(
+            client, discord.EXTRACT_MESSAGES, 8.0, 0.25, sleep=naps.append)
+        self.assertEqual(2, value["n"])
+        self.assertEqual(2, client.probes)   # one cheap probe + one after 0.25 s
+        self.assertEqual(1, client.extracts)  # the expensive extract runs once
+        self.assertEqual([0.25], naps)        # not the full 8 s render-wait
+
+    def test_render_wait_still_gives_a_slow_pane_the_full_window(self) -> None:
+        discord = _load("collect_cdp_discord_slow_test", CONNECTORS / "collect_cdp_discord.py")
+
+        class _Client:
+            def __init__(self):
+                self.probes = 0
+
+            def evaluate(self, expression, **kwargs):
+                if "document.body" in expression:
+                    return {"channel": "help", "n": 1, "ready": True,
+                            "url": "https://discord.com/channels/1/2", "body": "help",
+                            "messages": [{"id": "1"}]}
+                self.probes += 1
+                return {"n": 1 if self.probes >= 6 else 0,
+                        "ready": self.probes >= 6}
+
+        naps: list = []
+        value = discord.wait_until_ready(
+            _Client(), discord.EXTRACT_MESSAGES, 8.0, 0.25, sleep=naps.append)
+        self.assertEqual(1, value["n"])
+        self.assertLess(sum(naps), 8.0)  # never exceeds the render-wait ceiling
+
+    def test_scroll_collect_asks_only_for_unseen_messages(self) -> None:
+        discord = _load("collect_cdp_discord_incremental_test", CONNECTORS / "collect_cdp_discord.py")
+
+        class _Client:
+            def __init__(self):
+                self.expressions: list = []
+
+            def call(self, method, params=None, **kwargs):
+                return {}
+
+            def evaluate(self, expression, **kwargs):
+                self.expressions.append(expression)
+                if len(self.expressions) == 1:
+                    return {"messages": [{"id": "m1", "t": "1", "text": "a"}], "total": 2}
+                if len(self.expressions) == 2:
+                    return {"messages": [{"id": "m2", "t": "2", "text": "b"}], "total": 3}
+                return {"messages": [], "total": 3}
+
+        client = _Client()
+        guard = cdp_strategy.SessionGuard(
+            "discord", clock=lambda: 1000.0, wall_clock=lambda: 1000.0)
+        guard.begin_cell("messages")
+        saved = discord.time.sleep
+        discord.time.sleep = lambda seconds: None
+        try:
+            messages, stopped = discord.scroll_collect(
+                client, discord.message_extractor, guard, max_rounds=5, scroll_sleep=0.5,
+                seed=[{"id": "m0", "t": "0", "text": "seed"}])
+        finally:
+            discord.time.sleep = saved
+        self.assertEqual("ok", stopped)
+        self.assertEqual(["m0", "m1", "m2"], [row["id"] for row in messages])
+        self.assertIn('"m0"', client.expressions[0])
+        self.assertIn('"m1"', client.expressions[1])
+        self.assertEqual(5, guard.journal()["metrics"]["rounds"])
+        self.assertEqual(2, guard.journal()["metrics"]["new_messages"])
+
+    def test_scroll_collect_breaks_after_three_stale_rounds(self) -> None:
+        discord = _load("collect_cdp_discord_stall_test", CONNECTORS / "collect_cdp_discord.py")
+
+        class _Client:
+            def call(self, method, params=None, **kwargs):
+                return {}
+
+            def evaluate(self, expression, **kwargs):
+                return {"messages": [], "total": 7}
+
+        guard = cdp_strategy.SessionGuard(
+            "discord", clock=lambda: 1000.0, wall_clock=lambda: 1000.0)
+        guard.begin_cell("messages")
+        saved = discord.time.sleep
+        discord.time.sleep = lambda seconds: None
+        try:
+            messages, stopped = discord.scroll_collect(
+                _Client(), discord.message_extractor, guard, max_rounds=20, scroll_sleep=0.5)
+        finally:
+            discord.time.sleep = saved
+        self.assertEqual([], messages)
+        self.assertEqual("ok", stopped)
+        self.assertEqual(3, guard.journal()["metrics"]["rounds"])
+        self.assertEqual(3, guard.journal()["metrics"]["stale_rounds"])
+
+    def test_kickstarter_expansion_reads_only_the_appended_tail(self) -> None:
+        kickstarter = _load("collect_cdp_kickstarter_tail_test", CONNECTORS / "collect_cdp_kickstarter.py")
+        import re
+
+        class _Client:
+            def __init__(self):
+                self.extracts: list = []
+                self.clicks = 0
+
+            def evaluate(self, expression, **kwargs):
+                if "const after" not in expression:
+                    self.clicks += 1
+                    return True
+                self.extracts.append(expression)
+                after = int(re.search(r"const after = (\d+)", expression).group(1))
+                rows = [{"href": f"c{index}", "text": f"c{index}",
+                         "author": "a", "time": "t"} for index in range(after, after + 5)]
+                return {"comments": rows, "total": after + 5, "more": True}
+
+        client = _Client()
+        guard = cdp_strategy.SessionGuard(
+            "kickstarter", clock=lambda: 1000.0, wall_clock=lambda: 1000.0)
+        guard.begin_cell("comments")
+        comments, stopped = kickstarter.expand_and_extract(
+            client, max_clicks=6, click_burst=3, burst_pause=0.0, guard=guard)
+        self.assertEqual("ok", stopped)
+        self.assertEqual(15, len(comments))
+        self.assertEqual(3, len(client.extracts))   # one snapshot + one per burst
+        self.assertLessEqual(len(client.extracts), client.clicks + 1)
+        self.assertIn("const after = 5", client.extracts[1])
 
     def test_kickstarter_expansion_persists_best_before_stopping(self) -> None:
         kickstarter = _load("collect_cdp_kickstarter_test", CONNECTORS / "collect_cdp_kickstarter.py")

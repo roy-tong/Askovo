@@ -51,9 +51,11 @@ Usage:
       --url "https://discord.com/channels/1472004230112870610/1234567890" \
       --out 02-data/raw/discord-server.json
 
-Exit codes: 0 collected; 2 stopped (timeout circuit, session box, session drop
-or blank render) — stop touching the platform and read
-``<out>.session.json`` before the next run.
+Exit codes: 0 collected; 2 stopped (timeout circuit, session box, session drop,
+blank render, or zero rows with an unconfirmed chat pane) — stop touching the
+platform and read ``<out>.session.json`` before the next run. A channel that is
+truly empty is only recorded after a human confirms it with --confirm-empty;
+zero rows alone is a coverage gap, not an empty window.
 """
 from __future__ import annotations
 
@@ -82,14 +84,21 @@ EXTRACT_HEAD = r"""
   const header = document.querySelector("h1, [class*='header-'] h1, section h1");
   const channelName = header ? clean(header.textContent) : "";
   const body = clean(document.body ? document.body.innerText : "").slice(0, 800);
+  // A zero-message snapshot is only an empty channel when the message pane
+  // itself rendered; the sidebar renders long before the chat area does.
+  const ready = !!document.querySelector(
+    'ol[data-list-id="chat-messages"], [class*="messagesWrapper"], [class*="channelTextArea"]');
 """
 
-EXTRACT_MESSAGES = r"""
+EXTRACT_MESSAGES_TEMPLATE = r"""
 (() => {
 %s
+  const after = new Set(%s);
   const out = [];
-  for (const li of document.querySelectorAll('li[id^="chat-messages-"]')) {
+  const nodes = document.querySelectorAll('li[id^="chat-messages-"]');
+  for (const li of nodes) {
     const id = (li.id.match(/chat-messages-\\d+-\\d+-(\\d+)/) || [])[1] || li.id;
+    if (after.has(id)) continue;
     const time = li.querySelector("time");
     const author = li.querySelector('[class*="username"], [class*="author"]');
     out.push({author: clean(author ? author.textContent : ""),
@@ -97,10 +106,38 @@ EXTRACT_MESSAGES = r"""
               t: time ? (time.getAttribute("datetime") || clean(time.textContent)) : "",
               text: clean(li.innerText).slice(0, 2000)});
   }
-  return {channel: channelName, n: out.length, messages: out,
-          url: location.href, body: body};
+  return {channel: channelName, n: out.length, total: nodes.length, ready: ready,
+          messages: out, url: location.href, body: body};
 })()
-""" % EXTRACT_HEAD
+"""
+
+EXTRACT_MESSAGES = EXTRACT_MESSAGES_TEMPLATE % (EXTRACT_HEAD, "[]")
+
+# The mounted window is far smaller than Discord's full history; cap the
+# exclusion list so the expression stays bounded even after a long session.
+MAX_AFTER_IDS = 800
+
+
+def message_extractor(after=None) -> str:
+    """Build the message extractor that skips ids already in ``after``.
+
+    Re-reading the whole mounted list every round forces a layout for each
+    message; on a long channel that is what pushes one `evaluate` past the
+    cell budget. Asking the DOM for only unseen nodes keeps each round cheap
+    and lets the browser discard old nodes it would have unmounted anyway.
+    """
+    ids = sorted({str(item) for item in (after or ()) if item})
+    return EXTRACT_MESSAGES_TEMPLATE % (EXTRACT_HEAD, json.dumps(ids[-MAX_AFTER_IDS:]))
+
+
+PROBE_RENDER = r"""
+(() => {
+  const n = document.querySelectorAll('li[id^="chat-messages-"]').length;
+  const ready = !!document.querySelector(
+    'ol[data-list-id="chat-messages"], [class*="messagesWrapper"], [class*="channelTextArea"]');
+  return {n: n, ready: ready};
+})()
+"""
 
 EXTRACT_FORUM = r"""
 (() => {
@@ -121,7 +158,7 @@ EXTRACT_FORUM = r"""
               title: clean(title.textContent),
               text: clean(bodyNode ? bodyNode.innerText : card.innerText).slice(0, 2000)});
   }
-  return {channel: channelName, n: out.length, messages: out,
+  return {channel: channelName, n: out.length, ready: ready, messages: out,
           url: location.href, body: body};
 })()
 """ % EXTRACT_HEAD
@@ -167,6 +204,72 @@ def wheel_up(client, times: int = 3, delta: int = 1200) -> None:
         cdp_runtime.wheel_scroll(client.call, delta_y=-delta, move=index == 0)
 
 
+def _poll_render(client, budget: float, poll: float = 0.25, sleep=None,
+                 timeout: float = None) -> None:
+    """Probe the mounted pane, back off, and stop as soon as it renders.
+
+    ``budget`` is a ceiling, not a fixed cost: a warm pane returns on the first
+    cheap probe instead of paying the full render wait. The probe reads counts
+    and selectors only — no input events, no navigation.
+    """
+    sleep = sleep or time.sleep
+    remaining = max(0.0, float(budget))
+    step = max(0.05, float(poll))
+    while True:
+        probe = client.evaluate(PROBE_RENDER, timeout=timeout) or {}
+        if not isinstance(probe, dict):
+            return
+        if probe.get("n") or probe.get("ready"):
+            return
+        if remaining <= 0:
+            return
+        nap = min(step, remaining)
+        sleep(nap)
+        remaining -= nap
+        step = min(max(step * 1.5, float(poll)), 2.0)
+
+
+def wait_until_ready(client, extractor, budget: float, poll: float = 0.25,
+                     sleep=None, timeout: float = None) -> Dict[str, Any]:
+    """Wait for the chat pane to mount, then take one full extraction."""
+    _poll_render(client, budget, poll, sleep, timeout)
+    value = client.evaluate(extractor, timeout=timeout) or {}
+    return value if isinstance(value, dict) else {}
+
+
+def wait_for_render(client, extractor: str, first: Dict[str, Any], grace: float,
+                    poll: float = 0.25, sleep=None, timeout: float = None) -> Dict[str, Any]:
+    """Give a zero-message page its passive render window before judging it.
+
+    Discord mounts the shell before the chat pane, so zero rows on the first
+    probe is a timing signal, not an empty channel. Cheap probes watch for the
+    pane (or its first message) and escalate only when it stays blank; the full
+    extraction runs once at the end, not once per second.
+    """
+    value = first if isinstance(first, dict) else {}
+    if value.get("n") or value.get("ready"):
+        return value
+    _poll_render(client, grace, poll, sleep, timeout)
+    value = client.evaluate(extractor, timeout=timeout) or {}
+    return value if isinstance(value, dict) else {}
+
+
+def wait_for_channels(client, guard, budget: float, poll: float = 0.25,
+                      sleep=None) -> List[Dict[str, Any]]:
+    """Poll the sidebar until it renders; ``budget`` is the ceiling, not a cost."""
+    sleep = sleep or time.sleep
+    remaining = max(0.0, float(budget))
+    step = max(0.05, float(poll))
+    while True:
+        channels = list_channels(client, guard)
+        if channels or remaining <= 0:
+            return channels
+        nap = min(step, remaining)
+        sleep(nap)
+        remaining -= nap
+        step = min(max(step * 1.5, float(poll)), 2.0)
+
+
 def load_server_file(path: Path) -> Dict[str, Any]:
     if path.exists():
         try:
@@ -176,37 +279,91 @@ def load_server_file(path: Path) -> Dict[str, Any]:
     return {"guild": "", "server": "", "channels": {}}
 
 
-def scroll_collect(client, extractor: str, guard: "cdp_strategy.SessionGuard",
-                   max_rounds: int, scroll_sleep: float) -> Tuple[List[Dict[str, Any]], str]:
+def scroll_collect(client, extractor, guard: "cdp_strategy.SessionGuard",
+                   max_rounds: int, scroll_sleep: float,
+                   *, seed=None) -> Tuple[List[Dict[str, Any]], str]:
     """Scroll-load history until the count stalls; return (best, stop_reason).
+
+    ``extractor`` may be a callable that receives the already-seen ids and
+    returns an incremental expression, or a plain expression string (legacy
+    full re-read). The seed is the first screen: a virtual list unmounts rows
+    as the user scrolls, so rows seen before the scroll must ride along.
 
     A timeout is recorded on the guard and ends the run: the caller still
     persists the best harvest. The session box is checked every round.
     """
-    best: List[Dict[str, Any]] = []
+    incremental = callable(extractor)
+    seed_rows = [dict(row) for row in (seed or []) if isinstance(row, dict)]
+    best: List[Dict[str, Any]] = list(seed_rows)
+    index: Dict[str, int] = {}
+    for position, row in enumerate(best):
+        if row.get("id") is not None:
+            index[str(row["id"])] = position
     stale_rounds = 0
+    rounds = 0
+    started = time.monotonic()
+
+    def absorb(rows: List[Any]) -> int:
+        nonlocal best
+        if not incremental:
+            if len(rows) > len(best):
+                best = rows
+                return len(best)
+            return 0
+        added = 0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if row.get("id") is None:
+                best.append(row)
+                added += 1
+                continue
+            key = str(row["id"])
+            if key in index:
+                best[index[key]] = row  # refresh text/timestamps in place
+            else:
+                index[key] = len(best)
+                best.append(row)
+                added += 1
+        return added
+
+    def report() -> None:
+        guard.record_metric("rounds", rounds)
+        guard.record_metric("new_messages", max(0, len(best) - len(seed_rows)))
+        guard.record_metric("stale_rounds", stale_rounds)
+        guard.record_metric("incremental", incremental)
+        guard.record_metric("extract_seconds", round(time.monotonic() - started, 3))
+
     for _ in range(max(1, max_rounds)):
+        rounds += 1
         try:
             guard.check_session()
             wheel_up(client)
             time.sleep(max(0.5, scroll_sleep))
-            value = client.evaluate(extractor)
+            if incremental:
+                value = client.evaluate(extractor(list(index)),
+                                        timeout=guard.cell_budget(60.0))
+            else:
+                value = client.evaluate(extractor)
         except cdp_strategy.TIMEOUT_ERRORS as exc:
             guard.record_timeout(str(exc))
+            report()
             return best, "timeout"
         except (cdp_strategy.CircuitOpen, cdp_strategy.SessionExpired) as exc:
             guard.record_failure(exc, str(exc))
+            report()
             return best, "circuit_open" if isinstance(exc, cdp_strategy.CircuitOpen) else "session_time_box"
         if not isinstance(value, dict):
+            report()
             return best, "extractor_error"
-        messages = value.get("messages") or []
-        if len(messages) > len(best):
-            best = messages
+        added = absorb(value.get("messages") or [])
+        if added:
             stale_rounds = 0
-        else:
-            stale_rounds += 1
-            if stale_rounds >= 3:  # window exhausted
-                break
+            continue
+        stale_rounds += 1
+        if stale_rounds >= 3:  # window exhausted
+            break
+    report()
     return best, "ok"
 
 
@@ -220,8 +377,9 @@ def _list_channels_main(args, guard: "cdp_strategy.SessionGuard") -> int:
         ws_url = sure_engine.cdp_new_page(args.cdp_url.rstrip("/"), args.url)
         client = sure_engine.CDPClient(sure_engine._WebSocket(ws_url))
         client.call("Runtime.enable", timeout=guard.cell_budget(30.0))
-        time.sleep(6.0)
-        channels = list_channels(client, guard)
+        channels = wait_for_channels(client, guard,
+                                     getattr(args, "render_wait", 8.0),
+                                     getattr(args, "render_poll", 0.25))
         print(json.dumps({"url": args.url, "channels": channels}, ensure_ascii=False, indent=2))
     except cdp_strategy.TIMEOUT_ERRORS as exc:
         guard.record_timeout(str(exc))
@@ -259,6 +417,16 @@ def main() -> int:
                     help="bounded scroll rounds; leave ~30%% headroom, never let a cell time out mid-event")
     ap.add_argument("--scroll-sleep", type=float, default=2.5,
                     help="slow cadence per round (fast, steady automation trips anti-bot heuristics)")
+    ap.add_argument("--render-wait", type=float, default=8.0,
+                    help="ceiling (not a fixed cost) for the passive first render; the collector "
+                         "probes cheaply and proceeds as soon as the chat pane mounts")
+    ap.add_argument("--render-poll", type=float, default=0.25,
+                    help="initial probe interval in seconds; grows up to 2s while the pane stays blank")
+    ap.add_argument("--empty-grace", type=float, default=6.0,
+                    help="extra seconds of re-probing when the first probe sees zero messages")
+    ap.add_argument("--confirm-empty", action="store_true",
+                    help="record a rendered zero-message channel as an empty finding; without "
+                         "this flag zero rows is an unconfirmed gap, never an empty window")
     args = ap.parse_args()
 
     sure_engine._validate_cdp_base(args.cdp_url)
@@ -284,6 +452,7 @@ def main() -> int:
     channel = args.channel_name or f"channel-{guild}"
     messages: List[Dict[str, Any]] = []
     stopped = "ok"
+    empty_confirmed = False
     client = None
     try:
         guard.begin_cell(args.mode)
@@ -291,8 +460,9 @@ def main() -> int:
         ws_url = sure_engine.cdp_new_page(args.cdp_url.rstrip("/"), args.url)
         client = sure_engine.CDPClient(sure_engine._WebSocket(ws_url))
         client.call("Runtime.enable", timeout=guard.cell_budget(30.0))
-        time.sleep(6.0)  # let the SPA render before probing
-        header = client.evaluate(extractor, timeout=guard.cell_budget(60.0)) or {}
+        header = wait_until_ready(
+            client, extractor, args.render_wait, args.render_poll,
+            timeout=guard.cell_budget(60.0))
         channel = args.channel_name or header.get("channel") or channel
         if not header.get("n"):
             if cdp_strategy.looks_logged_out(header.get("url", ""), header.get("body", "")):
@@ -307,9 +477,24 @@ def main() -> int:
                 # attempt verification roles, bots or impersonation.
                 guard.record_stop("membership_gated")
                 stopped = "membership_gated"
+            else:
+                header = wait_for_render(client, extractor, header, args.empty_grace,
+                                         args.render_poll,
+                                         timeout=guard.cell_budget(60.0))
+                if not header.get("n"):
+                    if header.get("ready") and args.confirm_empty:
+                        empty_confirmed = True
+                    else:
+                        # A slow pane and a truly empty channel look identical
+                        # from here; a human decides, the collector never
+                        # records an empty window on a guess.
+                        guard.record_stop("empty_unconfirmed")
+                        stopped = "empty_unconfirmed"
         if stopped == "ok":
+            scroll_extractor = extractor if args.mode == "forum" else message_extractor
             messages, stopped = scroll_collect(
-                client, extractor, guard, args.max_rounds, args.scroll_sleep)
+                client, scroll_extractor, guard, args.max_rounds, args.scroll_sleep,
+                seed=header.get("messages") or [])
     except cdp_strategy.TIMEOUT_ERRORS as exc:
         guard.record_timeout(str(exc))
         stopped = "timeout"
@@ -322,7 +507,7 @@ def main() -> int:
         if client is not None:
             client.close()
 
-    if stopped in {"blank_render", "session_drop", "membership_gated"}:
+    if stopped in {"blank_render", "session_drop", "membership_gated", "empty_unconfirmed"}:
         detail = {
             "blank_render": "the page rendered blank (200 + empty title/body); unsupported stack — "
                             "pivot to another source in the same vertical",
@@ -330,6 +515,10 @@ def main() -> int:
             "membership_gated": "the server accepted the join but hides its history behind member "
                                 "verification; this is a coverage gap — never attempt verification "
                                 "roles, bots or impersonation",
+            "empty_unconfirmed": "zero messages and the chat pane never confirmed it rendered; a slow "
+                                 "SPA and an empty channel are indistinguishable from here. Inspect "
+                                 "the tab by hand; if the channel is truly empty, re-run with "
+                                 "--confirm-empty to record it as a finding",
         }[stopped]
         print(f"STOP [{stopped}] {args.url}: {detail}", file=sys.stderr)
         print(f"journal: {journal_path}", file=sys.stderr)
@@ -344,7 +533,11 @@ def main() -> int:
         if args.mode == "forum":
             payload.setdefault("forums", {})[channel] = channels.pop(channel)
         atomic_write_json(args.out, payload)
-        print(f"{channel}: {len(messages)} messages -> {args.out} (stop={stopped})", flush=True)
+        if empty_confirmed:
+            print(f"{channel}: 0 messages (empty_confirmed by --confirm-empty) -> {args.out}",
+                  flush=True)
+        else:
+            print(f"{channel}: {len(messages)} messages -> {args.out} (stop={stopped})", flush=True)
     else:
         print(f"{channel}: no messages persisted (stop={stopped}); an empty file is not a corpus",
               file=sys.stderr)

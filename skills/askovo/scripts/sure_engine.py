@@ -7958,13 +7958,23 @@ class CDPClient:
                 "instead of retrying on a torn stream"
             )
         budget = self.timeout if timeout is None else float(timeout)
-        self._arm_timeout(budget)
+        deadline = time.monotonic() + max(0.0, budget)
         self.next_id += 1
         message_id = self.next_id
         try:
+            self._arm_timeout(budget)
             self.ws.send_text(json.dumps({"id": message_id, "method": method, "params": params or {}}))
             while True:
-                message = json.loads(self.ws.recv_text())
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError(
+                        f"{method} exceeded its {budget:g}s wall-clock budget")
+                self._arm_timeout(max(0.05, remaining))
+                raw = self.ws.recv_text()
+                # Events carry no top-level "id"; skip them before parsing.
+                if '"id"' not in raw:
+                    continue
+                message = json.loads(raw)
                 if message.get("id") != message_id:
                     continue
                 if "error" in message:

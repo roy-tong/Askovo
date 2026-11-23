@@ -255,7 +255,7 @@ python3 collect_arctic_windows.py --config windows.json \
   --author-salt my-stable-salt --run-id backfill-20261117-01
 ```
 
-**空窗诚实性**：某社区某历史窗口返回 0 通常是真的没数据（社区当年还没起来），不是脚本 bug——烧长计划前先交互验证一个窗。信封含 `route_id=deep:<sub>` 与 `source_query=window:<sub>:<ts>` 溯源。
+**空窗诚实性**：某社区某历史窗口返回 0 通常是真的没数据（社区当年还没起来），不是脚本 bug——烧长计划前先交互验证一个窗。但只有**真实空页**（HTTP 200 + 空列表）才算空窗：非 2xx、429/403 预算耗尽、传输异常都抛 `ArchiveWindowError`，该窗写入 `state["errors"]` 且不进入 `completed`，不会被记成"0 条已完成"。`fields` 不请求 `permalink`（归档端点会 400），评论来源 URL 由 `link_id` + 评论 id + subreddit 重建（`comment_source_url`）。信封含 `route_id=deep:<sub>` 与 `source_query=window:<sub>:<ts>` 溯源。
 
 ---
 
@@ -271,6 +271,7 @@ python3 collect_arctic_windows.py --config windows.json \
 - **登录会话仅用户手工操作**：Discord 由用户自己登录浏览器，采集器只开授权可见频道；不代输凭据、不读存储凭据、不导 cookie。
 - **策略在运行时执行**：两个采集器都 import `cdp_strategy.py`，预算来自注册表 `runtime_policies`（不在脚本里各写一份）：一 cell 一次 goto、`reload()` 禁止、会话限时（Discord 40 分钟）、超时熔断（15 分钟）、模式互斥（messages/forum/invite、comments/posts）。**任何超时/中断都按熔断处理**（2026-11-17 四次 Discord 掉线：三次都在 timeout/abort 后继续驱动；同样快但无超时的导航从未掉线）。
 - **先落盘再停**：超时/掉线/空渲染/404 时先持久化已采到的最好结果，再以退出码 2 停止；会话日志写到 `<out>.session.json`（`askovo.cdp-session/1`），下一次运行能看见上次试过什么。空渲染（200 + 空标题 + 空正文）不是挑战页、也不是空语料，直接换同垂类信源。
+- **零消息 ≠ 空频道**：Discord 首轮 0 条时先判断登录墙/空白渲染/会员墙，再用 `--render-wait`（默认 8s，是等待上限而非固定成本，就绪即返回；轮询间隔 `--render-poll` 默认 0.25s）等 SPA，仍为 0 则按 `--empty-grace`（默认 6s）重探聊天区是否真的挂载。聊天区未就绪一律记为 `empty_unconfirmed` 缺口（退出码 2，不写快照），只有聊天区已渲染且人工确认后才用 `--confirm-empty` 把空列表记成发现——慢加载与真空白不再混为一谈。
 - **有界 + 慢速**：`--max-clicks`/`--max-rounds` 封顶；Discord 默认 2.5s/轮滚动 + 滚前模拟鼠标移动——高频导航与非人类匀速滚动会累积风险（实战教训，详见 playbook 的修正协议）。
 - **每轮持久化**：展开/滚动每轮原子写盘（实战教训：未落盘的一轮就是丢掉的一轮）。
 - **原始 JSON 落盘**：产物是平台保真快照（Kickstarter `{project,n,comments}`、Discord `{guild,server,channels,forums}`），转语料信封走 `clean_screen_corpus.py`（Kickstarter：`--text-fields text --id-fields 无，用派生`；Discord：`--text-fields text --id-fields id`）。

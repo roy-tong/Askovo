@@ -53,15 +53,23 @@ from common import (
 )
 
 ARCTIC_COMMENTS_SEARCH = "https://arctic-shift.photon-reddit.com/api/comments/search"
-FIELDS = "id,body,author,created_utc,score,link_id,permalink,subreddit"
+# `permalink` is not a selectable field: the archive answers HTTP 400
+# ("'permalink' is not a valid field") for the whole page. The URL is rebuilt
+# from link_id + comment id instead.
+FIELDS = "id,body,author,created_utc,score,link_id,subreddit"
+
+
+class ArchiveWindowError(RuntimeError):
+    """A hard archive failure; the window must stay incomplete, never empty."""
 
 
 def fetch_window_page(sub: str, after: int, before: int, cursor: Optional[int],
-                      timeout: int, max_wait: float) -> Optional[List[Dict[str, Any]]]:
+                      timeout: int, max_wait: float) -> List[Dict[str, Any]]:
     """One comments/search page with the archive's real-world error contract:
     429/403 wait for X-RateLimit-Reset (then exponential, capped, budget-bound);
-    422 is the archive's 'timeout, slow down' and retries with backoff. Returns
-    None on hard failure so the caller can stop the window honestly."""
+    422 is the archive's 'timeout, slow down' and retries with backoff. A real
+    empty page returns []; a hard failure raises ArchiveWindowError so the
+    caller records an error instead of mistaking it for an empty window."""
     params: Dict[str, Any] = {
         "subreddit": sub, "after": cursor if cursor is not None else after,
         "before": before, "limit": 100, "fields": FIELDS,
@@ -86,20 +94,40 @@ def fetch_window_page(sub: str, after: int, before: int, cursor: Optional[int],
                     pause = wait
                 pause = min(pause, 600.0)
                 if time.time() + pause > deadline:
+                    code = exc.code
                     exc.close()
-                    return None
+                    raise ArchiveWindowError(f"HTTP {code}: rate-limited beyond the wait budget")
                 time.sleep(pause)
                 wait = min(wait * 2, 120.0)
                 continue
             else:
+                code = exc.code
                 exc.close()
-                return None
-        except Exception:
-            return None
+                raise ArchiveWindowError(f"HTTP {code} for subreddit={sub!r} window={after}-{before}")
+        except ArchiveWindowError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - classify transport failures honestly
+            raise ArchiveWindowError(f"{type(exc).__name__}: {exc}") from exc
         if time.time() + wait > deadline:
-            return None
+            raise ArchiveWindowError("422 slow-down retries exhausted the wait budget")
         time.sleep(wait)
         wait = min(wait * 2, 120.0)
+
+
+def comment_source_url(item: Dict[str, Any], sub: str) -> Optional[str]:
+    """Stable Reddit URL without requesting the unsupported permalink field."""
+    permalink = item.get("permalink")
+    if isinstance(permalink, str) and permalink.startswith("/"):
+        return "https://www.reddit.com" + permalink
+    comment_id = item.get("id") or item.get("name")
+    link_id = str(item.get("link_id") or "")
+    link = link_id[3:] if link_id.startswith("t3_") else link_id
+    subreddit = str(sub or item.get("subreddit") or "")
+    if subreddit.lower().startswith("r/"):
+        subreddit = subreddit[2:]
+    if comment_id and link and subreddit:
+        return f"https://www.reddit.com/r/{subreddit}/comments/{link}/_/{comment_id}/"
+    return None
 
 
 def normalize_comment(item: Dict[str, Any], sub: str, window_after: int,
@@ -110,8 +138,7 @@ def normalize_comment(item: Dict[str, Any], sub: str, window_after: int,
     comment_id = item.get("id") or item.get("name")
     if not comment_id:
         return None
-    permalink = item.get("permalink")
-    source_url = "https://www.reddit.com" + permalink if permalink and permalink.startswith("/") else permalink
+    source_url = comment_source_url(item, sub)
     created_at = utc_from_timestamp(item.get("created_utc") or item.get("created"))
     score = item.get("score")
     flags = base_quality_flags(body, created_at)
@@ -153,7 +180,12 @@ def pull_window(sub: str, wafter: float, wbefore: float, cap: int,
     written = 0
     while written < cap:
         rows = fetch_window_page(sub, int(wafter), int(wbefore), cursor, timeout, max_wait)
-        if rows is None or not rows:
+        if rows is None:
+            # Defensive: an adapter that reports failure as None must not be
+            # mistaken for a genuinely empty archive page.
+            raise ArchiveWindowError(
+                f"no page returned for subreddit={sub!r} window={int(wafter)}-{int(wbefore)}")
+        if not rows:
             break
         oldest: Optional[int] = None
         for item in rows:
@@ -221,16 +253,25 @@ def main() -> None:
                 wafter = datetime.fromisoformat(win["after"] + "T00:00:00+00:00").timestamp()
                 wbefore = datetime.fromisoformat(win["before"] + "T00:00:00+00:00").timestamp()
                 cap = int(win.get("cap") or entry.get("max_per_window", 4000))
+                before_total = stats["comments"]
                 try:
                     pull_window(sub, wafter, wbefore, cap, out, seen, stats,
                                 args.timeout, args.max_wait, args.sleep, args.run_id)
+                except ArchiveWindowError as exc:
+                    # A hard archive failure is not an empty window: keep it out
+                    # of `completed` so a rerun retries it, and surface the cause.
+                    state["errors"][key] = str(exc)[:200]
+                    args.state.write_text(
+                        json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
+                    continue
                 except Exception as exc:  # noqa: BLE001 - record and move on
                     state["errors"][key] = str(exc)[:200]
                     args.state.write_text(
                         json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
                     continue
                 completed.add(key)
-                state["counts"][key] = stats["comments"]
+                state["errors"].pop(key, None)
+                state["counts"][key] = stats["comments"] - before_total
                 state["completed"] = sorted(completed)
                 args.state.write_text(
                     json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
