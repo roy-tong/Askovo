@@ -37,61 +37,15 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-try:
-    import external_bridge
-except ModuleNotFoundError as exc:  # direct importlib loading used by embedders/tests
-    if exc.name != "external_bridge":
-        raise
-    _bridge_spec = importlib.util.spec_from_file_location(
-        "askovo_external_bridge", Path(__file__).with_name("external_bridge.py")
-    )
-    if _bridge_spec is None or _bridge_spec.loader is None:  # pragma: no cover
-        raise RuntimeError("cannot load external_bridge.py beside sure_engine.py")
-    external_bridge = importlib.util.module_from_spec(_bridge_spec)
-    sys.modules.setdefault("askovo_external_bridge", external_bridge)
-    _bridge_spec.loader.exec_module(external_bridge)
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.append(str(_SCRIPT_DIR))
 
-try:
-    import delivery_projection
-except ModuleNotFoundError as exc:  # direct importlib loading used by embedders/tests
-    if exc.name != "delivery_projection":
-        raise
-    _projection_spec = importlib.util.spec_from_file_location(
-        "askovo_delivery_projection", Path(__file__).with_name("delivery_projection.py")
-    )
-    if _projection_spec is None or _projection_spec.loader is None:  # pragma: no cover
-        raise RuntimeError("cannot load delivery_projection.py beside sure_engine.py")
-    delivery_projection = importlib.util.module_from_spec(_projection_spec)
-    sys.modules.setdefault("askovo_delivery_projection", delivery_projection)
-    _projection_spec.loader.exec_module(delivery_projection)
-
-try:
-    import role_catalog
-except ModuleNotFoundError as exc:  # direct importlib loading used by embedders/tests
-    if exc.name != "role_catalog":
-        raise
-    _role_spec = importlib.util.spec_from_file_location(
-        "askovo_role_catalog", Path(__file__).with_name("role_catalog.py")
-    )
-    if _role_spec is None or _role_spec.loader is None:  # pragma: no cover
-        raise RuntimeError("cannot load role_catalog.py beside sure_engine.py")
-    role_catalog = importlib.util.module_from_spec(_role_spec)
-    sys.modules.setdefault("askovo_role_catalog", role_catalog)
-    _role_spec.loader.exec_module(role_catalog)
-
-try:
-    import web_surface
-except ModuleNotFoundError as exc:  # direct importlib loading used by embedders/tests
-    if exc.name != "web_surface":
-        raise
-    _web_spec = importlib.util.spec_from_file_location(
-        "askovo_web_surface", Path(__file__).with_name("web_surface.py")
-    )
-    if _web_spec is None or _web_spec.loader is None:  # pragma: no cover
-        raise RuntimeError("cannot load web_surface.py beside sure_engine.py")
-    web_surface = importlib.util.module_from_spec(_web_spec)
-    sys.modules.setdefault("askovo_web_surface", web_surface)
-    _web_spec.loader.exec_module(web_surface)
+import study_context
+import external_bridge
+import delivery_projection
+import role_catalog
+import web_surface
 
 try:
     import fcntl
@@ -297,6 +251,9 @@ def now() -> str:
 
 
 def load_json(path: Path) -> Any:
+    context = study_context.current_study_context()
+    if context is not None and context.owns(path):
+        return context.read_json(path)
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -2421,6 +2378,11 @@ def is_qualified_evidence(record: dict[str, Any]) -> bool:
 
 
 def _read_jsonl_rows(path: Path) -> list[dict[str, Any]]:
+    context = study_context.current_study_context()
+    if context is not None and context.owns(path):
+        if not path.is_file():
+            return []
+        return context.read_jsonl(path)
     rows: list[dict[str, Any]] = []
     if not path.is_file():
         return rows

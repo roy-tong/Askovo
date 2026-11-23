@@ -7,6 +7,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -224,6 +226,45 @@ class ObservationCliTest(unittest.TestCase):
             run = run_cli("observation", "record", str(path), "--store", str(store), "--replace")
             self.assertEqual(2, run.returncode)
             self.assertIn("reviewed", run.stderr)
+
+    def test_repeat_export_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "store"; study = Path(tmp) / "study"; study.mkdir()
+            path = Path(tmp) / "obs.json"; path.write_text(json.dumps(observation()), encoding="utf-8")
+            run_cli("observation", "record", str(path), "--store", str(store))
+            first = run_cli("observation", "export", "--store", str(store), "--study", str(study), "--json")
+            second = run_cli("observation", "export", "--store", str(store), "--study", str(study), "--json")
+            target = study / "01-sources/observations.jsonl"
+            rows = [json.loads(line) for line in target.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(0, first.returncode, first.stdout + first.stderr)
+        self.assertEqual(0, second.returncode, second.stdout + second.stderr)
+        self.assertEqual(1, len(rows))
+        self.assertEqual(1, json.loads(first.stdout)["added"])
+        self.assertEqual(0, json.loads(second.stdout)["added"])
+
+    def test_failed_export_transaction_preserves_previous_bytes(self):
+        scripts = ROOT / "skills/askovo/scripts"
+        if str(scripts) not in sys.path:
+            sys.path.insert(0, str(scripts))
+        import observation as observation_module
+        if not hasattr(observation_module, "write_integrity"):
+            self.fail("observation export does not use the study transaction boundary")
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "store"; store.mkdir(); study = Path(tmp) / "study"; study.mkdir()
+            doc = observation()
+            (store / "obs-001.json").write_text(json.dumps(doc), encoding="utf-8")
+            args = SimpleNamespace(store=str(store), study=str(study), json=True)
+            observation_module.cmd_export(args)
+            target = study / "01-sources/observations.jsonl"
+            before = target.read_bytes()
+            doc["claims"][0]["statement"] = "new revision"
+            (store / "obs-001.json").write_text(json.dumps(doc), encoding="utf-8")
+            with mock.patch.object(
+                    observation_module.write_integrity.Transaction, "commit",
+                    side_effect=observation_module.write_integrity.IntegrityError("boom")):
+                with self.assertRaises(observation_module.write_integrity.IntegrityError):
+                    observation_module.cmd_export(args)
+            self.assertEqual(before, target.read_bytes())
 
     def test_mcp_validate_uses_shared_observation_contract(self):
         with tempfile.TemporaryDirectory() as tmp:

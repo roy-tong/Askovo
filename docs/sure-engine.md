@@ -39,6 +39,7 @@ SURE = **Structured User Research with Evidence**。它不是独立安装的产�
 ## 代码位置
 
 ```text
+skills/askovo/scripts/study_context.py  # StudyRepository + request-scoped immutable StudyContext
 skills/askovo/scripts/sure_engine.py   # SURE 支撑引擎、主链脚手架与共享渲染
 skills/askovo/scripts/role_catalog.py  # 岗位/行业目录、组队、workplan 与岗位投影（支撑层）
 skills/askovo/scripts/askovo.py        # askovo CLI、统一结构/证据/推理门
@@ -46,6 +47,8 @@ skills/askovo/scripts/askovo_mcp.py    # askovo MCP 外壳
 ```
 
 不要为 SURE 单独安装、单独起服务或 fork 一套协议。五类领域也只改变方法、证据、安全与验收参数，不改变主链 schema。
+
+一次 `askovo deliver` 在同一 `StudyContext` 中完成全审计和交付投影：研究内 JSON/JSONL 使用同一不可变快照，研究外目录资产仍正常读取。下一命令重新读取文件；全局兼容缓存最多保留 32 个内容快照。Observation 独立库使用原子写，研究内导出使用事务并按观察 ID、claim ID 与来源哈希幂等追加。
 
 ## 一句话
 
