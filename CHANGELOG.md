@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.22.0 — 2026-11-23
+
+Request-scoped research snapshots, transactional observations and evidence-driven CDP collection performance.
+
+### Added
+
+- **`StudyRepository` / `StudyContext`**: one `askovo deliver` request now shares an immutable study snapshot across its fresh full audit and delivery projection. Research-contained JSON/JSONL reads are isolated from external rewrites during that request; the next request reloads current bytes. The compatibility JSONL cache is a bounded 32-entry LRU instead of an unbounded process dictionary.
+- **Transactional, idempotent observation export**: standalone observation records use atomic replacement. Study exports use the existing write journal and deduplicate only the exact `(observation_id, claim_id, source_hash)`; a changed source hash remains a new observation revision. Repeat exports report `added=0` and leave prior bytes untouched on transaction failure.
+- **Evidence-driven Discord / Kickstarter collection**: render waits poll for actual readiness instead of paying fixed sleeps. `--render-wait` is now a ceiling, `--render-poll` controls bounded backoff, and session journals record extraction metrics. Incremental DOM extraction reads only unseen Discord messages and appended Kickstarter rows.
+
+### Changed
+
+- SURE sibling modules use standard imports after one non-shadowing runtime-path setup. Only the explicit lazy CDP strategy boundary still loads a module by file path; thin-package and direct-engine loading no longer create duplicate sibling identities.
+- CDP socket calls recompute their remaining wall-clock budget before every frame. Events without a top-level id are skipped before JSON parsing; timeouts still open the circuit and are never retried.
+
+### Fixed
+
+- Discord's first zero-row probe distinguishes login, membership, blank render and confirmed empty channels. Unconfirmed empty rendering stops with a visible gap instead of writing a misleading empty snapshot.
+- Arctic Shift non-2xx responses, exhausted 429/403 budgets and transport errors remain failed windows instead of completed empty windows. Comment URLs are rebuilt from stable ids without requesting an unsupported permalink field.
+- The merged bilingual homepages retain the family story and decision-proof links; sitemap dates and duplicate entries are covered by SEO checks.
+
+### Tests
+
+- 904 unit/regression tests pass locally, including request snapshot isolation, bounded-cache eviction, import identity, observation idempotency/rollback and all existing evidence/delivery/MCP gates. SEO reports zero errors and warnings. Synthetic tests do not establish real platform collection quality or external product adoption.
+
 ## 2.21.0 — 2026-11-22
 
 ### Added
