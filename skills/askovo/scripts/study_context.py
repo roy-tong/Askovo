@@ -87,9 +87,7 @@ class StudyRepository:
             relative = path.relative_to(self.study_dir)
             if relative.parts[0] in {"05-audit", "06-report"}:
                 continue
-            stat = path.stat()
-            manifest[relative.as_posix()] = (stat.st_dev, stat.st_ino,
-                                             stat.st_size, stat.st_mtime_ns)
+            manifest[relative.as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
         return manifest
 
     def transaction(self, purpose: str = ""):

@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -57,7 +58,9 @@ class StudyContextTests(unittest.TestCase):
             with context.activate():
                 self.assertIs(context, current_study_context())
                 context.read_jsonl(self.evidence)
+                before = self.evidence.stat()
                 self.evidence.write_text('{"record_id":"r2","value":2}\n', encoding="utf-8")
+                os.utime(self.evidence, (before.st_atime, before.st_mtime))
                 context.read_jsonl(self.evidence)
         self.assertEqual("STALE_SOURCE", raised.exception.code)
         self.assertIsNone(current_study_context())
