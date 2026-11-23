@@ -79,6 +79,19 @@ class StudyRepository:
     def read_bytes(self, path: Any) -> bytes:
         return self.resolve(path).read_bytes()
 
+    def version_manifest(self) -> Dict[str, Any]:
+        manifest = {}
+        for path in self.study_dir.rglob("*"):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(self.study_dir)
+            if relative.parts[0] in {"05-audit", "06-report"}:
+                continue
+            stat = path.stat()
+            manifest[relative.as_posix()] = (stat.st_dev, stat.st_ino,
+                                             stat.st_size, stat.st_mtime_ns)
+        return manifest
+
     def transaction(self, purpose: str = ""):
         import write_integrity
         return write_integrity.Transaction(self.study_dir, purpose=purpose)
@@ -126,9 +139,10 @@ def _parse_jsonl_bytes(payload: bytes) -> List[Dict[str, Any]]:
 class StudyContext:
     def __init__(self, repository: StudyRepository, *, max_cache_entries: int = 32):
         self.repository = repository
-        self._bytes = BoundedJsonlCache(max_cache_entries)
+        self._bytes: Dict[str, bytes] = {}
         self._json = BoundedJsonlCache(max_cache_entries)
         self._jsonl = BoundedJsonlCache(max_cache_entries)
+        self._manifest = None
 
     def owns(self, path: Any) -> bool:
         return self.repository.owns(path)
@@ -139,7 +153,7 @@ class StudyContext:
         cached = self._bytes.get(key)
         if cached is None:
             cached = self.repository.read_bytes(resolved)
-            self._bytes.put(key, cached)
+            self._bytes[key] = cached
         return cached
 
     def read_json(self, path: Any) -> Any:
@@ -169,15 +183,38 @@ class StudyContext:
         if cached is None:
             cached = selected(raw)
             self._jsonl.put(key, cached)
-        return [dict(record) for record in cached]
+        return copy.deepcopy(cached)
+
+    def _assert_stable(self) -> None:
+        import write_integrity
+        report = write_integrity.recover_locked(self.repository.study_dir, apply=False)
+        if report.get("status") not in {"none", "clean", "completed"}:
+            raise write_integrity.IntegrityError(
+                "study has an unfinished or unreadable write transaction",
+                path=self.repository.study_dir, code="STALE_SOURCE",
+                suggestion="run the canonical recovery command before delivering")
+        current = self.repository.version_manifest()
+        if current != self._manifest:
+            raise write_integrity.IntegrityError(
+                "study files changed during the request; refusing a mixed-revision delivery",
+                path=self.repository.study_dir, code="STALE_SOURCE",
+                suggestion="retry audit and delivery against the newly committed revision")
 
     @contextmanager
     def activate(self):
+        self._manifest = self.repository.version_manifest()
+        self._assert_stable()
         token = _CURRENT_CONTEXT.set(self)
         try:
             yield self
-        finally:
+        except BaseException:
             _CURRENT_CONTEXT.reset(token)
+            raise
+        else:
+            try:
+                self._assert_stable()
+            finally:
+                _CURRENT_CONTEXT.reset(token)
 
 
 def current_study_context() -> Optional[StudyContext]:

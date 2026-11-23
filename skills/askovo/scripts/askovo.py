@@ -46,6 +46,7 @@ import evidence_page  # noqa: E402
 import proof_export  # noqa: E402
 import observation  # noqa: E402
 import study_context  # noqa: E402
+import write_integrity  # noqa: E402
 
 research_loop.bind_cli(sys.modules[__name__])
 
@@ -3439,7 +3440,7 @@ def command_deliver(args: argparse.Namespace) -> int:
                 deliverable_id=getattr(args, "deliverable", None),
                 chain_id=getattr(args, "chain", None),
             )
-    except (OSError, json.JSONDecodeError, ValueError) as exc:
+    except (OSError, json.JSONDecodeError, ValueError, write_integrity.IntegrityError) as exc:
         result = sure_engine.delivery_error(study_dir, args.kind, exc)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 2

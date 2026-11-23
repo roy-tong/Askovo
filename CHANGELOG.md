@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.22.1 — 2026-11-23
+
+### Fixed
+
+- Request-scoped byte snapshots are no longer evicted after 32 files, so audit and delivery cannot mix external revisions within one request. JSONL reads now deep-copy nested claims as well as top-level records.
+- Observation identity checks and append writes now hold the same study transaction lock, closing the two-process duplicate-export window.
+- Active study requests now compare a study-wide version manifest and journal state at entry/exit. A multi-file commit during delivery returns STALE_SOURCE rather than mixing an old study with new evidence; corrupt observation history stays untouched, changed source hashes preserve revisions, and interrupted appends retry exactly once.
+
+### Tests
+
+- 910 unit/regression tests pass locally, including 33-file external rewrites, multi-file commit rejection, nested caller mutation and synchronized two-process export/recovery.
+
 ## 2.22.0 — 2026-11-23
 
 Request-scoped research snapshots, transactional observations and evidence-driven CDP collection performance.

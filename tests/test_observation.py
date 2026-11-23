@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 import os
 import subprocess
 import sys
@@ -26,6 +27,26 @@ def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
         env=env,
         timeout=120,
     )
+
+
+def _synchronized_export_worker(store, study, barrier, queue):
+    scripts = ROOT / "skills/askovo/scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    import observation as observation_module
+    original_enter = observation_module.write_integrity.Transaction.__enter__
+
+    def synchronized_enter(transaction):
+        barrier.wait(timeout=30)
+        return original_enter(transaction)
+
+    observation_module.write_integrity.Transaction.__enter__ = synchronized_enter
+    try:
+        result = observation_module.cmd_export(
+            SimpleNamespace(store=store, study=study, json=False))
+        queue.put(("ok", result))
+    except Exception as exc:
+        queue.put(("error", type(exc).__name__, str(exc)))
 
 
 def observation(generalization="single_case", repeat_count=1, **overrides):
@@ -242,6 +263,33 @@ class ObservationCliTest(unittest.TestCase):
         self.assertEqual(1, json.loads(first.stdout)["added"])
         self.assertEqual(0, json.loads(second.stdout)["added"])
 
+    def test_concurrent_export_adds_each_identity_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "store"; study = Path(tmp) / "study"
+            store.mkdir(); study.mkdir()
+            (store / "obs-001.json").write_text(json.dumps(observation()), encoding="utf-8")
+            context = multiprocessing.get_context("spawn")
+            barrier = context.Barrier(2)
+            queue = context.Queue()
+            processes = [context.Process(
+                target=_synchronized_export_worker,
+                args=(str(store), str(study), barrier, queue), daemon=True)
+                for _ in range(2)]
+            for process in processes:
+                process.start()
+            for process in processes:
+                process.join(45)
+                if process.is_alive():
+                    process.terminate()
+                    process.join(5)
+                    self.fail("concurrent export did not finish")
+            results = [queue.get(timeout=5) for _ in processes]
+            rows = [json.loads(line) for line in
+                    (study / "01-sources/observations.jsonl").read_text(
+                        encoding="utf-8").splitlines()]
+        self.assertEqual([("ok", 0), ("ok", 0)], results)
+        self.assertEqual(1, len(rows))
+
     def test_failed_export_transaction_preserves_previous_bytes(self):
         scripts = ROOT / "skills/askovo/scripts"
         if str(scripts) not in sys.path:
@@ -265,6 +313,48 @@ class ObservationCliTest(unittest.TestCase):
                 with self.assertRaises(observation_module.write_integrity.IntegrityError):
                     observation_module.cmd_export(args)
             self.assertEqual(before, target.read_bytes())
+
+    def test_export_rejects_corrupt_history_without_rewriting_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "store"; study = Path(tmp) / "study"
+            store.mkdir(); study.mkdir()
+            (store / "obs-001.json").write_text(json.dumps(observation()), encoding="utf-8")
+            target = study / "01-sources" / "observations.jsonl"
+            target.parent.mkdir(parents=True)
+            target.write_text("{broken\n", encoding="utf-8")
+            before = target.read_bytes()
+            got = run_cli("observation", "export", "--store", str(store),
+                          "--study", str(study), "--json")
+            self.assertNotEqual(0, got.returncode)
+            self.assertEqual(before, target.read_bytes())
+
+    def test_changed_source_hash_keeps_revision_and_retry_recovers_interrupted_append(self):
+        scripts = ROOT / "skills/askovo/scripts"
+        if str(scripts) not in sys.path:
+            sys.path.insert(0, str(scripts))
+        import observation as observation_module
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "store"; study = Path(tmp) / "study"
+            store.mkdir(); study.mkdir()
+            doc = observation()
+            source = store / "obs-001.json"
+            source.write_text(json.dumps(doc), encoding="utf-8")
+            args = SimpleNamespace(store=str(store), study=str(study), json=True)
+            observation_module.cmd_export(args)
+            doc["claims"][0]["statement"] = "new revision"
+            source.write_text(json.dumps(doc), encoding="utf-8")
+            with mock.patch.object(
+                    observation_module.write_integrity.Transaction, "commit",
+                    side_effect=observation_module.write_integrity.IntegrityError("interrupted")):
+                with self.assertRaises(observation_module.write_integrity.IntegrityError):
+                    observation_module.cmd_export(args)
+            observation_module.cmd_export(args)
+            rows = [json.loads(line) for line in
+                    (study / "01-sources/observations.jsonl").read_text(
+                        encoding="utf-8").splitlines()]
+        self.assertEqual(2, len(rows))
+        self.assertEqual(1, len({(row["observation_id"], row["claim_id"]) for row in rows}))
+        self.assertEqual(2, len({row["source_hash"] for row in rows}))
 
     def test_mcp_validate_uses_shared_observation_contract(self):
         with tempfile.TemporaryDirectory() as tmp:
