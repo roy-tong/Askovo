@@ -45,6 +45,7 @@ import role_catalog  # noqa: E402
 import evidence_page  # noqa: E402
 import proof_export  # noqa: E402
 import observation  # noqa: E402
+import study_context  # noqa: E402
 
 research_loop.bind_cli(sys.modules[__name__])
 
@@ -544,6 +545,9 @@ def _annotated_missing(section: str, fields: list[str]) -> str:
 
 
 def _load_json(path: Path) -> Any:
+    context = study_context.current_study_context()
+    if context is not None and context.owns(path):
+        return context.read_json(path)
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -594,19 +598,19 @@ def _load_platform_map() -> dict[str, Any]:
     return value
 
 
-_JSONL_PARSE_CACHE: dict[str, list[dict[str, Any]]] = {}
+_JSONL_PARSE_CACHE = study_context.BoundedJsonlCache(max_entries=32)
 
 
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
-    """读 JSONL（A-3，review 2026-11-09）：内容摘要为键的进程内解析缓存。
+    """读取 JSONL：请求内使用 StudyContext，请求外使用有界内容摘要缓存。
 
-    此前一次 audit_payload 会把 evidence.jsonl 全量解析 3 遍
-    （_check_evidence / _compute_signals / _load_evidence_by_id 各自走本函数），
-    一次 loop run 最多 18 遍。键=文件字节摘要：同尺寸改写也会正确失效
-    （mtime/size 键挡不住的边界）；文件读取本身仍然每次发生（便宜），
-    贵的是逐行 json.loads。返回行是缓存的浅拷贝——调用方的行内注解
-    （如 _line_number）不污染缓存。
+    audit_payload 的证据解析保持一次；活动 StudyContext 还会让审计与交付看到
+    同一份字节，下一请求重新读取。兼容缓存最多保留 32 个内容快照，同尺寸改写
+    仍以 digest 失效。返回行是浅拷贝，调用方注解不污染缓存。
     """
+    context = study_context.current_study_context()
+    if context is not None and context.owns(path):
+        return context.read_jsonl(path)
     payload = path.read_bytes()
     digest = hashlib.blake2b(payload, digest_size=16).hexdigest()
     cached = _JSONL_PARSE_CACHE.get(digest)
@@ -3423,16 +3427,18 @@ def command_deliver(args: argparse.Namespace) -> int:
     """Deliver from a fresh full audit, never from a stale audit.json."""
     study_dir = Path(args.study_dir).resolve()
     try:
-        audit = audit_study(study_dir, "full")
-        result = sure_engine.deliver(
-            study_dir,
-            args.kind,
-            audit=audit,
-            role_id=getattr(args, "role", None),
-            industry=getattr(args, "industry", None),
-            deliverable_id=getattr(args, "deliverable", None),
-            chain_id=getattr(args, "chain", None),
-        )
+        context = study_context.StudyContext(study_context.StudyRepository(study_dir))
+        with context.activate():
+            audit = audit_study(study_dir, "full")
+            result = sure_engine.deliver(
+                study_dir,
+                args.kind,
+                audit=audit,
+                role_id=getattr(args, "role", None),
+                industry=getattr(args, "industry", None),
+                deliverable_id=getattr(args, "deliverable", None),
+                chain_id=getattr(args, "chain", None),
+            )
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         result = sure_engine.delivery_error(study_dir, args.kind, exc)
         print(json.dumps(result, ensure_ascii=False, indent=2))

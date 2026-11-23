@@ -25,6 +25,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+import study_context
+import write_integrity
+
 SCHEMA = "askovo.product-observation/1"
 GENERATOR = "askovo.observation"
 GENERATOR_VERSION = "1"
@@ -219,8 +222,8 @@ def cmd_record(args: argparse.Namespace) -> int:
               "(use --replace only to fix an un-reviewed file)" % target,
               file=sys.stderr)
         return 2
-    target.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n",
-                      encoding="utf-8")
+    study_context.StudyRepository(store).atomic_write_text(
+        target, json.dumps(doc, ensure_ascii=False, indent=2) + "\n")
     if args.json:
         print(json.dumps({
             "stored": str(target),
@@ -340,17 +343,35 @@ def cmd_export(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 2
     target = study / EXPORT_REL
-    target.parent.mkdir(parents=True, exist_ok=True)
     lines = [_claim_line(doc, claim, source)
              for doc, source in documents for claim in doc.get("claims") or []
              if isinstance(claim, dict)]
-    with target.open("a", encoding="utf-8") as handle:
-        for line in lines:
-            handle.write(json.dumps(line, ensure_ascii=False, sort_keys=True) + "\n")
+
+    def identity(line: Dict[str, Any]) -> Tuple[str, str, str]:
+        return (str(line.get("observation_id") or ""),
+                str(line.get("claim_id") or ""), str(line.get("source_hash") or ""))
+
+    existing = set()
+    if target.is_file():
+        for raw in target.read_text(encoding="utf-8").splitlines():
+            if raw.strip():
+                item = json.loads(raw)
+                if isinstance(item, dict):
+                    existing.add(identity(item))
+    new_lines = [line for line in lines if identity(line) not in existing]
+    if new_lines:
+        payload = "".join(json.dumps(line, ensure_ascii=False, sort_keys=True) + "\n"
+                          for line in new_lines)
+        repository = study_context.StudyRepository(study)
+        with repository.transaction("observation export") as txn:
+            txn.add(target, payload, mode="append")
+            txn.commit()
     summary = {
         "exported": str(target),
         "observations": len(documents),
         "claims": len(lines),
+        "added": len(new_lines),
+        "duplicates": len(lines) - len(new_lines),
         "single_case": sum(1 for line in lines if line["not_generalizable"]),
         "generalization": dict(sorted(
             (level, sum(1 for line in lines if line["generalization"] == level))
@@ -360,7 +381,8 @@ def cmd_export(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
     else:
-        print("已导出 %d 条结论到 %s（其中 %d 条 single_case，标记为不可泛化）"
-              % (len(lines), target, summary["single_case"]))
+        print("已导出 %d 条新结论到 %s（重复 %d 条；其中新增 single_case %d 条，标记为不可泛化）"
+              % (len(new_lines), target, summary["duplicates"],
+                 sum(1 for line in new_lines if line["not_generalizable"])))
         print("提醒：观察是 E2 来源，进入证据库前仍需具名人工语义审核。")
     return 0

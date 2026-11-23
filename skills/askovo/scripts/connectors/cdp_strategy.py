@@ -522,6 +522,7 @@ class SessionGuard:
         self._circuit_until = 0.0
         self._circuit_reason = ""
         self._stopped = ""
+        self._metrics: Dict[str, Any] = {}
 
     # -- budget / clocks ---------------------------------------------------
     def elapsed_seconds(self) -> float:
@@ -655,6 +656,15 @@ class SessionGuard:
     def record_stop(self, reason: str) -> None:
         self._stopped = str(reason)
 
+    def record_metric(self, name: str, value: Any) -> None:
+        """Attach a run measurement (rounds, extracts, waits) to the journal.
+
+        Metrics are evidence about the cell's cost, not about the platform:
+        they let the next run see whether a timeout came from DOM growth or
+        from network stalls.
+        """
+        self._metrics[str(name)] = value
+
     # -- journal -----------------------------------------------------------
     def _wall_iso(self) -> str:
         return datetime.fromtimestamp(self._wall_clock(), tz=timezone.utc).isoformat()
@@ -677,6 +687,7 @@ class SessionGuard:
             "timeouts": list(self._timeouts),
             "modes": list(self._modes),
             "stopped": self._stopped,
+            "metrics": dict(self._metrics),
         }
 
     def save(self, path: Optional[Path] = None) -> Path:

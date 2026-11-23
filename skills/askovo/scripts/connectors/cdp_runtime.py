@@ -160,6 +160,7 @@ def bounded_load_more(
     burst: int = 3,
     pause_seconds: float = 1.0,
     sleep: Callable[[float], None] = time.sleep,
+    initial_rows: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Click "load more" in bounded bursts until the list stops growing.
 
@@ -167,8 +168,11 @@ def bounded_load_more(
     returns a plausible but partial list. Click a small burst, re-extract, stop
     when the row count stops growing or the button disappears, and cap total
     clicks. Returns ``{"clicks": int, "rows": int, "stopped": "cap"|"stalled"|"no_more"}``.
+
+    ``initial_rows`` lets a caller that already took a snapshot skip the extra
+    full extraction at the top of the loop.
     """
-    rows = count()
+    rows = count() if initial_rows is None else max(0, int(initial_rows))
     clicks = 0
     while clicks < max_clicks:
         clicked = False

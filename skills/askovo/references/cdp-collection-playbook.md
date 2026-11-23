@@ -72,6 +72,20 @@ demands interaction, stop and let the human finish it, then rerun. Never
 solve, spoof, or proxy around a challenge. (`collect_cdp_kickstarter.py`
 implements exactly this with `--challenge-wait`.)
 
+### Waiting is a ceiling, not a schedule
+
+- **Poll for the state you need, then continue.** The configured window
+  (`--render-wait`, `--challenge-wait`) is the maximum, not a fixed cost. A
+  `sleep` pays the slowest render on every run and blurs "slow" with "never
+  ready"; a poll returns the moment the condition holds and still stops at the
+  same ceiling.
+- **Ask the DOM only for what is new.** Discord extraction skips ids already
+  absorbed (bounded to the last 800); Kickstarter comment expansion reads only
+  the appended tail. Re-extracting the whole list every round makes each round
+  cost O(total rows), which is what turns a long harvest into a timeout.
+- **Probing is read-only.** A poll evaluates selectors and `readyState` and
+  dispatches no input events, so waiting cannot look like interaction.
+
 ### Lazy loading: real input events, not property writes
 
 - **Discord history only loads on real wheel events.** Setting

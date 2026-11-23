@@ -40,7 +40,7 @@ SITEMAP_EXEMPT = {"404.html"}
 ALLOW_NOINDEX: set[str] = set()
 # Deployment acceptance: key pages must contain these strings once live.
 REQUIRED_MARKERS: dict[str, tuple[str, ...]] = {
-    "index.html": ("看一个具体需求判断",),
+    "index.html": ("让好产品，从定量推演中长出来",),
     "guides/need-validation.html": ("E2", "说了不算，做了才算"),
     "faq.html": ("用户说想要，就算需求吗？",),
 }

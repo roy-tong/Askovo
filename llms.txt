@@ -1,6 +1,6 @@
 # Askovo
 
-Bring one product decision and the material behind it. Review the sources and counterexamples with the person who owns the decision. If the evidence falls short, Askovo lists what to collect. Reopen the same decision when new evidence arrives.
+Bring one product decision and the material behind it. Askovo organizes supporting evidence, counterexamples and open gaps into a Decision Brief. The decision owner chooses whether to proceed, wait or stop; new evidence can reopen the decision without rewriting its history.
 
 OVO family boundary: Prove Anything is the family-level result-proof protocol candidate; an agent saying “done” remains a claim to verify. Verified Capability Factory is a gated research candidate, not an Askovo dependency. Askovo works independently and keeps its canonical research chain, evidence limits and human decisions; family-level proof never upgrades them into market, commercial or causal truth.
 
@@ -27,6 +27,7 @@ Stable raw base: https://raw.githubusercontent.com/roy-tong/askovo/main/
 - [Product reasoning protocol](skills/askovo/references/product-reasoning.md): canonical seven-node schema, rationale/alternative/review rules, evidence joins, and independent delivery/outcome/causal states.
 - [Agent runbook](skills/askovo/references/agent-runbook.md): file-level execution steps, stage gates, and inter-agent handoff format.
 - [README quickstart](README.md): 30-second sample and the chain → evidence → judgment → audit → role-deliverable walkthrough (English; full Chinese mirror in [README.zh-CN.md](README.zh-CN.md)).
+- [Decision replay proof and task template](https://roy-tong.github.io/Askovo/en/examples/decision-replay.html): how a registered counterexample triggers safe hold while preserving the earlier record.
 
 ## Interfaces
 
