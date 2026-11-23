@@ -351,19 +351,20 @@ def cmd_export(args: argparse.Namespace) -> int:
         return (str(line.get("observation_id") or ""),
                 str(line.get("claim_id") or ""), str(line.get("source_hash") or ""))
 
-    existing = set()
-    if target.is_file():
-        for raw in target.read_text(encoding="utf-8").splitlines():
-            if raw.strip():
-                item = json.loads(raw)
-                if isinstance(item, dict):
-                    existing.add(identity(item))
-    new_lines = [line for line in lines if identity(line) not in existing]
-    if new_lines:
-        payload = "".join(json.dumps(line, ensure_ascii=False, sort_keys=True) + "\n"
-                          for line in new_lines)
-        repository = study_context.StudyRepository(study)
-        with repository.transaction("observation export") as txn:
+    repository = study_context.StudyRepository(study)
+    new_lines = []
+    with repository.transaction("observation export") as txn:
+        existing = set()
+        if target.is_file():
+            for raw in target.read_text(encoding="utf-8").splitlines():
+                if raw.strip():
+                    item = json.loads(raw)
+                    if isinstance(item, dict):
+                        existing.add(identity(item))
+        new_lines = [line for line in lines if identity(line) not in existing]
+        if new_lines:
+            payload = "".join(json.dumps(line, ensure_ascii=False, sort_keys=True) + "\n"
+                              for line in new_lines)
             txn.add(target, payload, mode="append")
             txn.commit()
     summary = {

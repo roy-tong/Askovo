@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -49,16 +50,19 @@ class StudyContextTests(unittest.TestCase):
         self.evidence = self.study / "evidence.jsonl"
         self.evidence.write_text('{"record_id":"r1","value":1}\n', encoding="utf-8")
 
-    def test_one_active_snapshot_survives_external_rewrite(self):
+    def test_active_request_rejects_external_rewrite(self):
+        import write_integrity
         _, StudyContext, StudyRepository, current_study_context = _api()
         context = StudyContext(StudyRepository(self.study))
-        with context.activate():
-            self.assertIs(context, current_study_context())
-            first = context.read_jsonl(self.evidence)
-            self.evidence.write_text('{"record_id":"r2","value":2}\n', encoding="utf-8")
-            second = context.read_jsonl(self.evidence)
-        self.assertEqual(first, second)
-        self.assertEqual("r1", second[0]["record_id"])
+        with self.assertRaises(write_integrity.IntegrityError) as raised:
+            with context.activate():
+                self.assertIs(context, current_study_context())
+                context.read_jsonl(self.evidence)
+                before = self.evidence.stat()
+                self.evidence.write_text('{"record_id":"r2","value":2}\n', encoding="utf-8")
+                os.utime(self.evidence, (before.st_atime, before.st_mtime))
+                context.read_jsonl(self.evidence)
+        self.assertEqual("STALE_SOURCE", raised.exception.code)
         self.assertIsNone(current_study_context())
         with StudyContext(StudyRepository(self.study)).activate() as fresh:
             self.assertEqual("r2", fresh.read_jsonl(self.evidence)[0]["record_id"])
@@ -72,6 +76,32 @@ class StudyContextTests(unittest.TestCase):
         self.evidence.write_text('{"record_id":"r1"}\nnot-json\n', encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "line 2"):
             StudyContext(StudyRepository(self.study)).read_jsonl(self.evidence)
+
+    def test_jsonl_nested_rows_are_isolated_from_caller_mutation(self):
+        _, StudyContext, StudyRepository, _ = _api()
+        self.evidence.write_text(
+            '{"record_id":"r1","claims":[{"statement":"original"}]}\n', encoding="utf-8")
+        context = StudyContext(StudyRepository(self.study))
+        rows = context.read_jsonl(self.evidence)
+        rows[0]["claims"][0]["statement"] = "caller-mutated"
+        self.assertEqual(
+            "original", context.read_jsonl(self.evidence)[0]["claims"][0]["statement"])
+
+    def test_request_snapshot_survives_cache_capacity_and_external_rewrite(self):
+        _, StudyContext, StudyRepository, _ = _api()
+        paths = []
+        for index in range(33):
+            path = self.study / ("snapshot-%02d.json" % index)
+            path.write_text(json.dumps({"version": "old", "index": index}), encoding="utf-8")
+            paths.append(path)
+        context = StudyContext(StudyRepository(self.study))
+        first = context.read_json(paths[0])
+        for path in paths[1:]:
+            context.read_json(path)
+        paths[0].write_text(json.dumps({"version": "new", "index": 0}), encoding="utf-8")
+        second = context.read_json(paths[0])
+        self.assertEqual(first, second)
+        self.assertEqual("old", second["version"])
 
     def test_json_reads_return_deep_copies(self):
         _, StudyContext, StudyRepository, _ = _api()
@@ -91,27 +121,51 @@ class StudyContextTests(unittest.TestCase):
 
 
 class StudyContextIntegrationTests(unittest.TestCase):
-    def test_audit_and_deliver_use_one_snapshot_but_next_request_reloads(self):
+    def test_audit_and_deliver_reject_external_rewrite(self):
         import shutil
-        from unittest import mock
+        import write_integrity
         from tests.test_jsonl_parse_cache import askovo, SAMPLE
         _, StudyContext, StudyRepository, _ = _api()
         with tempfile.TemporaryDirectory() as directory:
             study = Path(directory) / "study"
             shutil.copytree(SAMPLE, study)
             evidence = study / "02-data/evidence.jsonl"
-            original = evidence.read_text(encoding="utf-8")
-            expected = sum(1 for line in original.splitlines() if line.strip())
             first_context = StudyContext(StudyRepository(study))
-            with first_context.activate():
-                audit = askovo.audit_study(study, "full")
-                evidence.write_text("", encoding="utf-8")
-                result = askovo.sure_engine.deliver(study, "plan", audit=audit)
-            self.assertEqual(expected, result["evidence_count"])
+            with self.assertRaises(write_integrity.IntegrityError) as raised:
+                with first_context.activate():
+                    audit = askovo.audit_study(study, "full")
+                    evidence.write_text("", encoding="utf-8")
+                    askovo.sure_engine.deliver(study, "plan", audit=audit)
+            self.assertEqual("STALE_SOURCE", raised.exception.code)
             second_context = StudyContext(StudyRepository(study))
             with second_context.activate():
                 second = askovo.sure_engine.deliver(study, "plan", audit=audit)
             self.assertEqual(0, second["evidence_count"])
+
+    def test_multi_file_commit_cannot_mix_old_study_with_new_evidence(self):
+        import write_integrity
+        _, StudyContext, StudyRepository, _ = _api()
+        with tempfile.TemporaryDirectory() as directory:
+            study = Path(directory) / "study"
+            study.mkdir()
+            study_file = study / "study.json"
+            evidence = study / "evidence.jsonl"
+            study_file.write_text('{"decision":{"question":"old"}}', encoding="utf-8")
+            evidence.write_text('{"record_id":"r1","value":1}\n', encoding="utf-8")
+            repository = StudyRepository(study)
+            context = StudyContext(repository)
+            with self.assertRaises(write_integrity.IntegrityError) as raised:
+                with context.activate():
+                    self.assertEqual("old", context.read_json(study_file)["decision"]["question"])
+                    with repository.transaction("test multi-file commit") as txn:
+                        txn.add(study_file, '{"decision":{"question":"new"}}')
+                        txn.add(evidence, '{"record_id":"r2","value":2}\n')
+                        txn.commit()
+                    self.assertEqual("r2", context.read_jsonl(evidence)[0]["record_id"])
+            self.assertEqual("STALE_SOURCE", raised.exception.code)
+            with StudyContext(repository).activate() as fresh:
+                self.assertEqual("new", fresh.read_json(study_file)["decision"]["question"])
+                self.assertEqual("r2", fresh.read_jsonl(evidence)[0]["record_id"])
 
     def test_legacy_cache_is_bounded(self):
         from tests.test_jsonl_parse_cache import askovo
