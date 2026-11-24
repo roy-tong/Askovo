@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Corpus-bound semantic candidates: `04-findings/semantic-candidates.json` now carries a `corpus_snapshot` over every record id + text hash. New counter-evidence or an edited record makes review/export fail with `STALE_CORPUS`; `askovo semantic export --against-snapshot <hash>` allows a clearly labelled historical export.
+- Semantic support sidecar: `askovo semantic support` records `supported|partial|unsupported|contradicted`, context integrity, generalization risk, independent sources, checker and a named reviewer. `contradicted` blocks export, `unsupported` needs an explicit named override, `partial` exports with a warning; the sidecar binds to the current candidate + critic hashes and never assigns E0–E5.
+- Host Agent semantic mode: `askovo analyze --semantic --semantic-provider host` writes `04-findings/semantic-host-request.json`; `askovo semantic import` validates nonce, schema, exact quotes, record ids and forbidden conclusion fields, generates candidate ids/hashes locally, and still requires named review before export.
+
+### Tests
+
+- 8 new semantic regressions cover added counter-evidence, historical snapshots, contradicted/unsupported/partial support, host import and forbidden host fields.
+
 ## 2.23.0 — 2026-11-24
 
 ### Added
