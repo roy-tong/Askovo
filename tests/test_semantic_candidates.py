@@ -482,6 +482,90 @@ class ReviewExportTests(SemanticFixture):
                 study, candidate_id, "accept", reviewer="alice")
         self.assertEqual("STALE_SOURCE", caught.exception.reason_code)
 
+    def test_contradicted_support_blocks_export(self) -> None:
+        study = self.make_study()
+        self.run_offline(study)
+        candidate_id = self.first_candidate(study)
+        semantic_candidates.review_candidate(
+            study, candidate_id, "accept", reviewer="alice", note="quotes checked")
+        semantic_candidates.assess_support(
+            study, candidate_id, entailment="contradicted", context_intact=False,
+            generalization_risk="high", reviewer="alice", checker="human",
+            note="R02 says the opposite")
+        store = study / "01-sources" / "semantic-observations"
+        result = semantic_candidates.export_observations(study, store, by="alice")
+        self.assertEqual(0, result["exported_count"])
+        self.assertEqual(1, result["support"]["contradicted"])
+        self.assertIn("contradicted", result["skipped"][0]["reason"])
+
+    def test_unsupported_support_needs_a_named_override(self) -> None:
+        study = self.make_study()
+        self.run_offline(study)
+        candidate_id = self.first_candidate(study)
+        semantic_candidates.review_candidate(
+            study, candidate_id, "accept", reviewer="alice", note="quotes checked")
+        with self.assertRaises(semantic_candidates.SemanticError):
+            semantic_candidates.assess_support(
+                study, candidate_id, entailment="unsupported", context_intact=True,
+                generalization_risk="medium", reviewer="alice")
+        semantic_candidates.assess_support(
+            study, candidate_id, entailment="unsupported", context_intact=True,
+            generalization_risk="medium", reviewer="alice", override=True,
+            note="quotes are adjacent but do not entail the stronger claim")
+        store = study / "01-sources" / "semantic-observations"
+        result = semantic_candidates.export_observations(study, store, by="alice")
+        self.assertEqual(1, result["exported_count"])
+        exported = json.loads((store / (result["exported"][0]["observation_id"] + ".json"))
+                              .read_text(encoding="utf-8"))
+        self.assertEqual("unsupported",
+                         exported["semantic_provenance"]["support"])
+
+    def test_partial_support_exports_with_a_warning(self) -> None:
+        study = self.make_study()
+        self.run_offline(study)
+        candidate_id = self.first_candidate(study)
+        semantic_candidates.review_candidate(
+            study, candidate_id, "accept", reviewer="alice", note="quotes checked")
+        semantic_candidates.assess_support(
+            study, candidate_id, entailment="partial", context_intact=True,
+            generalization_risk="low", reviewer="alice", note="one quote only")
+        store = study / "01-sources" / "semantic-observations"
+        result = semantic_candidates.export_observations(study, store, by="alice")
+        self.assertEqual(1, result["exported_count"])
+        self.assertEqual(1, len(result["support_warnings"]))
+
+    def test_added_counterevidence_blocks_export_until_historical_snapshot(self) -> None:
+        study = self.make_study()
+        self.run_offline(study)
+        candidate_id = self.first_candidate(study)
+        semantic_candidates.review_candidate(
+            study, candidate_id, "accept", reviewer="alice", note="quotes checked")
+        declared = semantic_candidates.load_candidates(study)["corpus_snapshot"]
+        path = study / "02-data" / "evidence.jsonl"
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        rows.append({
+            "record_id": "R05", "platform": "forum", "evidence_level": "E1",
+            "created_at": "2026-04-01T00:00:00Z", "source_url": "https://example.com/5",
+            "text": "Later users say night alerts are useful and should stay on.",
+        })
+        path.write_text("\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n",
+                        encoding="utf-8")
+        with self.assertRaises(semantic_candidates.SemanticError) as caught:
+            semantic_candidates.review_candidate(
+                study, candidate_id, "accept", reviewer="alice", note="quotes checked")
+        self.assertEqual("STALE_SOURCE", caught.exception.reason_code)
+        store = study / "01-sources" / "semantic-observations"
+        with self.assertRaises(semantic_candidates.SemanticError) as caught:
+            semantic_candidates.export_observations(study, store, by="alice")
+        self.assertEqual("STALE_CORPUS", caught.exception.reason_code)
+        historical = semantic_candidates.export_observations(
+            study, store, by="alice", against_snapshot=declared["records_sha256"])
+        self.assertTrue(historical["historical_corpus"])
+        self.assertEqual(1, historical["exported_count"])
+        exported = json.loads((store / (historical["exported"][0]["observation_id"] + ".json"))
+                              .read_text(encoding="utf-8"))
+        self.assertEqual("historical", exported["semantic_provenance"]["corpus_binding"])
+
     def test_export_skips_unreviewed_and_other_reviewers(self) -> None:
         study = self.make_study()
         self.run_offline(study)
@@ -602,6 +686,75 @@ class ReviewExportTests(SemanticFixture):
                    if item["candidate_id"] == candidate_id)
         self.assertEqual("reject", row["review"]["decision"])
         self.assertEqual("alice", row["review"]["reviewer"])
+
+
+class HostModeTests(SemanticFixture):
+    def make_request(self, study: Path) -> dict:
+        report = semantic_candidates.run_semantic_analysis(
+            study, semantic_candidates.load_records(study),
+            provider="host", question="night alerts")
+        self.assertEqual("host_requested", report["status"])
+        return json.loads((study / semantic_candidates.HOST_REQUEST_REL).read_text(encoding="utf-8"))
+
+    def response(self, request: dict, **overrides) -> dict:
+        payload = {
+            "schema": semantic_candidates.HOST_RESPONSE_SCHEMA,
+            "nonce": request["nonce"],
+            "producer_id": "claude-code",
+            "single_agent": False,
+            "candidates": [{
+                "kind": "theme",
+                "statement": "夜间误报让用户主动关闭提醒，而不是把它当作安全功能。",
+                "evidence_refs": [{"record_id": "R01", "quote": "Night alerts wake users"}],
+                "unknowns": ["没有误报率阈值"],
+            }],
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_host_request_import_review_and_export(self) -> None:
+        study = self.make_study()
+        request = self.make_request(study)
+        self.assertFalse((study / semantic_candidates.CANDIDATES_REL).exists())
+        report = semantic_candidates.import_host_response(
+            study, self.response(request), by="alice")
+        self.assertEqual("imported", report["status"])
+        self.assertEqual(1, report["candidates"])
+        listed = semantic_candidates.list_semantics(study)
+        candidate_id = listed["candidates"][0]["candidate_id"]
+        self.assertTrue(candidate_id.startswith("host-"))
+        semantic_candidates.review_candidate(
+            study, candidate_id, "accept", reviewer="alice", note="checked")
+        store = study / "01-sources" / "semantic-observations"
+        exported = semantic_candidates.export_observations(study, store, by="alice")
+        self.assertEqual(1, exported["exported_count"])
+        self.assertEqual("current", exported["corpus_binding"])
+
+    def test_host_import_rejects_quote_mismatch(self) -> None:
+        study = self.make_study()
+        request = self.make_request(study)
+        response = self.response(request)
+        response["candidates"][0]["evidence_refs"][0]["quote"] = "not in the record"
+        with self.assertRaises(semantic_candidates.SemanticError) as caught:
+            semantic_candidates.import_host_response(study, response, by="alice")
+        self.assertEqual("INVALID_RESPONSE", caught.exception.reason_code)
+
+    def test_host_import_rejects_stale_nonce(self) -> None:
+        study = self.make_study()
+        request = self.make_request(study)
+        with self.assertRaises(semantic_candidates.SemanticError) as caught:
+            semantic_candidates.import_host_response(
+                study, self.response(request, nonce="old"), by="alice")
+        self.assertEqual("STALE_SOURCE", caught.exception.reason_code)
+
+    def test_host_import_rejects_forbidden_evidence_fields(self) -> None:
+        study = self.make_study()
+        request = self.make_request(study)
+        response = self.response(request)
+        response["candidates"][0]["evidence_level"] = "E3"
+        with self.assertRaises(semantic_candidates.SemanticError) as caught:
+            semantic_candidates.import_host_response(study, response, by="alice")
+        self.assertEqual("INVALID_RESPONSE", caught.exception.reason_code)
 
 
 class SemanticCliTests(SemanticFixture):

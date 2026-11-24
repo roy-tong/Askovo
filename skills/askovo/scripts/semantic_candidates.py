@@ -34,6 +34,7 @@ import os
 import re
 import sys
 import unicodedata
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -48,6 +49,12 @@ import write_integrity
 SCHEMA = "askovo.semantic-candidate/1"
 CRITIC_SCHEMA = "askovo.semantic-critic/1"
 REPORT_SCHEMA = "askovo.semantic-report/1"
+SUPPORT_SCHEMA = "askovo.semantic-support/1"
+HOST_REQUEST_SCHEMA = "askovo.host-semantic-request/1"
+HOST_RESPONSE_SCHEMA = "askovo.host-semantic-response/1"
+ENTAILMENTS = ("supported", "partial", "unsupported", "contradicted")
+GENERALIZATION_RISKS = ("low", "medium", "high")
+SUPPORT_CHECKERS = ("human", "host", "model")
 GENERATOR = "askovo.semantic"
 GENERATOR_VERSION = "1"
 KINDS = ("theme", "mechanism", "counterexample")
@@ -59,6 +66,8 @@ MAX_REFS_PER_CANDIDATE = 12
 CANDIDATES_REL = Path("04-findings/semantic-candidates.json")
 CANDIDATES_JSONL_REL = Path("04-findings/semantic-candidates.jsonl")
 CRITIC_REL = Path("04-findings/semantic-critic.json")
+SUPPORT_REL = Path("04-findings/semantic-support.json")
+HOST_REQUEST_REL = Path("04-findings/semantic-host-request.json")
 REVIEWS_REL = Path("04-findings/semantic-reviews.jsonl")
 REPORT_REL = Path("04-findings/semantic-report.json")
 MARKDOWN_REL = Path("04-findings/semantic-candidates.md")
@@ -256,6 +265,294 @@ def records_by_id(records: Sequence[Dict[str, Any]]) -> Dict[str, Dict[str, Any]
     return indexed
 
 
+def corpus_snapshot(records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """Content-bound snapshot of the whole corpus, not only the selected batch.
+
+    Hashing ``record_id + text`` catches both new counter-evidence and edits to
+    an existing record whose id stayed the same.
+    """
+    items = []
+    for record in records:
+        rid = record_id(record)
+        if not rid:
+            continue
+        items.append({"record_id": rid, "sha256": _sha(record_text(record))})
+    items.sort(key=lambda row: row["record_id"])
+    times = sorted(value for value in (_record_time(record) for record in records) if value)
+    platforms = sorted({record_platform(record) for record in records
+                        if record_platform(record) not in ("", "unknown")})
+    return {
+        "records_sha256": _sha(_canonical(items)),
+        "record_count": len(items),
+        "collected_from": times[0] if times else "",
+        "collected_to": times[-1] if times else "",
+        "collector_version": GENERATOR_VERSION,
+        "source_platforms": platforms,
+        "computed_at": _now(),
+    }
+
+
+def _record_values(records) -> List[Dict[str, Any]]:
+    if isinstance(records, dict):
+        return list(records.values())
+    return list(records)
+
+
+def _stale_corpus_message(document: Dict[str, Any], records) -> str:
+    declared = document.get("corpus_snapshot")
+    if not isinstance(declared, dict):
+        return ""
+    current = corpus_snapshot(_record_values(records))
+    if (declared.get("records_sha256") != current["records_sha256"]
+            or declared.get("record_count") != current["record_count"]):
+        return ("corpus changed since this candidate document was created: "
+                "declared %s records, current %s records; rerun analyze --semantic "
+                "or export with --against-snapshot <declared hash> for a historical export"
+                % (declared.get("record_count"), current["record_count"]))
+    return ""
+
+
+def host_request(study_dir: Path, records: Sequence[Dict[str, Any]], *,
+                 question: str = "", max_records: int = 120,
+                 retrieval: str = "auto",
+                 text_of: Callable[[Dict[str, Any]], str] = record_text) -> Dict[str, Any]:
+    """Write a host-agent task instead of calling a model endpoint."""
+    study_dir = Path(study_dir).resolve()
+    selected, selection = select_records(
+        records, question, text_of, max_records=max_records, retrieval=retrieval,
+        study_dir=study_dir, allow_external=False)
+    selection.update(selection_summary(selected))
+    snapshot = corpus_snapshot(records)
+    record_ids = [record_id(record) for record in selected]
+    request = {
+        "schema": HOST_REQUEST_SCHEMA,
+        "created_at": _now(),
+        "nonce": uuid.uuid4().hex,
+        "study_id": study_dir.name,
+        "question": question,
+        "producer_id": "host-agent",
+        "corpus_snapshot": snapshot,
+        "input_hash": _sha(_canonical({"question": question, "record_ids": record_ids})),
+        "prompt_hash": _sha("askovo.host-semantic/1"),
+        "selection": selection,
+        "records": [{
+            "record_id": record_id(record),
+            "platform": record_platform(record),
+            "evidence_level": record_level(record),
+            "text": text_of(record),
+        } for record in selected],
+        "limits": {
+            "max_candidates": 40,
+            "max_refs_per_candidate": MAX_REFS_PER_CANDIDATE,
+            "min_statement_chars": MIN_STATEMENT_CHARS,
+        },
+        "response_schema": {
+            "schema": HOST_RESPONSE_SCHEMA,
+            "nonce": "<copy from request>",
+            "producer_id": "<host name>",
+            "single_agent": False,
+            "candidates": [{
+                "kind": "theme|mechanism|counterexample",
+                "statement": "...",
+                "evidence_refs": [{"record_id": "R01", "quote": "exact substring"}],
+                "unknowns": ["..."],
+            }],
+        },
+        "boundary": BOUNDARY,
+    }
+    repository = study_context.StudyRepository(study_dir)
+    try:
+        repository.atomic_write_text(
+            HOST_REQUEST_REL, json.dumps(request, ensure_ascii=False, indent=2) + "\n")
+    except (write_integrity.IntegrityError, OSError) as exc:
+        raise SemanticError("cannot write host semantic request: %s" % exc,
+                            "INTERNAL_ERROR") from exc
+    report = {
+        "schema": REPORT_SCHEMA,
+        "generated_at": _now(),
+        "status": "host_requested",
+        "provider": {"kind": "host", "model": "host-agent", "external": False},
+        "privacy": {"external": False, "authorized": True},
+        "question": question,
+        "records_total": len(records),
+        "selected": len(selected),
+        "selection": selection,
+        "request_path": str(study_dir / HOST_REQUEST_REL),
+        "nonce": request["nonce"],
+        "next": ("让宿主 Agent 读取 %s，写回一个 %s 文件，然后运行 "
+                 "`askovo semantic import STUDY --file RESPONSE --by NAME`."
+                 % (HOST_REQUEST_REL, HOST_RESPONSE_SCHEMA)),
+        "boundary": BOUNDARY,
+    }
+    _write_report(study_dir, report)
+    return report
+
+
+def import_host_response(study_dir: Path, response: Dict[str, Any], *, by: str) -> Dict[str, Any]:
+    """Validate a host response; candidate ids and hashes are generated here."""
+    study_dir = Path(study_dir).resolve()
+    by = str(by or "").strip()
+    if not by:
+        raise SemanticError("a named reviewer is required to import a host response",
+                            "INPUT_REQUIRED")
+    request_path = study_dir / HOST_REQUEST_REL
+    if not request_path.is_file():
+        raise SemanticError("no host request; run `askovo analyze STUDY --semantic "
+                            "--semantic-provider host` first", "INPUT_REQUIRED")
+    try:
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SemanticError("host request is unreadable: %s" % exc, "INTERNAL_ERROR") from exc
+    if not isinstance(response, dict):
+        raise SemanticError("host response must be a JSON object", "INPUT_REQUIRED")
+    if response.get("schema") != HOST_RESPONSE_SCHEMA:
+        raise SemanticError("host response schema must be %r" % HOST_RESPONSE_SCHEMA,
+                            "INPUT_REQUIRED")
+    if str(response.get("nonce") or "") != str(request.get("nonce") or ""):
+        raise SemanticError("host response nonce does not match the request", "STALE_SOURCE")
+    producer = str(response.get("producer_id") or "").strip()
+    if not producer:
+        raise SemanticError("host response needs producer_id", "INPUT_REQUIRED")
+    records = records_by_id(load_records(study_dir))
+    current = corpus_snapshot(list(records.values()))
+    declared = request.get("corpus_snapshot") or {}
+    if (declared.get("records_sha256") != current["records_sha256"]
+            or declared.get("record_count") != current["record_count"]):
+        raise SemanticError("corpus changed since the host request; rerun analyze "
+                            "--semantic --semantic-provider host", "STALE_CORPUS")
+    raw_candidates = response.get("candidates")
+    if not isinstance(raw_candidates, list) or not raw_candidates:
+        raise SemanticError("host response needs a non-empty candidates array",
+                            "INPUT_REQUIRED")
+    candidates = []
+    seen_ids = set()
+    for index, raw in enumerate(raw_candidates):
+        label = "candidates[%d]" % index
+        if not isinstance(raw, dict):
+            raise SemanticError(label + " must be an object", "INVALID_RESPONSE")
+        for forbidden in ("evidence_level", "demand_claim", "validated", "product_reasoning"):
+            if forbidden in raw:
+                raise SemanticError("%s.%s is not allowed" % (label, forbidden),
+                                    "INVALID_RESPONSE")
+        kind = raw.get("kind")
+        if kind not in KINDS:
+            raise SemanticError(label + ".kind must be one of: %s" % ", ".join(KINDS),
+                                "INVALID_RESPONSE")
+        statement = str(raw.get("statement") or "").strip()
+        if len(statement) < MIN_STATEMENT_CHARS:
+            raise SemanticError(label + ".statement is too short", "INVALID_RESPONSE")
+        unknowns = raw.get("unknowns")
+        if not isinstance(unknowns, list) or not unknowns or any(
+                not str(item).strip() for item in unknowns):
+            raise SemanticError(label + ".unknowns must be a non-empty string array",
+                                "INVALID_RESPONSE")
+        refs = raw.get("evidence_refs")
+        if not isinstance(refs, list) or not refs:
+            raise SemanticError(label + ".evidence_refs needs at least one quote",
+                                "INVALID_RESPONSE")
+        if len(refs) > MAX_REFS_PER_CANDIDATE:
+            raise SemanticError(label + ".evidence_refs exceeds the reference cap",
+                                "INVALID_RESPONSE")
+        normalized_refs = []
+        for ref_index, ref in enumerate(refs):
+            ref_label = "%s.evidence_refs[%d]" % (label, ref_index)
+            if not isinstance(ref, dict):
+                raise SemanticError(ref_label + " must be an object", "INVALID_RESPONSE")
+            rid = str(ref.get("record_id") or "").strip()
+            quote = str(ref.get("quote") or "").strip()
+            if rid not in records:
+                raise SemanticError("%s.record_id %r does not exist" % (ref_label, rid),
+                                    "INVALID_RESPONSE")
+            if len(quote) < MIN_QUOTE_CHARS or not quote_matches(quote, record_text(records[rid])):
+                raise SemanticError("%s.quote is not an exact substring of record %r"
+                                    % (ref_label, rid), "INVALID_RESPONSE")
+            normalized_refs.append({
+                "record_id": rid, "quote": quote,
+                "platform": record_platform(records[rid]),
+                "evidence_level": record_level(records[rid]),
+            })
+        candidate_id = _safe_id("host-" + _sha(statement + _canonical(normalized_refs))[:12])
+        if candidate_id in seen_ids:
+            candidate_id = _safe_id(candidate_id + "-" + str(index + 1))
+        seen_ids.add(candidate_id)
+        candidates.append({
+            "candidate_id": candidate_id,
+            "kind": kind,
+            "statement": statement,
+            "evidence_refs": normalized_refs,
+            "unknowns": [str(item).strip() for item in unknowns],
+            "status": STATUS,
+            "model": "host:" + producer,
+            "prompt_hash": request.get("prompt_hash") or "",
+            "input_hash": request.get("input_hash") or "",
+        })
+    selected_records = [records[rid] for rid in
+                        [row.get("record_id") for row in request.get("records") or []]
+                        if rid in records]
+    critic_entries = {}
+    for candidate in candidates:
+        critique = deterministic_critique(candidate, selected_records or list(records.values()),
+                                          record_text)
+        critique["status"] = "deterministic_only"
+        critique["producer_id"] = "askovo.deterministic-critic"
+        critic_entries[candidate["candidate_id"]] = critique
+    critic = {
+        "schema": CRITIC_SCHEMA,
+        "generated_at": _now(),
+        "status": "deterministic_only",
+        "corpus_sha256": declared.get("records_sha256") or "",
+        "candidates": critic_entries,
+        "boundary": "宿主候选仍需对抗复核与具名人工审核；deterministic critic 只列反例与缺口。",
+    }
+    document = {
+        "schema": SCHEMA,
+        "generator": GENERATOR,
+        "generator_version": GENERATOR_VERSION,
+        "origin": "host",
+        "host_producer": producer,
+        "model": "host:" + producer,
+        "prompt_hash": request.get("prompt_hash") or "",
+        "input_hash": request.get("input_hash") or "",
+        "created_at": _now(),
+        "question": request.get("question") or "",
+        "records": len(selected_records),
+        "corpus_snapshot": declared,
+        "single_agent": bool(response.get("single_agent")),
+        "status": "unverified",
+        "candidates": candidates,
+        "boundary": BOUNDARY,
+    }
+    errors = validate_candidate_document(document, records)
+    if errors:
+        raise SemanticError("imported candidate document failed validation: "
+                            + "; ".join(errors[:5]), "INVALID_RESPONSE")
+    report = {
+        "schema": REPORT_SCHEMA,
+        "generated_at": _now(),
+        "status": "imported",
+        "provider": {"kind": "host", "model": "host:" + producer, "external": False},
+        "privacy": {"external": False, "authorized": True},
+        "question": document["question"],
+        "records_total": len(records),
+        "selected": len(selected_records),
+        "candidates": len(candidates),
+        "producer_id": producer,
+        "single_agent": bool(response.get("single_agent")),
+        "imported_by": by,
+        "validation_errors": [],
+        "files": {
+            "candidates": str(study_dir / CANDIDATES_REL),
+            "critic": str(study_dir / CRITIC_REL),
+            "markdown": str(study_dir / MARKDOWN_REL),
+        },
+        "next": ("候选未验证：先读 critic，再运行 `askovo semantic review STUDY "
+                 "--candidate ID --decision accept|reject --reviewer NAME`。"),
+        "boundary": BOUNDARY,
+    }
+    _write_outputs(study_dir, document, critic, report)
+    return report
+
+
 # --------------------------------------------------------------------------- #
 # Schema and evidence-reference validation
 
@@ -321,12 +618,16 @@ def validate_candidate(candidate: Dict[str, Any], records: Dict[str, Dict[str, A
 
 
 def validate_candidate_document(document: Dict[str, Any],
-                                records: Dict[str, Dict[str, Any]]) -> List[str]:
+                                records: Dict[str, Dict[str, Any]],
+                                *, allow_stale_corpus: bool = False) -> List[str]:
     errors: List[str] = []
     if not isinstance(document, dict):
         return ["candidate document must be a JSON object"]
     if document.get("schema") != SCHEMA:
         errors.append("schema must be %r" % SCHEMA)
+    stale = _stale_corpus_message(document, records)
+    if stale and not allow_stale_corpus:
+        errors.append(stale)
     for field in ("model", "prompt_hash", "input_hash", "created_at"):
         if not str(document.get(field) or "").strip():
             errors.append("%s must be a non-empty string" % field)
@@ -1198,6 +1499,10 @@ def run_semantic_analysis(study_dir: Path, records: Sequence[Dict[str, Any]], *,
     study_dir = Path(study_dir).resolve()
     if batch_size < 1:
         raise SemanticError("batch_size must be >= 1", "INPUT_REQUIRED")
+    if provider == "host":
+        return host_request(study_dir, records, question=question,
+                            max_records=max_records, retrieval=retrieval,
+                            text_of=text_of)
     provider_instance, provider_meta = provider_from_environment(
         provider, allow_external=allow_external)
     if provider_instance is None:
@@ -1281,10 +1586,12 @@ def run_semantic_analysis(study_dir: Path, records: Sequence[Dict[str, Any]], *,
     critic_status = "deterministic_only"
     if any(item.get("status", "").startswith("model") for item in critic_entries.values()):
         critic_status = "partial" if critic_errors else "model+deterministic"
+    snapshot = corpus_snapshot(records)
     critic = {
         "schema": CRITIC_SCHEMA,
         "generated_at": _now(),
         "status": critic_status,
+        "corpus_sha256": snapshot["records_sha256"],
         "candidates": critic_entries,
         "boundary": ("Critic 输出同样是候选：反例、覆盖缺口和替代解释都要人工判断；"
                      "自动扫描不证明主题为假。"),
@@ -1299,6 +1606,7 @@ def run_semantic_analysis(study_dir: Path, records: Sequence[Dict[str, Any]], *,
         "created_at": _now(),
         "question": question,
         "records": len(selected),
+        "corpus_snapshot": snapshot,
         "status": "unverified",
         "candidates": candidates,
         "boundary": BOUNDARY,
@@ -1478,6 +1786,110 @@ def review_state(reviews: Sequence[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]
     return latest
 
 
+def load_support(study_dir: Path) -> Dict[str, Any]:
+    path = Path(study_dir).resolve() / SUPPORT_REL
+    if not path.is_file():
+        return {"schema": SUPPORT_SCHEMA, "candidates": {}}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SemanticError("semantic support file is unreadable: %s" % exc,
+                            "INTERNAL_ERROR") from exc
+    if not isinstance(payload, dict):
+        raise SemanticError("semantic support file is not an object", "INTERNAL_ERROR")
+    payload.setdefault("candidates", {})
+    return payload
+
+
+def assess_support(study_dir: Path, candidate_id: str, *,
+                   entailment: str, context_intact: bool, generalization_risk: str,
+                   reviewer: str, checker: str = "human", note: str = "",
+                   override: bool = False) -> Dict[str, Any]:
+    """Record whether the cited quotes actually support the candidate claim.
+
+    This is a human/host judgement sidecar.  It never assigns E0-E5 levels and
+    never rewrites the candidate; it binds to the current candidate + critic
+    hashes so a changed revision cannot inherit an old support verdict.
+    """
+    study_dir = Path(study_dir).resolve()
+    entailment = str(entailment or "").strip()
+    generalization_risk = str(generalization_risk or "").strip()
+    checker = str(checker or "").strip()
+    reviewer = str(reviewer or "").strip()
+    if entailment not in ENTAILMENTS:
+        raise SemanticError("entailment must be one of: %s" % ", ".join(ENTAILMENTS),
+                            "INPUT_REQUIRED")
+    if generalization_risk not in GENERALIZATION_RISKS:
+        raise SemanticError("generalization_risk must be one of: %s"
+                            % ", ".join(GENERALIZATION_RISKS), "INPUT_REQUIRED")
+    if checker not in SUPPORT_CHECKERS:
+        raise SemanticError("checker must be one of: %s" % ", ".join(SUPPORT_CHECKERS),
+                            "INPUT_REQUIRED")
+    if not reviewer:
+        raise SemanticError("a named reviewer is required for a support assessment",
+                            "INPUT_REQUIRED")
+    if entailment == "contradicted" and override:
+        raise SemanticError("contradicted support cannot be overridden; fix the claim or reject it",
+                            "INPUT_REQUIRED")
+    if entailment == "unsupported" and not override:
+        raise SemanticError("unsupported support needs --override and a note from a named reviewer",
+                            "INPUT_REQUIRED")
+    document = load_candidates(study_dir)
+    candidate = next((item for item in document.get("candidates") or []
+                      if item.get("candidate_id") == candidate_id), None)
+    if candidate is None:
+        raise SemanticError("unknown candidate %r" % candidate_id, "INPUT_REQUIRED",
+                            "run `askovo semantic list STUDY`")
+    critic = load_critic(study_dir)
+    critique = (critic.get("candidates") or {}).get(candidate_id)
+    if not critique:
+        raise SemanticError("candidate has no critic pass; run analyze --semantic first",
+                            "REVIEW_REQUIRED")
+    refs = candidate.get("evidence_refs") or []
+    support = {
+        "entailment": entailment,
+        "context_intact": bool(context_intact),
+        "generalization_risk": generalization_risk,
+        "independent_sources": len({ref.get("record_id") for ref in refs
+                                    if ref.get("record_id")}),
+        "independent_platforms": len({ref.get("platform") or "unknown" for ref in refs}),
+        "checker": checker,
+        "checked_at": _now(),
+        "notes": str(note or "").strip(),
+        "override": bool(override),
+        "reviewer": reviewer,
+        "evidence_refs": [{"record_id": ref.get("record_id"),
+                           "quote": ref.get("quote")} for ref in refs],
+    }
+    payload = load_support(study_dir)
+    payload["candidates"][candidate_id] = {
+        "candidate_hash": _sha(_canonical(candidate)),
+        "critic_hash": _sha(_canonical(critique)),
+        "support": support,
+    }
+    repository = study_context.StudyRepository(study_dir)
+    try:
+        repository.atomic_write_text(
+            SUPPORT_REL, json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    except (write_integrity.IntegrityError, OSError) as exc:
+        raise SemanticError("cannot write semantic support: %s" % exc,
+                            "INTERNAL_ERROR") from exc
+    return {"candidate_id": candidate_id, "status": "recorded", "support": support}
+
+
+def support_for(document: Dict[str, Any], candidate: Dict[str, Any],
+                critique: Dict[str, Any], support_doc: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    candidate_id = str(candidate.get("candidate_id") or "")
+    entry = (support_doc.get("candidates") or {}).get(candidate_id)
+    if not isinstance(entry, dict):
+        return None
+    if str(entry.get("candidate_hash") or "") != _sha(_canonical(candidate)):
+        return None
+    if str(entry.get("critic_hash") or "") != _sha(_canonical(critique)):
+        return None
+    return entry.get("support") if isinstance(entry.get("support"), dict) else None
+
+
 def list_semantics(study_dir: Path) -> Dict[str, Any]:
     document = load_candidates(study_dir)
     critic = load_critic(study_dir)
@@ -1608,7 +2020,8 @@ def _study_product(study_dir: Path) -> str:
 
 
 def export_observations(study_dir: Path, store_dir: Path, *, by: str,
-                        product: str = "", region: str = "") -> Dict[str, Any]:
+                        product: str = "", region: str = "",
+                        against_snapshot: str = "") -> Dict[str, Any]:
     study_dir = Path(study_dir).resolve()
     store_dir = Path(store_dir)
     by = str(by or "").strip()
@@ -1616,14 +2029,31 @@ def export_observations(study_dir: Path, store_dir: Path, *, by: str,
         raise SemanticError("a named reviewer is required for export", "INPUT_REQUIRED")
     document = load_candidates(study_dir)
     records = records_by_id(load_records(study_dir))
-    errors = validate_candidate_document(document, records)
+    declared = document.get("corpus_snapshot") or {}
+    current = corpus_snapshot(list(records.values()))
+    historical = False
+    if declared and declared.get("records_sha256") != current["records_sha256"]:
+        if str(against_snapshot or "") != str(declared.get("records_sha256") or ""):
+            raise SemanticError(
+                "corpus changed since this candidate document was created; "
+                "rerun analyze --semantic, or export with --against-snapshot %s "
+                "for a clearly labelled historical export"
+                % (declared.get("records_sha256") or "<missing>"),
+                "STALE_CORPUS")
+        historical = True
+    errors = validate_candidate_document(document, records, allow_stale_corpus=historical)
     if errors:
         raise SemanticError("candidate document is stale or invalid: " + "; ".join(errors[:5]),
                             "STALE_SOURCE")
+    corpus_binding = "historical" if historical else ("current" if declared else "legacy_unbound")
     critic = load_critic(study_dir)
+    support_doc = load_support(study_dir)
     latest = review_state(load_reviews(study_dir))
     exported: List[Dict[str, Any]] = []
     skipped: List[Dict[str, Any]] = []
+    support_counts = {key: 0 for key in ("supported", "partial", "unsupported",
+                                         "contradicted", "not_assessed")}
+    support_warnings: List[Dict[str, Any]] = []
     product_name = str(product or "").strip() or _study_product(study_dir)
     for candidate in document.get("candidates") or []:
         candidate_id = candidate["candidate_id"]
@@ -1651,6 +2081,21 @@ def export_observations(study_dir: Path, store_dir: Path, *, by: str,
             skipped.append({"candidate_id": candidate_id,
                             "reason": "stale critic revision; review the current critic again"})
             continue
+        support = support_for(document, candidate, critique, support_doc)
+        support_status = (support or {}).get("entailment") or "not_assessed"
+        support_counts[support_status] += 1
+        if support_status == "contradicted":
+            skipped.append({"candidate_id": candidate_id,
+                            "reason": "support is contradicted by the cited records"})
+            continue
+        if support_status == "unsupported" and not (support or {}).get("override"):
+            skipped.append({"candidate_id": candidate_id,
+                            "reason": "support is unsupported; a named override is required"})
+            continue
+        if support_status == "partial":
+            support_warnings.append({"candidate_id": candidate_id,
+                                     "reason": "support is partial",
+                                     "note": (support or {}).get("notes") or ""})
         needs = list(candidate.get("unknowns") or [])
         for item in critique.get("needs_more_evidence") or []:
             if item not in needs:
@@ -1707,6 +2152,11 @@ def export_observations(study_dir: Path, store_dir: Path, *, by: str,
                 "prompt_hash": candidate.get("prompt_hash") or document.get("prompt_hash"),
                 "critic_status": critique.get("status") or "missing",
                 "review_note": review.get("note") or "",
+                "corpus_sha256": declared.get("records_sha256") or "",
+                "corpus_binding": corpus_binding,
+                "support": support_status,
+                "support_note": (support or {}).get("notes") or "",
+                "support_checker": (support or {}).get("checker") or "",
             },
         }
         doc_errors = observation.validate_observation(doc)
@@ -1738,8 +2188,14 @@ def export_observations(study_dir: Path, store_dir: Path, *, by: str,
         "exported_count": len(exported),
         "skipped": skipped,
         "store": str(store_dir),
+        "corpus_binding": corpus_binding,
+        "corpus_snapshot": declared,
+        "historical_corpus": historical,
+        "support": support_counts,
+        "support_warnings": support_warnings,
         "next": ("askovo observation export --store %s --study %s" % (store_dir, study_dir)),
-        "note": "E2 上限；一条已审核的语料陈述，仍需人工语义审核后才能进入 evidence.jsonl。",
+        "note": ("E2 上限；一条已审核的语料陈述，仍需人工语义审核后才能进入 evidence.jsonl。"
+                 + (" 本次是针对历史语料的导出，不是最新语料结论。" if historical else "")),
     }
 
 
@@ -1788,13 +2244,47 @@ def cmd_review(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_support(args: argparse.Namespace) -> int:
+    try:
+        payload = assess_support(
+            Path(args.study_dir), args.candidate,
+            entailment=args.entailment,
+            context_intact=args.context == "intact",
+            generalization_risk=args.generalization_risk,
+            reviewer=args.reviewer, checker=args.checker,
+            note=args.note or "", override=bool(args.override))
+    except SemanticError as exc:
+        print("ERROR: %s%s" % (exc, ("\n" + exc.suggestion) if exc.suggestion else ""),
+              file=sys.stderr)
+        return 2
+    _print(payload, bool(getattr(args, "json", False)))
+    return 0
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    try:
+        response = json.loads(Path(args.file).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print("ERROR: %s" % exc, file=sys.stderr)
+        return 2
+    try:
+        payload = import_host_response(Path(args.study_dir), response, by=args.by)
+    except SemanticError as exc:
+        print("ERROR: %s%s" % (exc, ("\n" + exc.suggestion) if exc.suggestion else ""),
+              file=sys.stderr)
+        return 2
+    _print(payload, bool(getattr(args, "json", False)))
+    return 0
+
+
 def cmd_export(args: argparse.Namespace) -> int:
     import observation as observation_module
     target = Path(args.study_dir) / EXPORT_DIR_REL
     store = Path(args.store) if args.store else target
     try:
         payload = export_observations(Path(args.study_dir), store, by=args.by,
-                                      product=args.product or "", region=args.region or "")
+                                      product=args.product or "", region=args.region or "",
+                                      against_snapshot=getattr(args, "against_snapshot", "") or "")
     except SemanticError as exc:
         print("ERROR: %s" % exc, file=sys.stderr)
         return 2
