@@ -52,6 +52,8 @@ askovo case list
 
 撤销保留原文，但不再参与分析、需求判断或审计；恢复同样保留原文。E3 纠错必须提供有效概念测试。BRD 会投影最新 DecisionRecord，不代表执行或商业验收已完成。详见 [CLI 参考](docs/cli.md)。
 
+所有外部平台通过 `.askovo/account-quotas.json` 持久记录账号身份、等级和可选的 `collect` 日上限。直接采集、轮转和队列跨进程、跨对话共用这份策略；发帖额度不会冒充采集额度，未知等级和限额保持未知。详见 [平台与连接器](docs/connectors.md)。
+
 ## 运行产品推理样例
 
 ```bash

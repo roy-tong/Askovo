@@ -66,6 +66,64 @@ class QueueStoreTests(unittest.TestCase):
             next_at = conn.execute("SELECT next_at FROM rate_state WHERE platform='reddit'").fetchone()[0]
         self.assertEqual(130.0, next_at)
 
+    def test_daily_account_quota_is_persistent_and_scoped_by_account(self) -> None:
+        with mock.patch.object(sure_engine.time, "time", return_value=100.0):
+            self.assertEqual(0.0, self.store.acquire_daily("x", "premium", 1))
+            self.assertGreater(self.store.acquire_daily("x", "premium", 1), 0)
+            self.assertEqual(0.0, self.store.acquire_daily("x", "other", 1))
+        with mock.patch.object(sure_engine.time, "time", return_value=86400.0):
+            self.assertEqual(0.0, self.store.acquire_daily("x", "premium", 1))
+
+    def test_direct_collection_enforces_persistent_collect_cap(self) -> None:
+        study = Path(self._tmp.name) / "study"
+        completed = run_cli("do", "家用摄像头夜间告警", "--study", str(study), "--json")
+        self.assertEqual(0, completed.returncode, completed.stderr + completed.stdout)
+        complete_design(study)
+        fixture = Path(self._tmp.name) / "one.jsonl"
+        fixture.write_text(json.dumps({
+            "id": "r1", "title": "night", "text": "night alert false alarm",
+            "author": "u", "created_at": "2026-09-01T00:00:00Z",
+        }) + "\n", encoding="utf-8")
+        policy = Path(self._tmp.name) / "account-quotas.json"
+        policy.write_text(json.dumps({"version": 1, "accounts": [{
+            "account_id": "reddit-owner", "platform": "reddit",
+            "account_tier": "authenticated", "daily_caps": {"collect": 1},
+        }]}), encoding="utf-8")
+
+        first = sure_engine.collect_platform(
+            study, "reddit", "night", fixture=fixture,
+            account="reddit-owner", account_policy_path=policy)
+        other_study = Path(self._tmp.name) / "other-study"
+        created = run_cli("do", "家用摄像头夜间告警", "--study", str(other_study), "--json")
+        self.assertEqual(0, created.returncode, created.stderr + created.stdout)
+        complete_design(other_study)
+        second = sure_engine.collect_platform(
+            other_study, "reddit", "night", fixture=fixture,
+            account="reddit-owner", account_policy_path=policy)
+
+        self.assertEqual("collected", first["status"])
+        self.assertEqual("quota_exhausted", second["status"])
+        self.assertEqual("collect", second["action"])
+        self.assertEqual("reddit-owner", second["account"]["account_id"])
+
+    def test_dry_run_next_command_preserves_account_selection(self) -> None:
+        study = Path(self._tmp.name) / "study"
+        completed = run_cli("do", "家用摄像头夜间告警", "--study", str(study), "--json")
+        self.assertEqual(0, completed.returncode, completed.stderr + completed.stdout)
+        policy = Path(self._tmp.name) / "account-quotas.json"
+        policy.write_text(json.dumps({"version": 1, "accounts": [{
+            "account_id": "reddit-owner", "platform": "reddit",
+            "daily_caps": {"collect": 1},
+        }]}), encoding="utf-8")
+
+        result = sure_engine.collect_platform(
+            study, "reddit", "night", dry_run=True,
+            account="reddit-owner", account_policy_path=policy)
+
+        self.assertIn("--account reddit-owner", result["next"])
+        self.assertIn("--account-policy", result["next"])
+        self.assertIn(str(policy), result["next"])
+
     def test_only_current_owner_can_finish_a_lease(self) -> None:
         job_id = self.store.add("reddit", "night")
         job = self.store.lease("run-a-worker-1")
@@ -171,6 +229,31 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(3, summary["records"])
         self.assertEqual(3, len(list((self.study / "01-sources/manifests").glob("*.json"))))
         self.assertEqual(3, len((self.study / "02-data/normalized.jsonl").read_text(encoding="utf-8").splitlines()))
+
+    def test_queue_cli_uses_persistent_account_policy(self) -> None:
+        policy = self.base / "account-quotas.json"
+        policy.write_text(json.dumps({"version": 1, "accounts": [{
+            "account_id": "reddit-owner", "platform": "reddit",
+            "account_tier": "authenticated", "daily_caps": {"collect": 2},
+        }]}), encoding="utf-8")
+        for index in range(2):
+            fixture = self._fixture("policy-%d.jsonl" % index, "policy-%d" % index)
+            added = run_cli(
+                "queue", "add", str(self.study), "--platform", "reddit",
+                "--query", "night", "--limit", "1", "--fixture", str(fixture),
+            )
+            self.assertEqual(0, added.returncode, added.stderr + added.stdout)
+        completed = run_cli(
+            "queue", "run", str(self.study), "--workers", "1", "--min-interval", "0",
+            "--account", "reddit-owner", "--account-policy", str(policy),
+        )
+
+        self.assertEqual(0, completed.returncode, completed.stderr + completed.stdout)
+        self.assertEqual(2, json.loads(completed.stdout)["done"])
+        manifests = [json.loads(path.read_text(encoding="utf-8"))
+                     for path in (self.study / "01-sources/manifests").glob("*.json")]
+        self.assertEqual({"reddit-owner"}, {
+            item["account"]["account_id"] for item in manifests})
 
     def test_failure_and_retry(self) -> None:
         missing = self.base / "missing.jsonl"

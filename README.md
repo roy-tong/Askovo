@@ -52,6 +52,8 @@ askovo case list
 
 Retraction preserves the original text but removes the record from analysis, demand judgments and audit; restoration preserves it too. E3 correction requires a valid concept test. BRD projects the latest DecisionRecord without implying execution or business acceptance. See [CLI reference](docs/cli.md).
 
+For every external platform, `.askovo/account-quotas.json` persistently records the account identity, tier and optional `collect` daily cap. Direct collection, rotation and queue runs share this policy across processes and conversations. Publishing quotas never become collection quotas; unknown tiers and limits stay unknown. See [platforms and connectors](docs/connectors.md).
+
 ## Run the product-reasoning sample
 
 ```bash

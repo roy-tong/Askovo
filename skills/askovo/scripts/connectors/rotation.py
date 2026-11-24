@@ -100,6 +100,8 @@ class Cadence:
     risk_tier: str = "normal"
     requires_session: bool = False
     channel: str = ""
+    account_id: str = ""
+    account_tier: str = "unknown"
 
 
 @dataclass
@@ -112,18 +114,32 @@ class _PlatformState:
     requires_human: bool = False
 
 
-def build_cadences(platforms: Iterable[str], **overrides: Any) -> List[Cadence]:
-    """Cadences for the given platforms (registry policy, field table, overridable).
+def build_cadences(
+    platforms: Iterable[str],
+    account: str = "",
+    policy_path: Optional[Path] = None,
+    **overrides: Any,
+) -> List[Cadence]:
+    """Cadences from the registry and the persistent per-account policy.
 
     A platform with a `runtime_policies` override takes its cadence and session
     requirement from the registry — the same numbers `cdp_strategy.py` enforces
     for collectors. Platforms without an override (Reddit/YouTube archives) keep
     the field table below. Explicit keyword overrides still win.
     """
+    try:
+        import account_policy
+    except ImportError:  # pragma: no cover - standalone copied scheduler
+        account_policy = None
     cadences: List[Cadence] = []
     for platform in platforms:
         name = str(platform)
         policy = _runtime_policy(name)
+        account_view = (account_policy.view_for(
+            name, "collect", account, path=policy_path,
+        ) if account_policy is not None else {
+            "account_id": "", "account_tier": "unknown", "daily_cap": None,
+        })
         if "min_interval" in overrides:
             min_interval = float(overrides["min_interval"])
         elif policy is not None:
@@ -140,10 +156,13 @@ def build_cadences(platforms: Iterable[str], **overrides: Any) -> List[Cadence]:
             Cadence(
                 platform=name,
                 min_interval=min_interval,
-                daily_cap=overrides.get("daily_cap"),
+                daily_cap=(overrides["daily_cap"] if "daily_cap" in overrides
+                           else account_view["daily_cap"]),
                 risk_tier=str(overrides.get("risk_tier", "elevated" if requires_session else "normal")),
                 requires_session=requires_session,
                 channel=str(overrides.get("channel", "")),
+                account_id=str(account_view["account_id"]),
+                account_tier=str(account_view["account_tier"]),
             )
         )
     return cadences
@@ -372,12 +391,17 @@ class RotationScheduler:
         cadences: Optional[Iterable[Cadence]] = None,
         clock: Callable[[], float] = time.time,
         sleep: Callable[[float], None] = time.sleep,
+        account: str = "",
+        policy_path: Optional[Path] = None,
     ) -> "RotationScheduler":
-        """Resume a rotation from disk (cadences come from the current study)."""
+        """Resume a rotation from disk with the current persistent account policy."""
         snapshot = json.loads(Path(path).read_text(encoding="utf-8"))
         platforms = snapshot.get("platforms") or {}
         if cadences is None:
-            cadences = build_cadences([str(platform) for platform in platforms])
+            cadences = build_cadences(
+                [str(platform) for platform in platforms],
+                account=account, policy_path=policy_path,
+            )
         scheduler = cls(cadences, clock=clock, sleep=sleep)
         for platform, saved in platforms.items():
             if platform not in scheduler._state:
@@ -485,6 +509,8 @@ def main() -> int:
     )
     parser.add_argument("--plan", help="comma-separated platforms to order for one round")
     parser.add_argument("--state", type=Path, help="rotation state file to write after planning")
+    parser.add_argument("--account", default="", help="account_id or handle for every selected platform")
+    parser.add_argument("--account-policy", type=Path, help="persistent account-quotas.json path")
     parser.add_argument("--selftest", action="store_true", help="run the offline checks and exit")
     args = parser.parse_args()
     if args.selftest:
@@ -493,7 +519,9 @@ def main() -> int:
         parser.print_help()
         return 0
     platforms = [item.strip() for item in args.plan.split(",") if item.strip()]
-    scheduler = RotationScheduler(build_cadences(platforms))
+    scheduler = RotationScheduler(build_cadences(
+        platforms, account=args.account, policy_path=args.account_policy,
+    ))
     plan = scheduler.plan_round()
     print(json.dumps({"round": plan, "cadences": {p: scheduler.cadence(p).__dict__ for p in plan}},
                      ensure_ascii=False, indent=2))
