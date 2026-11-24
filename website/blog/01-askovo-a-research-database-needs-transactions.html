@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Askovo: a research database needs transaction semantics — Askovo</title>
+  <meta name="description" content="Evidence graphs, immutable decision records, request-scoped snapshots, and a deterministic response to contradiction.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="canonical" href="https://roy-tong.github.io/Askovo/blog/01-askovo-a-research-database-needs-transactions.html">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Askovo">
+  <meta property="og:title" content="Askovo: a research database needs transaction semantics">
+  <meta property="og:description" content="Evidence graphs, immutable decision records, request-scoped snapshots, and a deterministic response to contradiction.">
+  <meta property="og:url" content="https://roy-tong.github.io/Askovo/blog/01-askovo-a-research-database-needs-transactions.html">
+  <meta name="twitter:card" content="summary">
+  <link rel="stylesheet" href="../styles.css">
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Askovo: a research database needs transaction semantics", "description": "Evidence graphs, immutable decision records, request-scoped snapshots, and a deterministic response to contradiction.", "datePublished": "2026-11-24", "dateModified": "2026-11-24", "inLanguage": "en", "author": {"@type": "Person", "name": "Roy Tong", "url": "https://github.com/roy-tong"}, "mainEntityOfPage": "https://roy-tong.github.io/Askovo/blog/01-askovo-a-research-database-needs-transactions.html", "codeRepository": "https://github.com/roy-tong/Askovo", "isAccessibleForFree": true, "wordCount": 2140}</script>
+  <style>
+:root{--bg:#090c10;--panel:#0f141b;--line:#1e2733;--text:#e8edf3;--muted:#9aa7b5;--accent:#4f9cf9;--accent-soft:rgba(79,156,249,.12);--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+body{background:var(--bg);color:var(--text);font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.post-back,.post-k,.post-meta{font-family:var(--mono)}.post-k{color:var(--accent)}
+pre{background:var(--panel);border:1px solid var(--line)}code{background:var(--panel);border:1px solid var(--line)}
+th{background:var(--panel);color:var(--muted)}.note{border-left:3px solid var(--accent);background:var(--accent-soft)}
+
+*{box-sizing:border-box}html{scroll-behavior:smooth}.skip-link{position:absolute;left:12px;top:-60px;padding:8px 12px;background:Canvas;color:CanvasText;z-index:20}.skip-link:focus{top:12px}
+.post{max-width:860px;margin:0 auto;padding:52px 24px 72px}.post-back{display:inline-block;font-size:.78rem;letter-spacing:.08em;margin-bottom:28px}.post-k{font-size:.75rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;margin:0 0 12px}
+.post h1{font-size:clamp(2rem,5vw,3rem);line-height:1.16;letter-spacing:-.025em;margin:0 0 16px}.post-meta{font-size:.8rem;line-height:1.6;color:var(--muted);margin-bottom:36px}.post h2{font-size:1.45rem;line-height:1.3;margin:42px 0 14px;letter-spacing:-.01em}.post h3{font-size:1.08rem;margin:28px 0 10px}.post p{margin:0 0 18px}.post ul,.post ol{margin:0 0 20px;padding-left:1.5rem}.post li{margin-bottom:8px}.post blockquote{margin:0 0 20px;padding:10px 16px;color:var(--muted);border-left:3px solid var(--line)}
+.post pre{border-radius:8px;padding:16px 18px;overflow-x:auto;margin:0 0 20px;line-height:1.55;font-size:.88rem}.post code{font-family:var(--mono);font-size:.9em;border-radius:4px;padding:1px 5px;overflow-wrap:anywhere}.post pre code{display:block;border:0;padding:0;overflow-wrap:normal}.post table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:.92rem}.post th,.post td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}.post th{font-weight:600}.table-scroll{overflow-x:auto;outline-offset:4px}.note{padding:12px 16px;border-radius:0 8px 8px 0;margin:0 0 20px}.post-footer{border-top:1px solid var(--line);margin-top:44px;padding-top:20px;color:var(--muted);font-size:.88rem}.post-footer ul{padding-left:1.2rem}.post-footer a{overflow-wrap:anywhere}
+.cards{display:grid;gap:18px;margin-top:28px}.card{border:1px solid var(--line);border-radius:10px;padding:22px}.card h2{font-size:1.3rem;margin:0 0 10px}.card p{color:var(--muted);margin:0 0 14px}.card .read{font-size:.85rem}.blog-links{margin-top:30px}.blog-links li{margin-bottom:10px}
+@media(max-width:640px){.post{padding:32px 18px 56px}.post h1{font-size:2rem}.post h2{font-size:1.3rem}.post table{font-size:.84rem}.post th,.post td{padding:8px}.post pre{font-size:.8rem;padding:13px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to article</a>
+<main class="post" id="content">
+  <nav aria-label="Article navigation"><a class="post-back" href="./">← ASKOVO TECHNICAL BLOG</a></nav>
+  <p class="post-k">Askovo · Engineering deep dive</p>
+  <h1>Askovo: a research database needs transaction semantics</h1>
+  <p class="post-meta">24 November 2026 · 10 min read · 2,140 words · <a href="01-askovo-a-research-database-needs-transactions.md">Markdown source</a></p>
+  <article aria-label="Askovo: a research database needs transaction semantics">
+<p><em>Evidence graphs, immutable decision records, request-scoped snapshots, and a deterministic response to contradiction.</em></p>
+<p>A report generator can tolerate a stale read. A decision system should not.</p>
+<p>Suppose an audit reads version A of a study. Before the final brief is rendered, another process appends counter-evidence and commits version B. If the brief uses A for one section and B for another, every individual input may be valid. The resulting report is still wrong: no such study revision ever existed.</p>
+<p>Askovo 2.22 addressed this class of failure by giving research requests snapshot and transaction semantics. The follow-up 2.22.1 release closed two less obvious gaps: request snapshots could interact badly with the old 32-entry parsed-data cache, and two processes could pass an observation identity check before either acquired the append lock.</p>
+<p>That work is a useful lens through which to examine the product. Askovo is not trying to make a fluent report the unit of truth. It maintains a versioned relationship among evidence, inference, decisions, and subsequent observations. The database layer is part of the research method.</p>
+<h2>The canonical objects are smaller than the reports</h2>
+<p>A study has several files with deliberately different responsibilities:</p>
+<pre tabindex="0"><code class="language-text">study.json                              # question, owner, scope, method
+02-data/evidence.jsonl                  # registered evidence and provenance
+04-findings/demand-judgments.json       # demand/commercial evidence judgments
+04-findings/product-reasoning.json      # live product/business reasoning
+01-sources/observations.jsonl           # product-behavior observations
+05-audit/                               # generated audit outputs
+06-report/                              # generated projections
+</code></pre>
+<p>The live reasoning spine is:</p>
+<pre tabindex="0"><code class="language-text">scene → user → pain → need → feature → product → business
+</code></pre>
+<p>Reports, MRDs, PRDs, BRDs, web pages, and role-specific deliverables are projections of <code>product-reasoning.json</code>, not independent conclusions. A chain points to a demand judgment through <code>demand_judgment_id</code>; evidence must also share the chain's <code>context_key</code>. This prevents a record collected for one market, account, or study context from becoming convenient support for another.</p>
+<p>The separation is more than file hygiene. It allows Askovo to reject several different failure modes explicitly:</p>
+<ul>
+<li>a node has an evidence ID, but the evidence belongs to another context;</li>
+<li>an evidence record is authentic, but its type cannot support the claim being made;</li>
+<li>a business node is marked <code>decided</code>, but delivery, observed outcome, and causal state have not been established;</li>
+<li>a report contains a conclusion even though the full evidence gate failed.</li>
+</ul>
+<p>An imported record cannot simply declare itself E5 transaction evidence. E4+ transaction or purchase claims require a counterparty, timestamp, amount, source reference, and evidence reference. Missing structure holds the record at E2 and preserves the derivation rule. A line of text labeled “transaction” does not thereby become a receipt.</p>
+<h2>Product observations carry their own scope</h2>
+<p>Askovo also accepts product-behavior observations, but their schema makes overgeneralization awkward:</p>
+<pre tabindex="0"><code class="language-json">{
+  &quot;observation_id&quot;: &quot;obs-mobile-001&quot;,
+  &quot;product_version&quot;: &quot;2.22.1&quot;,
+  &quot;account_permission&quot;: &quot;owner&quot;,
+  &quot;platform&quot;: &quot;macos&quot;,
+  &quot;region&quot;: &quot;cn&quot;,
+  &quot;tested_at&quot;: &quot;2026-11-23T10:00:00Z&quot;,
+  &quot;method&quot;: &quot;scripted&quot;,
+  &quot;claims&quot;: [{
+    &quot;claim_id&quot;: &quot;claim-001&quot;,
+    &quot;observed_facts&quot;: [&quot;The CLI returned STALE_SOURCE after a source rewrite&quot;],
+    &quot;inferred_rule&quot;: &quot;An active request refuses a mixed study revision&quot;,
+    &quot;uncovered_conditions&quot;: [&quot;Windows file-locking behavior was not exercised&quot;],
+    &quot;generalization&quot;: &quot;single_case&quot;,
+    &quot;repeat_count&quot;: 1,
+    &quot;evidence_level&quot;: &quot;E2&quot;,
+    &quot;basis&quot;: &quot;product_behavior_observation&quot;
+  }]
+}
+</code></pre>
+<p>The three generalization values have executable definitions:</p>
+<div class="table-scroll" role="region" aria-label="Scrollable table" tabindex="0"><table>
+<thead>
+<tr>
+<th>Declaration</th>
+<th>Minimum evidence in the record</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>single_case</code></td>
+<td>Exactly one run; <code>not_generalizable=true</code> on export</td>
+</tr>
+<tr>
+<td><code>repeated</code></td>
+<td>At least two runs</td>
+</tr>
+<tr>
+<td><code>multi_context</code></td>
+<td>At least two runs and two distinct <code>(product_version, account_permission, platform, region)</code> tuples</td>
+</tr>
+</tbody>
+</table></div>
+<p>There is no <code>universal</code> value. Observations are capped at E2, and export into <code>01-sources/observations.jsonl</code> does not promote them into the main evidence pool. Named human semantic review is still required.</p>
+<p>This is a useful distinction between data collection and claim generation. The schema preserves <code>observed_facts</code>, <code>inferred_rule</code>, and <code>uncovered_conditions</code> in separate fields. A collector cannot turn “I saw this once” into “the product always works” without leaving a visible validation error.</p>
+<h2>Request snapshots solve a different problem from an LRU cache</h2>
+<p>The 2.22 implementation centers on two classes:</p>
+<ul>
+<li><code>StudyRepository</code> owns path containment, byte reads, atomic writes, transactions, and the source-version manifest.</li>
+<li><code>StudyContext</code> owns one request's immutable byte snapshot and parsed-data caches.</li>
+</ul>
+<p>The manifest hashes every study-contained file with SHA-256, excluding generated <code>05-audit/</code> and <code>06-report/</code> outputs. Request activation is equivalent to:</p>
+<pre tabindex="0"><code class="language-python">manifest = repository.version_manifest()
+assert_write_journal_clean()
+
+yield context  # on successful completion of the request body:
+assert_write_journal_clean()
+assert repository.version_manifest() == manifest
+</code></pre>
+<p>If another process commits a multi-file change during the request, delivery fails with <code>STALE_SOURCE</code>. Askovo does not merge the new evidence into half of the output, and it does not silently return the old report as current. The legal next action is to retry audit and delivery against the newly committed revision.</p>
+<p>Inside the request, <code>StudyContext.read_bytes()</code> memoizes raw bytes in a request-scoped dictionary. Parsed JSON and JSONL reads return deep copies, so a caller mutating a nested claim cannot alter what another projection reads. The JSONL cache key includes the resolved path, a 128-bit BLAKE2b digest of the raw bytes, the parser identity, and strictness.</p>
+<p>The older 32-entry LRU still has a compatibility role for parsed data. It is not the request isolation boundary. In 2.22.1, raw request snapshots stopped being subordinate to that capacity limit. This distinction matters: an LRU is a memory-management optimization, while a snapshot is a correctness contract. Replacing one with the other produces the kind of bug that looks like an occasional research inconsistency rather than a storage error.</p>
+<p>The repository also rejects paths that resolve outside the study. That is a separate boundary from revision stability: a source reference should not turn a report generator into an arbitrary local-file reader.</p>
+<h2>Observation export is idempotent by content, not by metadata</h2>
+<p>Observation export uses the identity:</p>
+<pre tabindex="0"><code class="language-python">(observation_id, claim_id, source_hash)
+</code></pre>
+<p><code>source_hash</code> is SHA-256 of the source observation file. The export procedure is:</p>
+<pre tabindex="0"><code class="language-python">with repository.transaction(&quot;observation export&quot;) as txn:
+    existing = read_existing_identities(target)
+    new_lines = [line for line in projected if identity(line) not in existing]
+    if new_lines:
+        txn.add(target, append_jsonl(new_lines), mode=&quot;append&quot;)
+        txn.commit()
+</code></pre>
+<p>A repeated export of the same bytes returns <code>added=0</code>. Editing an observation while preserving its ID and metadata changes the hash, so the export becomes a new revision rather than disappearing as a duplicate. Identity checking and append writing hold the same study transaction lock, closing the two-process window in which both exporters could decide that a claim was absent.</p>
+<p>This is a deliberately narrow idempotency contract. It does not say that two observation files with different hashes are semantically different claims. It says the system will not erase a source revision merely because the metadata looks familiar.</p>
+<p>The tests cover repeated exports, concurrent export, changed source hashes, corrupt history, interrupted append recovery, invalid stored documents, and preservation of previous bytes after transaction failure. I ran the study-context and observation suites while preparing this article: 29 tests passed.</p>
+<h2>A contradiction triggers a state transition, not a new essay</h2>
+<p>Decision records are append-only snapshots of the canonical chain. Each record carries a version, parent version, decision-maker, chain fingerprint, chain snapshot, original hypothesis, current candidate actions, and supporting state. Ordinary observations do not modify the live recommendation.</p>
+<p>An adversarial revision is allowed only under a more demanding contract:</p>
+<ol>
+<li>An initial <code>DecisionRecord</code> must exist.</li>
+<li>The contradiction ID must be registered in <code>02-data/evidence.jsonl</code>.</li>
+<li>The evidence must share the chain's <code>context_key</code>.</li>
+<li><code>evidence_level</code>, <code>evidence_basis</code>, and <code>source_ref</code> must be present.</li>
+<li>A pre-recorded <code>contradicts</code> or counter-evidence relation must exist in the evidence stance, chain counter list, linked demand judgment, or loop mappings.</li>
+</ol>
+<p>Passing those checks does not invoke an LLM to write a rebuttal. The code applies one deterministic transition:</p>
+<pre tabindex="0"><code class="language-python">confidence_scale = (&quot;very-low&quot;, &quot;low&quot;, &quot;medium&quot;, &quot;high&quot;)
+new_confidence = confidence_scale[max(0, old_index - 1)]
+
+chain.status = &quot;needs-validation&quot;
+chain.nodes.product.status = &quot;needs-validation&quot;
+chain.nodes.business.status = &quot;needs-validation&quot;
+chain.nodes.business.gate.decision = &quot;hold&quot;  # unless a human supplies a replacement
+</code></pre>
+<p>The public synthetic regression provides a concrete before/after:</p>
+<pre tabindex="0"><code class="language-text">DecisionRecord version:       1 → 2
+recommendation_origin:        deterministic_safe_hold
+recommendation_code:          hold
+confidence:                   low → very-low
+chain/product/business:       needs-validation
+candidate_evidence_promoted:  false
+demand_judgment_changed:      false
+causal_status_changed:        false
+full audit:                   PASS
+</code></pre>
+<p>Two details are especially important. The demand-judgment file remains byte-identical, and the supporting states remain unchanged. The system reopens the decision; it does not rewrite the evidence base to justify the new state. A separate test supplies an evidence ID without a recorded contradiction mapping. The command exits 2 and leaves the canonical reasoning bytes untouched.</p>
+<p>A human can provide an explicit replacement recommendation. That produces <code>recommendation_origin=decision_maker_override</code>, not a pretend semantic inference by the CLI.</p>
+<p>The decision commands are:</p>
+<pre tabindex="0"><code class="language-bash">askovo decision record STUDY --chain PR01 --by &quot;Product owner&quot;
+askovo decision record STUDY --chain PR01 --by &quot;Product owner&quot; \
+  --contradiction EVIDENCE_ID
+askovo decision replay STUDY --chain PR01 --json
+</code></pre>
+<p>The <a href="https://roy-tong.github.io/Askovo/en/examples/decision-replay.html">public decision-replay page</a> links to the actual regression. I ran it again for this article; it passed.</p>
+<h2>Proof export deliberately produces an incomplete proof</h2>
+<p>Askovo can project a study into OVO's shared Proof Bundle format:</p>
+<pre tabindex="0"><code class="language-bash">askovo proof export STUDY --out NEW_DIR --by NAME
+</code></pre>
+<p>The exporter first rebuilds or reads the Decision Brief, removes excerpts and replaces direct source locations with evidence IDs in the safe projection, hashes the canonical inputs, and writes into a staging directory. The output must be outside the source study, and an existing output is never overwritten.</p>
+<p>Its checks are intentionally asymmetric:</p>
+<div class="table-scroll" role="region" aria-label="Scrollable table" tabindex="0"><table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Level</th>
+<th>Normal status</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>artifact-readable</code></td>
+<td>P1</td>
+<td><code>PASS</code>, or <code>EXPIRED</code> if the brief is stale</td>
+<td>The brief is a readable projection of identified inputs</td>
+</tr>
+<tr>
+<td><code>independent-semantic-review</code></td>
+<td>P3</td>
+<td><code>UNCHECKED</code></td>
+<td>The exporter cannot approve research semantics</td>
+</tr>
+<tr>
+<td><code>external-decision-adoption</code></td>
+<td>P4</td>
+<td><code>UNCHECKED</code></td>
+<td>No owner disposition is bundled automatically</td>
+</tr>
+<tr>
+<td><code>replay-readiness</code></td>
+<td>P1</td>
+<td><code>INDETERMINATE</code></td>
+<td>Private canonical inputs and collection history are not copied</td>
+</tr>
+</tbody>
+</table></div>
+<p>A normal export therefore has <code>proof_status=BLOCKED</code>. That is not an exporter failure. It is the expected consequence of separating “we generated a valid brief” from “an independent reviewer accepted the reasoning” and “the owner actually used it.”</p>
+<p>Askovo does have a separate adoption command, but it records a named owner's declaration and supplied receipt text. It does not verify the owner's identity or infer commercial success. A declaration is useful evidence; it is not magically an independent observation.</p>
+<p>Privacy and replay pull in opposite directions here. Copying every canonical input would make third-party replay easier and leak the study. The exporter chooses the safer default: keep the proof structurally reviewable and mark full replay unavailable until authorized inputs are supplied.</p>
+<h2>What the second use should measure</h2>
+<p>One internal Askovo study analyzed 109,429 deduplicated comments from eight communities over 24 months. The resulting recommendation changed a golf-device sequence from dedicated camera hardware to validating software and export workflows first. The sample was a convenience sample, so it cannot support a market-prevalence estimate. The useful result was a change in the proposed allocation of product effort.</p>
+<p>The equivalent software test is not whether another report can be generated. It is whether a second decision review preserves the original decision, imports new evidence without corrupting the old basis, and reduces unnecessary rework while exposing its human minutes.</p>
+<p>A useful second-use record therefore includes:</p>
+<ul>
+<li>the original leaning and alternatives, recorded before the new evidence;</li>
+<li>the new evidence hash and its relationship to earlier claims;</li>
+<li>the owner's actual disposition: maintain, change, defer, or collect evidence;</li>
+<li>review and correction minutes;</li>
+<li>the checks that remained unchecked;</li>
+<li>an independent review, if one occurred.</li>
+</ul>
+<p>Replaying the same fixture twice is a determinism test. A second use is a new decision revision or an independent decision with its own context.</p>
+<h2>The tradeoffs are visible in the implementation</h2>
+<p>Askovo's approach has costs. A whole-study manifest requires reading source files at request boundaries; the project does not claim that this is the fastest design for very large studies. JSON and JSONL make the research inspectable and version-control friendly, but they require explicit transaction discipline that a database would otherwise help provide. Snapshot isolation favors a coherent report over immediate incorporation of newly arriving evidence.</p>
+<p>The deterministic safe hold is similarly a product choice. It cannot decide whether a contradiction is semantically valid, representative, or important. It only guarantees that a registered, same-context, mapped contradiction cannot be ignored by the current recommendation machinery. Human review remains responsible for the meaning.</p>
+<p>Those constraints are preferable to a system that always produces an answer. A research tool should be able to return <code>STALE_SOURCE</code>, reject an unsupported evidence grade, preserve an unknown, or reopen a decision. Otherwise its consistency is only typographic.</p>
+<h3>Source and verification links</h3>
+<ul>
+<li><a href="https://github.com/roy-tong/Askovo/blob/main/skills/askovo/scripts/study_context.py"><code>study_context.py</code>: repository, snapshots, manifests, and request activation</a></li>
+<li><a href="https://github.com/roy-tong/Askovo/blob/main/skills/askovo/scripts/observation.py"><code>observation.py</code>: observation schema and transactional export</a></li>
+<li><a href="https://github.com/roy-tong/Askovo/blob/main/skills/askovo/scripts/decision_review.py"><code>decision_review.py</code>: contradiction validation and deterministic safe hold</a></li>
+<li><a href="https://github.com/roy-tong/Askovo/blob/main/skills/askovo/scripts/proof_export.py"><code>proof_export.py</code>: P1/P3/P4 checks and replay boundaries</a></li>
+<li><a href="https://roy-tong.github.io/Askovo/en/examples/decision-replay.html">Decision-replay example and runnable regression</a></li>
+<li><a href="https://github.com/roy-tong/Askovo/blob/main/CHANGELOG.md">Askovo changelog</a></li>
+</ul>
+  </article>
+  <footer class="post-footer">
+    <p><strong>Also in this Askovo series</strong></p>
+    <ul><li><a href="04-askovo-product-research-needs-a-type-system.html">Askovo: product research needs a type system, not a confidence score</a> — Orthogonal evidence qualification, structural transaction checks, conclusion gates, and hash-bound research handoffs.</li></ul>
+    <p><a href="./">Blog index</a> · <a href="01-askovo-a-research-database-needs-transactions.md">Download Markdown</a> · <a href="https://github.com/roy-tong/Askovo">Source repository</a></p>
+  </footer>
+</main>
+</body>
+</html>
