@@ -1,6 +1,6 @@
 # Askovo site
 
-> Bring one product decision and the material behind it. Review the sources and counterexamples with the person who owns the decision. If the evidence falls short, Askovo lists what to collect. Reopen the same decision when new evidence arrives.
+> Build product decisions on real evidence. Askovo helps product teams collect user and market material, test demand assumptions, preserve source and counterevidence links, and revisit the same decision as evidence changes. Simulated users and model-generated interviews are not real demand evidence.
 
 Pages: / (landing, capability boundaries table, need-validation method with a five-judgment worked example, local 30s verification) · /first-look.html (task intake: mailto draft with 5-field template; scope and fee agreed per task, no public price list) · /claims.html (what we claim and never claim; six conclusion types; what tests prove) · /faq.html (Chinese FAQ: difference from generic AI reports, E0-E5 in plain words, data sources and no-scraping boundaries, free/paid boundary, 30s local verification, deliverables, family relations) · /guides/need-validation.html (Chinese guide: spoken intent vs observed behavior — four misreadings, E2 substitute-behavior checklist, grading conclusions, three do-it-now steps, where the product automates) · /glossary.html (E0-E5 level-by-level definitions, seven-node chain, SURE engine boundary, reading aids, overclaim).
 

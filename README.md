@@ -6,9 +6,9 @@
 
 # Askovo
 
-**Great products grow from quantitative reasoning**
+**Build product decisions on real evidence.**
 
-Askovo performs thorough quantitative research for product definition and decisions. It automatically collects and analyzes user and market data, then builds reasonable product judgments step by step—from scene and user to pain and need. Teams gain a reasoned answer to why, for whom and what to build, making data-driven product judgment part of everyday work.
+Askovo helps product teams collect user and market evidence, test demand assumptions, and decide what to build next. It adds research execution, source traceability, counterexamples and validation records to the agent workflow you already use.
 
 [Website](https://roy-tong.github.io/Askovo/) · [Decision replay](https://roy-tong.github.io/Askovo/en/examples/decision-replay.html) · [Quickstart](docs/quickstart.md) · [Method](docs/product-reasoning.md)
 
@@ -16,15 +16,20 @@ Askovo performs thorough quantitative research for product definition and decisi
 [![PyPI](https://img.shields.io/pypi/v/askovo)](https://pypi.org/project/askovo/)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
-## From scattered inputs to a product definition you can defend
+## A general agent can reason. Askovo brings real evidence into the study.
 
-A product discussion can easily become a contest of seniority, volume or report length. Askovo connects automatic collection, quantitative analysis and step-by-step reasoning directly to product definition:
+A polished research answer is only as useful as the material behind it. Askovo helps a team go beyond the information already in the prompt:
 
-- **See the opportunity.** Connect scenes, users, pains and needs instead of starting from a feature request.
-- **Compare real options.** Put supporting evidence, counterexamples and trade-offs beside each candidate.
-- **Move the decision forward.** Turn the discussion into a Decision Brief, a business plan and a concrete validation backlog.
-- **Keep learning.** Revisit the same decision when new material arrives and see how the recommendation changes.
-- **Keep the model on a leash.** Optional `analyze --semantic` candidates must cite exact source quotes and stated unknowns, pass an adversarial review, and wait for a named human before entering the evidence path. MCP cannot accept or reject on the human's behalf.
+- **Collect real material.** Gather community feedback, interview material, competitor records and authorized exports with source and acquisition history.
+- **Test demand assumptions.** Keep concept feedback, prototype responses, willingness-to-pay statements and observed behavior distinct; simulated users do not become demand evidence.
+- **Compare support and counterevidence.** Put exact source quotes, alternative explanations and coverage gaps beside each candidate direction.
+- **Move and revisit the decision.** Turn the material into a Decision Brief and next validation, then revisit the same decision when new evidence arrives.
+
+| General-purpose agent | Askovo |
+|---|---|
+| Helps frame a study, analyze supplied material and draft a recommendation | Adds collection, evidence provenance, demand-validation records and decision state |
+| Can produce a plausible answer from the current context | Keeps support, counterexamples and unknowns attached to the claims they affect |
+| Can rewrite a report for different readers | Projects the same research chain into a Decision Brief, business plan, MRD, PRD and BRD |
 
 ## What you can make
 
@@ -62,12 +67,12 @@ askovo do "Should we rebuild onboarding for small teams?" --domain software --dr
 
 The offline synthetic sample shows how Askovo structures a study, links evidence and turns a question into a reviewable product judgment. [See how one counterexample changes a decision](https://roy-tong.github.io/Askovo/en/examples/decision-replay.html).
 
-## A workflow built for real product work
+## A workflow built for real research execution
 
 1. **Frame the decision.** Start with the choice that has a real cost, not a generic request for research.
-2. **Bring the material you have.** Use documents, interviews, authorized exports and community discussions.
-3. **Find the weakest link.** Askovo helps identify which assumption deserves new evidence first.
-4. **Choose and revisit.** The decision owner selects the next move; new evidence can reopen the same decision.
+2. **Collect and import.** Use community feedback, interview material, competitor records, authorized exports and concept or prototype feedback.
+3. **Analyze with provenance.** Quantitative and semantic analysis stay linked to exact source material and counterexamples.
+4. **Validate and decide.** Keep stated interest, willingness to pay and observed behavior distinct; the decision owner selects the next move and revisits it as evidence changes.
 
 Use the CLI directly, attach Askovo to your agent as a Skill, or call the same behavior through MCP. Collection, analysis, interviews and evidence grading support the product judgment rather than replacing it.
 

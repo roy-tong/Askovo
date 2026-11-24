@@ -1,6 +1,6 @@
 # Askovo
 
-Bring one product decision and the material behind it. Askovo organizes supporting evidence, counterexamples and open gaps into a Decision Brief. The decision owner chooses whether to proceed, wait or stop; new evidence can reopen the decision without rewriting its history.
+Bring one product decision and collect the real evidence behind it. Askovo helps product teams gather user and market material, test demand assumptions, preserve source and counterevidence links, and decide what to build next. The decision owner chooses whether to proceed, wait or stop; new evidence can reopen the decision without rewriting its history.
 
 OVO family boundary: Prove Anything is the family-level result-proof protocol candidate; an agent saying “done” remains a claim to verify. Verified Capability Factory is a gated research candidate, not an Askovo dependency. Askovo works independently and keeps its canonical research chain, evidence limits and human decisions; family-level proof never upgrades them into market, commercial or causal truth.
 
