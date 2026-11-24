@@ -72,17 +72,16 @@ def normalize_comment(item: Dict[str, Any], run_id: Optional[str], source_role: 
         "thread_title": None,
         "thread_url": None,
         "month_bucket": month_bucket(created_at),
-        "primary_sample_eligible": is_primary_date(created_at),
+        "primary_sample_eligible": False,
         "quality_score": quality_score(body, flags, score),
         "sampling_weight": 1.0,
         "quality_flags": flags,
         "source_tier": "legacy_nonofficial_public_archive",
     }
-    if run_id:
-        row["collection_run_id"] = run_id
     if source_role:
         row["source_role"] = source_role
-    return row
+    return common.with_connector_envelope(
+        row, run_id or "arctic-standalone", "reddit-arctic-shift-historical", "1")
 
 
 def collect(subreddits: List[str], after_utc: Optional[int], max_records: int, size: int, sleep_s: float, timeout: int, run_id: Optional[str], source_role: Optional[str]) -> List[Dict[str, Any]]:
@@ -100,10 +99,9 @@ def collect(subreddits: List[str], after_utc: Optional[int], max_records: int, s
             }
             url = build_url(ARCTIC_COMMENTS_SEARCH, params)
             try:
-                payload = request_json(url, timeout=timeout, retries=2)
+                payload = common.request_json(url, timeout=timeout, retries=2)
             except Exception as exc:
-                print(f"warning: Arctic subreddit={subreddit!r} before={before} failed: {exc}")
-                break
+                raise RuntimeError(f"Arctic subreddit={subreddit!r} before={before} failed: {exc}") from exc
             comments = payload.get("data") or []
             if not comments:
                 break
@@ -163,8 +161,24 @@ def main() -> None:
         raise SystemExit("no subreddits: pass --subreddits or a --config file with a subreddits list")
 
     common.configure(user_agent=args.user_agent, author_salt=args.author_salt, primary_after_utc=args.primary_after_utc)
-    rows = collect(subreddits, after_utc, args.max_records, args.size, args.sleep, args.timeout, args.run_id, args.source_role)
-    count = write_jsonl(args.out, rows, append=False)
+    started_at = common.utc_now_iso()
+    run_id = args.run_id or f"arctic-{int(time.time())}"
+    try:
+        rows = collect(subreddits, after_utc, args.max_records, args.size, args.sleep, args.timeout, run_id, args.source_role)
+    except Exception as exc:
+        common.write_collection_manifest(
+            args.out, run_id=run_id, platform="reddit", connector_id="reddit-arctic-shift-historical",
+            connector_revision="1", access_basis="historical_archive", query=",".join(subreddits),
+            started_at=started_at, completed_at=common.utc_now_iso(), reached_records=0,
+            written_records=0, stop_reason="failed", requested_records=args.max_records,
+            errors=[str(exc)])
+        raise SystemExit(1) from exc
+    count = write_jsonl(args.out, rows, append=True)
+    common.write_collection_manifest(
+        args.out, run_id=run_id, platform="reddit", connector_id="reddit-arctic-shift-historical",
+        connector_revision="1", access_basis="historical_archive", query=",".join(subreddits),
+        started_at=started_at, completed_at=common.utc_now_iso(), reached_records=len(rows),
+        written_records=count, stop_reason="completed", requested_records=args.max_records)
     print(f"wrote {count} Arctic Reddit records to {args.out}")
 
 

@@ -151,7 +151,7 @@ class YouTubeInnertubeParserTests(unittest.TestCase):
             {"q": "golf cam", "route": "yt-comp"}, None)
         self.assertEqual("youtube:UgComment1", record["record_id"])
         self.assertEqual("approximate", record["date_precision"])
-        self.assertEqual("public_page_uncoded", record["source_tier"])
+        self.assertEqual("public_endpoint_limited", record["source_tier"])
         self.assertIn("quality_flags", record)
         self.assertIn("quality_score", record)
         self.assertEqual("yt-comp", record["route_id"])

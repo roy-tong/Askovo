@@ -9,8 +9,8 @@
 ## 安装一次
 
 ```bash
-git clone https://github.com/roy-tong/askovo.git
-cd askovo
+git clone https://github.com/roy-tong/Askovo.git
+cd Askovo
 python3 -m venv .venv
 .venv/bin/pip install -U pip
 .venv/bin/pip install -e .

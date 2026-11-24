@@ -45,6 +45,7 @@ import role_catalog  # noqa: E402
 import evidence_page  # noqa: E402
 import proof_export  # noqa: E402
 import observation  # noqa: E402
+import semantic_candidates  # noqa: E402
 import study_context  # noqa: E402
 import write_integrity  # noqa: E402
 
@@ -230,7 +231,7 @@ REDDIT_CONFIG_REQUIRED = {
     "treat_ai_summaries_as_discovery_only",
 } | CONNECTOR_CONFIG_REQUIRED
 REDDIT_COLLECTION_MODES = {"historical_search", "live_monitoring", "mixed"}
-REDDIT_ACCESS_BASES = {"official_api"}
+REDDIT_ACCESS_BASES = {"official_api", "historical_archive"}
 # First-party CDP transport contract (must mirror the run manifest stamped by
 # sure_engine.cdp_collect): authorized visible pages on catalog cdp:true
 # platforms. Governed by the platform catalog, not the open-source connector
@@ -6583,6 +6584,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     analyze_parser.add_argument("study_dir")
     analyze_parser.add_argument("--question", help="optional question to match quotes against")
+    analyze_parser.add_argument(
+        "--semantic", action="store_true",
+        help="add constrained LLM candidate themes/mechanisms/counterexamples "
+             "(default off; no config falls back to deterministic analysis)")
+    analyze_parser.add_argument(
+        "--semantic-provider", choices=("auto", "openai", "offline"), default="auto",
+        help="auto uses ASKOVO_LLM_* when configured; offline is a deterministic stub")
+    analyze_parser.add_argument(
+        "--allow-external", action="store_true",
+        help="authorize sending source text to a non-loopback model endpoint")
+    analyze_parser.add_argument(
+        "--semantic-max-records", type=int, default=120,
+        help="cap on records sent to the semantic layer (default 120)")
+    analyze_parser.add_argument(
+        "--semantic-batch-size", type=int, default=20,
+        help="records per model batch (default 20)")
+    analyze_parser.add_argument(
+        "--retrieval", choices=("auto", "keyword", "embedding"), default="auto",
+        help="candidate-record retrieval before batching; embedding falls back to keyword")
     analyze_parser.set_defaults(func=sure_engine.cli_analyze)
 
     answer_parser = subparsers.add_parser(
@@ -6625,6 +6645,65 @@ def build_parser() -> argparse.ArgumentParser:
     )
     chain_parser.add_argument("study_dir")
     chain_parser.set_defaults(func=sure_engine.cli_chain)
+    chain_sub = chain_parser.add_subparsers(dest="chain_action")
+    chain_set = chain_sub.add_parser("set", help="set a chain-level field and append a change_log entry")
+    chain_set.add_argument("--chain", default="", help="chain id or 1-based index; defaults to the first chain")
+    chain_set.add_argument("--field", required=True, help="title/context_key/demand_judgment_id/next_test/counter_evidence_ids/gaps/alternative_explanations/human_review")
+    chain_set.add_argument("--value-json", required=True, help="JSON value for --field")
+    chain_set.add_argument("--note", default="", help="why this edit is made; recorded in change_log.decision")
+    chain_set.set_defaults(func=sure_engine.cli_chain)
+
+    demand_parser = subparsers.add_parser("demand-judgment", help="create a traceable demand judgment without hand-editing JSON")
+    demand_parser.add_argument("study_dir")
+    demand_sub = demand_parser.add_subparsers(dest="judgment_action", required=True)
+    demand_create = demand_sub.add_parser("create", help="create one demand judgment with evidence references")
+    demand_create.add_argument("--id", required=True)
+    demand_create.add_argument("--title", required=True)
+    demand_create.add_argument("--user-role", required=True)
+    demand_create.add_argument("--scene", required=True)
+    demand_create.add_argument("--task", required=True)
+    demand_create.add_argument("--current-substitute", required=True)
+    demand_create.add_argument("--friction", required=True)
+    demand_create.add_argument("--consequence", required=True)
+    demand_create.add_argument("--solution", required=True)
+    demand_create.add_argument("--acceptance-conditions", required=True)
+    demand_create.add_argument("--problem-evidence", action="append", default=[])
+    demand_create.add_argument("--solution-evidence", action="append", default=[])
+    demand_create.add_argument("--commercial-evidence", action="append", default=[])
+    demand_create.add_argument("--counter-evidence", action="append", default=[])
+    demand_create.add_argument("--context-key", default="")
+    demand_create.add_argument("--next-test", required=True)
+    demand_create.set_defaults(func=sure_engine.cli_demand_judgment)
+
+    evidence_parser = subparsers.add_parser("evidence", help="correct imported evidence metadata through an audited path")
+    evidence_parser.add_argument("study_dir")
+    evidence_sub = evidence_parser.add_subparsers(dest="evidence_action", required=True)
+    evidence_set = evidence_sub.add_parser("set", help="correct evidence_form and level, with E3 concept-test evidence")
+    evidence_set.add_argument("record_id")
+    evidence_set.add_argument("--field", required=True, help="currently only evidence_form")
+    evidence_set.add_argument("--value-json", required=True)
+    evidence_set.add_argument("--evidence-level", required=True)
+    evidence_set.add_argument("--concept-test", default="", help="JSON record required for E3")
+    evidence_set.add_argument("--note", default="")
+    evidence_set.set_defaults(func=sure_engine.cli_evidence)
+    evidence_retract = evidence_sub.add_parser("retract", help="撤销误导入证据；保留原文，不再参与分析或审计")
+    evidence_retract.add_argument("record_id")
+    evidence_retract.add_argument("--by", required=True)
+    evidence_retract.add_argument("--reason", required=True)
+    evidence_retract.set_defaults(func=sure_engine.cli_evidence)
+    evidence_restore = evidence_sub.add_parser("restore", help="恢复先前撤销的证据及其原文")
+    evidence_restore.add_argument("record_id")
+    evidence_restore.add_argument("--by", required=True)
+    evidence_restore.set_defaults(func=sure_engine.cli_evidence)
+
+    study_parser = subparsers.add_parser("study", help="update explicit study contract fields without hand-editing study.json")
+    study_parser.add_argument("study_dir")
+    study_sub = study_parser.add_subparsers(dest="study_action", required=True)
+    study_set = study_sub.add_parser("set", help="set a supported dotted study contract field")
+    study_set.add_argument("--field", required=True, help="for example decision.owner or scope.allowed_sources")
+    study_set.add_argument("--value-json", required=True)
+    study_set.add_argument("--note", default="")
+    study_set.set_defaults(func=sure_engine.cli_study)
 
     chain_node_parser = subparsers.add_parser(
         "chain-node",
@@ -6734,6 +6813,43 @@ def build_parser() -> argparse.ArgumentParser:
     observation_export.add_argument("--study", required=True)
     observation_export.add_argument("--json", action="store_true")
     observation_export.set_defaults(func=observation.cmd_export)
+
+    semantic_parser = subparsers.add_parser(
+        "semantic",
+        help="review constrained semantic candidates; accepted ones export as E2 observations")
+    semantic_sub = semantic_parser.add_subparsers(dest="semantic_action", required=True)
+    semantic_list = semantic_sub.add_parser(
+        "list", help="list candidates with critic findings and review state")
+    semantic_list.add_argument("study_dir")
+    semantic_list.add_argument("--json", action="store_true")
+    semantic_list.set_defaults(func=semantic_candidates.cmd_list)
+    semantic_review = semantic_sub.add_parser(
+        "review", help="named accept/reject; a candidate with no critic pass is refused")
+    semantic_review.add_argument("study_dir")
+    semantic_review.add_argument("--candidate", required=True)
+    semantic_review.add_argument("--decision", required=True, choices=("accept", "reject"))
+    semantic_review.add_argument("--reviewer", required=True)
+    semantic_review.add_argument("--note", default="")
+    semantic_review.add_argument("--json", action="store_true")
+    semantic_review.set_defaults(func=semantic_candidates.cmd_review)
+    semantic_export = semantic_sub.add_parser(
+        "export", help="export accepted candidates as E2 collected-statement observations")
+    semantic_export.add_argument("study_dir")
+    semantic_export.add_argument("--store", default="",
+                                 help="observation store (default: STUDY/01-sources/semantic-observations)")
+    semantic_export.add_argument("--by", required=True, help="reviewer name; must match the accept record")
+    semantic_export.add_argument("--product", default="")
+    semantic_export.add_argument("--region", default="")
+    semantic_export.add_argument("--export-now", action="store_true",
+                                 help="also run observation export into 01-sources/observations.jsonl")
+    semantic_export.add_argument("--json", action="store_true")
+    semantic_export.set_defaults(func=semantic_candidates.cmd_export)
+    semantic_validate = semantic_sub.add_parser(
+        "validate", help="validate a candidate document against a study's records")
+    semantic_validate.add_argument("study_dir")
+    semantic_validate.add_argument("file")
+    semantic_validate.add_argument("--json", action="store_true")
+    semantic_validate.set_defaults(func=semantic_candidates.cmd_validate)
 
     metric_parser = subparsers.add_parser(
         "metric", help="map the chain's need.measure to the ovo family metric contract (Growovo gauge + Verovo criteria)"
@@ -6922,7 +7038,7 @@ def build_parser() -> argparse.ArgumentParser:
     roles_show.set_defaults(func=role_catalog.command_roles)
     roles_recommend = roles_sub.add_parser("recommend", help="assemble a role team from goal, industry and study stage")
     roles_recommend.add_argument("goal", help="product/business goal or task")
-    roles_recommend.add_argument("--industry", help="10-industry context; inferred from the goal when omitted")
+    roles_recommend.add_argument("--industry", help="11-industry context; inferred from the goal when omitted")
     roles_recommend.add_argument("--stage", choices=sure_engine.STAGES)
     roles_recommend.add_argument("--base-domain", choices=tuple(sure_engine.domain_packs().keys()), help="constrain industry inference to the routed SURE base domain")
     roles_recommend.add_argument("--lifecycle", choices=[f"L{number:02d}" for number in range(1, 11)])
@@ -6943,6 +7059,17 @@ def build_parser() -> argparse.ArgumentParser:
     roles_scaffold.add_argument("--force", action="store_true", help="deprecated: never overwrites an existing workbench; use --overwrite --confirm")
     roles_scaffold.add_argument("--json", action="store_true")
     roles_scaffold.set_defaults(func=role_catalog.command_roles)
+    roles_workplan_set = roles_sub.add_parser("workplan-set", help="update role owner, timebox and SOP status without editing workplan.json")
+    roles_workplan_set.add_argument("study_dir")
+    roles_workplan_set.add_argument("--role", required=True, help="assigned role id, e.g. R09")
+    roles_workplan_set.add_argument("--owner", default="", help="named owner for this role")
+    roles_workplan_set.add_argument("--timebox", default="", help="human-readable timebox label, e.g. next week")
+    roles_workplan_set.add_argument("--start", default="", help="timebox start date")
+    roles_workplan_set.add_argument("--end", default="", help="timebox end date")
+    roles_workplan_set.add_argument("--step", default="", help="SOP step id, e.g. R09-S01")
+    roles_workplan_set.add_argument("--status", default="", choices=["not_started", "in_progress", "blocked", "review_pending", "done"])
+    roles_workplan_set.set_defaults(func=role_catalog.command_roles)
+
     roles_template = roles_sub.add_parser("template", help="render one role deliverable template without creating findings")
     roles_template.add_argument("role")
     roles_template.add_argument("--deliverable", help="deliverable id or name; defaults to the first")
@@ -7026,7 +7153,7 @@ CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "explore",
     "external-research", "do", "domains",
     "methods", "catalog", "platforms", "capture", "collect", "research", "loop", "analyze", "answer", "instruments", "import", "queue",
-    "codebook", "chain", "chain-node", "context", "observation", "metric", "economics", "psm", "decision", "followup", "decide", "issues", "proof", "brief", "delta", "page", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
+    "codebook", "chain", "chain-node", "demand-judgment", "evidence", "study", "context", "observation", "semantic", "metric", "economics", "psm", "decision", "followup", "decide", "issues", "proof", "brief", "delta", "page", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
     "stage", "label", "build",
 }
 
@@ -7060,6 +7187,14 @@ def main(argv: list[str] | None = None) -> int:
         # list or plan can read like an execution promise (review §2.3).
         print(FIRST_INTERACTION_BANNER)
         return 2
+    if raw and raw[0] == "case":
+        acceptance_home = Path(os.environ.get("OVO_ACCEPTANCE_HOME") or _SCRIPT_DIR.parents[3] / "ovo-acceptance")
+        if not acceptance_home.is_dir():
+            print("OVO 案例运行时未找到，请设置 OVO_ACCEPTANCE_HOME", file=sys.stderr)
+            return 2
+        sys.path.insert(0, str(acceptance_home))
+        from ovo_acceptance.casebook import main as case_main
+        return int(case_main(raw[1:]))
     if (raw and raw[0] == "decide" and len(raw) > 1 and not raw[1].startswith("-")
             and raw[1] not in DECIDE_ACTIONS):
         # PRD §2.4: `askovo decide "question" --repo owner/repo` is the start form.

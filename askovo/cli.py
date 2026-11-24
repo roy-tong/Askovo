@@ -42,7 +42,8 @@ one entry:
 research:
   instruments <study>  generate interview/observation/test kits
   collect <study>      run a supported collector or plan an export
-  analyze <study>      normalize, dedup and describe collected material
+  analyze <study>      normalize, dedup and describe collected material (--semantic: unverified candidates)
+  semantic <action>    list/review/export constrained candidates; named accept -> E2 observation
   import <study> <file> import interviews/CSV/JSONL/text
   document <file>       convert a local PDF/Office/text source to Markdown (optional Docling)
   codebook <study>     scaffold claim-type codebook

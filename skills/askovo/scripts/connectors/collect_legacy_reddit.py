@@ -36,6 +36,8 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import common
+
 DEFAULT_ENDPOINT = "https://arctic-shift.photon-reddit.com/api/comments/search"
 MIN_TEXT_LENGTH = 40
 
@@ -224,6 +226,7 @@ def main() -> None:
     seen = load_seen(args.out)
     written = 0
     args.out.parent.mkdir(parents=True, exist_ok=True)
+    started_at = common.utc_now_iso()
     with args.out.open("a", encoding="utf-8") as output:
         for month_start, month_end in month_bounds(args.start, args.end):
             year, month = month_start.year, month_start.month
@@ -289,6 +292,14 @@ def main() -> None:
                 break
     args.state.parent.mkdir(parents=True, exist_ok=True)
     args.state.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    errors = list((state.get("errors") or {}).values())
+    common.write_collection_manifest(
+        args.out, run_id=run_id, platform="reddit",
+        connector_id=args.connector_id or "reddit-arctic-shift-historical", connector_revision="1",
+        access_basis="historical_archive", query="community_subwindow",
+        started_at=started_at, completed_at=common.utc_now_iso(), reached_records=written,
+        written_records=written, stop_reason="partial" if errors else "completed",
+        requested_records=0 if args.full else args.target_records, errors=errors)
     print(f"completed deep collection: {written} new records (run_id={run_id})", flush=True)
 
 

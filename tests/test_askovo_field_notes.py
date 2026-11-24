@@ -153,7 +153,7 @@ class FieldNotesEngineTests(unittest.TestCase):
         completed = run_cli("platforms", "App Store 评论", "--platform", "app_store", "--json")
         self.assertEqual(0, completed.returncode, completed.stderr)
         payload = json.loads(completed.stdout)
-        self.assertEqual([], payload["recommended"])
+        self.assertIn("app_store", [item["id"] for item in payload["recommended"]])
         note_ids = {note["id"] for note in payload["field_notes"]}
         self.assertIn("app-store-rss-retired", note_ids)
 

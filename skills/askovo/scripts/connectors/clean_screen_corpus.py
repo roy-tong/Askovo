@@ -128,7 +128,11 @@ def build_envelope(
         if field in row:
             envelope[field] = row[field]
     if created_at_field:
-        envelope["created_at"] = row.get(created_at_field)
+        for candidate in str(created_at_field).split(","):
+            value = row.get(candidate.strip())
+            if value not in (None, ""):
+                envelope["created_at"] = value
+                break
     envelope.update(
         {
             "text": text,
@@ -159,11 +163,11 @@ def main() -> None:
     parser.add_argument("--source-family", required=True)
     parser.add_argument("--source-tier", default="published_historical_dataset")
     parser.add_argument("--dataset-role", default="privacy_minimised_discovery_corpus")
-    parser.add_argument("--text-fields", default="title,text", help="comma-separated fields concatenated into the cleaned text")
-    parser.add_argument("--id-fields", default="review_id,id,source_record_id", help="preferred stable id fields")
+    parser.add_argument("--text-fields", default="title,text,body,selftext,content,quote", help="comma-separated fields concatenated into the cleaned text")
+    parser.add_argument("--id-fields", default="review_id,id,source_record_id,comment_id,message_id", help="preferred stable id fields")
     parser.add_argument("--id-parts", default="", help="comma-separated fields hashed into a derived id when no id field exists (e.g. parent_asin,timestamp)")
     parser.add_argument("--channel-field", default="", help="field copied to source_channel (e.g. category)")
-    parser.add_argument("--created-at-field", default="", help="field copied to created_at (e.g. timestamp)")
+    parser.add_argument("--created-at-field", default="created_at,published_at,timestamp,time,created_utc", help="comma-separated timestamp aliases; first non-empty field is copied to created_at")
     parser.add_argument("--keep-fields", default="", help="comma-separated raw fields passed through into the envelope")
     parser.add_argument("--min-length", type=int, default=20)
     parser.add_argument("--redact", default="email,url,phone", help="comma-separated of: " + ",".join(sorted(REDACTIONS)))

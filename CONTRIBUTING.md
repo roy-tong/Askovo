@@ -7,8 +7,8 @@
 要求 Python 3.9–3.12。核心运行时只使用 Python 标准库。
 
 ```bash
-git clone https://github.com/roy-tong/askovo.git
-cd askovo
+git clone https://github.com/roy-tong/Askovo.git
+cd Askovo
 python3 -m unittest discover -s tests
 python3 skills/askovo/scripts/askovo.py demo
 python3 skills/askovo/scripts/askovo.py doctor

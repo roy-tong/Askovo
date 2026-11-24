@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.23.0 — 2026-11-24
+
+### Added
+
+- **Constrained semantic candidate layer (`askovo analyze --semantic`)**: an optional, off-by-default OpenAI-compatible adapter widens recall without letting a model decide. Every candidate must cite an existing `record_id` plus an exact quote, carry `unknowns`, and stay `unverified`; model-declared `evidence_level`, demand claims and `validated` status are rejected. A mandatory critic pass records counterexamples, coverage gaps, alternative explanations and missing evidence before named `askovo semantic review`; only an accepted candidate can be exported as a `collected_corpus_statement` E2 observation (quote provenance preserved, theme still unverified), and nothing enters `evidence.jsonl` automatically. No model configuration falls back to deterministic analysis; remote endpoints require explicit `--allow-external` and HTTPS; loopback models run locally. Optional embedding retrieval stores only text hashes and vectors, with keyword fallback. New: `skills/askovo/scripts/semantic_candidates.py`, `docs/semantic-candidates.md`, MCP `askovo_semantic` and `analyze --semantic` options.
+
+### Fixed
+
+- Final review binds every accepted candidate to both its candidate hash and the exact critic hash; later critic changes require a fresh named review. Record ids must be globally unambiguous before citation.
+- MCP `askovo_semantic` can list/validate candidates and export existing accepted reviews, but accept/reject is human-only in the CLI. Model and embedding requests refuse redirects instead of forwarding authorization headers to another endpoint.
+- Collection authorization now runs inside `collect_cdp` itself, empty extraction is `empty_unconfirmed`, and every non-`collected/planned` terminal state exits nonzero instead of reporting success. Independent collectors append results, preserve failed manifests and never advance completed queries after request failures.
+- Raw envelopes and manifests now share stable platform ids, normalized text hashes, run ids, connector revisions and real timestamps. Legacy sources always keep `primary_sample_eligible=false`; Amazon/Bilibili CDP access modes are consistent, and YouTube/Hacker News are wired into the main collector.
+- YouTube innertube is explicitly `public_endpoint_limited`: the official Data API remains preferred, while the project-internal route requires separate review and is not treated as official quota or a first-party exemption. Amazon/Bilibili catalog access modes, Kickstarter status and Arctic registration docs are aligned.
+
+- Restored the reviewed historical-only `reddit-arctic-shift-historical` connector registration used by real HMC and golf research workspaces. Existing studies can be audited again without rewriting their provenance; the registration remains distinct from Reddit's official API and does not authorize live-market collection or raw-corpus redistribution.
+
+### Tests
+
+- 1002 unit/regression tests pass locally, including direct CDP authorization, failure exit codes, empty-output handling, raw/manifest contracts, cross-run resume, atomic state, reviewed revisions, the empty-body evidence gate and 43 constrained semantic-candidate tests covering MCP self-review refusal, redirect refusal, unique record ids and critic-hash binding.
+
 ## 2.22.1 — 2026-11-23
 
 ### Fixed

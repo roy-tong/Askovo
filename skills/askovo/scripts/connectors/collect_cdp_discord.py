@@ -73,6 +73,7 @@ if str(HERE) not in sys.path:
 
 import cdp_runtime
 import cdp_strategy
+import common
 from common import atomic_write_json
 _spec = importlib.util.spec_from_file_location("sure_engine_cdp_dc", HERE.parent / "sure_engine.py")
 sure_engine = importlib.util.module_from_spec(_spec)
@@ -454,6 +455,7 @@ def main() -> int:
     stopped = "ok"
     empty_confirmed = False
     client = None
+    started_at = common.utc_now_iso()
     try:
         guard.begin_cell(args.mode)
         guard.navigate()  # the only goto in this cell
@@ -507,6 +509,13 @@ def main() -> int:
         if client is not None:
             client.close()
 
+    common.write_collection_manifest(
+        args.out, run_id=f"discord-{int(time.time())}", platform="discord",
+        connector_id="cdp-authorized-visible-page", connector_revision="1",
+        access_basis="cdp_authorized_visible_page", query=args.url,
+        started_at=started_at, completed_at=common.utc_now_iso(), reached_records=len(messages),
+        written_records=len(messages), stop_reason=stopped,
+        requested_records=0, errors=[] if stopped == "ok" else [stopped])
     if stopped in {"blank_render", "session_drop", "membership_gated", "empty_unconfirmed"}:
         detail = {
             "blank_render": "the page rendered blank (200 + empty title/body); unsupported stack — "

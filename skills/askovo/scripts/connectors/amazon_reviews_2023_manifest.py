@@ -26,6 +26,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="List a HuggingFace dataset repository's files with sizes and oids.")
     parser.add_argument("--dataset-id", default=DEFAULT_DATASET)
     parser.add_argument("--prefix", default="raw", help="keep only paths starting with this prefix (use '' for everything)")
+    parser.add_argument("--revision", required=True, help="full reviewed HuggingFace commit SHA")
     parser.add_argument("--user-agent", default="askovo-connector/1.0")
     parser.add_argument("--out", type=Path, default=Path("hf_dataset_manifest.json"))
     args = parser.parse_args()
@@ -33,7 +34,7 @@ def main() -> None:
     tree_url = (
         "https://huggingface.co/api/datasets/"
         + urllib.parse.quote(args.dataset_id, safe="")
-        + "/tree/main?recursive=1"
+        + "/tree/" + urllib.parse.quote(args.revision, safe="") + "?recursive=1"
     )
     request = urllib.request.Request(tree_url, headers={"User-Agent": args.user_agent})
     with urllib.request.urlopen(request, timeout=60) as response:
@@ -47,6 +48,7 @@ def main() -> None:
         relevant.append(
             {
                 "dataset_id": args.dataset_id,
+                "dataset_revision": args.revision,
                 "path": path,
                 "size": item.get("size"),
                 "type": item.get("type"),

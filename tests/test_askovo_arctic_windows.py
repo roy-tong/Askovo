@@ -98,8 +98,10 @@ class ArcticWindowTests(unittest.TestCase):
                 "--user-agent", "askovo-test/1.0", "--max-wait", "0",
             ]
             with mock.patch.object(sys, "argv", argv), \
-                    mock.patch.object(arctic, "fetch_window_page", return_value=None):
+                    mock.patch.object(arctic, "fetch_window_page", return_value=None), \
+                    self.assertRaises(SystemExit) as stopped:
                 arctic.main()
+            self.assertEqual(1, stopped.exception.code)
             saved = json.loads(state.read_text(encoding="utf-8"))
             key = "python:2024-01-01:2024-01-02"
             self.assertIn(key, saved["errors"])

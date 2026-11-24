@@ -362,12 +362,11 @@ CDP 平台的间隔与会话要求直接读注册表 `runtime_policies`（调用
 - **隐私最小化**：作者/用户 id 只留加盐哈希；PII 类字符串打码；无 id 数据集用派生 id 而不保留 `user_id`。
 - **可审计**：state.json 断点 + audit JSON（输入/写出/各类拒绝计数与 policy 声明）；正式运行请配合 `01-sources/manifests/` 的 manifest 模板记录 run 信息。
 
-## 6. 为什么没有登记进 open-source-connectors.json
+## 6. 哪些路线登记，哪些只在本目录维护
 
-评估过，**schema 与语义都不合适，故只写本 README**：
-
-1. 注册表条目以外部 GitHub 项目为对象：`upstream_repo` + 精确 `reviewed_revision`（commit 哈希）+ 其许可证与访问依据审查。本目录是第一方脚本，没有可 pin 的外部 revision（本仓库自身未 commit 前也没有哈希可言）。
-2. `askovo.py` 的连接器校验会把 `supported`/`historical_only` 条目自动启用进 plan。其中 legacy Reddit 归档端点属于**非官方访问路径**，是否允许作为默认路线是四道审查要回答的政策问题——收编工具不等于通过审查，不应借登记悄悄放行。
+1. 注册表条目以外部 GitHub 项目为对象：`upstream_repo` + 精确 `reviewed_revision`（commit 哈希）+ 其许可证与访问依据审查。本目录第一方脚本保留自己的连接器版本和统一 manifest，不伪造上游 commit。
+2. Arctic Shift 历史归档已经按 `references/open-source-connectors.md` 的四道审查登记为 `reddit-arctic-shift-historical`（`historical_only`），不再适用“尚未登记”的旧描述。PullPush 与其他 legacy 路线仍须分别复核，不能因 Arctic 已登记而自动放行。
 3. Amazon Reviews 2023 数据集已有注册表条目（`amazon-reviews-2023`），收编的获取器只是同一 `historical_only` 数据集的另一种取数方式，另立条目会重复。
+4. YouTube innertube 是项目内部的 `public_endpoint_limited` 路线，不是官方 Data API 配额，也不是对 blocked 第三方抓取器的豁免。官方 Data API 优先；innertube 需要独立复核访问依据、规模与数据权利，并与主 CLI 的 adapter 字段和独立脚本分别说明。
 
-若未来要放开 legacy 归档路线，正确路径是：按 `references/open-source-connectors.md` 的四道审查评审该端点，pin 其上游 revision 与访问依据，再更新注册表与 `reviewed_at`（并按 AGENTS.md 加 CHANGELOG 行）——而不是从工具箱反向登记。
+若未来要放开新的 legacy 归档路线，正确路径仍是：按四道审查评审端点，pin 上游 revision 与访问依据，再更新注册表与 `reviewed_at`（并按 AGENTS.md 加 CHANGELOG 行）——而不是从工具箱反向登记。

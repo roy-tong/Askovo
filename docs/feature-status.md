@@ -1,5 +1,32 @@
 # Askovo: implementation status
 
+## Release update, 2026-11-23 · v2.22.1
+
+- `StudyRepository` / `StudyContext` give one `askovo deliver` request an immutable study snapshot; external rewrites during the request no longer mix revisions, and the compatibility JSONL cache is a bounded 32-entry LRU. v2.22.1 removes the 32-file byte-snapshot eviction and deep-copies nested claims.
+- Standalone observation export is atomic and idempotent; repeat exports deduplicate the exact `(observation_id, claim_id, source_hash)`, a changed source hash remains a new revision, and two-process duplicate export is closed by the shared study transaction lock.
+- Active study requests compare a study-wide version manifest and journal state at entry/exit; a multi-file commit during delivery returns `STALE_SOURCE` instead of mixing old evidence with new output. Corrupt observation history stays untouched, and interrupted appends retry exactly once.
+- **Verification:** 910 unit/regression tests pass locally (v2.22.1); the v2.22.0 line added the request-scoped snapshot, transactional observation export and bounded cache. See `CHANGELOG.md`.
+
+## Constrained semantic candidates (v2.23.0, 2026-11-24)
+
+- `askovo analyze <study> --semantic` adds an optional, off-by-default candidate layer on top of the deterministic analysis. An OpenAI-compatible model may propose themes, mechanisms and counterexamples, but every candidate must cite an existing `record_id` plus an exact quote substring, `unknowns` is mandatory, and `status` stays `unverified`. Model-declared `evidence_level`, demand claims and `validated` status are rejected before storage.
+- A critic pass (deterministic scan plus optional model critic) records counterexamples, coverage gaps, alternative explanations and missing evidence before any candidate can be reviewed. Named CLI `askovo semantic review` then gates export; the review binds both candidate and critic hashes, and either changing requires a fresh review. MCP cannot accept/reject on a human's behalf. Accepted candidates become `collected_corpus_statement` E2 observations whose quote provenance is preserved and whose inferred theme stays unverified. Nothing enters `evidence.jsonl` automatically.
+- Without `ASKOVO_LLM_BASE` / `ASKOVO_LLM_MODEL` the command falls back to deterministic analysis. Non-loopback endpoints require explicit `--allow-external`; remote endpoints must use HTTPS, and all model/embedding redirects are refused. Ambiguous cross-platform record ids are rejected before citation. Optional embedding retrieval caches only text hashes and vectors, and falls back to keyword matching. The offline stub validates the contract, not real model recall quality.
+- **Verification:** 43 dedicated tests plus the full 1002-test CLI/MCP/observation suite pass; see `docs/semantic-candidates.md`.
+
+## Collection consistency repair (2026-11-24)
+
+- `collect_cdp` enforces scope and enabled adapter itself; direct calls cannot bypass the outer gate. Empty extraction returns `empty_unconfirmed` without a run, and all non-`collected/planned` terminal states exit nonzero.
+- YouTube, Hacker News, Arctic, PullPush and Amazon use one raw envelope and manifest writer with stable record ids, normalized text hashes, run ids, connector revisions, access basis, real start/finish timestamps and stop reasons. Independent tools append rather than overwrite and persist failures rather than advancing completed state.
+- Legacy sources always keep `primary_sample_eligible=false`; Hacker News and Amazon use the same platform ids as the catalog. Amazon/Bilibili declare `cdp_visible_page` consistently, and YouTube/Hacker News are wired into the main collector instead of reporting `adapter_unavailable`.
+- YouTube marks innertube as `public_endpoint_limited`: the official Data API remains preferred, while the project-internal route needs separate review and is not treated as official quota or a first-party exemption from connector review. See `docs/connectors.md` and the updated platform catalog/field notes.
+- **Verification:** 954 unit/regression tests pass locally, including the new collection consistency suite and the previously failing empty-body evidence gate.
+
+## Native real-task case gate (2026-11-24)
+
+- `askovo case list|show|incidents|index|validate|replay|verify` delegates to the shared `ovo-acceptance` runtime. The default registry supplies the family workspace root, so commands also work from this repository. `OVO_ACCEPTANCE_HOME` overrides the shared runtime location and `OVO_CASE_REGISTRY` overrides the registry for isolated tests; `OVO_CASE_ROOT` explicitly overrides the evidence root.
+- `task_rerun` and `evidence_only` remain separate. External-write cases are evidence-only and never resend, pay or sign. The runtime and 17-case registry passed validation; 14 replayable cases passed and 3 remained blocked. See `../ai输出/ovo-真实任务资产库/README.md`.
+
 **Release update, 2026-11-20 · [v2.20.0](../CHANGELOG.md).** Evidence grades follow the source and its review history. An empty, ineligible or unreadable evidence set produces a gap note explaining what the decision owner needs to supply.
 
 Earlier baseline reviewed 2026-11-04 against the **v2.16.1 release**. Available means local implementation, not production validation on every platform.

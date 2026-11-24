@@ -11,7 +11,7 @@
 
 请通过 GitHub 私密漏洞报告提交：
 
-<https://github.com/roy-tong/askovo/security/advisories/new>
+<https://github.com/roy-tong/Askovo/security/advisories/new>
 
 如果该入口尚未启用，请先通过仓库所有者的 GitHub 资料页寻找非公开联系方式，不要在公开 Issue 中披露漏洞细节。
 

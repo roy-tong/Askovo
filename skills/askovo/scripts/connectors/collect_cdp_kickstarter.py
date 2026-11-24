@@ -416,6 +416,7 @@ def main() -> int:
     journal_path = args.out.with_name(args.out.stem + ".session.json")
     guard = cdp_strategy.SessionGuard("kickstarter", policy=policy, state_path=journal_path)
     stopped = "ok"
+    started_at = common.utc_now_iso()
 
     try:
         if args.mode == "posts":
@@ -434,6 +435,13 @@ def main() -> int:
         guard.save()
         print(f"journal: {journal_path}", flush=True)
 
+    common.write_collection_manifest(
+        args.out, run_id=f"kickstarter-{int(time.time())}", platform="kickstarter",
+        connector_id="cdp-authorized-visible-page", connector_revision="1",
+        access_basis="cdp_authorized_visible_page", query=args.url,
+        started_at=started_at, completed_at=common.utc_now_iso(), reached_records=total,
+        written_records=total, stop_reason=stopped,
+        requested_records=0, errors=[] if stopped == "ok" else [stopped])
     if stopped != "ok":
         print(
             f"STOP [{stopped}]: stop touching kickstarter; a timeout means >= "

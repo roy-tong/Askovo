@@ -30,11 +30,11 @@ dependencies = []
 
 [project.urls]
 Homepage = "https://roy-tong.github.io/Askovo/"
-Repository = "https://github.com/roy-tong/askovo"
-Documentation = "https://github.com/roy-tong/askovo/blob/main/docs/README.md"
-Changelog = "https://github.com/roy-tong/askovo/blob/main/CHANGELOG.md"
-Issues = "https://github.com/roy-tong/askovo/issues"
-Security = "https://github.com/roy-tong/askovo/security"
+Repository = "https://github.com/roy-tong/Askovo"
+Documentation = "https://github.com/roy-tong/Askovo/blob/main/docs/README.md"
+Changelog = "https://github.com/roy-tong/Askovo/blob/main/CHANGELOG.md"
+Issues = "https://github.com/roy-tong/Askovo/issues"
+Security = "https://github.com/roy-tong/Askovo/security"
 
 [project.scripts]
 askovo = "askovo.cli:main"

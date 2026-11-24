@@ -4,22 +4,22 @@
 
 ## 1. 先完成 canonical 仓库迁移
 
-当前目标地址为 <https://github.com/roy-tong/askovo>。
+当前目标地址为 <https://github.com/roy-tong/Askovo>。
 
-1. 在 GitHub 将 `roy-tong/user-demand-research` 重命名为 `roy-tong/askovo`，不要新建一个没有历史的空仓库替代。
+1. 在 GitHub 将 `roy-tong/user-demand-research` 重命名为 `roy-tong/Askovo`，不要新建一个没有历史的空仓库替代。
 2. 确认旧 URL 会重定向，且以下地址全部可用：仓库页、raw logo、CI badge、Issues、Security Advisories。
 3. 将 About 改为 Askovo 的产品描述；SURE 只描述为底层研究引擎。更新 Topics、Homepage 和个人官网 `llms.txt` 中的旧链接。
 4. 启用 Private Vulnerability Reporting，并实际确认 `security/advisories/new` 可用。
 5. 迁移后更新本地 remote；使用仓库实际采用的 SSH alias 或 HTTPS，不要盲目覆盖其他机器的认证配置。
 
 ```bash
-git remote set-url origin git@github.com:roy-tong/askovo.git
+git remote set-url origin git@github.com:roy-tong/Askovo.git
 git ls-remote --symref origin HEAD
 ```
 
 ## 2. 准备候选版本
 
-- 不移动已经公开的 tag。本轮并发一致性与观察恢复修复发布为 **v2.22.1**；后续版本按实际变更遵循语义化版本。
+- 不移动已经公开的 tag；后续版本按实际变更遵循语义化版本。
 - 只修改 `VERSION` 作为版本事实源；同步合成样例中的 `method_version`。
 - 将 `CHANGELOG.md` 的 `Unreleased` 内容整理到该版本，保持 1.x 历史中的旧 SURE 名称和命令不变。
 - 确认工作树干净，所有评审、CI 和文档链接检查通过。

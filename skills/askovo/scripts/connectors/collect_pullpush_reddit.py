@@ -24,7 +24,7 @@ from common import (
 PULLPUSH_COMMENT_SEARCH = "https://api.pullpush.io/reddit/search/comment/"
 
 
-def normalize_comment(item: Dict[str, Any], query: str) -> Dict[str, Any] | None:
+def normalize_comment(item: Dict[str, Any], query: str, run_id: str | None = None) -> Dict[str, Any] | None:
     body = clean_text(item.get("body"))
     if len(body) < 20:
         return None
@@ -39,7 +39,7 @@ def normalize_comment(item: Dict[str, Any], query: str) -> Dict[str, Any] | None
     created_at = utc_from_timestamp(item.get("created_utc") or item.get("created"))
     score = item.get("score") or item.get("ups")
     flags = base_quality_flags(body, created_at)
-    return {
+    row = {
         "record_id": f"reddit:{comment_id}",
         "source_platform": "reddit",
         "source_channel": f"r/{subreddit}" if subreddit and not str(subreddit).startswith("r/") else subreddit,
@@ -60,14 +60,17 @@ def normalize_comment(item: Dict[str, Any], query: str) -> Dict[str, Any] | None
         "source_role": "motivation",
         "sample_bucket": query,
         "month_bucket": month_bucket(created_at),
-        "primary_sample_eligible": is_primary_date(created_at),
+        "primary_sample_eligible": False,
         "quality_score": quality_score(body, flags, score),
         "sampling_weight": 1.0,
         "quality_flags": flags,
+        "source_tier": "legacy_nonofficial_public_archive",
     }
+    return common.with_connector_envelope(row, run_id or "pullpush-standalone", "reddit-pullpush-historical", "1")
 
 
-def collect(cfg: Dict[str, Any], max_records: int, size: int, sleep_s: float, timeout: int) -> List[Dict[str, Any]]:
+def collect(cfg: Dict[str, Any], max_records: int, size: int, sleep_s: float, timeout: int,
+            run_id: str | None = None) -> List[Dict[str, Any]]:
     cfg = cfg.get("reddit", cfg)
     queries = cfg["queries"]
     subreddits = cfg["subreddits"]
@@ -86,14 +89,13 @@ def collect(cfg: Dict[str, Any], max_records: int, size: int, sleep_s: float, ti
                 try:
                     payload = common.request_json(url, timeout=timeout, retries=1)
                 except Exception as exc:
-                    print(f"warning: {subreddit=} {query=!r} failed: {exc}")
-                    break
+                    raise RuntimeError(f"PullPush subreddit={subreddit!r} query={query!r} failed: {exc}") from exc
                 comments = payload.get("data", [])
                 if not comments:
                     break
                 next_before = None
                 for item in comments:
-                    row = normalize_comment(item, query)
+                    row = normalize_comment(item, query, run_id)
                     created = item.get("created_utc") or item.get("created")
                     if created is not None:
                         created_i = int(float(created))
@@ -128,6 +130,7 @@ def main() -> None:
     parser.add_argument("--user-agent", required=True)
     parser.add_argument("--author-salt", default=None)
     parser.add_argument("--primary-after-utc", type=int, default=None)
+    parser.add_argument("--run-id", default=None)
     parser.add_argument("--out", type=Path, default=Path("data/raw/reddit/pullpush_comments.jsonl"))
     args = parser.parse_args()
 
@@ -137,8 +140,25 @@ def main() -> None:
         primary_after_utc=args.primary_after_utc,
     )
     out_path = Path(__file__).resolve().parents[1] / args.out
-    rows = collect(common.load_json_config(args.config), args.max_records, args.size, args.sleep, args.timeout)
-    count = write_jsonl(out_path, rows, append=False)
+    cfg = common.load_json_config(args.config)
+    started_at = common.utc_now_iso()
+    run_id = args.run_id or f"pullpush-{int(time.time())}"
+    try:
+        rows = collect(cfg, args.max_records, args.size, args.sleep, args.timeout, run_id)
+    except Exception as exc:
+        common.write_collection_manifest(
+            out_path, run_id=run_id, platform="reddit", connector_id="reddit-pullpush-historical",
+            connector_revision="1", access_basis="historical_archive", query=str(cfg.get("queries") or ""),
+            started_at=started_at, completed_at=common.utc_now_iso(), reached_records=0,
+            written_records=0, stop_reason="failed", requested_records=args.max_records,
+            errors=[str(exc)])
+        raise SystemExit(1) from exc
+    count = write_jsonl(out_path, rows, append=True)
+    common.write_collection_manifest(
+        out_path, run_id=run_id, platform="reddit", connector_id="reddit-pullpush-historical",
+        connector_revision="1", access_basis="historical_archive", query=str(cfg.get("queries") or ""),
+        started_at=started_at, completed_at=common.utc_now_iso(), reached_records=len(rows),
+        written_records=count, stop_reason="completed", requested_records=args.max_records)
     print(f"wrote {count} Reddit records to {out_path}")
 
 
