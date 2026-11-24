@@ -30,6 +30,7 @@ askovo 用同一主链服务五域产品经理、用户研究、用户运营及�
 24. [机器可读交付合同](delivery-contract.json) —— 定量/定性研究到做/缓做/不做业务结论、采购门与独立业务结果边界。
 25. [2026-11 采集战役复盘](campaign-postmortem-20261117.md) —— 问题 → 根因 → 有效解法 → 沉淀位置（风控 / 平台通道 / 数据管线）。
 26. [Web 阅读面](web-surface.md) —— `askovo deliver --kind web`：事实/自述/推导/我的判断四类标签、数字与判断的时间分层、自包含阅读页与边界。
+27. [语义候选层](semantic-candidates.md) —— `analyze --semantic`：受约束召回、逐条原文引用、critic、具名复核与 E2 收集陈述导出。
 
 | 你想做什么 | 去哪 |
 | --- | --- |
@@ -44,6 +45,7 @@ askovo 用同一主链服务五域产品经理、用户研究、用户运营及�
 | 把研究工件变成一个能顺着读的网页 | `askovo deliver <study> --kind web`（见 [Web 阅读面](web-surface.md)） |
 | 我是研发转型全栈，要自己挖需求、定产品 | [快速开始·研发转全栈](quickstart.md#研发转全栈先证据后编码) 与[全栈研发入门手册](../skills/askovo/references/fullstack-developer-playbook.md) |
 | 看语料分布与判断覆盖 | `askovo deliver <study> --kind analysis` |
+| 用模型扩大召回但不让它下结论 | `askovo analyze <study> --semantic`（见 [语义候选层](semantic-candidates.md)） |
 | 查 80 岗位职责/KPI/SOP、组队与交付模板 | [岗位操作系统](role-operating-system.md) 与 `askovo roles ...` |
 | 生成岗位交付或生命周期导航 | `askovo deliver <study> --kind role --role R52` / `--kind lifecycle` |
 | 让 Agent 按协议工作 | [../skills/askovo/SKILL.md](../skills/askovo/SKILL.md) |

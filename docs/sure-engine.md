@@ -41,6 +41,7 @@ SURE = **Structured User Research with Evidence**。它不是独立安装的产�
 ```text
 skills/askovo/scripts/study_context.py  # StudyRepository + request-scoped immutable StudyContext
 skills/askovo/scripts/sure_engine.py   # SURE 支撑引擎、主链脚手架与共享渲染
+skills/askovo/scripts/semantic_candidates.py  # 可选的受约束语义候选层（召回扩展，不下结论）
 skills/askovo/scripts/role_catalog.py  # 岗位/行业目录、组队、workplan 与岗位投影（支撑层）
 skills/askovo/scripts/askovo.py        # askovo CLI、统一结构/证据/推理门
 skills/askovo/scripts/askovo_mcp.py    # askovo MCP 外壳
@@ -49,6 +50,12 @@ skills/askovo/scripts/askovo_mcp.py    # askovo MCP 外壳
 不要为 SURE 单独安装、单独起服务或 fork 一套协议。五类领域也只改变方法、证据、安全与验收参数，不改变主链 schema。
 
 一次 `askovo deliver` 在同一 `StudyContext` 中完成全审计和交付投影：研究内 JSON/JSONL 使用同一不可变快照，研究外目录资产仍正常读取。下一命令重新读取文件；全局兼容缓存最多保留 32 个内容快照。Observation 独立库使用原子写，研究内导出使用事务并按观察 ID、claim ID 与来源哈希幂等追加。
+
+## 语义候选层（可选）
+
+确定性的 `analyze` 会对同义表达和隐含机制漏召回。`analyze --semantic` 增加一个受约束的候选层：模型只提出主题、机制和反例，每条候选必须挂当前 study 中存在的 `record_id` 与原文子串 `quote`，`unknowns` 必填，`status` 固定 `unverified`。模型写 `evidence_level`、`demand_claim`、`validated` 会被拒绝；候选在展示或复核前先过 critic（反例、覆盖缺口、替代解释、补证清单）；只有具名 `accept` 才能导出 `collected_corpus_statement` 的 E2 观察，进入 `evidence.jsonl` 仍需人工语义审核。
+
+没有 `ASKOVO_LLM_*` 配置时自动退回确定性分析；非 loopback 端点必须显式 `--allow-external`。它不写七节点链、不写需求判断、不改证据等级，也不把候选数量当作总体比例或因果证据。详见[语义候选层](semantic-candidates.md)。
 
 ## 一句话
 

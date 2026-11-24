@@ -33,16 +33,20 @@ askovo platforms "家用摄像头夜间告警的用户抱怨" --domain hardware 
 |---|---|---|
 | GitHub | 官方 Search API | `GITHUB_TOKEN`（可选，提高限额） |
 | Reddit | 官方 Data API | `ASKOVO_REDDIT_CLIENT_ID` / `ASKOVO_REDDIT_CLIENT_SECRET` / `ASKOVO_REDDIT_USER_AGENT` |
+| YouTube | 官方 Data API 优先；项目内部 innertube 受限公开端点 | 与官方 API 分开审查，标 `public_endpoint_limited` |
+| Hacker News | Algolia 公共 API | 无账号；按限速与偏差说明使用 |
 | 本地 fixture/授权导出 | JSONL/CSV | — |
 
-其他平台（Instagram、Amazon、X、TikTok、App Store 等）当前没有内置批量适配器，`collect` 会返回 `3` 并给出导入/授权导出路径。原因不是“技术做不到”，而是没有合规的通用批量接口。
+其他平台（Instagram、Amazon、X、TikTok、App Store 等）主 CLI 当前没有内置批量适配器，`collect` 会返回 `3` 并给出导入/授权导出路径。`adapter=none` 表示主 CLI 能力，不等于平台目录拒绝，也不等于独立工具箱不存在采集脚本。
 
 ### 特殊平台说明
 
 - **Instagram**：没有通用公开内容批量 API；只接受授权创作者/企业导出或符合资格的研究 API；不做抓取。
 - **Amazon**：官方评论/商品接口按合作伙伴/卖家权限开放；优先 Amazon Reviews 2023 历史数据集或授权导出。
+- **YouTube**：官方 Data API 优先；内置 innertube 是项目内部的受限公开端点，不当作官方 API 配额或 supported 无限量通道，按 limited 单独复核。
 - **X / TikTok / LinkedIn**：官方 API 有付费层级、研究资格或合作方限制。
-- **小红书 / 知乎 / 京东 / 淘宝 / Kickstarter**：当前标记为 blocked；只接受授权导出，不提供绕过方式。
+- **小红书 / 知乎 / 京东 / 淘宝**：当前标记为 blocked；只接受授权导出，不提供绕过方式。
+- **Kickstarter**：当前为 limited，可用授权可见页 CDP 采集公开项目评论/更新；历史冻结数据集只作背景。
 
 ## 四门审查
 
@@ -59,7 +63,7 @@ askovo platforms "家用摄像头夜间告警的用户抱怨" --domain hardware 
 
 ## 当前清单
 
-截至 2026-08-27：
+截至 2026-11-24：
 
 | 平台 | 开源项目 | 状态 | 使用边界 |
 | --- | --- | --- | --- |

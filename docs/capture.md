@@ -12,10 +12,12 @@ askovo capture page ./cam-study \
 产物（均为候选材料，不是已登记证据）：
 
 ```text
-01-sources/captures/<capture_id>.json   # URL、标题、正文、哈希、截图、OCR、CDP 端点
+01-sources/captures/<capture_id>.json   # URL、标题、正文、created_at、作者、结构化行、哈希、截图、OCR、CDP 端点
 01-sources/captures/<capture_id>.png    # 页面截图
 01-sources/captures/index.jsonl         # 追加式抓取索引
 ```
+
+`structured_rows` 是平台提取出的评论/帖子行，保留 `created_at`、作者和精确 URL；`capture accept` 归一化时优先使用它们，避免只剩整页纯文本后丢失发生时间和来源。
 
 ## 审核：候选 → 证据的唯一通道
 

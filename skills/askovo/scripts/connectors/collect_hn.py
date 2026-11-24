@@ -23,7 +23,7 @@ from common import (
 HN_SEARCH = "https://hn.algolia.com/api/v1/search"
 
 
-def normalize_hit(hit: Dict[str, Any], query: str) -> Dict[str, Any] | None:
+def normalize_hit(hit: Dict[str, Any], query: str, run_id: str | None = None) -> Dict[str, Any] | None:
     text = clean_text(hit.get("comment_text") or hit.get("story_text") or hit.get("title"))
     if len(text) < 20:
         return None
@@ -35,9 +35,9 @@ def normalize_hit(hit: Dict[str, Any], query: str) -> Dict[str, Any] | None:
     created_at = hit.get("created_at")
     flags = base_quality_flags(text, created_at)
     score = hit.get("points")
-    return {
+    row = {
         "record_id": f"hn:{object_id}",
-        "source_platform": "hacker_news",
+        "source_platform": "hackernews",
         "source_channel": story_title or "hn_comment",
         "source_url": f"https://news.ycombinator.com/item?id={object_id}",
         "source_query": query,
@@ -60,10 +60,13 @@ def normalize_hit(hit: Dict[str, Any], query: str) -> Dict[str, Any] | None:
         "quality_score": quality_score(text, flags, score),
         "sampling_weight": 1.0,
         "quality_flags": flags,
+        "source_tier": "official_public_api",
     }
+    return common.with_connector_envelope(row, run_id or "hn-standalone", "hackernews-algolia", "1")
 
 
-def collect(cfg: Dict[str, Any], max_records: int, hits_per_page: int, sleep_s: float, timeout: int) -> List[Dict[str, Any]]:
+def collect(cfg: Dict[str, Any], max_records: int, hits_per_page: int, sleep_s: float, timeout: int,
+            run_id: str | None = None) -> List[Dict[str, Any]]:
     cfg = cfg.get("hacker_news", cfg)
     queries = cfg["queries"]
     after_utc = cfg.get("after_utc")
@@ -86,13 +89,12 @@ def collect(cfg: Dict[str, Any], max_records: int, hits_per_page: int, sleep_s: 
             try:
                 payload = common.request_json(url, timeout=timeout, retries=2)
             except Exception as exc:
-                print(f"warning: HN query={query!r} page={page} failed: {exc}")
-                break
+                raise RuntimeError(f"HN query={query!r} page={page} failed: {exc}") from exc
             hits = payload.get("hits", [])
             if not hits:
                 break
             for hit in hits:
-                row = normalize_hit(hit, query)
+                row = normalize_hit(hit, query, run_id)
                 if not row or row["record_id"] in seen:
                     continue
                 seen.add(row["record_id"])
@@ -118,6 +120,7 @@ def main() -> None:
     parser.add_argument("--user-agent", required=True)
     parser.add_argument("--author-salt", default=None)
     parser.add_argument("--primary-after-utc", type=int, default=None)
+    parser.add_argument("--run-id", default=None)
     parser.add_argument("--out", type=Path, default=Path("data/raw/hn/hn_comments.jsonl"))
     args = parser.parse_args()
 
@@ -127,8 +130,25 @@ def main() -> None:
         primary_after_utc=args.primary_after_utc,
     )
     out_path = Path(__file__).resolve().parents[1] / args.out
-    rows = collect(common.load_json_config(args.config), args.max_records, args.hits_per_page, args.sleep, args.timeout)
-    count = write_jsonl(out_path, rows, append=False)
+    cfg = common.load_json_config(args.config)
+    started_at = common.utc_now_iso()
+    run_id = args.run_id or f"hn-{int(time.time())}"
+    try:
+        rows = collect(cfg, args.max_records, args.hits_per_page, args.sleep, args.timeout, run_id)
+    except Exception as exc:
+        common.write_collection_manifest(
+            out_path, run_id=run_id, platform="hackernews", connector_id="hackernews-algolia",
+            connector_revision="1", access_basis="official_api", query=str(cfg.get("queries") or ""),
+            started_at=started_at, completed_at=common.utc_now_iso(), reached_records=0,
+            written_records=0, stop_reason="failed", requested_records=args.max_records,
+            errors=[str(exc)])
+        raise SystemExit(1) from exc
+    count = write_jsonl(out_path, rows, append=True)
+    common.write_collection_manifest(
+        out_path, run_id=run_id, platform="hackernews", connector_id="hackernews-algolia",
+        connector_revision="1", access_basis="official_api", query=str(cfg.get("queries") or ""),
+        started_at=started_at, completed_at=common.utc_now_iso(), reached_records=len(rows),
+        written_records=count, stop_reason="completed", requested_records=args.max_records)
     print(f"wrote {count} Hacker News records to {out_path}")
 
 

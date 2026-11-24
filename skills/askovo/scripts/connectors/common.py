@@ -63,6 +63,7 @@ def ensure_parent(path: Path) -> None:
 
 def request_json(url: str, *, timeout: int = 30, retries: int = 3, user_agent: Optional[str] = None) -> Dict[str, Any]:
     last_error: Optional[Exception] = None
+    safe_url = url.split("?", 1)[0]
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": user_agent or USER_AGENT})
@@ -71,12 +72,17 @@ def request_json(url: str, *, timeout: int = 30, retries: int = 3, user_agent: O
                 if len(payload) > 16 * 1024 * 1024:
                     raise RuntimeError("JSON response exceeds 16 MiB limit")
                 return json.loads(payload.decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            decision = classify_backoff(exc.code, dict(exc.headers or {}), attempt)
+            if decision["action"] == "stop" or attempt + 1 >= retries:
+                break
+            time.sleep(float(decision["wait_seconds"]))
         except Exception as exc:
             last_error = exc
-            if isinstance(exc, urllib.error.HTTPError) and exc.code in {400, 404}:
-                raise
-            time.sleep(1.5 * (attempt + 1))
-    raise RuntimeError(f"request failed after {retries} attempts: {url}") from last_error
+            if attempt + 1 < retries:
+                time.sleep(1.5 * (attempt + 1))
+    raise RuntimeError(f"request failed after {retries} attempts: {safe_url}") from last_error
 
 
 def build_url(base: str, params: Dict[str, Any]) -> str:
@@ -515,4 +521,105 @@ def atomic_write_json(path: Path, payload: Any) -> None:
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=1)
     Path(tmp).replace(target)
+
+
+def with_connector_envelope(record: Dict[str, Any], run_id: str, connector_id: str,
+                            connector_revision: str) -> Dict[str, Any]:
+    record["source_record_id"] = record.get("record_id") or record.get("source_record_id")
+    record["normalized_text_hash"] = (
+        record.get("normalized_text_hash") or record.get("text_hash")
+        or stable_text_hash(str(record.get("text") or ""))
+    )
+    record["collection_run_id"] = run_id
+    record["connector_id"] = connector_id
+    record["connector_revision"] = connector_revision
+    return record
+
+
+def collection_manifest_path(out: Path, run_id: str) -> Path:
+    out = Path(out)
+    parts = out.parts
+    if "02-data" in parts:
+        index = parts.index("02-data")
+        root = Path(*parts[:index]) if index else Path(".")
+        return root / "01-sources" / "manifests" / f"{run_id}.json"
+    return out.with_name(out.stem + ".manifest.json")
+
+
+def write_collection_manifest(
+    out: Path,
+    *,
+    run_id: str,
+    platform: str,
+    connector_id: str,
+    connector_revision: str,
+    access_basis: str,
+    query: str,
+    started_at: str,
+    completed_at: str,
+    reached_records: int,
+    written_records: int,
+    stop_reason: str,
+    requested_records: int = 0,
+    errors: Optional[Iterable[str]] = None,
+) -> Path:
+    errors = list(errors or [])
+    path = collection_manifest_path(out, run_id)
+    payload = {
+        "collection_run_id": run_id,
+        "study_id": "",
+        "platform": platform,
+        "connector_id": connector_id,
+        "connector_revision": connector_revision,
+        "connector_license": "MIT",
+        "access_basis": access_basis,
+        "terms_reviewed_at": "",
+        "data_rights_reviewed_at": "",
+        "data_rights_basis": "See the approved study design",
+        "route_id": query,
+        "query": query,
+        "requested_at": started_at,
+        "completed_at": completed_at,
+        "requested_records": int(requested_records),
+        "reached_records": int(reached_records),
+        "written_records": int(written_records),
+        "blocked_or_dropped": {"errors": len(errors)},
+        "rate_limit_or_quota": "",
+        "warnings": errors,
+        "stop_reason": stop_reason,
+    }
+    atomic_write_json(path, payload)
+    return path
+
+
+@contextlib.contextmanager
+def collection_manifest(
+    out: Path,
+    *,
+    run_id: str,
+    platform: str,
+    connector_id: str,
+    connector_revision: str,
+    access_basis: str,
+    query: str,
+    requested_records: int,
+    written_records: Any,
+):
+    started_at = utc_now_iso()
+    try:
+        yield
+    except Exception as exc:
+        write_collection_manifest(
+            out, run_id=run_id, platform=platform, connector_id=connector_id,
+            connector_revision=connector_revision, access_basis=access_basis, query=query,
+            started_at=started_at, completed_at=utc_now_iso(), reached_records=0,
+            written_records=int(written_records() if callable(written_records) else written_records),
+            stop_reason="failed", requested_records=requested_records, errors=[str(exc)])
+        raise
+    count = int(written_records() if callable(written_records) else written_records)
+    write_collection_manifest(
+        out, run_id=run_id, platform=platform, connector_id=connector_id,
+        connector_revision=connector_revision, access_basis=access_basis, query=query,
+        started_at=started_at, completed_at=utc_now_iso(), reached_records=count,
+        written_records=count, stop_reason="completed", requested_records=requested_records)
 

@@ -153,13 +153,14 @@
       ],
       "access_modes": [
         "official_api",
+        "public_endpoints",
         "cdp_visible_page"
       ],
       "auth": "oauth",
       "bulk": "limited",
       "freshness": "high",
-      "decision": "supported",
-      "adapter": "none",
+      "decision": "limited",
+      "adapter": "youtube",
       "limits": [
         "Data API quota",
         "Comments require video IDs and pagination",
@@ -173,7 +174,7 @@
         "Comment ranking bias",
         "Video performance confounds"
       ],
-      "notes": "优先 Official YouTube Data API 或免登录 innertube 连接器；用户有权查看的页面也可走授权可见页 CDP。评论/元数据按配额采集，字幕与转写需权利确认；CDP 不代登录、不绕挑战页，平台条款仍须人工确认。",
+      "notes": "优先 Official YouTube Data API。innertube 是项目内部的受限公开端点路线（public_endpoint_limited），不是官方 API 配额；需单独复核访问依据、规模与数据权利。用户有权查看的页面也可走授权可见页 CDP。",
       "cdp": true
     },
     {
@@ -279,7 +280,8 @@
       "access_modes": [
         "historical_dataset",
         "seller_api",
-        "associates_api"
+        "associates_api",
+        "cdp_visible_page"
       ],
       "auth": "partner",
       "bulk": "limited",
@@ -398,7 +400,7 @@
       "bulk": "yes",
       "freshness": "high",
       "decision": "supported",
-      "adapter": "none",
+      "adapter": "hackernews",
       "limits": [
         "Algolia public API; rate limits",
         "Tech/startup skew"
@@ -463,7 +465,8 @@
       ],
       "access_modes": [
         "public_endpoints",
-        "authorized_export"
+        "authorized_export",
+        "cdp_visible_page"
       ],
       "auth": "optional",
       "bulk": "limited",

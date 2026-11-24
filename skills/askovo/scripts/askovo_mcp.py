@@ -51,7 +51,10 @@ SERVER_INSTRUCTIONS = (
     "contracts, KPI/SOP/templates, 11 industry overlays and orchestration-only study workbenches. "
     "(1) askovo_do scaffolds the study and product-reasoning.json; askovo_roles scaffold explicitly creates the bound role workbench; (2) askovo_chain renders the "
     "reasoning canvas; (3) askovo_platforms and askovo_collect gather permitted supporting "
-    "material; (4) askovo_analyze describes it; (5) askovo_audit checks product/business "
+    "material; (4) askovo_analyze describes it; optional semantic=true adds constrained unverified "
+    "candidates with exact quotes and a critic pass, never evidence levels or conclusions; "
+    "askovo_semantic lists/validates candidates and exports only CLI-reviewed E2 collected statements; "
+    "semantic accept/reject is human-only in the CLI; (5) askovo_audit checks product/business "
     "rationales, evidence gates and per-claim verdicts; (6) askovo_deliver assembles the "
     "business plan (plan), corpus analysis (analysis), chain-led memo, MRD, PRD, BRD, ops or tracker. Legacy text/platform planning remains available as "
     "askovo_plan; askovo_check remains the low-level gate command. "
@@ -450,9 +453,51 @@ def _build_decision(arguments: dict[str, Any]) -> argparse.Namespace:
 
 
 def _build_analyze(arguments: dict[str, Any]) -> argparse.Namespace:
+    provider = _optional_string(arguments, "semantic_provider") or "auto"
+    if provider not in ("auto", "openai", "offline"):
+        raise ValueError("semantic_provider must be auto, openai or offline")
+    retrieval = _optional_string(arguments, "retrieval") or "auto"
+    if retrieval not in ("auto", "keyword", "embedding"):
+        raise ValueError("retrieval must be auto, keyword or embedding")
     return _namespace(
         study_dir=_string(arguments.get("study_dir"), "study_dir"),
         question=_optional_string(arguments, "question"),
+        semantic=_boolean(arguments, "semantic", False),
+        semantic_provider=provider,
+        allow_external=_boolean(arguments, "allow_external", False),
+        semantic_max_records=int(arguments.get("semantic_max_records") or 120),
+        semantic_batch_size=int(arguments.get("semantic_batch_size") or 20),
+        retrieval=retrieval,
+    )
+
+
+def _command_semantic(args: argparse.Namespace) -> int:
+    action = str(args.action)
+    if action not in ("list", "export", "validate"):
+        raise ValueError("action must be list, export or validate; semantic review is human-only via CLI")
+    return int(getattr(askovo_cli.semantic_candidates, "cmd_" + action)(args))
+
+
+def _build_semantic(arguments: dict[str, Any]) -> argparse.Namespace:
+    action = _string(arguments.get("action"), "action")
+    if action not in ("list", "export", "validate"):
+        raise ValueError("action must be list, export or validate; semantic review is human-only via CLI")
+    if action == "validate" and not _optional_string(arguments, "file"):
+        raise ValueError("file is required for validate")
+    return _namespace(
+        action=action,
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        file=_optional_string(arguments, "file") or "",
+        candidate=_optional_string(arguments, "candidate") or "",
+        decision=_optional_string(arguments, "decision") or "",
+        reviewer=_optional_string(arguments, "reviewer") or "",
+        note=_optional_string(arguments, "note") or "",
+        store=_optional_string(arguments, "store") or "",
+        by=_optional_string(arguments, "by") or "",
+        product=_optional_string(arguments, "product") or "",
+        region=_optional_string(arguments, "region") or "",
+        export_now=_boolean(arguments, "export_now", False),
+        json=True,
     )
 
 
@@ -1012,6 +1057,14 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "study_dir": {"type": "string"},
                 "question": {"type": "string"},
+                "semantic": {"type": "boolean", "default": False,
+                             "description": "add constrained unverified candidates; default off"},
+                "semantic_provider": {"enum": ["auto", "openai", "offline"], "default": "auto"},
+                "allow_external": {"type": "boolean", "default": False,
+                                   "description": "authorize sending source text to a remote model"},
+                "semantic_max_records": {"type": "integer", "minimum": 1, "default": 120},
+                "semantic_batch_size": {"type": "integer", "minimum": 1, "default": 20},
+                "retrieval": {"enum": ["auto", "keyword", "embedding"], "default": "auto"},
             },
             "required": ["study_dir"],
         },
@@ -1290,6 +1343,31 @@ TOOLS.append({
 })
 
 TOOLS.append({
+    "name": "askovo_semantic",
+    "description": ("List, export or validate constrained semantic candidates. "
+                    "Candidates stay unverified, carry exact record quotes and a critic pass; "
+                    "accept/reject is human-only in the CLI, and MCP can export only an existing accepted review."),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {"enum": ["list", "export", "validate"]},
+            "study_dir": {"type": "string"},
+            "file": {"type": "string"},
+            "candidate": {"type": "string"},
+            "decision": {"enum": ["accept", "reject"]},
+            "reviewer": {"type": "string"},
+            "note": {"type": "string"},
+            "store": {"type": "string"},
+            "by": {"type": "string"},
+            "product": {"type": "string"},
+            "region": {"type": "string"},
+            "export_now": {"type": "boolean", "default": False},
+        },
+        "required": ["action", "study_dir"],
+    },
+})
+
+TOOLS.append({
     "name": "askovo_proof_export",
     "description": ("Export a read-only Prove Anything Proof Bundle from a study. "
                     "P1 checks the brief projection; independent semantic review and external adoption stay UNCHECKED."),
@@ -1323,6 +1401,7 @@ TOOL_BUILDERS = {
     "askovo_deliver": (askovo_cli.command_deliver, _build_deliver),
     "askovo_proof_export": (askovo_cli.command_proof, _build_proof_export),
     "askovo_observation": (_command_observation, _build_observation),
+    "askovo_semantic": (_command_semantic, _build_semantic),
     "askovo_methods": (askovo_cli.sure_engine.cli_methods, _build_methods),
     "askovo_domains": (askovo_cli.sure_engine.cli_domains, _build_domains),
     "askovo_queue_add": (askovo_cli.sure_engine.cli_queue_add, _build_queue_add),

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/roy-tong/askovo/main/assets/brand/askovo-logo-600.png" alt="Askovo" width="300">
+  <img src="https://raw.githubusercontent.com/roy-tong/Askovo/main/assets/brand/askovo-logo-600.png" alt="Askovo" width="300">
 </p>
 
 <p align="center"><b>English</b> | <a href="README.zh-CN.md">简体中文</a></p>
@@ -12,7 +12,7 @@ Askovo performs thorough quantitative research for product definition and decisi
 
 [Website](https://roy-tong.github.io/Askovo/) · [Decision replay](https://roy-tong.github.io/Askovo/en/examples/decision-replay.html) · [Quickstart](docs/quickstart.md) · [Method](docs/product-reasoning.md)
 
-[![CI](https://github.com/roy-tong/askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/askovo/actions/workflows/tests.yml)
+[![CI](https://github.com/roy-tong/Askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/Askovo/actions/workflows/tests.yml)
 [![PyPI](https://img.shields.io/pypi/v/askovo)](https://pypi.org/project/askovo/)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
@@ -24,6 +24,7 @@ A product discussion can easily become a contest of seniority, volume or report 
 - **Compare real options.** Put supporting evidence, counterexamples and trade-offs beside each candidate.
 - **Move the decision forward.** Turn the discussion into a Decision Brief, a business plan and a concrete validation backlog.
 - **Keep learning.** Revisit the same decision when new material arrives and see how the recommendation changes.
+- **Keep the model on a leash.** Optional `analyze --semantic` candidates must cite exact source quotes and stated unknowns, pass an adversarial review, and wait for a named human before entering the evidence path. MCP cannot accept or reject on the human's behalf.
 
 ## What you can make
 
@@ -36,6 +37,20 @@ A product discussion can easily become a contest of seniority, volume or report 
 | Decision replay | Revisit how new evidence changed an earlier recommendation |
 
 Every deliverable comes from one reasoning chain: **scene → user → pain → need → feature → product → business**. You get different views for different readers without reconciling several versions of the conclusion.
+
+## Research data without hand-edited JSON
+
+Use the formal writers for study contracts, chain-level fields, commercial nodes, demand judgments and role workplans. CSV imports recognize `记录编号 / 内容 / 证据等级 / 来源 / 采集时间`; duplicate text is not counted twice, and conflicting record IDs reject the whole batch before evidence is written.
+
+```bash
+askovo chain STUDY set --field context_key --value-json '"after_sales_saas"'
+askovo study STUDY set --field decision.owner --value-json '"周航"'
+askovo evidence STUDY retract R01 --by "Research owner" --reason "Imported by mistake"
+askovo evidence STUDY restore R01 --by "Research owner"
+askovo case list
+```
+
+Retraction preserves the original text but removes the record from analysis, demand judgments and audit; restoration preserves it too. E3 correction requires a valid concept test. BRD projects the latest DecisionRecord without implying execution or business acceptance. See [CLI reference](docs/cli.md).
 
 ## Run the product-reasoning sample
 
@@ -77,4 +92,4 @@ CLI output and the detailed guides under `docs/` are currently Chinese. Commands
 - [CLI reference](docs/cli.md)
 - [Agent Skill](skills/askovo/SKILL.md) · [llms.txt](llms.txt) · [AGENTS.md](AGENTS.md)
 
-Askovo is MIT open source. Bring a product decision through the [task page](https://roy-tong.github.io/Askovo/first-look.html), or open a reproducible issue on [GitHub](https://github.com/roy-tong/askovo/issues).
+Askovo is MIT open source. Bring a product decision through the [task page](https://roy-tong.github.io/Askovo/first-look.html), or open a reproducible issue on [GitHub](https://github.com/roy-tong/Askovo/issues).

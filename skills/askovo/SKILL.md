@@ -28,7 +28,7 @@ askovo "<business research request>"           # bare shorthand = do
 askovo do "<business request>"                 # route + seven-node chain scaffold
 askovo chain <study>                           # render product + business reasoning
 askovo route "<request>" --json                # route + industry/role recommendation
-askovo roles list --json                       # 80 role families / 10 lifecycles / 10 industries
+askovo roles list --json                       # 80 role families / 10 lifecycles / 11 industries
 askovo roles show R52 --industry ai_native     # duties + KPI + SOP + outputs + boundaries
 askovo roles recommend "<goal>" --stage concept --task design  # task-sized team + output contract
 askovo roles scaffold <study> --task define    # only this task's roles, outputs and templates
@@ -37,6 +37,8 @@ askovo collect <study> --platform …            # collect/import against a chai
 askovo capture page <study> --url … --ack-terms --ocr  # visible-page candidate (collect-grade gates)
 askovo capture accept <study> --capture ID --by NAME --evidence-level E2  # named review -> evidence; no auto chain/conclusion
 askovo analyze <study> --question …            # normalize/describe
+askovo analyze <study> --semantic              # optional constrained candidates + critic (off by default)
+askovo semantic review|export <study>          # named accept/reject -> E2 collected-statement observation
 askovo answer <study>                          # conclusion + decision from reviewed evidence, or unanswerable + gaps
 askovo deliver <study> --kind plan            # Business Plan (conclusions + data basis + user voices)
 askovo deliver <study> --kind analysis        # corpus analysis (funnel, sources, coverage, counter-evidence)
@@ -60,6 +62,8 @@ askovo deliver <study> --kind signoff            # F3: stakeholder sign-off one-
 **Platform rule**: before promising data, run `askovo platforms`. Classify each source as `supported`, `limited` or `blocked`. Never scrape a blocked platform or substitute a merchant API/internal endpoint; a user login session is permitted only through the declared CDP exception below. Never treat platform volume as population representativeness. Prefer official APIs, authorized exports or compliant historical datasets when no declared CDP route fits.
 
 **Analysis rule**: `askovo analyze` is descriptive (counts, dedup, time/platform distribution, candidate terms, matching excerpts). It does not prove prevalence, causality or demand. Deep coding, evidence grading and claim judgments remain with the Skill and a human reviewer.
+
+**Semantic candidate rule**: `--semantic` is optional and off by default. The model may propose themes, mechanisms and counterexamples, but every candidate must cite a globally unambiguous existing `record_id` plus an exact quote, must carry `unknowns`, and stays `unverified`; a model-declared `evidence_level`, demand claim or `validated` status is rejected. Candidates are not shown for review until a critic pass records counterexamples, coverage gaps, alternative explanations and missing evidence. Named accept/reject is human-only in the CLI; MCP cannot self-attest a review. Accept binds both candidate and critic hashes, and only a current accepted candidate can export a `collected_corpus_statement` E2 observation; entering `evidence.jsonl` still needs human semantic review. Without model configuration the command falls back to deterministic analysis; remote endpoints require explicit `--allow-external`, and model/embedding redirects are refused.
 
 **Queue rule**: use `askovo queue add/run` for multi-job work. Jobs are leased, retried with backoff, rate-limited per platform and resumable after a worker crash. Do not bypass a failed job by raising concurrency or lowering limits without recording why.
 

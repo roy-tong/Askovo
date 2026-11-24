@@ -653,6 +653,8 @@ def _extract_record(record: Dict[str, Any]) -> Dict[str, Any]:
     title = str(record.get("title") or "")
     text = str(record.get("text") or "")
     body = text[len(title) + 2:] if title and text.startswith(title + "\n\n") else text
+    if title and body.strip() == title.strip() and not str(record.get("body") or "").strip():
+        body = ""
     body_offset = len(text) - len(body)
     body_sentences = [item for item in _sentences(text) if item[0] >= body_offset]
     lowered_body = body.casefold()

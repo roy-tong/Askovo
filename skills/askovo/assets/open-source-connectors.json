@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "reviewed_at": "2026-10-31",
+  "reviewed_at": "2026-11-24",
   "scope": "Open-source GitHub projects that an independent third-party researcher could inspect, fork, or wrap for Askovo studies.",
   "decisions": {
     "supported": "May be selected after study-specific platform, privacy, retention, and data-rights review.",
@@ -46,6 +46,34 @@
         ]
       },
       "policy_url": "https://redditinc.com/policies/data-api-terms"
+    },
+    {
+      "id": "reddit-arctic-shift-historical",
+      "platform": "reddit",
+      "upstream_repo": "roy-tong/Askovo",
+      "upstream_url": "https://github.com/roy-tong/Askovo/tree/9f04bcc88857dbefb4ce752f68a4c51720d10528/skills/askovo/scripts/connectors",
+      "reviewed_revision": "9f04bcc88857dbefb4ce752f68a4c51720d10528",
+      "license": "MIT",
+      "last_push_at_review": "2026-11-20",
+      "tier": "historical_archive_client",
+      "decision": "historical_only",
+      "allowed_access_bases": [
+        "historical_archive"
+      ],
+      "acquisition_mechanism": "Read-only Arctic Shift public archive comments API with bounded subreddit and time-window backfill",
+      "usable_scope": [
+        "historical comments",
+        "subreddit and time-window routes",
+        "thread hierarchy"
+      ],
+      "limits": [
+        "Historical research only; this is not Reddit's official API or a live-market connector.",
+        "The MIT license covers the Askovo collector, not Reddit user content or the Arctic Shift dataset.",
+        "Bulk capability is limited by archive availability, rate limits and study-specific retention rights; failed windows remain errors rather than empty samples.",
+        "Public-archive and keyword sampling can overrepresent technical communities, active threads and deleted-content survivors; preserve subreddit, thread and time-window bias in every analysis.",
+        "Do not collect private or quarantined communities, republish raw corpora, or treat archive presence as permission to bypass Reddit controls."
+      ],
+      "policy_url": "https://github.com/ArthurHeitmann/arctic_shift"
     },
     {
       "id": "x-tweepy",

@@ -26,7 +26,8 @@ askovo --help
 | `brief <study>` | Decision Brief：PRD §2.3 九节只读投影、PRD 开发验收清单、`stale` 门禁 | 0/1/2 |
 | `delta sync/show/status/approve` | 增量研究 Delta：append-only 快照、新增/变更/删除、受影响节点与反证影响、`needs_re_review` | 0/1/2/4 |
 | `queue init/add/run/status/retry` | SQLite 队列、worker、重试、限速、断点续跑 | 0/1/2 |
-| `analyze <study>` | 归一化、去重、分布、候选主题、问题匹配 | 0/2 |
+| `semantic list/review/export/validate` | 受约束语义候选的查看、具名复核与 E2 收集陈述导出 | 0/1/2 |
+| `analyze <study>` | 归一化、去重、分布、候选主题、问题匹配；`--semantic` 增加受约束候选、critic 与人工复核通道 | 0/1/2 |
 | `chain <study>` | 生成/渲染“场景→用户→痛点→需求→特性→产品→商业”推理链 | 0/2 |
 | `economics <study>` | business 节点单位经济投影（算术投影，null=未知） | 0/2 |
 | `psm <study> --input <csv>` | van Westendorp 价格敏感度四问分析 | 0/1/2 |
@@ -221,6 +222,9 @@ askovo collect ./study --platform instagram --query "night alert workaround" \
 - 非 dry-run 采集先执行 design gate；失败返回 `1` 和 `design_gate_failed`。平台还必须在 `scope.allowed_sources` 中，live/CDP 必须启用 adapter。
 - GitHub：官方 Search API；`GITHUB_TOKEN` 可选。
 - Reddit：官方 Data API；需要 `ASKOVO_REDDIT_CLIENT_ID`、`ASKOVO_REDDIT_CLIENT_SECRET`、可选 `ASKOVO_REDDIT_USER_AGENT`；registry 复核过期不再阻断，返回结果带 `review_status: "expired"` 与降频提醒。
+- YouTube：官方 Data API 优先；内置 innertube 是 `public_endpoint_limited`，不是官方配额，按 limited 路线审查。
+- Hacker News：Algolia 公共 API；保留平台 ID `hackernews`、限速与技术圈层偏差说明。
+- 空提取不等于空语料：`empty_unconfirmed` 不写 run；`cdp_timeout`、`blank_render`、`page_not_found`、`scope_violation`、`session_drop` 等失败状态均返回非零，不能只按进程退出码 0 判断成功。
 - 官方 API 可用不等于必须走 API：x、kickstarter、github、hackernews、youtube、weibo 等平台可用 `--cdp-url` 走授权可见页路线（需 Design gate、启用 adapter、`--ack-terms` 与批准 URL）；API 路线保留在 plan 的 `routes` 中，采购要求只影响该路线，不关闭整个平台。
 - `--fixture`：离线 JSONL/CSV，用于授权导出、历史数据集和测试；每行必须是 JSON object。
 - 其他平台既没有内置适配器、也没有显式 `--cdp-url` 路由时返回 `3`，并给出导入/授权导出路径。
@@ -404,6 +408,23 @@ askovo analyze ./study --question "夜间误报"
 
 规范性证据用 `text_excerpt` 存原文；没有 `text` 字段时 `analyze` 回退到 `text_excerpt`，没有 `evidence_form`/`claim_type` 时回退到 `corpus_role` 与证据等级（E0=context、E1/E2=need、E3=acceptance、E4+/E5=commercial、E4-=counter）。`deliver --kind analysis` 的漏斗优先读 `01-sources/collection-summary.json`（`raw_records` / `screened_records`），用于多波次或多工位合并的语料；缺省时回退到本工位 `02-data/raw`。
 
+### 语义候选（`--semantic`）
+
+```bash
+askovo analyze ./study --question "夜间误报" --semantic
+askovo analyze ./study --semantic --semantic-provider offline
+askovo semantic list ./study
+askovo semantic review ./study --candidate theme-night-alert-fatigue \
+  --decision accept --reviewer alice --note "两条引文已核对"
+askovo semantic export ./study --by alice --export-now
+```
+
+语义层默认关闭：没有 `ASKOVO_LLM_BASE` / `ASKOVO_LLM_MODEL`（或显式 `--semantic-provider offline`）时自动退回确定性分析。远程模型必须显式 `--allow-external`，否则退出码 2 且不发送语料；loopback 模型不需要该开关。
+
+候选固定为 `unverified`，每条必须挂存在的 `record_id` 与原文子串 `quote`，`unknowns` 必填；模型写 `evidence_level`、`demand_claim`、`validated` 会被拒绝。写候选前先过 critic（反例、覆盖缺口、替代解释、补证清单），没有 critic 的候选拒绝复核。只有具名 `accept` 的候选能导出为 `collected_corpus_statement` 的 E2 观察；进入 `evidence.jsonl` 仍需人工语义审核。产物、环境变量与边界见[语义候选层](semantic-candidates.md)。
+
+`--semantic` 的退出码：`0` 完成或按设计回退；`1` 语义层 partial/failed；`2` 远程未授权或参数错误。确定性 `analysis.json` / `analysis.md` 在语义层之前写出，失败不会隐藏已有分析。
+
 ## instruments
 
 ```bash
@@ -424,7 +445,7 @@ askovo report ./study
 `deliver --kind`：
 
 - `plan`：业务方案（Business Plan），写 `06-report/plan.md`——业务用户默认视图：七节点渲染为"目标场景/目标用户/痛点/需求/特性/产品形态/商业与 GTM"九节业务章节，通篇业务语言；每个判断带**数据基础**（来源 · 语料量 · 时间窗）与**来自语料的声音**（用户原话或典型情况），尚无数据的判断如实标注"暂无采集数据"；证据编码与原始状态只进文末方法档案；
-- `analysis`：语料分析，写 `06-report/analysis.md`——采集漏斗（原始→筛选→编码→进入判断）、来源与年份分布、语料用途、七节点覆盖、集中度与重复、反证清单，以及"这份数据能回答/不能回答什么"；只做确定性统计，不推人群比例或市场规模；
+- `analysis`：语料分析，写 `06-report/analysis.md`——采集漏斗（原始→筛选→编码→进入判断）、来源与年份分布、语料用途、七节点覆盖、集中度与重复、反证清单，以及"这份数据能回答/不能回答什么"；新增共现候选主题、机制/转折句候选和重复/独立记录归并，全部只做确定性统计，不推人群比例、市场规模或已验证因果；
 - `decision`：决策包（Decision Package），写 `06-report/decision-package.md`——机会地图/证据图/选项与权衡/决策备忘/验证清单五个决策侧视图，全部由同一条主链与需求判断投影；
 - `memo`：产品/商业决策 memo；
 - `report`：产品与商业推理总报告，写 `06-report/report.md`；
@@ -434,6 +455,8 @@ askovo report ./study
 - `ops`：场景×用户分群、痛点/异议和运营回流，写 `06-report/user-ops.md`；
 - `tracker`：从特性/产品验收和商业成功指标生成带 chain/node ID 的跟踪行，写 `06-report/postlaunch-tracker.csv`；
 - `web`：Web 阅读面，写 `06-report/web/index.html`——同一条主链的自包含阅读页：事实/自述/推导/我的判断四类标签、数字与判断形成时间的分层展示、证据墙（原文/来源/引用环节/本地截图/原帖链接）、来源与节点分布图、可复用打法；E0–E5 与资格标记只进页尾方法档案，不新增结论。详见 [Web 阅读面](web-surface.md)。
+
+角色交付 `role`/`lifecycle` 见上文「roles」一节，签收页 `signoff` 见下文 F3 一节；与本节合计 14 种（默认 `memo`）。
 
 多链研究：`--kind plan` 先输出跨链比较表与逐链结论，七环节正文只展开优先级最高的一条；`--kind report` 的“产品决策”一节按链生成状态/依据强度/建议/下一步/失败线，没有 `decided` 链时明确标注为待验证建议，不再留空模板。`--kind analysis` 的漏斗支持 `01-sources/collection-summary.json` 的累计口径。
 
@@ -540,3 +563,48 @@ askovo chain-node STUDY set --node feature \
 ```
 
 字符串字段包括 `current_substitute`、`friction_cost`、`consequence`、`desired_outcome`、`measure`、`capability`、`form`、`scope`；数组字段包括 `assumptions`、`constraints`、`alternatives_considered`、`acceptance_conditions`、`non_goals`、`acceptance_criteria`。字段、JSON 语法和类型都会校验；相同值不写文件。所有变更进入链的 append-only `change_log`，仍需 `askovo check STUDY --stage full` 重新审计，编辑不等于门禁通过。
+
+
+## 受控研究写入、导入纠错与撤销
+
+普通研究操作不需要手改内部 JSON：
+
+```bash
+# 链级字段与商业节点字段
+askovo chain STUDY set --field context_key --value-json '"after_sales_saas"'
+askovo chain-node STUDY set --node business \
+  --field pricing_hypothesis --value-json '{"seat_price":1800,"premium":0.2}'
+
+# 研究合同、需求判断和角色工作台
+askovo study STUDY set --field decision.owner --value-json '"周航"'
+askovo demand-judgment STUDY create --id DJ01 --title "售后自动分派验证" \
+  --user-role "售后主管" --scene "人工录单积压" --task "决定是否试点自动分派" \
+  --current-substitute "人工分派" --friction "录单慢且易错" --consequence "客户等待与返工" \
+  --solution "低摩擦试点" --acceptance-conditions "录单率达到70%且续费不下降" \
+  --problem-evidence R01 --context-key after_sales_saas --next-test "3家客户4周试点"
+askovo roles workplan-set STUDY --role R09 --owner 王珂 --timebox 下周 \
+  --start 2026-11-23 --end 2026-11-29 --step R09-S01 --status in_progress
+
+# 撤销与恢复错误证据；不删除原文，也不自动通过审计
+askovo evidence STUDY retract R01 --by 赵敏 --reason "纠正误导入记录"
+askovo evidence STUDY restore R01 --by 赵敏
+```
+
+`study set` 支持决策、范围、假设与停止/重启规则；`chain set` 支持链级关联、缺口和反证；商业节点支持市场、价格、成本、收入和业务门等类型化字段。需求判断只接受已登记证据 ID。`evidence set` 纠正证据形式/等级时，E3 必须同时提供有效的 `--concept-test`，不能借纠错升权。撤销后的证据不参与分析、需求判断或审计，恢复保留原文。
+
+CSV 导入识别 `记录编号 / 内容 / 证据等级 / 来源 / 采集时间`。编号和正文均参与跨文件判重；同编号不同正文会在任何证据写入前拒绝整批，不会先写一半。重复项返回 `duplicates` 映射，采集时间不再冒充内容发生时间。
+
+BRD 的「BRD 商业决策」区域会投影每条主链最新 DecisionRecord 的记录号、决策人、决定和下一动作；这是 canonical 的只读投影，不表示执行或业务结果已验收。
+
+## 真实任务案例门
+
+```bash
+askovo case list
+askovo case show A-HMC-RESEARCH-01
+askovo case incidents --out ../ai输出/ovo-真实任务资产库/INCIDENTS.md
+askovo case validate
+askovo case replay A-GOLF-DISCOVERY-01 --run-root /tmp/ovo-case-runs
+askovo case verify --run-root /tmp/ovo-case-verification
+```
+
+`case` 调用 `ovo-acceptance` 的共享运行时。默认注册表决定家族工作区根路径；`OVO_ACCEPTANCE_HOME` 覆盖运行时位置，`OVO_CASE_REGISTRY` 覆盖案例注册表，`OVO_CASE_ROOT` 显式覆盖证据根目录。`task_rerun` 与 `evidence_only` 分开，外部写案例只复核证据，不重新发送、付款或签核。

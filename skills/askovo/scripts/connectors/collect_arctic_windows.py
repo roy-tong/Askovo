@@ -161,15 +161,14 @@ def normalize_comment(item: Dict[str, Any], sub: str, window_after: int,
         "thread_title": None,
         "thread_url": None,
         "month_bucket": month_bucket(created_at),
-        "primary_sample_eligible": is_primary_date(created_at),
+        "primary_sample_eligible": False,
         "quality_score": quality_score(body, flags, score),
         "sampling_weight": 1.0,
         "quality_flags": flags,
         "source_tier": "legacy_nonofficial_public_archive",
     }
-    if run_id:
-        row["collection_run_id"] = run_id
-    return row
+    return common.with_connector_envelope(
+        row, run_id or "arctic-windows-standalone", "reddit-arctic-shift-historical", "1")
 
 
 def pull_window(sub: str, wafter: float, wbefore: float, cap: int,
@@ -231,6 +230,11 @@ def main() -> None:
     state = json.loads(args.state.read_text(encoding="utf-8")) if args.state.exists() \
         else {"completed": [], "counts": {}, "errors": {}}
     completed = set(state["completed"])
+    started_at = common.utc_now_iso()
+    run_id = args.run_id or f"arctic-windows-{int(time.time())}"
+    common.ensure_parent(args.out)
+    common.ensure_parent(args.state)
+    common.atomic_write_json(args.state, state)
     seen = set()
     if args.out.exists():
         for line in args.out.open(encoding="utf-8"):
@@ -261,22 +265,28 @@ def main() -> None:
                     # A hard archive failure is not an empty window: keep it out
                     # of `completed` so a rerun retries it, and surface the cause.
                     state["errors"][key] = str(exc)[:200]
-                    args.state.write_text(
-                        json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
+                    common.atomic_write_json(args.state, state)
                     continue
                 except Exception as exc:  # noqa: BLE001 - record and move on
                     state["errors"][key] = str(exc)[:200]
-                    args.state.write_text(
-                        json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
+                    common.atomic_write_json(args.state, state)
                     continue
                 completed.add(key)
                 state["errors"].pop(key, None)
                 state["counts"][key] = stats["comments"] - before_total
                 state["completed"] = sorted(completed)
-                args.state.write_text(
-                    json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
+                common.atomic_write_json(args.state, state)
                 print(f"{key}: cumulative new={stats['comments']}", flush=True)
                 time.sleep(args.sleep)
+    errors = list(state["errors"].values())
+    stop_reason = "partial" if errors else "completed"
+    common.write_collection_manifest(
+        args.out, run_id=run_id, platform="reddit", connector_id="reddit-arctic-shift-historical",
+        connector_revision="1", access_basis="historical_archive", query="windowed_backfill",
+        started_at=started_at, completed_at=common.utc_now_iso(), reached_records=stats["comments"],
+        written_records=stats["comments"], stop_reason=stop_reason, errors=errors)
+    if errors:
+        raise SystemExit(1)
     print(f"DONE new={stats['comments']} windows={stats['windows']}", flush=True)
 
 

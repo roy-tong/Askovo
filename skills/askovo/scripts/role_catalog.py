@@ -1503,10 +1503,12 @@ def _workplan_markdown(
         item["role_id"]: item["name"]
         for item in plan.get("output_plan", {}).get("role_work_outputs", [])
     }
+    has_timebox = any(assignment.get("timebox") for assignment in plan.get("roles", []))
+    status_note = "时间盒已设定；目标值和签收人仍待团队确认" if has_timebox else "负责人、目标值、时间盒和签收人均待团队确认"
     lines = [
         f"# 岗位执行包：{plan['study_id']}",
         "",
-        "> 状态：分工与执行草案。负责人、目标值、时间盒和签收人均待团队确认。",
+        f"> 状态：分工与执行草案。{status_note}。",
         "",
         f"- 行业：{plan['industry']['label_zh']} / 基础研究域：{plan['base_domain']}",
         f"- 任务：{task.get('label', '待确认')}（`{task.get('id', 'unknown')}`）",
@@ -1517,6 +1519,12 @@ def _workplan_markdown(
         "- 本执行包只保存目录引用和项目状态，不复制岗位定义或主链结论；SOP 完成不等于证据充分或专业放行。",
         "",
     ]
+    if has_timebox:
+        for assignment in plan.get("roles", []):
+            box = assignment.get("timebox") or {}
+            label = box.get("label") or "已设定"
+            start, end = box.get("start") or "未定", box.get("end") or "未定"
+            lines.append(f"- 时间盒：{label}（{start} → {end}）")
     if plan.get("output_plan"):
         lines.extend(_output_contract_lines(plan["output_plan"]))
     lines.extend([
@@ -1843,6 +1851,48 @@ def scaffold_workplan(
     return result
 
 
+def workplan_set(study_dir: Path, args: Any) -> dict[str, Any]:
+    root = study_dir / "01-sources" / "role-workbench"
+    path = root / "workplan.json"
+    if not path.is_file():
+        raise ValueError("workplan.json 不存在；先运行 `askovo roles scaffold STUDY --role R09`")
+    plan = json.loads(path.read_text(encoding="utf-8"))
+    role_id = str(getattr(args, "role", "") or "").strip()
+    assignment = next((row for row in plan.get("roles", []) if row.get("id") == role_id), None)
+    if assignment is None:
+        raise ValueError(f"岗位 {role_id} 未分配；请先 scaffold 对应岗位")
+    owner = str(getattr(args, "owner", "") or "").strip()
+    if owner:
+        assignment["owner"] = owner
+    timebox = str(getattr(args, "timebox", "") or "").strip()
+    start = str(getattr(args, "start", "") or "").strip()
+    end = str(getattr(args, "end", "") or "").strip()
+    if timebox or start or end:
+        assignment["timebox"] = {"label": timebox, "start": start, "end": end}
+    sop_id = str(getattr(args, "step", "") or "").strip()
+    status = str(getattr(args, "status", "") or "").strip()
+    if sop_id or status:
+        allowed = {"not_started", "in_progress", "blocked", "review_pending", "done"}
+        if not sop_id or status not in allowed:
+            raise ValueError("--step 与 --status 必须同时提供，且状态为 " + ", ".join(sorted(allowed)))
+        step = next((row for row in assignment.get("sop_status", []) if row.get("sop_id") == sop_id), None)
+        if step is None:
+            raise ValueError(f"未知 SOP 步骤 {sop_id}")
+        step["work_status"] = status
+        if not step.get("evidence_refs"):
+            step["evidence_refs"] = [plan["decision_ref"], plan["canonical_reasoning"] + "#chains/" + str(plan.get("chain_id") or "")]
+    reasoning_path = study_dir / "04-findings" / "product-reasoning.json"
+    reasoning = json.loads(reasoning_path.read_text(encoding="utf-8")) if reasoning_path.is_file() else {}
+    errors = validate_workplan(plan, reasoning)
+    if errors:
+        raise ValueError("更新后的 workplan 不合法：" + "; ".join(errors[:8]))
+    path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    resolved = [resolve_role(assignment["id"], plan["industry"]["id"])]
+    template_paths = {item["id"]: f"templates/{item['id']}.md" for item in resolved[0]["deliverables"] if (root / "templates" / (item["id"] + ".md")).is_file()}
+    (root / "workplan.md").write_text(_workplan_markdown(plan, template_paths, resolved), encoding="utf-8")
+    return {"status": "updated", "role_id": role_id, "owner": assignment.get("owner"), "timebox": assignment.get("timebox"), "sop_status": assignment.get("sop_status"), "workplan": str(path), "workplan_markdown": str(root / "workplan.md")}
+
+
 def command_roles(args: Any) -> int:
     as_json = bool(getattr(args, "json", False))
     try:
@@ -1903,6 +1953,9 @@ def command_roles(args: Any) -> int:
                 print(json.dumps(result, ensure_ascii=False, indent=2))
             else:
                 print(json.dumps(result, ensure_ascii=False, indent=2))
+        elif action == "workplan-set":
+            result = workplan_set(Path(args.study_dir), args)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
         elif action == "template":
             role = resolve_role(args.role, getattr(args, "industry", None))
             deliverable = _deliverable(role, getattr(args, "deliverable", None))

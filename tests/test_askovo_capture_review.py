@@ -92,6 +92,37 @@ class ReviewCase(unittest.TestCase):
         return capture_review.accept(self.study, capture_id, **kwargs)
 
 
+class CaptureStructuredFieldTests(ReviewCase):
+    def test_capture_payload_contains_structured_rows(self) -> None:
+        capture_id = _mocked_capture(self.study)
+        payload = json.loads(
+            (self.study / "01-sources/captures" / f"{capture_id}.json").read_text(encoding="utf-8"))
+        self.assertIn("structured_rows", payload)
+        self.assertIn("created_at", payload)
+        self.assertIn("author", payload)
+
+    def test_review_normalization_uses_structured_created_at(self) -> None:
+        payload = {
+            "capture_id": "cap-structured",
+            "final_url": "https://example.com/post",
+            "created_at": "",
+            "structured_rows": [{
+                "source_url": "https://example.com/comment/1",
+                "created_at": "2026-01-03T00:00:00Z",
+                "author": "alice",
+                "source_content_type": "post",
+            }],
+        }
+        record = capture_review._evidence_record(
+            payload, level="E1", corpus_role="open_scene", context_key="",
+            operator="验收员", reviewed_at="2026-01-04", text="正文",
+            from_text="page", platform="instagram")
+        self.assertEqual("2026-01-03T00:00:00Z", record["created_at"])
+        self.assertEqual("2026-01-03T00:00:00Z", record["collected_at"])
+        self.assertEqual("post", record["source_content_type"])
+        self.assertEqual("https://example.com/comment/1", record["source_url"])
+
+
 class CaptureAcceptTests(ReviewCase):
     def test_accept_registers_normalized_evidence_with_all_backlinks(self) -> None:
         capture_id = _mocked_capture(self.study)

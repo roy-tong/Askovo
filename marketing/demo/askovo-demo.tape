@@ -20,7 +20,7 @@ Set Shell bash
 Set Theme "Dracula"
 Set TypingSpeed 40ms
 
-# 1) 安装（PyPI 发布后有效；未发布时改为 pipx install git+https://github.com/roy-tong/askovo.git）
+# 1) 安装（PyPI 发布后有效；未发布时改为 pipx install git+https://github.com/roy-tong/Askovo.git）
 Type@40ms "pip install askovo"
 Sleep 500ms
 Enter

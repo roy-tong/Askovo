@@ -2059,17 +2059,67 @@ def generate_instruments(study_dir: Path) -> list[str]:
     return written
 
 
+def _first_nonempty(raw: dict[str, Any], keys: tuple[str, ...]) -> str:
+    """Read the first non-empty scalar field, tolerating author objects."""
+    for key in keys:
+        value = raw.get(key)
+        if isinstance(value, dict):
+            value = (value.get("name") or value.get("displayName") or value.get("login")
+                     or value.get("handle") or value.get("username") or "")
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def _raw_text(raw: dict[str, Any]) -> str:
+    """Canonical text extraction for imported material.
+
+    A title alone is not reproducible evidence text. Platform normalization may
+    deliberately keep title-only posts, but the generic import path must not.
+    """
+    return _first_nonempty(raw, (
+        "text", "text_excerpt", "body", "selftext", "content", "quote",
+        "message", "comment", "内容",
+    ))
+
+
+def _raw_created_at(raw: dict[str, Any]) -> str:
+    value = _first_nonempty(raw, (
+        "created_at", "published_at", "source_time", "created", "timestamp",
+        "created_utc", "datetime", "date", "time", "published_time", "date_text",
+    ))
+    if not value:
+        return ""
+    try:
+        if value.replace(".", "", 1).isdigit():
+            return datetime.fromtimestamp(float(value), tz=timezone.utc).isoformat()
+    except (TypeError, ValueError, OverflowError):
+        pass
+    return value
+
+
+def _raw_source_url(raw: dict[str, Any]) -> str:
+    return _first_nonempty(raw, ("source_url", "url", "html_url", "permalink", "link", "href"))
+
+
+def _raw_author(raw: dict[str, Any]) -> str:
+    return _first_nonempty(raw, ("author", "author_name", "username", "handle", "user"))
+
+
 def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str],
                       level_cap: str | None = None) -> dict[str, Any]:
-    text = str(raw.get("text") or raw.get("内容") or raw.get("quote") or "")
-    record_id = str(raw.get("record_id") or raw.get("id") or f"{defaults['source_family']}-{index:04d}")
-    form = str(raw.get("evidence_form") or defaults["evidence_form"]).strip() or "self_report"
+    text = _raw_text(raw)
+    created_at = _raw_created_at(raw)
+    record_id = _first_nonempty(raw, ("record_id", "id", "记录编号", "记录ID", "编号")) \
+        or f"{defaults['source_family']}-{index:04d}"
+    form = _first_nonempty(raw, ("evidence_form", "证据形式")) or defaults["evidence_form"]
+    form = str(form).strip() or "self_report"
     cap = level_cap
     if level_cap:
         row_cap = IMPORT_LEVEL_CAPS.get(form, "E2")
         if IMPORT_LEVEL_ORDER[row_cap] < IMPORT_LEVEL_ORDER[level_cap]:
             cap = row_cap
-    level_declared = str(raw.get("evidence_level") or "").strip().upper()
+    level_declared = _first_nonempty(raw, ("evidence_level", "证据等级")).strip().upper()
     if level_declared and level_declared not in IMPORT_LEVEL_ORDER:
         raise ImportReviewError(
             f"record {record_id}: unknown evidence_level {level_declared!r}",
@@ -2105,9 +2155,13 @@ def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str],
         "level_basis": level_basis,
         "evidence_basis": str(raw.get("evidence_basis") or "imported; grade before use"),
         "corpus_role": str(raw.get("corpus_role") or defaults.get("corpus_role") or "open_scene"),
-        "source_family": str(raw.get("source_family") or raw.get("source") or defaults["source_family"]),
+        "source_family": _first_nonempty(raw, ("source_family", "source", "来源")) or defaults["source_family"],
         "source_ref": str(raw.get("source_ref") or defaults["source_ref"]),
-        "collected_at": str(raw.get("collected_at") or raw.get("created_at") or raw.get("date") or ""),
+        "source_url": _raw_source_url(raw),
+        "author_hash": str(raw.get("author_hash") or _hash_author(_raw_author(raw))),
+        "created_at": created_at,
+        # created_at 只表示内容发生时间；collected_at 单独保留采集时间，不能互相补齐。
+        "collected_at": _first_nonempty(raw, ("collected_at", "采集时间", "收集时间")) or created_at,
         "normalized_text_hash": str(raw.get("normalized_text_hash") or ""),
         "text": text,
         "claim_type": str(raw.get("claim_type") or defaults["claim_type"]),
@@ -2119,9 +2173,14 @@ def _normalize_record(raw: dict[str, Any], index: int, defaults: dict[str, str],
         "imported_at": now(),
     }
     if not record["normalized_text_hash"]:
-        seed = (text or record_id).encode("utf-8")
-        record["normalized_text_hash"] = "sha256:" + hashlib.sha256(seed).hexdigest()
+        record["normalized_text_hash"] = _import_text_hash(record)
     return record
+
+
+def _import_text_hash(record: dict[str, Any]) -> str:
+    text = str(record.get("text") or record.get("record_id") or "")
+    normalized = " ".join(text.split())
+    return "sha256:" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 class ImportReviewError(ValueError):
@@ -2287,23 +2346,49 @@ def import_material(
                                             defaults, level_cap=cap))
 
     evidence_path = study_dir / "02-data" / "evidence.jsonl"
-    existing_ids: set[str] = set()
+    existing_by_id: dict[str, dict[str, Any]] = {}
+    existing_by_text: dict[str, dict[str, Any]] = {}
     if evidence_path.is_file():
         for line in evidence_path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                try:
-                    existing_ids.add(str(json.loads(line).get("record_id")))
-                except json.JSONDecodeError:
-                    continue
-    added = 0
-    with evidence_path.open("a", encoding="utf-8") as handle:
-        for record in records:
-            if record["record_id"] in existing_ids:
+            if not line.strip():
                 continue
+            try:
+                existing = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            record_id = str(existing.get("record_id") or "")
+            if record_id:
+                existing_by_id[record_id] = existing
+                existing_by_text.setdefault(_import_text_hash(existing), existing)
+    accepted: list[dict[str, Any]] = []
+    duplicates: list[dict[str, str]] = []
+    for record in records:
+        record_id = str(record["record_id"])
+        text_hash = _import_text_hash(record)
+        previous_id = existing_by_id.get(record_id)
+        if previous_id is not None and _import_text_hash(previous_id) != text_hash:
+            raise ImportReviewError(
+                f"证据编号 {record_id} 已存在，但正文不同；拒绝整批导入，未新增或覆盖证据",
+                "CONFLICT", "核对原始记录后使用新编号，或先撤销错误记录")
+        previous_text = existing_by_text.get(text_hash)
+        if previous_text is not None and str(previous_text.get("record_id")) != record_id:
+            duplicates.append({"record_id": record_id,
+                               "duplicate_of": str(previous_text.get("record_id") or ""),
+                               "reason": "same_text"})
+            continue
+        if previous_id is not None:
+            duplicates.append({"record_id": record_id, "duplicate_of": record_id,
+                               "reason": "same_record_id"})
+            continue
+        accepted.append(record)
+        existing_by_id[record_id] = record
+        existing_by_text[text_hash] = record
+    with evidence_path.open("a", encoding="utf-8") as handle:
+        for record in accepted:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-            existing_ids.add(record["record_id"])
-            added += 1
-    _ensure_imported_source_plan(study_dir, source_family, added or len(records))
+    added = len(accepted)
+    for family in {str(record.get("source_family") or source_family) for record in records}:
+        _ensure_imported_source_plan(study_dir, family, added or len(records))
     row_levels = [str(record.get("evidence_level") or "") for record in records]
     row_level_max = max(row_levels, key=lambda value: IMPORT_LEVEL_ORDER.get(value, -1),
                         default="unclassified")
@@ -2317,6 +2402,7 @@ def import_material(
         "parsed": len(records),
         "added": added,
         "skipped_duplicates": len(records) - added,
+        "duplicates": duplicates,
         "evidence_file": str(evidence_path),
         "review": {
             "evidence_level": row_level_max,
@@ -2437,6 +2523,8 @@ def load_evidence_store(study_dir: Path) -> dict[str, Any]:
     qualified: list[dict[str, Any]] = []
     qualified_ids: set[str] = set()
     for record in _read_jsonl_rows(study_dir / "02-data" / "evidence.jsonl"):
+        if record.get("retracted"):
+            continue
         record_id = str(record.get("record_id") or "")
         if is_qualified_evidence(record) and record_id not in qualified_ids:
             qualified_ids.add(record_id)
@@ -2688,6 +2776,16 @@ def _brd_decision_lines(data: dict[str, Any]) -> list[str]:
         for label, value in field_rows[1:]:
             impact, action = BRD_FIELD_GUIDE[label]
             lines.append(f"- {label}：{_gap_or_value(value, impact, action)}")
+        records = [item for item in data.get("decision_records") or []
+                   if isinstance(item, dict) and item.get("chain_id") == chain_id]
+        if records:
+            record = max(records, key=lambda item: int(item.get("version") or 0))
+            lines.extend([
+                "- 已登记决策（不代表执行或结果已验收）：",
+                f"  - 记录：`{record.get('record_id') or '未登记'}`；决策人：{record.get('decision_maker') or '未登记'}",
+                f"  - 决定：{record.get('decision') or '未登记'}",
+                f"  - 下一动作：{record.get('next_action') or '未登记'}",
+            ])
         lines.append("")
     lines.extend(
         [
@@ -3920,12 +4018,22 @@ def _plan_strength_families(records: list[dict[str, Any]]) -> set:
 
 
 def _evidence_text(record: dict[str, Any]) -> str:
-    """Canonical evidence stores `text_excerpt`; imported/legacy rows may store `text`."""
+    """Canonical evidence stores `text_excerpt`; imported/legacy rows may store text/body/content.
+
+    `title` is deliberately not a fallback here: a title-only issue is not
+    reproducible evidence text, even though normalization may preserve the title
+    for display.
+    """
     return str(
         record.get("text")
         or record.get("text_excerpt")
         or record.get("body")
         or record.get("selftext")
+        or record.get("content")
+        or record.get("quote")
+        or record.get("message")
+        or record.get("comment")
+        or record.get("evidence_basis")
         or ""
     ).strip()
 
@@ -5446,7 +5554,33 @@ def _analysis_lines(study: dict[str, Any], reasoning: dict[str, Any] | None, evi
         "- 不能回答：这类人占多大比例、市场规模多大、他们愿意为本品付多少钱；最后一条只能靠真实报价与成交来验。",
         "",
     ])
-    lines.extend(_capture_provenance_lines(records, heading="## 8."))
+    # 8. 候选主题、机制与重复归并（确定性统计，不改变证据边界）
+    stop = set("the and for with that this from are was were you your our not but have has had will can could should about into over under more most some such than then them they their there here what when where which who whom why how all any both each few other own same so too very just also".split())
+    topics = _analysis_topics(records, stop)
+    if topics:
+        lines.extend(["## 8. 候选主题（共现聚合）", ""])
+        for index, topic in enumerate(topics, start=1):
+            lines.append(
+                f"{index}. **{' / '.join(topic['terms'])}**（{topic['record_count']} 条）"
+                f" · 例：{', '.join(topic['example_record_ids'])}")
+        lines.append("> 共现聚合只是候选主题，不是总体主题比例；需要人工命名与复核。")
+        lines.append("")
+    mechanisms = _analysis_mechanisms(records)
+    if mechanisms:
+        lines.extend(["## 9. 机制与转折句（候选）", ""])
+        for item in mechanisms[:12]:
+            lines.append(
+                f"- [{item['kind']}] `{item['record_id']}`（{item['platform']} / {item['evidence_level']}）：{item['text']}")
+        lines.append("> 含因果/转折词的句子是候选机制或反证线索，不等于已验证因果。")
+        lines.append("")
+    duplicates = _analysis_duplicates(records)
+    lines.extend([
+        "## 10. 重复与独立记录", "",
+        f"- 重复组：{len(duplicates['duplicate_groups'])}；重复记录：{duplicates['duplicate_records']}；去重后独立记录：{duplicates['unique_records']}",
+        f"> {duplicates['note']}",
+        "",
+    ])
+    lines.extend(_capture_provenance_lines(records, heading="## 11."))
     lines.extend([
         "## 边界",
         "",
@@ -6187,7 +6321,7 @@ def doctor() -> int:
     checks.append((
         "role-catalog",
         not role_errors,
-        "80 roles; 10 lifecycles; 10 industries" if not role_errors else "; ".join(role_errors[:5]),
+        "80 roles; 10 lifecycles; 11 industries" if not role_errors else "; ".join(role_errors[:5]),
     ))
     try:
         platform_data = platform_catalog()
@@ -7370,24 +7504,27 @@ def _hash_author(value: str) -> str:
 
 
 def _normalize_platform_record(raw: dict[str, Any], platform: str, run_id: str, query: str) -> dict[str, Any]:
-    text = str(raw.get("text") or raw.get("body") or raw.get("selftext") or raw.get("content") or "")
+    text = _raw_text(raw)
     title = str(raw.get("title") or "")
-    if title and text and title not in text:
-        text = title + "\n\n" + text
-    record_id = str(raw.get("record_id") or raw.get("id") or hashlib.sha256(text.encode()).hexdigest()[:12])
+    created_at = _raw_created_at(raw)
+    source_url = _raw_source_url(raw)
+    record_id = str(raw.get("record_id") or raw.get("id") or raw.get("source_record_id") or "")
+    if not record_id:
+        # title-only 可以没有正文，但不能把 title 写进 text；用 URL/标题/run_id 稳定去重。
+        record_id = source_url or hashlib.sha256((text or title or run_id).encode()).hexdigest()[:16]
     if not record_id.startswith(platform + ":"):
         record_id = f"{platform}:{record_id}"
     record = {
         "record_id": record_id,
         "platform": platform,
         "source_platform": platform,
-        "source_url": str(raw.get("source_url") or raw.get("url") or raw.get("html_url") or ""),
+        "source_url": source_url,
         "source_channel": str(raw.get("source_channel") or raw.get("subreddit") or ""),
         "source_content_type": str(raw.get("source_content_type") or raw.get("content_type") or "unknown"),
         "parent_id": raw.get("parent_id"),
         "thread_id": raw.get("thread_id"),
-        "author_hash": str(raw.get("author_hash") or _hash_author(str(raw.get("author") or ""))),
-        "created_at": str(raw.get("created_at") or ""),
+        "author_hash": str(raw.get("author_hash") or _hash_author(_raw_author(raw))),
+        "created_at": created_at,
         "date_precision": str(raw.get("date_precision") or "unknown"),
         "title": title,
         "text": text,
@@ -7569,7 +7706,7 @@ def _write_run(
         "warnings": warnings,
         "stop_reason": manifest.get("stop_reason") or "completed",
         "requested_at": manifest.get("requested_at") or manifest.get("started_at") or now(),
-        "completed_at": now(),
+        "completed_at": manifest.get("completed_at") or now(),
         "raw_file": str(raw_path),
     })
     manifest_dir = study_dir / "01-sources" / "manifests"
@@ -7683,6 +7820,65 @@ def _collect_reddit(query: str, limit: int) -> list[dict[str, Any]]:
         if not after:
             break
     return records
+
+
+def _collect_youtube(query: str, limit: int) -> list[dict[str, Any]]:
+    from connectors import collect_youtube_innertube as collector
+
+    records: list[dict[str, Any]] = []
+    for video_id in collector.search_videos(query, min(4, limit)):
+        payload = collector.post("next", dict(collector.CTX, videoId=video_id))
+        meta = collector.video_meta(payload)
+        token = collector.comment_token(payload)
+        pages = 0
+        while token and len(records) < limit and pages < 40:
+            page = collector.post("next", dict(collector.CTX, continuation=token))
+            pages += 1
+            for comment in collector.parse_comments(page):
+                if len(records) >= limit:
+                    break
+                if not comment.get("text") or not comment.get("id"):
+                    continue
+                records.append({
+                    "id": f"youtube:{comment['id']}",
+                    "title": meta.get("title", ""),
+                    "text": comment["text"],
+                    "url": f"https://youtu.be/{video_id}",
+                    "author": comment.get("author") or "",
+                    "created_at": collector.approx_time(comment.get("time_text"), time.time()) or "",
+                    "context": meta.get("channel", ""),
+                    "source_channel": meta.get("channel", ""),
+                    "source_content_type": "comment",
+                    "thread_id": video_id,
+                    "youtube_video_id": video_id,
+                    "youtube_item_id": comment["id"],
+                    "date_precision": "approximate",
+                    "claim_type": "need",
+                    "evidence_form": "self_report",
+                })
+            token = collector.next_page_token(page)
+            time.sleep(1.2)
+    return records
+
+
+def _collect_hn(query: str, limit: int) -> list[dict[str, Any]]:
+    from connectors import collect_hn as collector
+
+    rows = collector.collect({"queries": [query]}, limit, 100, 0.25, 12)
+    return [{
+        "id": row["record_id"],
+        "title": row.get("thread_title", ""),
+        "text": row["text"],
+        "url": row["source_url"],
+        "author": "",
+        "created_at": row.get("created_at", ""),
+        "context": row.get("source_channel", ""),
+        "source_channel": row.get("source_channel", ""),
+        "source_content_type": "comment",
+        "parent_id": row.get("parent_id"),
+        "claim_type": "need",
+        "evidence_form": "self_report",
+    } for row in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -8144,6 +8340,28 @@ CDP_DISCORD_EXTRACTOR = r"""
       page_url: location.href
     });
   }
+  // 论坛/帖子卡片不是 chat-messages 节点；不单独提取就会退回整页文本，
+  // created_at、作者和帖子 URL 全部丢失。
+  for (const card of document.querySelectorAll("article")) {
+    const titleNode = card.querySelector("h1, h2, h3");
+    const time = card.querySelector("time[datetime]");
+    const link = card.querySelector('a[href*="/channels/"]');
+    const href = link ? link.getAttribute("href") : "";
+    const text = clean(card.innerText);
+    if (text.length < 40) continue;
+    const id = (href.match(/(\d+)(?:[/?]|$)/) || [])[1] || clean(titleNode ? titleNode.textContent : "") || String(rows.length);
+    rows.push({
+      id: id,
+      title: clean(titleNode ? titleNode.textContent : "") || "Discord forum post",
+      text: text,
+      author: clean((card.querySelector('[class*="username"], [class*="author"]') || {}).textContent),
+      created_at: time ? time.getAttribute("datetime") || "" : "",
+      source_url: href ? new URL(href, location.href).href : location.href,
+      source_channel: channel,
+      source_content_type: "forum_post",
+      page_url: location.href
+    });
+  }
   return {rows: rows, page_title: document.title, page_url: location.href, page_text: bodyText};
 })()
 """
@@ -8163,12 +8381,14 @@ CDP_YOUTUBE_EXTRACTOR = r"""
     const comment = thread.querySelector("ytd-comment-view-model") || thread;
     const content = comment.querySelector("#content-text");
     const author = comment.querySelector("#author-text");
+    const published = comment.querySelector("#published-time-text");
+    const publishedText = clean(published ? published.textContent : "");
     const id = thread.getAttribute("data-comment-id") || comment.getAttribute("data-comment-id") ||
       (comment.querySelector("#published-time-text a") || {}).href || String(rows.length);
     rows.push({
       id: id, title: "YouTube comment", text: clean(content ? content.textContent : ""),
-      author: clean(author ? author.textContent : ""), created_at: "",
-      date_precision: "unknown", youtube_video_id: videoId,
+      author: clean(author ? author.textContent : ""), created_at: publishedText,
+      date_precision: publishedText ? "relative_text" : "unknown", youtube_video_id: videoId,
       source_url: location.href, source_channel: channel,
       source_content_type: "comment", thread_id: videoId, page_url: location.href
     });
@@ -8475,6 +8695,18 @@ def capture_page(
         ocr_payload = {"engine": "not_requested", "text": "", "error": ""}
         if ocr:
             ocr_payload = _ocr_with_vision(image_path)
+        # 同时保存平台结构化行：整页文本用于人工阅读，结构化行用于 created_at、
+        # 作者和后续归一化。只存整页 title/text 会把平台字段全部丢掉。
+        structured = client.evaluate(CDP_EXTRACTORS.get(platform, CDP_EXTRACTOR))
+        structured_rows = structured.get("rows") if isinstance(structured, dict) else []
+        if not isinstance(structured_rows, list):
+            structured_rows = []
+        structured_created_at = next(
+            (str(row.get("created_at") or "") for row in structured_rows
+             if str(row.get("created_at") or "").strip()), "")
+        structured_author = next(
+            (str(row.get("author") or "") for row in structured_rows
+             if str(row.get("author") or "").strip()), "")
         payload = {
             "schema": "askovo.page-capture/1",
             "capture_id": capture_id,
@@ -8487,6 +8719,9 @@ def capture_page(
             "capture_mode": "attach_existing" if attach_existing else "new_page",
             "title": title,
             "text": text,
+            "created_at": structured_created_at,
+            "author": structured_author,
+            "structured_rows": structured_rows[:200],
             "text_length": len(text),
             "text_sha256": hashlib.sha256(text.encode()).hexdigest(),
             "screenshot": str(image_path),
@@ -8555,6 +8790,25 @@ def capture_page(
             client.close()
 
 
+def _collection_scope_failure(study_dir: Path, platform: str, *, fixture: bool = False) -> dict[str, Any] | None:
+    study = load_json(study_dir / "study.json")
+    scope = study.get("scope", {}) if isinstance(study, dict) else {}
+    allowed_sources = scope.get("allowed_sources", []) if isinstance(scope, dict) else []
+    if not isinstance(allowed_sources, list) or platform not in allowed_sources:
+        return {"status": "scope_blocked", "platform": platform,
+                "reason": "platform is not listed in study.scope.allowed_sources"}
+    if fixture:
+        # 授权离线导出不需要 live adapter；enabled=false 只阻断真实在线采集。
+        return None
+    adapters = study.get("source_adapters", {}) if isinstance(study, dict) else {}
+    adapter = adapters.get(platform) if isinstance(adapters, dict) else None
+    if isinstance(adapter, dict) and adapter.get("enabled") is False:
+        # 只有显式 enabled=false 才是禁用；缺省配置、fixture 和 CDP 都按原路线放行。
+        return {"status": "adapter_disabled", "platform": platform,
+                "reason": "live collection requires an enabled platform adapter in study.json"}
+    return None
+
+
 def collect_cdp(
     study_dir: Path,
     platform: str,
@@ -8585,6 +8839,10 @@ def collect_cdp(
     if not url:
         return {"status": "error", "platform": platform, "reason": "CDP requires --url"}
     _validate_cdp_target(platform, url)
+    scope_failure = _collection_scope_failure(study_dir, platform)
+    if scope_failure is not None:
+        return scope_failure
+    started_at = now()
     if lease_valid is not None and not lease_valid():
         return {"status": "lease_lost", "platform": platform, "reason": "queue lease is no longer owned by this worker"}
     strategy = _cdp_strategy()
@@ -8712,14 +8970,21 @@ def collect_cdp(
         guard.end_cell("circuit_open" if guard.circuit()["open"] else "ok")
         if client is not None:
             client.close()
+    if not rows:
+        return {
+            "status": "empty_unconfirmed",
+            "platform": platform,
+            "reason": "no records were extracted; the page may be empty, blocked or using an unsupported selector",
+        }
+    completed_at = now()
     raw_records = [
         {
-            "id": str(row.get("id") or f"{platform}:{hashlib.sha256((row.get('source_url','') + row.get('text','')[:500]).encode()).hexdigest()[:16]}"),
+            "id": str(row.get("id") or row.get("href") or f"{platform}:{hashlib.sha256((row.get('source_url','') + row.get('text','')[:500]).encode()).hexdigest()[:16]}"),
             "title": row.get("title") or "",
             "text": row.get("text") or "",
-            "url": row.get("source_url") or url,
+            "url": row.get("source_url") or row.get("url") or row.get("href") or url,
             "author": row.get("author") or "",
-            "created_at": row.get("created_at") or "",
+            "created_at": row.get("created_at") or row.get("published_at") or row.get("time") or "",
             "context": "cdp_visible_page",
             "rating": row.get("rating") or "",
             "source_channel": row.get("source_channel") or "",
@@ -8766,8 +9031,8 @@ def collect_cdp(
         "connector_license": "MIT",
         "access_basis": "cdp_authorized_visible_page",
         "auth": "user_browser_session",
-        "started_at": now(),
-        "finished_at": now(),
+        "started_at": started_at,
+        "finished_at": completed_at,
         "requested": limit,
         "source_url": url,
         "cdp_base": cdp_base,
@@ -8910,15 +9175,10 @@ def collect_platform(
             if attach_existing:
                 next_command += " --attach-existing"
         return {"status": "planned", **plan, "next": next_command}
+    scope_failure = _collection_scope_failure(study_dir, platform, fixture=fixture is not None)
+    if scope_failure is not None:
+        return scope_failure
     study = load_json(study_dir / "study.json")
-    scope = study.get("scope", {}) if isinstance(study, dict) else {}
-    allowed_sources = scope.get("allowed_sources", []) if isinstance(scope, dict) else []
-    if not isinstance(allowed_sources, list) or platform not in allowed_sources:
-        return {
-            "status": "scope_blocked",
-            "platform": platform,
-            "reason": "platform is not listed in study.scope.allowed_sources",
-        }
     adapters = study.get("source_adapters", {}) if isinstance(study, dict) else {}
     adapter = adapters.get(platform) if isinstance(adapters, dict) else None
     adapter_disabled = not isinstance(adapter, dict) or not adapter.get("enabled", False)
@@ -8930,6 +9190,7 @@ def collect_platform(
         }
     if lease_valid is not None and not lease_valid():
         return {"status": "lease_lost", "platform": platform, "reason": "queue lease is no longer owned by this worker"}
+    started_at = now()
     if cdp_url:
         return collect_cdp(
             study_dir, platform, query, url or "", cdp_url, ack_terms, limit,
@@ -8957,6 +9218,16 @@ def collect_platform(
             raw_records = _collect_reddit(query, limit)
         except (RuntimeError, OSError, json.JSONDecodeError) as exc:
             return {"status": "error", "platform": platform, "reason": str(exc)}
+    elif entry.get("adapter") == "youtube":
+        try:
+            raw_records = _collect_youtube(query, limit)
+        except (RuntimeError, OSError, json.JSONDecodeError) as exc:
+            return {"status": "error", "platform": platform, "reason": str(exc)}
+    elif entry.get("adapter") == "hackernews":
+        try:
+            raw_records = _collect_hn(query, limit)
+        except (RuntimeError, OSError, json.JSONDecodeError) as exc:
+            return {"status": "error", "platform": platform, "reason": str(exc)}
     else:
         return {
             "status": "adapter_unavailable",
@@ -8970,6 +9241,7 @@ def collect_platform(
             raise ValueError(f"fixture record {index} must be a JSON object")
     if lease_valid is not None and not lease_valid():
         return {"status": "lease_lost", "platform": platform, "reason": "queue lease is no longer owned by this worker"}
+    completed_at = now()
     normalized = [_normalize_platform_record(raw, platform, run_id, query) for raw in raw_records[:limit]]
     adapter_config = adapter if isinstance(adapter, dict) else {}
     manifest = {
@@ -8983,8 +9255,8 @@ def collect_platform(
         "connector_license": "" if fixture else adapter_config.get("connector_license") or "MIT",
         "access_basis": "authorized_export" if fixture else ", ".join(entry.get("access_modes", [])),
         "auth": entry.get("auth"),
-        "started_at": now(),
-        "finished_at": now(),
+        "started_at": started_at,
+        "finished_at": completed_at,
         "requested": limit,
         "limits": entry.get("limits", []),
         "bias": entry.get("bias", []),
@@ -9067,7 +9339,7 @@ ANALYSIS_FIELD_CONCEPTS = {
     "record_id": ("record_id", "id"),
     "text": ("text", "body", "normalized_text", "content", "selftext"),
     "source_url": ("source_url", "url", "source_ref"),
-    "created_at": ("created_at", "source_time"),
+    "created_at": ("created_at", "published_at", "source_time", "created", "timestamp", "created_utc", "time", "published_time", "date_text"),
 }
 ANALYSIS_REQUIRED_FIELDS = ("record_id",)
 
@@ -9106,8 +9378,13 @@ def _analysis_field_completeness(records: list[dict[str, Any]]) -> dict[str, Any
 
 
 def _record_time(record: dict[str, Any]) -> str:
-    """First known timestamp on a record; collected_at is what imports carry."""
-    return str(record.get("created_at") or record.get("source_time") or record.get("collected_at") or "")
+    """First known timestamp on a record; imports and captures use different aliases."""
+    return str(
+        record.get("created_at") or record.get("published_at") or record.get("source_time")
+        or record.get("created") or record.get("timestamp") or record.get("created_utc")
+        or record.get("time") or record.get("published_time") or record.get("date_text")
+        or record.get("collected_at") or ""
+    )
 
 
 _CHINESE_LEXICON: tuple[set[str], int] | None = None
@@ -9184,6 +9461,132 @@ def _query_terms(question: str, stop: set[str]) -> list[str]:
         elif len(token) >= 2:
             terms.extend(token[i:i + 2] for i in range(len(token) - 1))
     return terms
+
+
+def _topic_counts(records: list[dict[str, Any]], key: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for record in records:
+        if key == "platform":
+            value = str(record.get("platform") or record.get("source_family") or "unknown")
+        else:
+            value = str(record.get(key) or "unknown").strip() or "unknown"
+        counts[value] = counts.get(value, 0) + 1
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
+def _analysis_topics(records: list[dict[str, Any]], stop: set[str], *, max_topics: int = 8) -> list[dict[str, Any]]:
+    """Deterministic co-occurrence topics; descriptive candidates, not prevalence claims."""
+    doc_terms: list[tuple[dict[str, Any], set[str]]] = []
+    df: dict[str, int] = {}
+    for record in records:
+        terms = {term for term in _analysis_terms(_evidence_text(record), stop) if len(term) >= 2}
+        doc_terms.append((record, terms))
+        for term in terms:
+            df[term] = df.get(term, 0) + 1
+    total = len(records)
+    if total < 3:
+        return []
+    candidates = [
+        term for term, count in df.items()
+        if count >= 2 and count <= max(2, int(total * 0.65))
+    ]
+    candidates.sort(key=lambda term: (-df[term], term))
+    candidates = candidates[:40]
+    adjacency: dict[str, set[str]] = {term: set() for term in candidates}
+    for _, terms in doc_terms:
+        common = sorted(terms.intersection(candidates))
+        for index, left in enumerate(common):
+            for right in common[index + 1:]:
+                adjacency[left].add(right)
+                adjacency[right].add(left)
+    visited: set[str] = set()
+    clusters: list[set[str]] = []
+    for term in candidates:
+        if term in visited:
+            continue
+        stack = [term]
+        component: set[str] = set()
+        while stack:
+            current = stack.pop()
+            if current in visited:
+                continue
+            visited.add(current)
+            component.add(current)
+            for neighbor in adjacency[current]:
+                if neighbor not in visited:
+                    stack.append(neighbor)
+        if len(component) >= 2 or df[term] >= 3:
+            clusters.append(component)
+    topics: list[dict[str, Any]] = []
+    for component in clusters:
+        members = [record for record, terms in doc_terms if terms.intersection(component)]
+        if not members:
+            continue
+        terms_sorted = sorted(component, key=lambda term: (-df[term], term))
+        topics.append({
+            "terms": terms_sorted[:6],
+            "record_count": len(members),
+            "example_record_ids": [str(record.get("record_id") or "") for record in members[:3]],
+            "platforms": _topic_counts(members, "platform"),
+            "evidence_levels": _topic_counts(members, "evidence_level"),
+            "note": "共现聚合的候选主题，不是总体主题比例；需要人工命名与复核",
+        })
+    topics.sort(key=lambda item: -item["record_count"])
+    return topics[:max_topics]
+
+
+_MECHANISM_RE = re.compile(
+    r"因为|由于|所以|因此|导致|于是|才会|就会|because|so that|therefore|due to|as a result",
+    re.IGNORECASE,
+)
+_CONTRAST_RE = re.compile(
+    r"但|但是|然而|不过|却|而是|并非|不是|没有|but|however|although|though|instead|rather than",
+    re.IGNORECASE,
+)
+
+
+def _analysis_mechanisms(records: list[dict[str, Any]], *, limit: int = 30) -> list[dict[str, Any]]:
+    """Candidate mechanism/contrast sentences; markers are not proof of causality."""
+    found: list[dict[str, Any]] = []
+    for record in records:
+        text = _evidence_text(record)
+        for sentence in re.split(r"[。！？；\n.!?;]+", text):
+            excerpt = sentence.strip()
+            if len(excerpt) < 8:
+                continue
+            if _MECHANISM_RE.search(excerpt):
+                kind = "mechanism_candidate"
+            elif _CONTRAST_RE.search(excerpt):
+                kind = "contrast_candidate"
+            else:
+                continue
+            found.append({
+                "kind": kind,
+                "record_id": str(record.get("record_id") or ""),
+                "platform": str(record.get("platform") or record.get("source_family") or "unknown"),
+                "evidence_level": str(record.get("evidence_level") or "unclassified"),
+                "text": excerpt[:300],
+            })
+            if len(found) >= limit:
+                return found
+    return found
+
+
+def _analysis_duplicates(records: list[dict[str, Any]]) -> dict[str, Any]:
+    groups: dict[str, list[str]] = {}
+    for record in records:
+        text = _evidence_text(record)
+        digest = str(record.get("normalized_text_hash") or "")
+        if not digest:
+            digest = "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+        groups.setdefault(digest, []).append(str(record.get("record_id") or ""))
+    duplicates = [ids for ids in groups.values() if len(ids) > 1]
+    return {
+        "duplicate_groups": duplicates[:20],
+        "duplicate_records": sum(len(group) for group in duplicates),
+        "unique_records": len(groups),
+        "note": "normalized_text_hash 或正文哈希归并；近重复改写不会被误判为独立主题",
+    }
 
 
 def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any]:
@@ -9280,6 +9683,9 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
         "segments_note": "描述性计数，n<3 的分段标记 low_n；不做显著性、因果或总体推断。",
         "time_coverage": _analysis_time_coverage(unique, study),
         "field_completeness": field_completeness,
+        "topics": _analysis_topics(unique, stop),
+        "mechanisms": _analysis_mechanisms(unique),
+        "duplicates": _analysis_duplicates(unique),
         "by_evidence_form": by_form,
         "by_month": dict(sorted(by_month.items())),
         "avg_text_length": round(sum(lengths) / len(lengths), 1) if lengths else 0,
@@ -9328,6 +9734,31 @@ def analyze_study(study_dir: Path, question: str | None = None) -> dict[str, Any
     lines.extend([
         "",
         "> " + field_completeness["note"],
+        "",
+    ])
+    stop = set("the and for with that this from are was were you your our not but have has had will can could should about into over under more most some such than then them they their there here what when where which who whom why how all any both each few other own same so too very just also".split())
+    topics = _analysis_topics(records, stop)
+    if topics:
+        lines.extend(["## 候选主题（共现聚合）", ""])
+        for index, topic in enumerate(topics, start=1):
+            lines.append(
+                f"{index}. **{' / '.join(topic['terms'])}**（{topic['record_count']} 条）"
+                f" · 例：{', '.join(topic['example_record_ids'])}")
+        lines.append("> 共现聚合只是候选主题，不是总体主题比例；需要人工命名与复核。")
+        lines.append("")
+    mechanisms = _analysis_mechanisms(records)
+    if mechanisms:
+        lines.extend(["## 机制与转折句（候选）", ""])
+        for item in mechanisms[:12]:
+            lines.append(
+                f"- [{item['kind']}] `{item['record_id']}`（{item['platform']} / {item['evidence_level']}）：{item['text']}")
+        lines.append("> 含因果/转折词的句子是候选机制或反证线索，不等于已验证因果。")
+        lines.append("")
+    duplicates = _analysis_duplicates(records)
+    lines.extend([
+        "## 重复与独立记录", "",
+        f"- 重复组：{len(duplicates['duplicate_groups'])}；重复记录：{duplicates['duplicate_records']}；去重后独立记录：{duplicates['unique_records']}",
+        f"> {duplicates['note']}",
         "",
         "## 高频词（候选主题，不是结论）",
         "",
@@ -9962,13 +10393,11 @@ def cli_collect(args: Any) -> int:
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2))
     status = result.get("status")
-    if status == "terms_required":
+    if status in {"terms_required", "cdp_not_allowed"}:
         return 4
-    if status == "cdp_not_allowed":
-        return 4
-    if status in ("blocked", "adapter_unavailable", "adapter_disabled", "scope_blocked", "review_expired", "lease_lost", "error", "challenge"):
-        return 3
-    return 0
+    if status in {"collected", "planned"}:
+        return 0
+    return 3
 
 
 def cli_analyze(args: Any) -> int:
@@ -9977,6 +10406,30 @@ def cli_analyze(args: Any) -> int:
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    if getattr(args, "semantic", False):
+        import semantic_candidates
+        study_dir = Path(args.study_dir).resolve()
+        try:
+            records = semantic_candidates.load_records(study_dir)
+            summary = semantic_candidates.run_semantic_analysis(
+                study_dir, records,
+                question=args.question or "",
+                provider=getattr(args, "semantic_provider", "auto"),
+                allow_external=bool(getattr(args, "allow_external", False)),
+                max_records=int(getattr(args, "semantic_max_records", 120)),
+                batch_size=int(getattr(args, "semantic_batch_size", 20)),
+                retrieval=getattr(args, "retrieval", "auto"),
+            )
+        except semantic_candidates.SemanticUnavailable as exc:
+            print("%s%s" % (exc, ("\n" + exc.suggestion) if exc.suggestion else ""),
+                  file=sys.stderr)
+            return 2 if exc.reason_code == "EXTERNAL_NOT_AUTHORIZED" else 1
+        except (semantic_candidates.SemanticError, OSError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        result["semantic"] = summary
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 1 if summary.get("status") in ("failed", "partial") else 0
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
@@ -10779,6 +11232,8 @@ def _reasoning_node(chain: dict[str, Any], node_name: str) -> tuple[str, dict[st
 def _evidence_records_by_id(study_dir: Path) -> dict[str, dict[str, Any]]:
     records: dict[str, dict[str, Any]] = {}
     for record in _read_jsonl_rows(Path(study_dir) / "02-data" / "evidence.jsonl"):
+        if record.get("retracted"):
+            continue
         record_id = str(record.get("record_id") or "").strip()
         if record_id and record_id not in records:
             records[record_id] = record
@@ -10891,6 +11346,18 @@ CHAIN_NODE_FIELD_TYPES = {
     "desired_outcome": str, "measure": str, "capability": str, "form": str, "scope": str,
     "assumptions": list, "constraints": list, "alternatives_considered": list,
     "acceptance_conditions": list, "non_goals": list, "acceptance_criteria": list,
+    "market_definition": str, "geographies": list, "time_window": str,
+    "included_markets": list, "excluded_markets": list, "target_segment": str,
+    "segments": list, "payer": str, "positioning": str,
+    "competitive_alternatives": list, "pricing_hypothesis": dict,
+    "cost_drivers": list, "success_metrics": list, "revenue_model": dict,
+    "gate": dict, "resource_commitment": str, "revisit_trigger": str,
+}
+
+CHAIN_FIELD_TYPES = {
+    "title": str, "context_key": str, "demand_judgment_id": str,
+    "next_test": dict, "counter_evidence_ids": list, "gaps": list,
+    "alternative_explanations": list, "human_review": dict,
 }
 
 
@@ -11083,9 +11550,234 @@ def cli_chain_node(args: Any) -> int:
         return 2
 
 
+def _typed_json_value(args: Any, field_types: dict[str, Any], field_name: str) -> Any:
+    if field_name not in field_types:
+        raise ValueError("不支持的字段 %r；可用：%s" % (field_name, ", ".join(sorted(field_types))))
+    raw = getattr(args, "value_json", None)
+    if raw is None:
+        raise ValueError("--field 需要同时提供 --value-json")
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("--value-json 必须是有效 JSON：%s" % exc) from exc
+    expected = field_types[field_name]
+    if not isinstance(value, expected) or (expected is str and not value.strip()):
+        label = "非空字符串" if expected is str else ("JSON 对象" if expected is dict else "JSON 数组")
+        raise ValueError("--field %s 需要%s" % (field_name, label))
+    return value
+
+
+def _write_json_document(path: Path, value: Any) -> None:
+    temp = path.with_name(path.name + ".tmp")
+    try:
+        temp.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        os.replace(temp, path)
+    finally:
+        if temp.exists():
+            temp.unlink()
+
+
+def _cli_chain_set(study_dir: Path, args: Any, reasoning: dict[str, Any]) -> int:
+    chain = _select_reasoning_chain(reasoning, getattr(args, "chain", ""))
+    field_name = str(getattr(args, "field", "") or "").strip()
+    if not field_name:
+        raise ValueError("chain set 需要 --field；可用：" + ", ".join(sorted(CHAIN_FIELD_TYPES)))
+    value = _typed_json_value(args, CHAIN_FIELD_TYPES, field_name)
+    old = chain.get(field_name)
+    if old == value:
+        print(json.dumps({"status": "unchanged", "chain": chain.get("id"), "field": field_name}, ensure_ascii=False, indent=2))
+        return 0
+    chain[field_name] = value
+    note = str(getattr(args, "note", "") or "更新链级字段；未重新审计")
+    entry = _append_chain_change(chain, str(chain.get("id") or ""), "chain", [field_name], {field_name: old}, [], note)
+    entry["affected_refs"] = [f"{chain.get('id')}.{name}" for name in REASONING_NODES]
+    _save_product_reasoning(study_dir, reasoning)
+    print(json.dumps({"status": "updated", "chain": chain.get("id"), "field": field_name, "previous": old, "change_log_id": entry["id"], "affected_refs": entry["affected_refs"], "audit_status": "not_run"}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cli_demand_judgment(args: Any) -> int:
+    try:
+        study_dir = Path(args.study_dir).resolve()
+        if getattr(args, "judgment_action", "") != "create":
+            raise ValueError("可用动作：create")
+        path = study_dir / "04-findings" / "demand-judgments.json"
+        judgments = load_json(path) if path.is_file() else []
+        if not isinstance(judgments, list):
+            raise ValueError("demand-judgments.json 必须是数组")
+        judgment_id = str(args.id).strip()
+        if not judgment_id:
+            raise ValueError("--id 不能为空")
+        if any(str(row.get("id") or "") == judgment_id for row in judgments if isinstance(row, dict)):
+            raise ValueError(f"需求判断 {judgment_id} 已存在；请使用新 id 或先修正现有记录")
+        records = _evidence_records_by_id(study_dir)
+        evidence_groups = {}
+        for argument, field in (("problem_evidence", "problem_evidence_ids"), ("solution_evidence", "solution_evidence_ids"), ("commercial_evidence", "commercial_evidence_ids"), ("counter_evidence", "counter_evidence_ids")):
+            values = [str(value).strip() for value in (getattr(args, argument, None) or []) if str(value).strip()]
+            unknown = [value for value in values if value not in records]
+            if unknown:
+                raise ValueError(f"{field} 引用了不存在的证据 ID：{', '.join(unknown)}")
+            evidence_groups[field] = values
+        created = {
+            "id": judgment_id,
+            "title": str(args.title).strip(),
+            "user_role": str(args.user_role).strip(),
+            "scene": str(args.scene).strip(),
+            "task": str(args.task).strip(),
+            "current_substitute": str(args.current_substitute).strip(),
+            "friction": str(args.friction).strip(),
+            "consequence": str(args.consequence).strip(),
+            "solution": str(args.solution).strip(),
+            "acceptance_conditions": str(args.acceptance_conditions).strip(),
+            **evidence_groups,
+            "status": "needs-validation",
+            "confidence": "low",
+            "gaps": [],
+            "next_test": str(args.next_test).strip(),
+            "context_key": str(getattr(args, "context_key", "") or "").strip(),
+        }
+        required_text = ("title", "user_role", "scene", "task", "current_substitute", "friction", "consequence", "solution", "acceptance_conditions", "next_test")
+        missing = [name for name in required_text if not created[name]]
+        if missing:
+            raise ValueError("需求判断缺字段：" + ", ".join(missing))
+        judgments.append(created)
+        _write_json_document(path, judgments)
+        print(json.dumps({"status": "created", "judgment": created, "audit_status": "not_run", "next_step": f"运行 `askovo check {study_dir} --stage full` 重新审计"}, ensure_ascii=False, indent=2))
+        return 0
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+
+def cli_evidence(args: Any) -> int:
+    try:
+        study_dir = Path(args.study_dir).resolve()
+        if getattr(args, "evidence_action", "") in {"retract", "restore"}:
+            record_id = str(args.record_id).strip()
+            path = study_dir / "02-data" / "evidence.jsonl"
+            rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            record = next((row for row in rows if str(row.get("record_id") or "") == record_id), None)
+            if record is None:
+                raise ValueError(f"证据 {record_id} 不存在；请先运行 `askovo import STUDY FILE`")
+            actor = str(getattr(args, "by", "") or "").strip()
+            if not actor:
+                raise ValueError("撤销/恢复证据必须提供 --by，记录责任人")
+            action = args.evidence_action
+            if action == "retract":
+                reason = str(getattr(args, "reason", "") or "").strip()
+                if not reason:
+                    raise ValueError("撤销证据必须提供 --reason，说明误导入或不再采用的原因")
+                if record.get("retracted"):
+                    raise ValueError(f"证据 {record_id} 已撤销；如需恢复请先运行 restore")
+                record["retracted"] = True
+                record["retraction"] = {"at": now(), "by": actor, "reason": reason}
+            else:
+                if not record.get("retracted"):
+                    raise ValueError(f"证据 {record_id} 未撤销，无需恢复")
+                record.pop("retracted", None)
+                record["restoration"] = {"at": now(), "by": actor}
+            temp = path.with_name(path.name + ".tmp")
+            try:
+                temp.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
+                os.replace(temp, path)
+            finally:
+                if temp.exists():
+                    temp.unlink()
+            print(json.dumps({"status": "retracted" if action == "retract" else "restored",
+                              "record_id": record_id, "text_unchanged": True,
+                              "audit_status": "not_run"}, ensure_ascii=False, indent=2))
+            return 0
+        if getattr(args, "evidence_action", "") != "set":
+            raise ValueError("可用动作：set / retract / restore")
+        record_id = str(args.record_id).strip()
+        path = study_dir / "02-data" / "evidence.jsonl"
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        record = next((row for row in rows if str(row.get("record_id") or "") == record_id), None)
+        if record is None:
+            raise ValueError(f"证据 {record_id} 不存在；请先运行 `askovo import STUDY FILE`")
+        field_name = str(getattr(args, "field", "") or "").strip()
+        if field_name != "evidence_form":
+            raise ValueError("evidence set 目前只支持 --field evidence_form，避免用命令直接改写证据等级")
+        form = _typed_json_value(args, {"evidence_form": str}, "evidence_form")
+        level = str(getattr(args, "evidence_level", "") or "").strip().upper()
+        if level not in IMPORT_LEVEL_ORDER:
+            raise ValueError(f"未知证据等级 {level!r}")
+        cap = IMPORT_LEVEL_CAPS.get(form, "E2")
+        concept_path = getattr(args, "concept_test", "")
+        if IMPORT_LEVEL_ORDER[level] > IMPORT_LEVEL_ORDER[cap]:
+            if level != "E3" or not concept_path:
+                raise ValueError(f"{form} 最高支持 {cap}；E3 还需同时提供 --concept-test")
+            import capture_review
+            capture_review._load_concept_test(Path(concept_path))
+        previous = {"evidence_form": record.get("evidence_form"), "evidence_level": record.get("evidence_level")}
+        record["evidence_form"] = form
+        record["evidence_level"] = level
+        record["evidence_correction"] = {
+            "note": str(getattr(args, "note", "") or "纠正导入默认值"),
+            "concept_test": str(concept_path or ""),
+        }
+        temp = path.with_name(path.name + ".tmp")
+        try:
+            temp.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
+            os.replace(temp, path)
+        finally:
+            if temp.exists():
+                temp.unlink()
+        print(json.dumps({"status": "updated", "record_id": record_id, "previous": previous, "current": {"evidence_form": form, "evidence_level": level}, "audit_status": "not_run"}, ensure_ascii=False, indent=2))
+        return 0
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+
+def cli_study(args: Any) -> int:
+    try:
+        study_dir = Path(args.study_dir).resolve()
+        if getattr(args, "study_action", "") != "set":
+            raise ValueError("可用动作：set")
+        path = study_dir / "study.json"
+        study = load_json(path)
+        field_name = str(getattr(args, "field", "") or "").strip()
+        fields = {
+            "title": str,
+            "decision.question": str, "decision.owner": str, "decision.deadline": str,
+            "decision.options": list, "decision.minimum_evidence": list,
+            "scope.target_users": list, "scope.markets": list, "scope.languages": list,
+            "scope.allowed_sources": list, "scope.source_time_window": dict,
+            "hypotheses": list, "stopping_rules": list, "restart_rules": list,
+        }
+        value = _typed_json_value(args, fields, field_name)
+        target = study
+        parts = field_name.split(".")
+        for part in parts[:-1]:
+            target = target.setdefault(part, {})
+            if not isinstance(target, dict):
+                raise ValueError(f"{part} 不是对象，无法写入 {field_name}")
+        key = parts[-1]
+        previous = target.get(key)
+        if previous == value:
+            print(json.dumps({"status": "unchanged", "field": field_name}, ensure_ascii=False, indent=2))
+            return 0
+        target[key] = value
+        _write_json_document(path, study)
+        print(json.dumps({"status": "updated", "field": field_name, "previous": previous, "audit_status": "not_run", "next_step": f"运行 `askovo check {study_dir} --stage full` 重新审计"}, ensure_ascii=False, indent=2))
+        return 0
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+
 def cli_chain(args: Any) -> int:
     try:
         study_dir = Path(args.study_dir).resolve()
+        reasoning = load_product_reasoning(study_dir)
+        if reasoning is None:
+            scaffold_product_reasoning(study_dir)
+            reasoning = load_product_reasoning(study_dir)
+        if reasoning is None:
+            raise ValueError("cannot create product-reasoning.json")
+        if getattr(args, "chain_action", "") == "set":
+            return _cli_chain_set(study_dir, args, reasoning)
         scaffold = scaffold_product_reasoning(study_dir)
         reasoning = load_product_reasoning(study_dir)
         if reasoning is None:

@@ -317,6 +317,13 @@ def _evidence_record(payload: Dict[str, Any], *, level: str, corpus_role: str,
     screenshot_rel = str(CAPTURES_RELATIVE / f"{capture_id}.png")
     ocr = payload.get("ocr") if isinstance(payload.get("ocr"), dict) else {}
     source_url = str(payload.get("final_url") or payload.get("url") or "")
+    structured_rows = payload.get("structured_rows") if isinstance(payload.get("structured_rows"), list) else []
+    structured_row = next(
+        (row for row in structured_rows if str(row.get("source_url") or "") == source_url),
+        structured_rows[0] if structured_rows else {})
+    created_at = str(structured_row.get("created_at") or payload.get("created_at") or "")
+    author = str(structured_row.get("author") or payload.get("author") or "")
+    row_url = str(structured_row.get("source_url") or source_url)
     basis = (
         f"capture candidate {capture_id} ({source_url}); human-reviewed text "
         f"source={from_text}; accepted by {operator}")
@@ -340,6 +347,9 @@ def _evidence_record(payload: Dict[str, Any], *, level: str, corpus_role: str,
         "corpus_role": corpus_role,
         "source_family": SOURCE_FAMILY,
         "source_ref": capture_rel,
+        "source_url": row_url,
+        "author": author,
+        "created_at": created_at,
         "normalized_text_hash": _sha_text(text),
         "text": text,
         "claim_type": "context" if level == "E0" else "need",
@@ -360,6 +370,7 @@ def _evidence_record(payload: Dict[str, Any], *, level: str, corpus_role: str,
     record["level_basis"] = level_basis
     record["requested_evidence_level"] = requested_level
     record["level_observation"] = observation
+    record["source_content_type"] = str(structured_row.get("source_content_type") or "unknown")
     provenance = {
         "platform": "web",
         "capture_id": capture_id,
@@ -375,8 +386,9 @@ def _evidence_record(payload: Dict[str, Any], *, level: str, corpus_role: str,
         "capture_ocr_text_sha256": str(ocr.get("text_sha256") or ""),
         "capture_text_source": from_text,
         "captured_at": str(payload.get("captured_at") or ""),
-        "collected_at": str(payload.get("captured_at") or ""),
-        "source_url": source_url,
+        # captured_at 是采集时间；缺失时保留结构化 created_at，不能用空值覆盖归一化结果。
+        "collected_at": str(payload.get("captured_at") or created_at),
+        "source_url": row_url,
         "text_excerpt": text,
         "reviewed_by": operator,
         "reviewed_at": reviewed_at,

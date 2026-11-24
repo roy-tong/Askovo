@@ -41,7 +41,7 @@ from typing import Any, Dict, List, Optional
 import common
 
 CTX = {"context": {"client": {"clientName": "WEB", "clientVersion": "2.20240726.00.00", "hl": "en", "gl": "US"}}}
-SOURCE_TIER = "public_page_uncoded"
+SOURCE_TIER = "public_endpoint_limited"
 
 
 def post(endpoint: str, body: dict, max_wait: float = 240.0) -> Optional[dict]:
@@ -60,14 +60,14 @@ def post(endpoint: str, body: dict, max_wait: float = 240.0) -> Optional[dict]:
                 return json.loads(r.read().decode("utf-8", "ignore"))
         except urllib.error.HTTPError as exc:
             if exc.code not in {429, 403}:
-                return None
+                raise RuntimeError(f"YouTube API HTTP {exc.code}") from exc
             if time.time() + wait > deadline:
-                return None
+                raise RuntimeError(f"YouTube API HTTP {exc.code}: backoff budget exhausted") from exc
             print(f"HTTP {exc.code}; back off {wait:.0f}s", flush=True)
             time.sleep(wait)
             wait = min(wait * 2, 120.0)
-        except Exception:
-            return None
+        except Exception as exc:
+            raise RuntimeError(f"YouTube API request failed: {type(exc).__name__}") from exc
 
 
 def walk(o: Any, pred, out: list) -> None:
@@ -91,6 +91,8 @@ def search_videos(query: str, n: int) -> List[str]:
             body = dict(CTX)
             body["continuation"] = cont
         d = post("search", body)
+        if d is None:
+            raise RuntimeError(f"YouTube search failed for {query!r}")
         if not d:
             break
         renderers: List[dict] = []
@@ -240,9 +242,8 @@ def build_record(c: dict, meta: dict, vid: str, q: dict, run_id: Optional[str]) 
         "primary_sample_eligible": created_at is not None and common.is_primary_date(created_at),
         "source_tier": SOURCE_TIER,
     }
-    if run_id:
-        record["collection_run_id"] = run_id
-    return record
+    return common.with_connector_envelope(
+        record, run_id or "youtube-standalone", "youtube-innertube-limited", "1")
 
 
 def main() -> None:
@@ -263,16 +264,23 @@ def main() -> None:
 
     plan = json.loads(Path(args.queries).read_text(encoding="utf-8"))
     state_path = Path(args.state)
+    out_path = Path(args.out)
+    common.ensure_parent(state_path)
+    common.ensure_parent(out_path)
     state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() \
         else {"done_videos": {}, "queries_run": []}
     seen = set()
-    out_path = Path(args.out)
     if out_path.exists():
         for row in common.read_jsonl(out_path):
             if row.get("record_id"):
                 seen.add(row["record_id"])
     total = 0
-    with out_path.open("a", encoding="utf-8") as fo:
+    run_id = args.run_id or f"youtube-{int(time.time())}"
+    common.atomic_write_json(state_path, state)
+    with out_path.open("a", encoding="utf-8") as fo, common.collection_manifest(
+            out_path, run_id=run_id, platform="youtube", connector_id="youtube-innertube-limited",
+            connector_revision="1", access_basis="public_endpoint_limited", query=str(plan),
+            requested_records=args.max_records or 0, written_records=lambda: total):
         for q in plan:
             if args.max_records and total >= args.max_records:
                 print(f"MAX_RECORDS hit ({total})", flush=True)
@@ -282,14 +290,18 @@ def main() -> None:
             vids = search_videos(q["q"], int(q.get("n_videos", 8)))
             print(f"[{q['route']}] '{q['q']}' -> {len(vids)} videos", flush=True)
             for vid in vids:
+                if args.max_records and total >= args.max_records:
+                    break
                 if vid in state["done_videos"]:
                     continue
                 body = dict(CTX)
                 body["videoId"] = vid
                 d = post("next", body)
                 time.sleep(args.sleep)
+                if d is None:
+                    raise RuntimeError(f"YouTube video metadata failed for {vid}")
                 if not d:
-                    continue
+                    raise RuntimeError(f"YouTube video metadata is empty for {vid}")
                 meta = video_meta(d)
                 tok = comment_token(d)
                 n_comments = 0
@@ -300,6 +312,8 @@ def main() -> None:
                     cd = post("next", body)
                     time.sleep(args.sleep)
                     pages += 1
+                    if cd is None:
+                        raise RuntimeError(f"YouTube comments page failed for {vid}")
                     if not cd:
                         break
                     for c in parse_comments(cd):
@@ -307,16 +321,20 @@ def main() -> None:
                         if rid in seen or len(str(c.get("text"))) < 15:
                             continue
                         seen.add(rid)
-                        record = build_record(c, meta, vid, q, args.run_id)
+                        if args.max_records and total >= args.max_records:
+                            break
+                        record = build_record(c, meta, vid, q, run_id)
                         fo.write(json.dumps(record, ensure_ascii=False) + "\n")
                         n_comments += 1
                         total += 1
                     tok = next_page_token(cd)
-                state["done_videos"][vid] = {"title": meta.get("title", ""), "comments": n_comments}
-                state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+                if not (args.max_records and total >= args.max_records):
+                    state["done_videos"][vid] = {"title": meta.get("title", ""), "comments": n_comments}
+                    common.atomic_write_json(state_path, state)
                 print(f"  {vid} {meta.get('title', '')[:48]} -> +{n_comments}", flush=True)
-            state["queries_run"].append(q["q"])
-            state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+            if not (args.max_records and total >= args.max_records):
+                state["queries_run"].append(q["q"])
+                common.atomic_write_json(state_path, state)
     print(f"DONE total_new={total}", flush=True)
 
 

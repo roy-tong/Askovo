@@ -20,7 +20,7 @@ Failure at an earlier gate ends the review. Do not compensate for a failed acces
 | Platform | Repository | Registry decision | What it means for Askovo |
 | --- | --- | --- | --- |
 | Reddit | [praw-dev/praw](https://github.com/praw-dev/praw) | `supported` | Default OSS client when the study has approved Reddit Data API access; register the API app by 2026-09-30 and re-review after the Devvit transition |
-| Reddit | [Askovo Arctic Shift window collector](https://github.com/roy-tong/askovo/blob/9f04bcc88857dbefb4ce752f68a4c51720d10528/skills/askovo/scripts/connectors/collect_arctic_windows.py) | `historical_only` | MIT Askovo collector over the Arctic Shift historical archive; not live Reddit, with archive coverage/deletion and content rights reviewed separately |
+| Reddit | [Askovo Arctic Shift window collector](https://github.com/roy-tong/Askovo/blob/9f04bcc88857dbefb4ce752f68a4c51720d10528/skills/askovo/scripts/connectors/collect_arctic_windows.py) | `historical_only` | MIT Askovo collector over the Arctic Shift historical archive; not live Reddit, with archive coverage/deletion and content rights reviewed separately |
 | X | [tweepy/tweepy](https://github.com/tweepy/tweepy) | `supported` | Default OSS client for the official X API |
 | YouTube | [googleapis/google-api-python-client](https://github.com/googleapis/google-api-python-client) | `supported` | Default OSS client for YouTube Data API search, metadata, and comment threads |
 | Hacker News | [HackerNews/API](https://github.com/HackerNews/API) | `supported` | Official Firebase API (plus the public Algolia search mirror); no account needed for reads, technical-audience skew must be stated |

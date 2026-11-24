@@ -22,6 +22,7 @@ import argparse
 import hashlib
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
 
@@ -94,7 +95,8 @@ def find_product_asins(
     return asins
 
 
-def normalize_review(row: Dict[str, Any], category: str, query: str, author_salt: Optional[str]) -> Optional[Dict[str, Any]]:
+def normalize_review(row: Dict[str, Any], category: str, query: str, author_salt: Optional[str],
+                     run_id: str | None = None, dataset_revision: str = "") -> Optional[Dict[str, Any]]:
     review_id = get_value(row, ["review_id", "id"])
     asin = get_value(row, ["parent_asin", "asin"])
     user_id = get_value(row, ["user_id"])
@@ -111,9 +113,9 @@ def normalize_review(row: Dict[str, Any], category: str, query: str, author_salt
     # Amazon Reviews 2023 timestamps are usually milliseconds.
     if isinstance(timestamp, (int, float)) and timestamp > 10_000_000_000:
         timestamp = timestamp / 1000
-    return {
+    row = {
         "record_id": f"amazon:{stable_id}",
-        "source_platform": "amazon_reviews_2023",
+        "source_platform": "amazon",
         "source_channel": category,
         "source_url": None,
         "source_query": query,
@@ -124,10 +126,14 @@ def normalize_review(row: Dict[str, Any], category: str, query: str, author_salt
         "parent_id": f"asin:{asin}" if asin else None,
         "product_hint": str(asin) if asin else None,
         "quality_flags": [],
+        "source_tier": "historical_dataset",
     }
+    return common.with_connector_envelope(
+        row, run_id or "amazon-reviews-2023-standalone", "amazon-reviews-2023", dataset_revision)
 
 
-def collect(cfg: Dict[str, Any], max_records: int, max_meta_records: int, skip_metadata: bool, author_salt: Optional[str]) -> List[Dict[str, Any]]:
+def collect(cfg: Dict[str, Any], max_records: int, max_meta_records: int, skip_metadata: bool, author_salt: Optional[str],
+            run_id: str | None = None) -> List[Dict[str, Any]]:
     dataset_id = str(cfg.get("dataset", DEFAULT_DATASET))
     revision = str(cfg.get("dataset_revision") or "")
     if len(revision) != 40 or any(char not in "0123456789abcdefABCDEF" for char in revision):
@@ -160,7 +166,7 @@ def collect(cfg: Dict[str, Any], max_records: int, max_meta_records: int, skip_m
                 continue
             if not text_matches(combined, cfg["review_keywords"]):
                 continue
-            row_out = normalize_review(row, category, query_label, author_salt)
+            row_out = normalize_review(row, category, query_label, author_salt, run_id, revision)
             if not row_out or row_out["record_id"] in seen:
                 continue
             seen.add(row_out["record_id"])
@@ -178,6 +184,7 @@ def main() -> None:
     parser.add_argument("--max-meta-records", type=int, default=250000)
     parser.add_argument("--skip-metadata", action="store_true", help="skip the ASIN allowlist pass and filter reviews by keywords only")
     parser.add_argument("--author-salt", default=None, help="study-stable salt for user_id pseudonymisation")
+    parser.add_argument("--run-id", default=None)
     parser.add_argument("--out", type=Path, default=Path("amazon_reviews_2023_filtered.jsonl"))
     args = parser.parse_args()
 
@@ -185,8 +192,27 @@ def main() -> None:
     missing = [key for key in ("dataset_revision", "categories", "product_keywords", "review_keywords") if not cfg.get(key)]
     if missing:
         raise SystemExit(f"config missing keys: {', '.join(missing)}")
-    rows = collect(cfg, args.max_records, args.max_meta_records, args.skip_metadata, args.author_salt)
-    count = write_jsonl(args.out, rows, append=False)
+    started_at = common.utc_now_iso()
+    run_id = args.run_id or f"amazon-reviews-2023-{int(time.time())}"
+    revision = str(cfg["dataset_revision"])
+    try:
+        rows = collect(cfg, args.max_records, args.max_meta_records, args.skip_metadata,
+                       args.author_salt, run_id)
+    except Exception as exc:
+        common.write_collection_manifest(
+            args.out, run_id=run_id, platform="amazon", connector_id="amazon-reviews-2023",
+            connector_revision=revision, access_basis="historical_dataset",
+            query=str(cfg.get("query_label") or ""), started_at=started_at,
+            completed_at=common.utc_now_iso(), reached_records=0, written_records=0,
+            stop_reason="failed", requested_records=args.max_records, errors=[str(exc)])
+        raise SystemExit(1) from exc
+    count = write_jsonl(args.out, rows, append=True)
+    common.write_collection_manifest(
+        args.out, run_id=run_id, platform="amazon", connector_id="amazon-reviews-2023",
+        connector_revision=revision, access_basis="historical_dataset",
+        query=str(cfg.get("query_label") or ""), started_at=started_at,
+        completed_at=common.utc_now_iso(), reached_records=len(rows), written_records=count,
+        stop_reason="completed", requested_records=args.max_records)
     print(f"wrote {count} Amazon Reviews 2023 records to {args.out}")
 
 

@@ -1561,7 +1561,9 @@
       },
       "youtube": {
         "access_modes": [
-          "official_api"
+          "official_api",
+          "public_endpoints",
+          "cdp_visible_page"
         ],
         "budget": {
           "cadence_seconds": 3.0,
@@ -1682,7 +1684,7 @@
         ],
         "unverified": [
           "Quota-increase audit outcomes are not predictable; plans must fit 10,000 units/day.",
-          "The innertube route is project-internal and not covered by the API terms; treat its volume as unlicensed headroom and keep it small."
+          "The innertube route is a project-internal, limited public endpoint rather than official API quota. Use the official Data API first; keep this route small, separately reviewed and explicitly marked public_endpoint_limited."
         ]
       },
       "x": {

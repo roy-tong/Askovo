@@ -13,6 +13,12 @@ one run), ``repeated`` (at least two runs) or ``multi_context`` (at least two
 distinct version/permission/platform/region tuples). There is no universal
 level. Observations cap at E2 and still need human semantic review before they
 enter ``02-data/evidence.jsonl``; this module never promotes them itself.
+
+A second source kind, ``collected_corpus_statement``, carries an accepted
+semantic candidate: the observed facts are exact quotes from a collected
+corpus, the inferred rule is the candidate theme (still unverified), and the
+untested conditions are its unknowns plus critic gaps. E2 here means the quoted
+words were observed in the corpus, not that the inferred theme is true.
 """
 from __future__ import annotations
 
@@ -36,6 +42,10 @@ GENERALIZATIONS = ("single_case", "repeated", "multi_context")
 CONTEXT_FIELDS = ("product_version", "account_permission", "platform", "region")
 OBSERVATION_LEVEL = "E2"
 BASIS = "product_behavior_observation"
+PRODUCT_SOURCE_KIND = "product_observation"
+COLLECTED_SOURCE_KIND = "collected_corpus_statement"
+SOURCE_KINDS = (PRODUCT_SOURCE_KIND, COLLECTED_SOURCE_KIND)
+COLLECTED_BASIS = "collected_statement_quote"
 EXPORT_REL = Path("01-sources/observations.jsonl")
 INSTANT_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$")
@@ -45,6 +55,12 @@ BOUNDARY = (
     "One recorded product session. It states what was observed and what was not "
     "tested; it does not prove a general product capability, a market fact or a "
     "purchase behaviour, and it does not enter the evidence pool without human review."
+)
+COLLECTED_BOUNDARY = (
+    "One quoted statement from a collected corpus, reviewed by a named human. E2 here "
+    "means the quoted words were observed in the corpus; it does not prove that the "
+    "inferred theme is true, that it is prevalent, or that it reflects acceptance of "
+    "the studied product. It does not enter the evidence pool without further human review."
 )
 
 
@@ -70,15 +86,25 @@ def validate_observation(doc: Dict[str, Any]) -> List[str]:
         return ["observation must be a JSON object"]
     if doc.get("schema") != SCHEMA:
         errors.append("schema must be %r" % SCHEMA)
+    source_kind = _text(doc.get("source_kind")) or PRODUCT_SOURCE_KIND
+    if source_kind not in SOURCE_KINDS:
+        errors.append("source_kind must be one of: %s" % ", ".join(SOURCE_KINDS))
+    collected = source_kind == COLLECTED_SOURCE_KIND
     for field in ("observation_id", "product", "tested_at"):
         if not _text(doc.get(field)):
             errors.append("%s must be a non-empty string" % field)
     if doc.get("observation_id") and not ID_RE.match(str(doc["observation_id"])):
         errors.append("observation_id must contain only letters, digits, _ and -")
-    for field in ("product_version", "account_permission", "platform", "region"):
+    required_scope = ("platform",) if collected else (
+        "product_version", "account_permission", "platform", "region")
+    for field in required_scope:
         if not _text(doc.get(field)):
             errors.append(
                 "%s is required: an observation without it cannot be scoped" % field)
+    for field in ("product_version", "account_permission", "platform", "region"):
+        if field not in required_scope and doc.get(field) is not None \
+                and not _text(doc.get(field)):
+            errors.append("%s must be non-empty when provided" % field)
     tested_at = _text(doc.get("tested_at"))
     if tested_at and not INSTANT_RE.match(tested_at):
         errors.append("tested_at must be an ISO-8601 instant with a timezone")
@@ -116,9 +142,9 @@ def validate_observation(doc: Dict[str, Any]) -> List[str]:
             errors.append("%s.observed_facts needs at least one observed fact" % path)
         else:
             for fact_index, fact in enumerate(facts):
-                text = fact.get("text") if isinstance(fact, dict) else fact
+                text = fact.get("text") or fact.get("quote") if isinstance(fact, dict) else fact
                 if not _text(text):
-                    errors.append("%s.observed_facts[%d] must carry text"
+                    errors.append("%s.observed_facts[%d] must carry text or quote"
                                   % (path, fact_index))
         if not _text(claim.get("inferred_rule")):
             errors.append(
@@ -175,8 +201,9 @@ def validate_observation(doc: Dict[str, Any]) -> List[str]:
         if claim.get("evidence_level") != OBSERVATION_LEVEL:
             errors.append("%s.evidence_level must be %r"
                           % (path, OBSERVATION_LEVEL))
-        if claim.get("basis") != BASIS:
-            errors.append("%s.basis must be %r" % (path, BASIS))
+        expected_basis = COLLECTED_BASIS if collected else BASIS
+        if claim.get("basis") != expected_basis:
+            errors.append("%s.basis must be %r" % (path, expected_basis))
     return errors
 
 
@@ -297,8 +324,11 @@ def cmd_list(args: argparse.Namespace) -> int:
 
 def _claim_line(doc: Dict[str, Any], claim: Dict[str, Any], source: Path) -> Dict[str, Any]:
     generalization = claim.get("generalization")
+    source_kind = _text(doc.get("source_kind")) or PRODUCT_SOURCE_KIND
+    collected = source_kind == COLLECTED_SOURCE_KIND
+    basis = claim.get("basis") or (COLLECTED_BASIS if collected else BASIS)
     return {
-        "source_kind": "product_observation",
+        "source_kind": source_kind,
         "source_ref": "%s/%s" % (doc.get("observation_id"), claim.get("claim_id")),
         "source_hash": "sha256:" + hashlib.sha256(source.read_bytes()).hexdigest(),
         "observed_facts": list(claim.get("observed_facts") or []),
@@ -319,8 +349,8 @@ def _claim_line(doc: Dict[str, Any], claim: Dict[str, Any], source: Path) -> Dic
         "repeat_count": claim.get("repeat_count"),
         "not_generalizable": generalization == "single_case",
         "evidence_level": OBSERVATION_LEVEL,
-        "basis": BASIS,
-        "boundary": BOUNDARY,
+        "basis": basis,
+        "boundary": COLLECTED_BOUNDARY if collected else BOUNDARY,
         "generator": GENERATOR,
         "generator_version": GENERATOR_VERSION,
     }
@@ -374,10 +404,14 @@ def cmd_export(args: argparse.Namespace) -> int:
         "added": len(new_lines),
         "duplicates": len(lines) - len(new_lines),
         "single_case": sum(1 for line in lines if line["not_generalizable"]),
+        "collected_statements": sum(
+            1 for line in lines if line["source_kind"] == COLLECTED_SOURCE_KIND),
         "generalization": dict(sorted(
             (level, sum(1 for line in lines if line["generalization"] == level))
             for level in GENERALIZATIONS)),
-        "note": "E2 only; promotion into evidence.jsonl still needs named human review",
+        "note": ("E2 only; promotion into evidence.jsonl still needs named human review. "
+                 "Collected statements keep their quote provenance and do not prove the "
+                 "inferred theme."),
     }
     if args.json:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
