@@ -3429,6 +3429,8 @@ def command_deliver(args: argparse.Namespace) -> int:
     """Deliver from a fresh full audit, never from a stale audit.json."""
     study_dir = Path(args.study_dir).resolve()
     try:
+        if args.kind != "needs" and getattr(args, "baseline", None):
+            raise ValueError("--baseline is only supported for --kind needs")
         context = study_context.StudyContext(study_context.StudyRepository(study_dir))
         with context.activate():
             audit = audit_study(study_dir, "full")
@@ -3440,6 +3442,7 @@ def command_deliver(args: argparse.Namespace) -> int:
                 industry=getattr(args, "industry", None),
                 deliverable_id=getattr(args, "deliverable", None),
                 chain_id=getattr(args, "chain", None),
+                baseline=getattr(args, "baseline", None),
             )
     except (OSError, json.JSONDecodeError, ValueError, write_integrity.IntegrityError) as exc:
         result = sure_engine.delivery_error(study_dir, args.kind, exc)
@@ -6957,11 +6960,12 @@ def build_parser() -> argparse.ArgumentParser:
         "deliver", help="assemble the business plan, decision package, MRD, PRD, BRD, memo and tracker deliverables"
     )
     deliver_parser.add_argument("study_dir")
-    deliver_parser.add_argument("--kind", choices=("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis", "role", "lifecycle", "web"), default="memo")
+    deliver_parser.add_argument("--kind", choices=("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "needs", "analysis", "role", "lifecycle", "web"), default="memo")
     deliver_parser.add_argument("--role", help="kind=role: role id/name whose deliverable is projected from the canonical chain")
     deliver_parser.add_argument("--deliverable", help="kind=role: deliverable id/name; defaults to the role's first")
     deliver_parser.add_argument("--industry", help="kind=role: override the study industry context")
     deliver_parser.add_argument("--chain", help="kind=role: canonical chain id when no bound workplan exists or to select its target")
+    deliver_parser.add_argument("--baseline", help="kind=needs: previous study directory or product-reasoning.json for semantic comparison")
     deliver_parser.add_argument("--strict", action="store_true",
                                 help="audit_failed 时不返回 0（草稿仍写出，便于自动化拦截）")
     deliver_parser.set_defaults(func=command_deliver)

@@ -182,7 +182,7 @@ PM 可以在证据不足时决定推进，但应保留 `needs-validation`，记�
 - **用户研究**：读节点证据、假设、反证、替代解释、样本缺口和人工复核；使用 research-status、audit 和补证计划。
 - **用户运营**：读 scene/user/pain 的行为分群与语言、feature/product 的干预对象、business 的行为指标、counter 的异议；通过 ops 和 tracker 回流。
 - **市场研究/分析**：读商业节点的市场边界、细分、替代、渠道、价格和规模口径；产出 MRD。
-- **需求研究/分析**：维护 need→feature→product→business 的 requirement、优先级、验收、追溯与变更；产出 PRD。
+- **需求研究/分析**：先维护 scene→pain→need，再维护 need→feature→product→business 的 requirement、优先级、验收、追溯与变更；用 `deliver --kind needs` 读需求主报告，用 `--baseline` 对照前后链的新增/移出与语义字段旧值、新值，用 PRD 查看特性、范围和验收。
 - **商业分析**：维护收入、成本、单位经济、资源门、风险与 BRD，不让财务假设替代用户和交付证据。
 
 运营指标必须有事件、分子、分母、窗口、队列和版本口径。公开反馈帮助解释“为什么”，不能直接估计客群规模；行为数据帮助回答“做了什么”，不能单独解释动机或证明干预因果。

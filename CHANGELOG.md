@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Business-first needs report (`askovo deliver STUDY --kind needs`)**: business owners, PMs and requirements analysts get a main answer organized as business conclusion → requirement changes → product/business impact → next actions. Demand cards use plain scene/substitute/friction/consequence/outcome language; quotes, evidence ids, audit and engine states move to the appendix, and the chat summary shares the same business text. `--baseline` accepts a previous study or `product-reasoning.json` and reports added/removed chains plus old/new semantic fields in demand, solution and business order. Missing baselines never imply new demand; evidence/status changes and unlinked corpus records stay separate from demand changes. CLI and MCP expose the same projection.
+
 ## 2.23.0 — 2026-11-24
 
 ### Added

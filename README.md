@@ -32,6 +32,7 @@ A product discussion can easily become a contest of seniority, volume or report 
 |---|---|
 | Decision Brief | Align on the recommendation, supporting evidence, counterexamples and next action |
 | Business plan | Connect target scenes, user needs, product form and the route to market |
+| Needs report | Start with the business conclusion, requirement changes, product/business impact and next action; keep evidence and technical detail in the appendix |
 | Decision Package | Compare opportunities, options, trade-offs and the cheapest useful validation |
 | MRD / PRD / BRD | Give market, requirements and business readers a view built for their work |
 | Decision replay | Revisit how new evidence changed an earlier recommendation |

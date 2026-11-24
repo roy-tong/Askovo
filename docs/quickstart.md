@@ -193,7 +193,9 @@ askovo audit ./cam-study --json
 ## 第七步：按分析工作流与职责交付
 
 ```bash
-askovo deliver ./cam-study --kind plan    # 业务方案（业务用户默认）：九节业务章节+数据基础+用户之声
+askovo deliver ./cam-study --kind needs   # 需求优先：场景—痛点—需求 → 特性/产品 → 商业
+askovo deliver ./cam-study --kind needs --baseline ./cam-study-v1  # 对照前后需求链
+askovo deliver ./cam-study --kind plan    # 业务方案（完整商业计划）：九节业务章节+数据基础+用户之声
 askovo deliver ./cam-study --kind report   # 产品/商业总报告
 askovo deliver ./cam-study --kind mrd      # 市场研究与分析 → MRD
 askovo deliver ./cam-study --kind prd      # 需求研究与分析 → PRD
@@ -204,7 +206,7 @@ askovo deliver ./cam-study --kind ops      # 06-report/user-ops.md
 askovo deliver ./cam-study --kind tracker  # 行为、验收与商业指标跟踪
 ```
 
-业务方案是业务用户的默认视图（业务语言，判断挂数据基础与用户之声）；MRD/PRD/BRD 模板和访谈包见 [SKILL](../skills/askovo/SKILL.md) 的模板入口。它们是同一七节点主链的投影，详见[市场、需求与商业分析](business-analysis.md)。所有交付默认草稿，必须能回链主链和证据。
+业务负责人、产品经理和需求分析人员优先读 `needs`：主文先看业务结论、需求变化、产品/商业影响和下一步，证据与技术细节在附录；需要完整商业计划时读 `plan`。`needs --baseline` 只对照 canonical 需求链，不把工具版本、审计状态或证据增删冒充业务需求变化；没有旧链时明确说无法判断新增。MRD/PRD/BRD 模板和访谈包见 [SKILL](../skills/askovo/SKILL.md) 的模板入口。它们是同一七节点主链的投影，详见[市场、需求与商业分析](business-analysis.md)。所有交付默认草稿，必须能回链主链和证据。
 
 ## 研发转全栈：先证据后编码
 
