@@ -44,6 +44,7 @@ if str(_SCRIPT_DIR) not in sys.path:
 import study_context
 import external_bridge
 import delivery_projection
+import needs_delivery
 import role_catalog
 import web_surface
 
@@ -5690,7 +5691,7 @@ def _report_decision_lines(reasoning: dict[str, Any] | None, by_id: dict[str, di
 
 FORMAL_DELIVERY_KINDS = frozenset({
     "memo", "report", "mrd", "prd", "brd", "ops", "decision", "signoff",
-    "plan", "analysis", "web", "role",
+    "plan", "needs", "analysis", "web", "role",
 })
 EVIDENCE_GATE_VERSION = "askovo-evidence-gate/1"
 _EVIDENCE_SOURCE_PREFIXES = (
@@ -5843,6 +5844,7 @@ def _deliver_artifact(
     deliverable_id: str | None = None,
     chain_id: str | None = None,
     evidence: dict[str, Any] | None = None,
+    baseline: str | Path | None = None,
 ) -> dict[str, Any]:
     study_dir = study_dir.resolve()
     study = load_json(study_dir / "study.json")
@@ -6005,6 +6007,34 @@ def _deliver_artifact(
         }
     titles = {"memo": "决策备忘", "report": "产品推理报告", "mrd": "MRD 市场需求文档", "prd": "PRD 产品需求文档", "brd": "BRD 商业需求文档", "ops": "用户运营交付", "decision": "决策包 Decision Package", "signoff": "干系人签收页", "plan": "业务方案 Business Plan", "analysis": "语料分析 Corpus Analysis"}
     title = titles.get(kind, "交付物")
+    if kind == "needs":
+        baseline_reasoning = None
+        baseline_ref = ""
+        if baseline:
+            baseline_reasoning, baseline_ref = needs_delivery.load_baseline(baseline)
+        comparison = (
+            needs_delivery.compare(reasoning, baseline_reasoning)
+            if baseline_reasoning is not None else None
+        )
+        path = out_dir / "needs.md"
+        path.write_text(
+            needs_delivery.render(
+                study, reasoning, evidence, audit_status,
+                baseline=baseline_reasoning, baseline_ref=baseline_ref,
+            ),
+            encoding="utf-8",
+        )
+        return {
+            "status": "written",
+            "path": str(path),
+            "kind": kind,
+            "audit_status": audit_status,
+            "audit_generated_at": audit_info.get("generated_at", ""),
+            "evidence_count": evidence["count"],
+            "product_reasoning": product_reasoning_summary(reasoning),
+            "baseline": baseline_ref or None,
+            "comparison": comparison,
+        }
     if kind == "plan":
         path = out_dir / "plan.md"
         path.write_text(
@@ -6277,13 +6307,14 @@ def deliver(
     industry: str | None = None,
     deliverable_id: str | None = None,
     chain_id: str | None = None,
+    baseline: str | Path | None = None,
 ) -> dict[str, Any]:
     # One delivery run, one evidence-store read: the artifact and its chat
     # summary must see the same snapshot even if files change mid-run.
     evidence = _evidence_summary(Path(study_dir).resolve())
     result = _deliver_artifact(
         study_dir, kind, audit=audit, role_id=role_id, industry=industry, deliverable_id=deliverable_id, chain_id=chain_id,
-        evidence=evidence,
+        evidence=evidence, baseline=baseline,
     )
     return _with_chat_summary(study_dir, kind, result, audit, evidence=evidence)
 
@@ -12178,7 +12209,7 @@ def cli_context_export(args: Any) -> int:
 
 def cli_deliver(args: Any) -> int:
     try:
-        result = deliver(Path(args.study_dir), args.kind)
+        result = deliver(Path(args.study_dir), args.kind, baseline=getattr(args, "baseline", None))
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         result = delivery_error(Path(args.study_dir), args.kind, exc)
         print(json.dumps(result, ensure_ascii=False, indent=2))

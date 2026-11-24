@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import needs_delivery
+
 CANONICAL_ARTIFACT = "04-findings/product-reasoning.json"
 INPUT_FILES = (
     "study.json",
@@ -397,6 +399,8 @@ def build_chat_summary(
                 value = (result.get("projected_chain_ids") or [None])[0]
             if value:
                 command_parts.extend([flag, str(value)])
+    if kind == "needs" and result.get("baseline"):
+        command_parts.extend(["--baseline", str(result["baseline"])])
     reproduce_command = shlex.join(command_parts)
 
     artifact_value = result.get("path")
@@ -494,5 +498,25 @@ def build_chat_summary(
         "reproduce_command": reproduce_command,
         "boundary": GLOBAL_BOUNDARY,
     }
-    payload["text"] = _text_summary(payload)
+    if kind == "needs" and artifact_exists:
+        business = needs_delivery._business_projection(
+            study, reasoning, result.get("comparison"),
+        )
+        payload["audience"] = "business_and_product"
+        payload["headline"] = business["headline"]
+        payload["comparison"] = result.get("comparison")
+        payload["actions"] = business["next_actions"]
+        payload["research_appendix"] = {
+            "audit_status": audit_status,
+            "audit_failures": payload["audit_failures"],
+            "decision": payload.pop("decision"),
+            "basis": payload.pop("basis"),
+            "evidence_qualification": payload.pop("evidence_qualification"),
+            "costs_and_boundaries": payload.pop("costs_and_boundaries"),
+            "unknowns": payload.pop("unknowns"),
+        }
+        payload["boundary"] = "新增方向不等于已验证需求；最终投入由负责人决定，研究细节见报告附录。"
+        payload["text"] = business["text"] + f"\n详细报告：{artifact_path}\n"
+    else:
+        payload["text"] = _text_summary(payload)
     return payload
