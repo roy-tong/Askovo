@@ -427,6 +427,28 @@ class ReviewExportTests(SemanticFixture):
         self.assertEqual("reviewed", third["status"])
         self.assertEqual(2, len(semantic_candidates.load_reviews(study)))
 
+    def test_changed_critic_requires_a_new_review_and_unblocks_export(self) -> None:
+        study = self.make_study()
+        self.run_offline(study)
+        candidate_id = self.first_candidate(study)
+        semantic_candidates.review_candidate(
+            study, candidate_id, "accept", reviewer="alice", note="quotes checked")
+        critic_path = study / semantic_candidates.CRITIC_REL
+        critic = json.loads(critic_path.read_text(encoding="utf-8"))
+        critique = critic["candidates"][candidate_id]
+        critique["needs_more_evidence"] = list(
+            critique.get("needs_more_evidence") or []) + ["补充独立来源"]
+        critic_path.write_text(json.dumps(critic, ensure_ascii=False), encoding="utf-8")
+        again = semantic_candidates.review_candidate(
+            study, candidate_id, "accept", reviewer="alice", note="quotes checked")
+        self.assertEqual("reviewed", again["status"])
+        self.assertEqual(2, len(semantic_candidates.load_reviews(study)))
+        store = study / "01-sources" / "semantic-observations"
+        result = semantic_candidates.export_observations(study, store, by="alice")
+        self.assertEqual(1, result["exported_count"])
+        self.assertEqual([], [row for row in result["skipped"]
+                              if "stale critic" in row["reason"]])
+
     def test_reject_needs_a_reason(self) -> None:
         study = self.make_study()
         self.run_offline(study)

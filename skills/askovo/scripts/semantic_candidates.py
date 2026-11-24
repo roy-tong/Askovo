@@ -1557,15 +1557,19 @@ def review_candidate(study_dir: Path, candidate_id: str, decision: str, *,
     reviews = load_reviews(study_dir)
     latest = review_state(reviews).get(candidate_id) or {}
     current_hash = _sha(_canonical(candidate))
+    current_critic_hash = _sha(_canonical(critique))
+    # 幂等必须同时覆盖 candidate 与 critic：critic 变了而候选没变时，
+    # 旧审核不能继续代表当前语义论证。
     if (latest.get("decision") == decision and latest.get("reviewer") == reviewer
             and str(latest.get("note") or "") == note
-            and str(latest.get("candidate_hash") or "") == current_hash):
+            and str(latest.get("candidate_hash") or "") == current_hash
+            and str(latest.get("critic_hash") or "") == current_critic_hash):
         return {"status": "unchanged", "candidate_id": candidate_id,
                 "decision": decision, "reviewer": reviewer}
     entry = {
         "candidate_id": candidate_id,
         "candidate_hash": current_hash,
-        "critic_hash": _sha(_canonical(critique)),
+        "critic_hash": current_critic_hash,
         "decision": decision,
         "reviewer": reviewer,
         "reviewed_at": _now(),
