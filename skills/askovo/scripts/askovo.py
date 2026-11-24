@@ -6589,8 +6589,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="add constrained LLM candidate themes/mechanisms/counterexamples "
              "(default off; no config falls back to deterministic analysis)")
     analyze_parser.add_argument(
-        "--semantic-provider", choices=("auto", "openai", "offline"), default="auto",
-        help="auto uses ASKOVO_LLM_* when configured; offline is a deterministic stub")
+        "--semantic-provider", choices=("auto", "openai", "offline", "host"), default="auto",
+        help="auto uses ASKOVO_LLM_* when configured; offline is a deterministic stub; "
+             "host writes a task for the host agent instead of calling a model")
     analyze_parser.add_argument(
         "--allow-external", action="store_true",
         help="authorize sending source text to a non-loopback model endpoint")
@@ -6832,6 +6833,30 @@ def build_parser() -> argparse.ArgumentParser:
     semantic_review.add_argument("--note", default="")
     semantic_review.add_argument("--json", action="store_true")
     semantic_review.set_defaults(func=semantic_candidates.cmd_review)
+    semantic_support = semantic_sub.add_parser(
+        "support", help="record whether the cited quotes entail, partly support or contradict a candidate")
+    semantic_support.add_argument("study_dir")
+    semantic_support.add_argument("--candidate", required=True)
+    semantic_support.add_argument("--entailment", required=True,
+                                  choices=semantic_candidates.ENTAILMENTS)
+    semantic_support.add_argument("--context", required=True, choices=("intact", "broken"))
+    semantic_support.add_argument("--generalization-risk", required=True,
+                                  choices=semantic_candidates.GENERALIZATION_RISKS)
+    semantic_support.add_argument("--checker", default="human",
+                                  choices=semantic_candidates.SUPPORT_CHECKERS)
+    semantic_support.add_argument("--reviewer", required=True)
+    semantic_support.add_argument("--note", default="")
+    semantic_support.add_argument("--override", action="store_true",
+                                  help="allow an unsupported claim with a named reason")
+    semantic_support.add_argument("--json", action="store_true")
+    semantic_support.set_defaults(func=semantic_candidates.cmd_support)
+    semantic_import = semantic_sub.add_parser(
+        "import", help="validate and import a host-agent semantic response")
+    semantic_import.add_argument("study_dir")
+    semantic_import.add_argument("--file", required=True)
+    semantic_import.add_argument("--by", required=True)
+    semantic_import.add_argument("--json", action="store_true")
+    semantic_import.set_defaults(func=semantic_candidates.cmd_import)
     semantic_export = semantic_sub.add_parser(
         "export", help="export accepted candidates as E2 collected-statement observations")
     semantic_export.add_argument("study_dir")
@@ -6842,6 +6867,8 @@ def build_parser() -> argparse.ArgumentParser:
     semantic_export.add_argument("--region", default="")
     semantic_export.add_argument("--export-now", action="store_true",
                                  help="also run observation export into 01-sources/observations.jsonl")
+    semantic_export.add_argument("--against-snapshot", default="",
+                                 help="allow a clearly labelled historical export bound to this corpus hash")
     semantic_export.add_argument("--json", action="store_true")
     semantic_export.set_defaults(func=semantic_candidates.cmd_export)
     semantic_validate = semantic_sub.add_parser(

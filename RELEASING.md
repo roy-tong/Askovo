@@ -78,3 +78,18 @@ PyPI 是可延后但不得虚假宣传的分发渠道。若发布 PyPI，使用 
 - 文档或 CI 失败：停止推广，发布新的补丁版本；不要移动公开 tag。
 - PyPI 严重问题：优先 yank 受影响版本并说明原因，再发补丁；不要假装旧版本从未存在。
 - 安全漏洞：按 SECURITY.md 私下协调修复和披露，不在公开 Issue 泄露细节。
+
+## 7. 同步主工作树
+
+发版经常在 `git worktree` 或 `临时工作区/` 里完成，`main` 主工作树不会自动前进。合并发版 PR 后必须回到每个主工作树快进，否则下一次 review 的 `git status` 会拿过期 HEAD 比对，把已经发布的内容报成大量未提交改动。
+
+```bash
+for d in . ../Growovo/代码仓库/Growovo ../Verovo/代码仓库; do
+  printf '%-32s ' "$d"; git -C "$d" fetch --quiet origin
+  echo "落后 $(git -C "$d" rev-list --count HEAD..origin/main) 个提交，脏文件 $(git -C "$d" status --porcelain | wc -l | tr -d ' ') 个"
+done
+```
+
+正确状态是每个仓库都「落后 0、脏文件 0」。
+
+主工作树里的未提交改动若是发版前的旧快照，用 `git stash push -u` 暂存后 `git merge --ff-only origin/main`，确认无误再 `git stash drop`。**不要把这些旧快照提交回去**——它们比 `origin/main` 更旧，提交等于回退发版。判断方法：`git diff origin/main --stat` 后逐文件比对；内容已在 `origin/main` 或更短更旧，就是快照而非新工作。
