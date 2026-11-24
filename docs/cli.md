@@ -220,6 +220,7 @@ askovo collect ./study --platform instagram --query "night alert workaround" \
 ```
 
 - 非 dry-run 采集先执行 design gate；失败返回 `1` 和 `design_gate_failed`。平台还必须在 `scope.allowed_sources` 中，live/CDP 必须启用 adapter。
+- `--account <account_id|handle>` 选择持久账号，`--account-policy <path>` 指定配置文件；缺省读取 `.askovo/account-quotas.json` 或 `ASKOVO_ACCOUNT_POLICY`。`daily_caps.collect` 达到上限时返回 `quota_exhausted` 与 UTC 重置等待时间，不执行采集；其他动作（如 `publish`）的额度不计入采集。dry-run 的 `next` 命令保留这两个账号参数。
 - GitHub：官方 Search API；`GITHUB_TOKEN` 可选。
 - Reddit：官方 Data API；需要 `ASKOVO_REDDIT_CLIENT_ID`、`ASKOVO_REDDIT_CLIENT_SECRET`、可选 `ASKOVO_REDDIT_USER_AGENT`；registry 复核过期不再阻断，返回结果带 `review_status: "expired"` 与降频提醒。
 - YouTube：官方 Data API 优先；内置 innertube 是 `public_endpoint_limited`，不是官方配额，按 limited 路线审查。
@@ -390,6 +391,7 @@ askovo queue retry ./study
 - worker 用租约抢占，崩溃后租约过期自动回收；
 - 失败按 5s/10s/20s… 退避重试，超过 `max_attempts` 标 failed；
 - 按平台限速（默认 GitHub 6s、Reddit 2s、其他 5s），可用 `--min-interval` 覆盖；
+- `queue run --account <account_id|handle> --account-policy <path>` 与直接采集共用账号策略；`account_quota_state` 存在策略文件旁的共享 `quota.db`，按平台 + 账号 + UTC 日计数。达到 `collect` 上限后等待下一 UTC 日；不同 study 共用上限，不同账号互不混用；
 - 每个 job 独立 run id、raw 文件与 manifest；`normalized.jsonl` 跨进程加锁去重；
 - 单机多进程/多 worker 可用；跨机器共享 SQLite 不可靠，需要外部队列。
 

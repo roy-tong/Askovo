@@ -21,6 +21,12 @@ askovo platforms "家用摄像头夜间告警的用户抱怨" --domain hardware 
 | `limits` / `bias` | 已知限制与选择偏差 |
 | `adapter` | 是否有内置适配器 |
 
+### 账号等级与采集额度（持久核心策略）
+
+所有外部平台共用 `.askovo/account-quotas.json`；也可用 `ASKOVO_ACCOUNT_POLICY` 指定位置，安装后默认读取 `~/.askovo/account-quotas.json`。每条记录包含 `platform`、`account_id`/`handle`、`account_tier`、可选 `subscription_tier`、`daily_caps` 和 `source`。直接采集、轮转和持久队列都通过 `connectors/account_policy.py` 读取，跨进程与跨对话不丢失。
+
+`collect` 表示一次采集请求，只读取 `daily_caps.collect`。其他动作的额度不能混用：例如 X Premium 的 `publish=500` 是发帖上限，不是 API 或页面采集上限。没有采集额度证据时保持未设置，继续执行现有速率、Design gate、访问权限与停止条件；未知账号等级写 `unknown`，不由 Agent 猜测。`askovo collect` 和 `askovo queue run` 可用 `--account` 与 `--account-policy` 显式选择账号和配置文件。
+
 **三档含义**：
 
 - `supported`：有官方 API、第一方数据或合规历史数据集；
