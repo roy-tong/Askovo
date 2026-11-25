@@ -533,6 +533,25 @@ askovo review ./study --json   # 机器可读检查项
 
 退出码 `1` 表示存在 `fail` 项；`warn` 不阻塞但必须解释。复盘不判断业务成败，也不替代人工复核。
 
+## watch（持久化到期复核）
+
+```bash
+askovo watch create ./study --question "跟踪移动方案的需求变化" \
+  --interval-hours 24 --by "研究负责人"
+askovo watch create ./study --question "跟踪授权 issue 变化" \
+  --interval-hours 24 --by "研究负责人" \
+  --delta-file issues.jsonl --delta-authorized-by "数据授权人"
+askovo watch status ./study
+askovo watch run ./study                 # 由 cron 或宿主 Agent 显式调用
+askovo watch pause ./study W001
+askovo watch resume ./study W001
+askovo watch resolution ./study W001 > watch-resolution.json  # shared next-action contract; read-only
+```
+
+状态写入 `04-findings/research-watch.json`，每次执行追加到 `research-watch-runs.jsonl`。到期运行复用现有 `askovo review`，记录源文件指纹、是否变化、复核状态和报告路径；未到期不重复执行，损坏状态拒绝覆盖，暂停后不执行。
+
+`watch` 不是后台 Worker，也不自动联网采集、升级证据或改写产品判断。它只提供可恢复的周期复核状态；持续市场采集仍需要独立授权的数据路径。配置 `--delta-file/--delta-authorized-by` 后，每次到期先复用 `delta sync` 处理该本地授权导出：无变化不新增版本，有变化追加来源快照，失败保留 last-good 和 attention；快照仍需既有具名审核才能进入 canonical 证据。`watch resolution` 只读生成 `ovo.problem-resolution/1`，可重定向后用 `python3 -m ovo_acceptance resolution watch-resolution.json --json` 独立评估；未复核先请求本地复核，失败和质量缺口交给研究负责人，不自动重试。
+
 ## 机器可读
 
 所有命令输出 JSON 或 Markdown；错误写 stderr。适合：
@@ -598,6 +617,95 @@ askovo evidence STUDY restore R01 --by 赵敏
 CSV 导入识别 `记录编号 / 内容 / 证据等级 / 来源 / 采集时间`。编号和正文均参与跨文件判重；同编号不同正文会在任何证据写入前拒绝整批，不会先写一半。重复项返回 `duplicates` 映射，采集时间不再冒充内容发生时间。
 
 BRD 的「BRD 商业决策」区域会投影每条主链最新 DecisionRecord 的记录号、决策人、决定和下一动作；这是 canonical 的只读投影，不表示执行或业务结果已验收。
+
+## 本机问卷一手研究
+
+```bash
+askovo experiment survey create --spec survey.json --out ./survey-run
+askovo experiment survey serve --dir ./survey-run --port 8000
+askovo experiment survey status --dir ./survey-run
+askovo experiment survey export-candidates --dir ./survey-run --out candidates.json
+```
+
+问卷合同登记研究情境、同意说明、题目、选项、必答和最大回收数。服务仅绑定回环地址，匿名 cookie 保持受访者身份，SQLite 持久化回答；服务端校验同意、必答、选项和长度，重复提交不重复计数。状态只给选项计数和文本回答数量，不公开原始回答。
+
+显式 `export-candidates` 将原始回答、来源、时间、同意与匿名参与者引用导出为现有 `capture plan import` 格式；候选仍需 `review-candidate` 具名复核才能成为 E0–E2 证据。问卷回收不自动证明样本代表性、需求强度或产品结论，公开招募另行授权。
+
+## 本机 Landing Page 需求验证
+
+```bash
+askovo experiment landing create --spec landing.json --out ./landing-run
+askovo experiment landing serve --dir ./landing-run --port 8000
+askovo experiment landing status --dir ./landing-run
+askovo experiment landing export --dir ./landing-run \
+  --design landing-export.json --out shared-experiment.json
+```
+
+实验合同在首次曝光前登记假设、证伪条件、控制/处理版本、转化定义、同意说明、注册人、最大曝光数，以及人群、时间窗、每组样本目标和可比性。SQLite 保存注册内容指纹；事后修改原文件，或在导出时更换这些设计字段，都会拒绝。需要改设计时创建带 `revision_of`、`previous_design_sha256`、`revision_reason` 和新注册时间的新实验版本，旧观察仍绑定旧版本。服务仅允许 `127.0.0.1`、`localhost` 或其他回环地址；非回环绑定直接拒绝。匿名 ID 保持同一访客分组，SQLite 持久化分组、曝光和转化，刷新与重复提交不重复计数，达到曝光上限后停止新访客。
+
+设置 `validation_mode=price_sensitivity` 时，创建合同还必须冻结三位币种、`price_definition` 和每个版本不同的非负 `price_amount`。状态与共享导出绑定价格点及币种，聚合事件哈希也包含价格；价格测试仍只观察注册意向，不是支付、支付意愿证明或收入。页面转义实验文本并设置 CSP、`no-store` 与 HttpOnly/SameSite cookie。状态只输出各组聚合和转化率，不暴露匿名参与者 ID。服务重启不丢失分组和结果。`export` 将非空分组的聚合转化率、事件哈希、随机分组和预注册设计投影为 `ovo.experiment-contract/1`；空组不填零，默认保持 `inconclusive` 与描述性关联。导出设计需显式提供目标人群、时间窗、每组计划样本和可比性。`status` 同时给出各组 Wilson 95% 区间、处理—对照 Newcombe 95% 差值区间与 `min_exposures_per_arm` 样本门；零分母保持未知，区间不自动选择赢家。当前结果是本机描述性行为观察，不自动写 canonical 证据，不证明支付、市场占比、统计显著性或因果；公开部署、招募和外部触达需另行授权与验收。
+
+## 本机原型任务验证
+
+```bash
+askovo experiment prototype create --spec prototype.json --out ./prototype-run
+askovo experiment prototype import --dir ./prototype-run \
+  --file observations.jsonl --by "研究负责人"
+askovo experiment prototype status --dir ./prototype-run
+askovo experiment prototype export --dir ./prototype-run --out prototype-experiment.json
+```
+
+创建时冻结假设、人群、窗口、样本目标、可比性、任务说明、成功标准、同意说明和参与者上限，并以 SQLite 指纹阻止原合同漂移。每条观察必须绑定注册任务、匿名参与者、尝试序号、同意、具名观察者、来源和带时区时间；成功/失败、耗时、是否需要帮助和错误数均使用明确字段。观察 ID 与参与者／任务／尝试联合约束去重，冲突记录拒绝，整个批次原子写入。
+
+状态按任务给出去重参与者、尝试、成功率、耗时中位数、帮助和错误聚合；共享导出只含任务聚合，不暴露参与者 pseudonym。设置 `validation_mode=mvp_behavior` 并预注册 `repeat_window_hours` 后，同一观察库还按参与者计算首次成功激活和达到间隔后的再次成功留存；激活率以参与观察者为分母，留存率以已激活者为分母，无分母保持未知，提前复用不计入留存。默认结果仍为 `inconclusive` 和描述性关联，不证明需求、普遍可用性、产品接受或因果。该入口只接受本地授权观察，不执行公开招募、外部发布或自动 canonical 证据晋升。MCP `askovo_primary_research` 提供 `prototype_create/import/status/export`。
+
+## 本机多日日记研究
+
+```bash
+askovo experiment diary create --spec diary.json --out ./diary-run
+askovo experiment diary import --dir ./diary-run \
+  --file entries.jsonl --by "研究负责人"
+askovo experiment diary status --dir ./diary-run
+askovo experiment diary export --dir ./diary-run --out diary-aggregate.json
+```
+
+创建时冻结研究目标、日记提示、同意说明、时间窗、升序日程和经过筛选的匿名参与者。每条记录必须绑定注册参与者、注册日期、来源、同意和带时区提交时间；accepted 需要正文，withdrawn 不保存正文且阻止撤回后的新记录。SQLite 执行注册指纹、参与者／日期唯一约束和同 ID 冲突拒绝，重复导入不重复计数。迟到记录单独标记，缺失日程保持缺口，不能解释为负面需求证据。
+
+`status` 只在本机给出到期缺口，不发送提醒；`export` 仅输出按日期的聚合计数，不含参与者 pseudonym 或日记原文。公开招募、外部通知、样本代表性、实际参与和真实产品结论仍需独立验收。MCP 提供 `diary_create/import/status/export` 同一实现。
+
+## 受访者资格与同意筛选
+
+```bash
+askovo capture plan screen --plan PLAN/capture-plan.json \
+  --file screening-reviews.json --by "研究负责人" --out participant-roster.json
+```
+
+名单按采集计划的目标人群和纳入标准，逐位记录 pseudonym、来源、资格、证据引用、原因和同意状态。符合画像必须有证据；`research_ready` 仅当资格合格且同意为 accepted。pending/declined/withdrawn 均不得进入可开展研究状态。稳定参与者引用去重，冲突记录拒绝，输出只写新文件且不修改原计划。
+
+该投影不复制联系方式，不执行招募、邀约或实际参与，也不证明证据质量、样本代表性或需求结论。MCP 通过 `askovo_primary_research` 的 `screening_export` 调用同一实现。
+
+## 一手研究候选具名复核
+
+```bash
+askovo capture plan review-candidate \
+  --plan 04-findings/capture-plans/PLAN/capture-plan.json \
+  --candidate CANDIDATE_ID --decision accept --by "复核人" \
+  --observation practice --reason "已对照原始记录确认"
+```
+
+接受必须绑定当前计划授权、候选哈希、同意引用、参与者 pseudonym、原始来源和具名复核人。`statement` 派生 E1，`practice` 派生 E2，材料不足或 `context` 为 E0；E3 仍走既有概念测试合同。事务同时写正式证据、候选状态和审核轨迹，不改需求判断或七节点链。`--decision reject` 不写正式证据。重复接受只核验既有连接，不重复追加。
+
+只有接受后仍通过 canonical 来源校验的候选，实验导出才可成为合格观察；未审核或已拒绝候选始终不合格。
+
+## 共享实验契约导出
+
+```bash
+askovo capture plan export-experiment \
+  --plan 04-findings/capture-plans/PLAN/capture-plan.json \
+  --design experiment-design.json --out experiment-contract.json
+```
+
+导出器把采集计划的样本、窗口、停止条件、授权和候选观察投影为 `ovo.experiment-contract/1`。宿主 Agent 必须在 design JSON 中显式提供假设、证伪条件、分组、主指标、可比性和注册人；外部研究必须有当前授权及授权引用。每个候选观察都要绑定分组和指标，未经具名证据复核的候选保持 `eligible=false`，不能支持或推翻需求假设。输出只写新文件，源采集计划不变。
 
 ## 真实任务案例门
 

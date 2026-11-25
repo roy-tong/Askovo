@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.25.0 — 2026-11-25
+
+### Added
+
+- Shared pre-registered experiment contracts and local survey, randomized landing, prototype/MVP and price-sensitivity runtimes. Designs, consent, participant limits, source hashes and aggregate observations remain separate from canonical evidence and product decisions.
+- Evidence-backed participant eligibility/consent screening, named primary-candidate review, durable research watches and shared problem-resolution projections. CLI, Skill and MCP use the same implementations without autonomous recruitment or evidence promotion.
+- Local longitudinal diary studies with screened participant pseudonyms, fixed schedules, consent/withdrawal, late/missing cells, conflict-safe imports and anonymous date aggregates. Withdrawal blocks every subsequent new accepted entry, including a backdated one; exact existing duplicates remain idempotent.
+
+### Fixed
+
+- Arctic pagination stops on short, empty or repeated pages instead of repeating a request indefinitely.
+- Landing population, window, sample targets and comparability are fingerprinted before exposure; post-hoc substitutions require a separately registered revision.
+
+### Verification
+
+- 1107 tests pass, including diary withdrawal and mixed CLI/MCP regressions. Local wheel chains and the shared experiment validator pass; synthetic research does not prove recruitment, demand, product acceptance or external adoption.
+
 ## 2.24.0 — 2026-11-25
 
 ### Added

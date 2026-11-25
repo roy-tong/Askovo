@@ -37,9 +37,18 @@ import decision_review  # noqa: E402
 import decide  # noqa: E402
 import decision_brief  # noqa: E402
 import research_delta  # noqa: E402
+import research_watch  # noqa: E402
+import research_watch_resolution  # noqa: E402
 import issue_structuring  # noqa: E402
 import capture_review  # noqa: E402
 import capture_plan  # noqa: E402
+import experiment_export  # noqa: E402
+import primary_candidate_review  # noqa: E402
+import participant_screening  # noqa: E402
+import landing_experiment  # noqa: E402
+import prototype_experiment  # noqa: E402
+import survey_experiment  # noqa: E402
+import diary_study  # noqa: E402
 import decision_followup  # noqa: E402
 import role_catalog  # noqa: E402
 import evidence_page  # noqa: E402
@@ -1927,6 +1936,9 @@ def _check_evidence(
             # Candidate/OCR text cannot be hand-appended as evidence: the source
             # capture, reviewer, timestamp, hashes and accepted join must agree.
             errors.extend(capture_review.validate_evidence_record(audit.study_dir, record))
+        if str(record.get("source_family") or "") == primary_candidate_review.SOURCE_FAMILY:
+            errors.extend(primary_candidate_review.validate_evidence_record(
+                audit.study_dir, record))
         normalized_hashes.append(str(record["normalized_text_hash"]))
         role_counts[role] += 1
         source_counts[str(record["source_family"])] += 1
@@ -3312,6 +3324,32 @@ def command_review(args: argparse.Namespace) -> int:
     return 1 if result["status"] == "fail" else 0
 
 
+def command_watch(args: argparse.Namespace) -> int:
+    study_dir = Path(args.study_dir).resolve()
+    try:
+        if args.watch_action == "resolution":
+            result = research_watch_resolution.build(study_dir, args.watch_id)
+        elif args.watch_action == "create":
+            result = research_watch.create(
+                study_dir, question=args.question, interval_hours=args.interval_hours,
+                owner=args.by, now=args.now, delta_file=args.delta_file,
+                delta_authorized_by=args.delta_authorized_by)
+        elif args.watch_action == "status":
+            result = research_watch.status(study_dir, now=args.now, due_only=args.due)
+        elif args.watch_action == "run":
+            result = research_watch.run_due(study_dir, watch_id=args.watch_id or "", now=args.now)
+        elif args.watch_action in ("pause", "resume"):
+            result = research_watch.set_paused(
+                study_dir, args.watch_id, args.watch_action == "pause", now=args.now)
+        else:
+            raise ValueError("unknown research watch action")
+    except (OSError, ValueError, json.JSONDecodeError, write_integrity.IntegrityError) as exc:
+        print(json.dumps({"status": "error", "reason": str(exc)}, ensure_ascii=False, indent=2))
+        return 2
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 1 if result.get("status") == "failed" else 0
+
+
 def command_decision(args: argparse.Namespace) -> int:
     """Record and replay versioned decisions inside the canonical reasoning chain."""
     study_dir = Path(args.study_dir).resolve()
@@ -3509,9 +3547,44 @@ def command_capture_plan(args: argparse.Namespace) -> int:
 
         plan_path = Path(args.plan)
         plan = capture_plan.load_plan(plan_path)
+        if action == "screen":
+            document = participant_screening.build(
+                plan, capture_plan.load_json(Path(args.file)),
+                reviewed_by=args.by, reviewed_at=args.at)
+            out = participant_screening.write_new(document, Path(args.out))
+            print(json.dumps({"status": "exported", "schema": document["schema"],
+                              "participants": len(document["participants"]),
+                              "research_ready": document["summary"]["research_ready"],
+                              "path": str(out)}, ensure_ascii=False, indent=2))
+            return 0
         if action == "show":
             print(json.dumps({"status": "ok", "plan": plan},
                              ensure_ascii=False, indent=2))
+            return 0
+        if action == "export-experiment":
+            evidence_records = None
+            study_dir = None
+            if any(str(row.get("state") or "") == "accepted"
+                   for row in plan.get("candidates") or [] if isinstance(row, dict)):
+                study_dir = primary_candidate_review.study_root_for_plan(plan_path)
+                evidence_records = primary_candidate_review.load_evidence_records(study_dir)
+            document = experiment_export.from_capture_plan(
+                plan, capture_plan.load_json(Path(args.design)), ASKOVO_VERSION,
+                evidence_records=evidence_records, study_dir=study_dir)
+            out = experiment_export.write_new(document, Path(args.out))
+            print(json.dumps({
+                "status": "exported", "schema": document["schema"],
+                "experiment_id": document["experiment_id"],
+                "state": document["state"], "observations": len(document["observations"]),
+                "outcome": document["outcome"]["status"], "path": str(out),
+            }, ensure_ascii=False, indent=2))
+            return 0
+        if action == "review-candidate":
+            result = primary_candidate_review.review_candidate(
+                plan_path, args.candidate, by=args.by, decision=args.decision,
+                reason=args.reason, at=args.at, observation=args.observation,
+                corpus_role=args.corpus_role, evidence_level=args.evidence_level)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
         if action == "render":
             out = Path(args.out) if args.out else plan_path.parent
@@ -5980,6 +6053,144 @@ def command_build(args: argparse.Namespace) -> int:
     return _run_stage_project("build_primary_dataset.py", project_dir, list(args.stage_args), defaults)
 
 
+def command_prototype(args: argparse.Namespace) -> int:
+    try:
+        if args.prototype_action == "create":
+            spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
+            result = prototype_experiment.create(spec, Path(args.out))
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        if args.prototype_action == "import":
+            rows = prototype_experiment.load_observations(Path(args.file))
+            result = prototype_experiment.import_observations(
+                Path(args.dir), rows, imported_by=args.by)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        if args.prototype_action == "status":
+            print(json.dumps(prototype_experiment.status(Path(args.dir)),
+                             ensure_ascii=False, indent=2))
+            return 0
+        if args.prototype_action == "export":
+            document = prototype_experiment.export_experiment(Path(args.dir), ASKOVO_VERSION)
+            out = prototype_experiment.write_shared_export(document, Path(args.out))
+            print(json.dumps({"status": "exported", "schema": document["schema"],
+                              "observations": len(document["observations"]),
+                              "outcome": document["outcome"]["status"],
+                              "path": str(out)}, ensure_ascii=False, indent=2))
+            return 0
+        raise ValueError("unknown prototype action")
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(json.dumps({"status": "error", "reason": str(exc)[:500]}, ensure_ascii=False))
+        return 1
+
+
+def command_diary(args: argparse.Namespace) -> int:
+    try:
+        if args.diary_action == "create":
+            spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
+            result = diary_study.create(spec, Path(args.out))
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        if args.diary_action == "import":
+            rows = diary_study.load_entries(Path(args.file))
+            result = diary_study.import_entries(Path(args.dir), rows, imported_by=args.by)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        if args.diary_action == "status":
+            print(json.dumps(diary_study.status(Path(args.dir), now=args.at),
+                             ensure_ascii=False, indent=2))
+            return 0
+        if args.diary_action == "export":
+            out = diary_study.write_aggregate(Path(args.dir), Path(args.out))
+            print(json.dumps({"status": "exported", "schema": diary_study.EXPORT_SCHEMA,
+                              "path": str(out)}, ensure_ascii=False, indent=2))
+            return 0
+        raise ValueError("unknown diary action")
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(json.dumps({"status": "error", "reason": str(exc)[:500]}, ensure_ascii=False))
+        return 1
+
+
+def command_experiment(args: argparse.Namespace) -> int:
+    if getattr(args, "experiment_kind", "landing") == "prototype":
+        return command_prototype(args)
+    if getattr(args, "experiment_kind", "landing") == "diary":
+        return command_diary(args)
+    try:
+        if args.landing_action == "create":
+            spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
+            result = landing_experiment.create(spec, Path(args.out))
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        if args.landing_action == "status":
+            print(json.dumps(landing_experiment.status(Path(args.dir)),
+                             ensure_ascii=False, indent=2))
+            return 0
+        if args.landing_action == "export":
+            export_spec = json.loads(Path(args.design).read_text(encoding="utf-8"))
+            document = landing_experiment.export_experiment(
+                Path(args.dir), export_spec, ASKOVO_VERSION)
+            out = landing_experiment.write_shared_export(document, Path(args.out))
+            print(json.dumps({"status": "exported", "schema": document["schema"],
+                              "observations": len(document["observations"]),
+                              "outcome": document["outcome"]["status"],
+                              "path": str(out)}, ensure_ascii=False, indent=2))
+            return 0
+        if args.landing_action == "serve":
+            server = landing_experiment.create_server(
+                Path(args.dir), host=args.host, port=args.port)
+            print(json.dumps({"status": "serving", "experiment_id": server.spec["experiment_id"],
+                              "url": "http://%s:%d/" % (args.host, server.server_port),
+                              "network": "loopback_only"}, ensure_ascii=False), flush=True)
+            try:
+                server.serve_forever()
+            except KeyboardInterrupt:
+                pass
+            finally:
+                server.server_close()
+            return 0
+        raise ValueError("unknown landing action")
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(json.dumps({"status": "error", "reason": str(exc)[:500]},
+                         ensure_ascii=False))
+        return 1
+
+
+def command_survey(args: argparse.Namespace) -> int:
+    try:
+        if args.survey_action == "create":
+            spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
+            result = survey_experiment.create(spec, Path(args.out))
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        if args.survey_action == "status":
+            print(json.dumps(survey_experiment.status(Path(args.dir)),
+                             ensure_ascii=False, indent=2))
+            return 0
+        if args.survey_action == "export-candidates":
+            out = survey_experiment.write_candidates(Path(args.dir), Path(args.out))
+            print(json.dumps({"status": "exported", "path": str(out)},
+                             ensure_ascii=False, indent=2))
+            return 0
+        if args.survey_action == "serve":
+            server = survey_experiment.create_server(
+                Path(args.dir), host=args.host, port=args.port)
+            print(json.dumps({"status": "serving", "survey_id": server.spec["survey_id"],
+                              "url": "http://%s:%d/" % (args.host, server.server_port),
+                              "network": "loopback_only"}, ensure_ascii=False), flush=True)
+            try:
+                server.serve_forever()
+            except KeyboardInterrupt:
+                pass
+            finally:
+                server.server_close()
+            return 0
+        raise ValueError("unknown survey action")
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(json.dumps({"status": "error", "reason": str(exc)[:500]}, ensure_ascii=False))
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="askovo",
@@ -6353,9 +6564,44 @@ def build_parser() -> argparse.ArgumentParser:
     plan_render_parser.add_argument("--out", default="")
     plan_render_parser.set_defaults(func=command_capture_plan)
 
+    plan_screen_parser = plan_sub.add_parser(
+        "screen", help="export named participant eligibility/consent screening without recruiting")
+    plan_screen_parser.add_argument("--plan", required=True)
+    plan_screen_parser.add_argument("--file", required=True, help="participant screening review JSON")
+    plan_screen_parser.add_argument("--by", required=True)
+    plan_screen_parser.add_argument("--at", default="")
+    plan_screen_parser.add_argument("--out", required=True, help="new roster JSON; never overwritten")
+    plan_screen_parser.set_defaults(func=command_capture_plan)
+
     plan_show_parser = plan_sub.add_parser("show", help="print the stored plan JSON")
     plan_show_parser.add_argument("plan")
     plan_show_parser.set_defaults(func=command_capture_plan)
+
+    plan_experiment_parser = plan_sub.add_parser(
+        "export-experiment",
+        help="project a capture plan and explicit host design into the shared experiment contract")
+    plan_experiment_parser.add_argument("--plan", required=True)
+    plan_experiment_parser.add_argument("--design", required=True,
+                                        help="JSON hypothesis/design/registration; never inferred")
+    plan_experiment_parser.add_argument("--out", required=True,
+                                        help="new JSON path; existing files are never overwritten")
+    plan_experiment_parser.set_defaults(func=command_capture_plan)
+
+    plan_candidate_review = plan_sub.add_parser(
+        "review-candidate",
+        help="accept one candidate into canonical evidence or reject it, with named review")
+    plan_candidate_review.add_argument("--plan", required=True)
+    plan_candidate_review.add_argument("--candidate", required=True)
+    plan_candidate_review.add_argument("--decision", required=True, choices=("accept", "reject"))
+    plan_candidate_review.add_argument("--by", required=True)
+    plan_candidate_review.add_argument("--reason", required=True)
+    plan_candidate_review.add_argument("--observation", default="statement",
+                                       choices=("context", "statement", "practice"))
+    plan_candidate_review.add_argument("--corpus-role", default="open_scene")
+    plan_candidate_review.add_argument("--evidence-level", default="",
+                                       choices=("", "E0", "E1", "E2"))
+    plan_candidate_review.add_argument("--at", default="")
+    plan_candidate_review.set_defaults(func=command_capture_plan)
 
     capture_parser.set_defaults(func=command_capture)
 
@@ -6583,6 +6829,41 @@ def build_parser() -> argparse.ArgumentParser:
     review_parser.add_argument("study_dir")
     review_parser.add_argument("--json", action="store_true", help="machine-readable review")
     review_parser.set_defaults(func=command_review)
+
+    watch_parser = subparsers.add_parser(
+        "watch", help="persist recurring local research reviews; an external cron/host must tick them")
+    watch_sub = watch_parser.add_subparsers(dest="watch_action", required=True)
+    watch_create = watch_sub.add_parser("create", help="create a due local-review watch")
+    watch_create.add_argument("study_dir")
+    watch_create.add_argument("--question", required=True)
+    watch_create.add_argument("--interval-hours", required=True, type=float)
+    watch_create.add_argument("--by", required=True, help="named research owner")
+    watch_create.add_argument("--delta-file", default="", help="authorized local issue export for each due run")
+    watch_create.add_argument("--delta-authorized-by", default="", help="named export/data-rights authorizer")
+    watch_create.add_argument("--now", default="", help=argparse.SUPPRESS)
+    watch_create.set_defaults(func=command_watch)
+    watch_status = watch_sub.add_parser("status", help="show watches and whether they are due")
+    watch_status.add_argument("study_dir")
+    watch_status.add_argument("--due", action="store_true", help="show only due active watches")
+    watch_status.add_argument("--now", default="", help=argparse.SUPPRESS)
+    watch_status.set_defaults(func=command_watch)
+    watch_run = watch_sub.add_parser(
+        "run", help="run due local decision reviews; never collects or promotes evidence")
+    watch_run.add_argument("study_dir")
+    watch_run.add_argument("--watch-id", default="")
+    watch_run.add_argument("--now", default="", help=argparse.SUPPRESS)
+    watch_run.set_defaults(func=command_watch)
+    for action in ("pause", "resume"):
+        watch_state = watch_sub.add_parser(action)
+        watch_state.add_argument("study_dir")
+        watch_state.add_argument("watch_id")
+        watch_state.add_argument("--now", default="", help=argparse.SUPPRESS)
+        watch_state.set_defaults(func=command_watch)
+    watch_resolution = watch_sub.add_parser(
+        "resolution", help="project one watch problem into ovo.problem-resolution/1; read-only")
+    watch_resolution.add_argument("study_dir")
+    watch_resolution.add_argument("watch_id")
+    watch_resolution.set_defaults(func=command_watch)
 
     analyze_parser = subparsers.add_parser(
         "analyze", help="normalize, dedup and describe collected material"
@@ -7136,6 +7417,91 @@ def build_parser() -> argparse.ArgumentParser:
                               help="auto=终端用 text、管道用 json（默认 auto）")
     check_parser.set_defaults(func=command_check)
 
+    experiment_parser = subparsers.add_parser(
+        "experiment", help="execute registered demand-validation experiments")
+    experiment_sub = experiment_parser.add_subparsers(dest="experiment_kind", required=True)
+    landing_parser = experiment_sub.add_parser(
+        "landing", help="loopback-only randomized landing-page experiment")
+    landing_sub = landing_parser.add_subparsers(dest="landing_action", required=True)
+    landing_create = landing_sub.add_parser("create")
+    landing_create.add_argument("--spec", required=True)
+    landing_create.add_argument("--out", required=True)
+    landing_create.set_defaults(func=command_experiment)
+    landing_status = landing_sub.add_parser("status")
+    landing_status.add_argument("--dir", required=True)
+    landing_status.set_defaults(func=command_experiment)
+    landing_export = landing_sub.add_parser("export")
+    landing_export.add_argument("--dir", required=True)
+    landing_export.add_argument("--design", required=True)
+    landing_export.add_argument("--out", required=True)
+    landing_export.set_defaults(func=command_experiment)
+    landing_serve = landing_sub.add_parser("serve")
+    landing_serve.add_argument("--dir", required=True)
+    landing_serve.add_argument("--host", default="127.0.0.1")
+    landing_serve.add_argument("--port", type=int, default=8000)
+    landing_serve.set_defaults(func=command_experiment)
+
+    prototype_parser = experiment_sub.add_parser(
+        "prototype", help="local pre-registered prototype task observation and shared export")
+    prototype_sub = prototype_parser.add_subparsers(dest="prototype_action", required=True)
+    prototype_create = prototype_sub.add_parser("create")
+    prototype_create.add_argument("--spec", required=True)
+    prototype_create.add_argument("--out", required=True)
+    prototype_create.set_defaults(func=command_experiment)
+    prototype_import = prototype_sub.add_parser("import")
+    prototype_import.add_argument("--dir", required=True)
+    prototype_import.add_argument("--file", required=True, help="local observation JSON array or JSONL")
+    prototype_import.add_argument("--by", required=True, help="named observation importer")
+    prototype_import.set_defaults(func=command_experiment)
+    prototype_status = prototype_sub.add_parser("status")
+    prototype_status.add_argument("--dir", required=True)
+    prototype_status.set_defaults(func=command_experiment)
+    prototype_export = prototype_sub.add_parser("export")
+    prototype_export.add_argument("--dir", required=True)
+    prototype_export.add_argument("--out", required=True)
+    prototype_export.set_defaults(func=command_experiment)
+
+    survey_parser = experiment_sub.add_parser(
+        "survey", help="loopback-only primary-research questionnaire")
+    survey_sub = survey_parser.add_subparsers(dest="survey_action", required=True)
+    survey_create = survey_sub.add_parser("create")
+    survey_create.add_argument("--spec", required=True)
+    survey_create.add_argument("--out", required=True)
+    survey_create.set_defaults(func=command_survey)
+    survey_status = survey_sub.add_parser("status")
+    survey_status.add_argument("--dir", required=True)
+    survey_status.set_defaults(func=command_survey)
+    survey_export = survey_sub.add_parser("export-candidates")
+    survey_export.add_argument("--dir", required=True)
+    survey_export.add_argument("--out", required=True)
+    survey_export.set_defaults(func=command_survey)
+    survey_serve = survey_sub.add_parser("serve")
+    survey_serve.add_argument("--dir", required=True)
+    survey_serve.add_argument("--host", default="127.0.0.1")
+    survey_serve.add_argument("--port", type=int, default=8000)
+    survey_serve.set_defaults(func=command_survey)
+
+    diary_parser = experiment_sub.add_parser(
+        "diary", help="local pre-registered longitudinal diary entries and anonymous aggregates")
+    diary_sub = diary_parser.add_subparsers(dest="diary_action", required=True)
+    diary_create = diary_sub.add_parser("create")
+    diary_create.add_argument("--spec", required=True)
+    diary_create.add_argument("--out", required=True)
+    diary_create.set_defaults(func=command_experiment)
+    diary_import = diary_sub.add_parser("import")
+    diary_import.add_argument("--dir", required=True)
+    diary_import.add_argument("--file", required=True, help="local diary entry JSON array or JSONL")
+    diary_import.add_argument("--by", required=True, help="named diary importer")
+    diary_import.set_defaults(func=command_experiment)
+    diary_status = diary_sub.add_parser("status")
+    diary_status.add_argument("--dir", required=True)
+    diary_status.add_argument("--at", default="", help="deterministic current timestamp for due cells")
+    diary_status.set_defaults(func=command_experiment)
+    diary_export = diary_sub.add_parser("export")
+    diary_export.add_argument("--dir", required=True)
+    diary_export.add_argument("--out", required=True)
+    diary_export.set_defaults(func=command_experiment)
+
     connector_parser = subparsers.add_parser(
         "connectors", help="list reviewed open-source connector decisions"
     )
@@ -7188,8 +7554,8 @@ CLI_COMMANDS = {
     "init", "plan", "signals", "lexicon", "report", "demo", "route", "mode", "explore",
     "external-research", "do", "domains",
     "methods", "catalog", "platforms", "capture", "collect", "research", "loop", "analyze", "answer", "instruments", "import", "queue",
-    "codebook", "chain", "chain-node", "demand-judgment", "evidence", "study", "context", "observation", "semantic", "metric", "economics", "psm", "decision", "followup", "decide", "issues", "proof", "brief", "delta", "page", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors",
-    "stage", "label", "build",
+    "codebook", "chain", "chain-node", "demand-judgment", "evidence", "study", "context", "observation", "semantic", "metric", "economics", "psm", "decision", "followup", "decide", "issues", "proof", "brief", "delta", "page", "deliver", "boundary", "cost", "roles", "doctor", "audit", "review", "check", "connectors", "experiment",
+    "stage", "label", "build", "watch",
 }
 
 

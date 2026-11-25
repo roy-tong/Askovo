@@ -123,9 +123,10 @@ def collect(subreddits: List[str], after_utc: Optional[int], max_records: int, s
             print(f"progress: {len(rows)} Arctic Reddit rows after r/{subreddit} before={next_before}")
             if next_before is None or len(comments) < size:
                 break
-            before = max(after_utc or 0, next_before - 1)
-            if before == after_utc:
+            next_cursor = max(after_utc or 0, next_before - 1)
+            if next_cursor == after_utc or (before is not None and next_cursor >= before):
                 break
+            before = next_cursor
             time.sleep(sleep_s)
         if len(rows) >= max_records:
             break

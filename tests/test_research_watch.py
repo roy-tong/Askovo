@@ -1,0 +1,95 @@
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / "skills/askovo/scripts"
+CLI = SCRIPTS / "askovo.py"
+SAMPLE = ROOT / "examples/sample-study"
+sys.path.insert(0, str(SCRIPTS))
+
+import research_watch  # noqa: E402
+import write_integrity  # noqa: E402
+
+
+class ResearchWatchTests(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+        self.study = self.dir / "study"
+        shutil.copytree(SAMPLE, self.study)
+        self.now = "2026-11-25T00:00:00+00:00"
+
+    def create(self) -> dict:
+        return research_watch.create(
+            self.study, question="Track changes for the mobile decision",
+            interval_hours=24, owner="research-owner", now=self.now)
+
+    def run_cli(self, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run([sys.executable, str(CLI), *args],
+                              capture_output=True, text=True, timeout=180)
+
+    def test_create_persists_due_watch_without_collecting_evidence(self) -> None:
+        created = self.create()
+        self.assertEqual("askovo.research-watch/1", created["schema"])
+        self.assertEqual("W001", created["watch"]["watch_id"])
+        self.assertEqual(self.now, created["watch"]["next_due_at"])
+        self.assertFalse(created["watch"]["new_evidence_collected"])
+        status = research_watch.status(self.study, now=self.now)
+        self.assertEqual(1, status["due_count"])
+        self.assertTrue(status["watches"][0]["due"])
+
+    def test_corrupt_state_is_not_replaced_with_an_empty_watch_list(self) -> None:
+        self.create()
+        (self.study / research_watch.STATE_RELATIVE).write_text("{", encoding="utf-8")
+        with self.assertRaises(write_integrity.IntegrityError):
+            research_watch.status(self.study, now=self.now)
+
+    def test_due_run_records_review_and_source_fingerprint(self) -> None:
+        self.create()
+        first = research_watch.run_due(self.study, now=self.now)
+        self.assertEqual("completed", first["status"])
+        self.assertEqual(1, len(first["runs"]))
+        self.assertEqual("local_review_only", first["runs"][0]["execution"])
+        self.assertFalse(first["runs"][0]["new_evidence_collected"])
+        self.assertFalse(first["runs"][0]["source_changed_since_last_run"])
+        not_due = research_watch.run_due(self.study, now="2026-11-25T01:00:00+00:00")
+        self.assertEqual("no_due_watches", not_due["status"])
+        second = research_watch.run_due(self.study, now="2026-11-26T00:00:00+00:00")
+        self.assertEqual(1, len(second["runs"]))
+        self.assertFalse(second["runs"][0]["source_changed_since_last_run"])
+        history = (self.study / research_watch.HISTORY_RELATIVE).read_text(encoding="utf-8").splitlines()
+        self.assertEqual(2, len(history))
+
+    def test_pause_blocks_run_and_resume_schedules_due_review(self) -> None:
+        self.create()
+        paused = research_watch.set_paused(self.study, "W001", True, now=self.now)
+        self.assertEqual("paused", paused["watch"]["state"])
+        self.assertEqual("no_due_watches", research_watch.run_due(self.study, now=self.now)["status"])
+        resumed = research_watch.set_paused(self.study, "W001", False, now=self.now)
+        self.assertEqual("active", resumed["watch"]["state"])
+        self.assertEqual(self.now, resumed["watch"]["next_due_at"])
+
+    def test_cli_create_run_and_status(self) -> None:
+        created = self.run_cli(
+            "watch", "create", str(self.study), "--question", "Track demand changes",
+            "--interval-hours", "12", "--by", "owner", "--now", self.now)
+        self.assertEqual(0, created.returncode, created.stdout + created.stderr)
+        ran = self.run_cli("watch", "run", str(self.study), "--now", self.now)
+        self.assertEqual(0, ran.returncode, ran.stdout + ran.stderr)
+        self.assertEqual("completed", json.loads(ran.stdout)["status"])
+        status = self.run_cli(
+            "watch", "status", str(self.study), "--now", "2026-11-25T13:00:00+00:00")
+        self.assertEqual(0, status.returncode, status.stdout + status.stderr)
+        self.assertEqual(1, json.loads(status.stdout)["due_count"])
+
+
+if __name__ == "__main__":
+    unittest.main()
