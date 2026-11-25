@@ -220,6 +220,7 @@ askovo collect ./study --platform instagram --query "night alert workaround" \
 ```
 
 - 非 dry-run 采集先执行 design gate；失败返回 `1` 和 `design_gate_failed`。平台还必须在 `scope.allowed_sources` 中，live/CDP 必须启用 adapter。
+- `--account <account_id|handle>` 选择持久账号，`--account-policy <path>` 指定配置文件；缺省读取 `.askovo/account-quotas.json` 或 `ASKOVO_ACCOUNT_POLICY`。`daily_caps.collect` 达到上限时返回 `quota_exhausted` 与 UTC 重置等待时间，不执行采集；其他动作（如 `publish`）的额度不计入采集。dry-run 的 `next` 命令保留这两个账号参数。
 - GitHub：官方 Search API；`GITHUB_TOKEN` 可选。
 - Reddit：官方 Data API；需要 `ASKOVO_REDDIT_CLIENT_ID`、`ASKOVO_REDDIT_CLIENT_SECRET`、可选 `ASKOVO_REDDIT_USER_AGENT`；registry 复核过期不再阻断，返回结果带 `review_status: "expired"` 与降频提醒。
 - YouTube：官方 Data API 优先；内置 innertube 是 `public_endpoint_limited`，不是官方配额，按 limited 路线审查。
@@ -390,6 +391,7 @@ askovo queue retry ./study
 - worker 用租约抢占，崩溃后租约过期自动回收；
 - 失败按 5s/10s/20s… 退避重试，超过 `max_attempts` 标 failed；
 - 按平台限速（默认 GitHub 6s、Reddit 2s、其他 5s），可用 `--min-interval` 覆盖；
+- `queue run --account <account_id|handle> --account-policy <path>` 与直接采集共用账号策略；`account_quota_state` 存在策略文件旁的共享 `quota.db`，按平台 + 账号 + UTC 日计数。达到 `collect` 上限后等待下一 UTC 日；不同 study 共用上限，不同账号互不混用；
 - 每个 job 独立 run id、raw 文件与 manifest；`normalized.jsonl` 跨进程加锁去重；
 - 单机多进程/多 worker 可用；跨机器共享 SQLite 不可靠，需要外部队列。
 
@@ -444,7 +446,8 @@ askovo report ./study
 
 `deliver --kind`：
 
-- `plan`：业务方案（Business Plan），写 `06-report/plan.md`——业务用户默认视图：七节点渲染为"目标场景/目标用户/痛点/需求/特性/产品形态/商业与 GTM"九节业务章节，通篇业务语言；每个判断带**数据基础**（来源 · 语料量 · 时间窗）与**来自语料的声音**（用户原话或典型情况），尚无数据的判断如实标注"暂无采集数据"；证据编码与原始状态只进文末方法档案；
+- `plan`：业务方案（Business Plan），写 `06-report/plan.md`——完整商业计划视图：七节点渲染为"目标场景/目标用户/痛点/需求/特性/产品形态/商业与 GTM"九节业务章节，通篇业务语言；每个判断带**数据基础**（来源 · 语料量 · 时间窗）与**来自语料的声音**（用户原话或典型情况），尚无数据的判断如实标注"暂无采集数据"；证据编码与原始状态只进文末方法档案；
+- `needs`：业务需求报告，写 `06-report/needs.md`——面向业务负责人、产品经理和需求分析人员，主文按“业务结论 → 需求变化 → 产品/商业影响 → 下一步”表达；需求卡用“谁、什么场景、当前替代、摩擦、后果、期望结果、业务衡量方式”说明，原始引文、证据 ID、审计和技术状态退到附录，会话摘要与主文共用同一业务语言。`--baseline <旧研究目录或 product-reasoning.json>` 按稳定链 ID 对照新增/移出链及需求、方案、商业语义字段的旧值与新值。没有基线不断言新增或变化；证据绑定与状态变化单列，不冒充需求语义变化；未入链记录不自动算新增需求；
 - `analysis`：语料分析，写 `06-report/analysis.md`——采集漏斗（原始→筛选→编码→进入判断）、来源与年份分布、语料用途、七节点覆盖、集中度与重复、反证清单，以及"这份数据能回答/不能回答什么"；新增共现候选主题、机制/转折句候选和重复/独立记录归并，全部只做确定性统计，不推人群比例、市场规模或已验证因果；
 - `decision`：决策包（Decision Package），写 `06-report/decision-package.md`——机会地图/证据图/选项与权衡/决策备忘/验证清单五个决策侧视图，全部由同一条主链与需求判断投影；
 - `memo`：产品/商业决策 memo；
@@ -456,7 +459,7 @@ askovo report ./study
 - `tracker`：从特性/产品验收和商业成功指标生成带 chain/node ID 的跟踪行，写 `06-report/postlaunch-tracker.csv`；
 - `web`：Web 阅读面，写 `06-report/web/index.html`——同一条主链的自包含阅读页：事实/自述/推导/我的判断四类标签、数字与判断形成时间的分层展示、证据墙（原文/来源/引用环节/本地截图/原帖链接）、来源与节点分布图、可复用打法；E0–E5 与资格标记只进页尾方法档案，不新增结论。详见 [Web 阅读面](web-surface.md)。
 
-角色交付 `role`/`lifecycle` 见上文「roles」一节，签收页 `signoff` 见下文 F3 一节；与本节合计 14 种（默认 `memo`）。
+角色交付 `role`/`lifecycle` 见上文「roles」一节，签收页 `signoff` 见下文 F3 一节；与本节合计 15 种（默认 `memo`）。
 
 多链研究：`--kind plan` 先输出跨链比较表与逐链结论，七环节正文只展开优先级最高的一条；`--kind report` 的“产品决策”一节按链生成状态/依据强度/建议/下一步/失败线，没有 `decided` 链时明确标注为待验证建议，不再留空模板。`--kind analysis` 的漏斗支持 `01-sources/collection-summary.json` 的累计口径。
 

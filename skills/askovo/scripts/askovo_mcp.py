@@ -545,8 +545,8 @@ def _build_proof_export(arguments: dict[str, Any]) -> argparse.Namespace:
 
 def _build_deliver(arguments: dict[str, Any]) -> argparse.Namespace:
     kind = arguments.get("kind", "memo")
-    if kind not in ("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis", "role", "lifecycle", "web"):
-        raise ValueError("kind must be memo, report, mrd, prd, brd, ops, decision, tracker, signoff, plan, analysis, role, lifecycle or web")
+    if kind not in ("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "needs", "analysis", "role", "lifecycle", "web"):
+        raise ValueError("kind must be memo, report, mrd, prd, brd, ops, decision, tracker, signoff, plan, needs, analysis, role, lifecycle or web")
     role = _string(arguments.get("role"), "role") if kind == "role" else _optional_string(arguments, "role")
     return _namespace(
         study_dir=_string(arguments.get("study_dir"), "study_dir"),
@@ -555,6 +555,7 @@ def _build_deliver(arguments: dict[str, Any]) -> argparse.Namespace:
         deliverable=_optional_string(arguments, "deliverable"),
         industry=_optional_string(arguments, "industry"),
         chain=_optional_string(arguments, "chain"),
+        baseline=_optional_string(arguments, "baseline"),
     )
 
 
@@ -1125,16 +1126,17 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "askovo_deliver",
-        "description": "Assemble the business plan, decision package, MRD/PRD/BRD, operations/tracker, a role deliverable, or a self-contained Web reading surface projected read-only from the canonical chain. kind=role requires role and never authors findings from a blank template.",
+        "description": "Assemble the demand-first needs report (optional baseline comparison), full business plan, decision package, MRD/PRD/BRD, operations/tracker, a role deliverable, or a self-contained Web reading surface projected read-only from the canonical chain. kind=role requires role and never authors findings from a blank template.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "study_dir": {"type": "string"},
-                "kind": {"enum": ["memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis", "role", "lifecycle", "web"], "default": "memo"},
+                "kind": {"enum": ["memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "needs", "analysis", "role", "lifecycle", "web"], "default": "memo"},
                 "role": {"type": "string", "description": "kind=role: R52 or role alias"},
                 "deliverable": {"type": "string", "description": "kind=role: deliverable id or name"},
                 "industry": {"type": "string", "description": "kind=role: optional industry overlay"},
                 "chain": {"type": "string", "description": "kind=role: explicit PRxx chain target"},
+                "baseline": {"type": "string", "description": "kind=needs: previous study directory or product-reasoning.json"},
             },
             "required": ["study_dir"],
         },

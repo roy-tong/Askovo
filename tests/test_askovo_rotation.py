@@ -41,6 +41,58 @@ class CadenceTests(unittest.TestCase):
         self.assertEqual(3.0, cadence.min_interval)
         self.assertFalse(cadence.requires_session)
 
+    def test_persistent_account_policy_applies_across_platforms(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "account-quotas.json"
+            path.write_text(json.dumps({"version": 1, "accounts": [
+                {"account_id": "x-owner", "platform": "x", "handle": "@owner",
+                 "account_tier": "premium", "daily_caps": {"publish": 500}},
+                {"account_id": "github-owner", "platform": "github",
+                 "account_tier": "authenticated", "daily_caps": {"collect": 42}},
+                {"account_id": "discord-owner", "platform": "discord",
+                 "account_tier": "unknown", "daily_caps": {"collect": 7}},
+            ]}), encoding="utf-8")
+
+            first = {item.platform: item for item in rotation.build_cadences(
+                ["x", "github", "discord"], policy_path=path)}
+            second = {item.platform: item for item in rotation.build_cadences(
+                ["x", "github", "discord"], policy_path=path)}
+
+        self.assertEqual("premium", first["x"].account_tier)
+        self.assertIsNone(first["x"].daily_cap)  # publish quota is not a collection quota
+        self.assertEqual(42, first["github"].daily_cap)
+        self.assertEqual(7, second["discord"].daily_cap)
+        self.assertEqual("github-owner", second["github"].account_id)
+
+    def test_explicit_account_selects_the_matching_platform_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "account-quotas.json"
+            path.write_text(json.dumps({"version": 1, "accounts": [
+                {"account_id": "one", "platform": "github", "daily_caps": {"collect": 10}},
+                {"account_id": "two", "platform": "github", "daily_caps": {"collect": 20}},
+            ]}), encoding="utf-8")
+            (cadence,) = rotation.build_cadences(
+                ["github"], account="two", policy_path=path)
+
+        self.assertEqual(20, cadence.daily_cap)
+        self.assertEqual("two", cadence.account_id)
+
+    def test_resume_uses_the_persistent_account_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            policy = Path(directory) / "account-quotas.json"
+            policy.write_text(json.dumps({"version": 1, "accounts": [{
+                "account_id": "github-owner", "platform": "github",
+                "daily_caps": {"collect": 42},
+            }]}), encoding="utf-8")
+            path = Path(directory) / "rotation.json"
+            scheduler = rotation.RotationScheduler(rotation.build_cadences(
+                ["github"], account="github-owner", policy_path=policy))
+            scheduler.save(path)
+            resumed = rotation.RotationScheduler.load(
+                path, account="github-owner", policy_path=policy)
+
+        self.assertEqual(42, resumed.cadence("github").daily_cap)
+
     def test_duplicate_platform_is_refused(self) -> None:
         with self.assertRaises(ValueError):
             rotation.RotationScheduler([rotation.Cadence("x"), rotation.Cadence("x")])
@@ -163,6 +215,24 @@ class RotationSchedulerTests(unittest.TestCase):
         )
         self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
         self.assertIn("[ok]", completed.stdout)
+
+    def test_plan_cli_reads_persistent_account_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            policy = Path(directory) / "account-quotas.json"
+            policy.write_text(json.dumps({"version": 1, "accounts": [{
+                "account_id": "reddit-owner", "platform": "reddit",
+                "daily_caps": {"collect": 9},
+            }]}), encoding="utf-8")
+            completed = subprocess.run([
+                sys.executable, str(CONNECTORS / "rotation.py"),
+                "--plan", "reddit", "--account", "reddit-owner",
+                "--account-policy", str(policy),
+            ], check=False, capture_output=True, text=True, timeout=60)
+
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        cadence = json.loads(completed.stdout)["cadences"]["reddit"]
+        self.assertEqual(9, cadence["daily_cap"])
+        self.assertEqual("reddit-owner", cadence["account_id"])
 
     def test_plan_cli_orders_platforms(self) -> None:
         completed = subprocess.run(

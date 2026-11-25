@@ -44,6 +44,7 @@ if str(_SCRIPT_DIR) not in sys.path:
 import study_context
 import external_bridge
 import delivery_projection
+import needs_delivery
 import role_catalog
 import web_surface
 
@@ -5690,7 +5691,7 @@ def _report_decision_lines(reasoning: dict[str, Any] | None, by_id: dict[str, di
 
 FORMAL_DELIVERY_KINDS = frozenset({
     "memo", "report", "mrd", "prd", "brd", "ops", "decision", "signoff",
-    "plan", "analysis", "web", "role",
+    "plan", "needs", "analysis", "web", "role",
 })
 EVIDENCE_GATE_VERSION = "askovo-evidence-gate/1"
 _EVIDENCE_SOURCE_PREFIXES = (
@@ -5843,6 +5844,7 @@ def _deliver_artifact(
     deliverable_id: str | None = None,
     chain_id: str | None = None,
     evidence: dict[str, Any] | None = None,
+    baseline: str | Path | None = None,
 ) -> dict[str, Any]:
     study_dir = study_dir.resolve()
     study = load_json(study_dir / "study.json")
@@ -6005,6 +6007,34 @@ def _deliver_artifact(
         }
     titles = {"memo": "决策备忘", "report": "产品推理报告", "mrd": "MRD 市场需求文档", "prd": "PRD 产品需求文档", "brd": "BRD 商业需求文档", "ops": "用户运营交付", "decision": "决策包 Decision Package", "signoff": "干系人签收页", "plan": "业务方案 Business Plan", "analysis": "语料分析 Corpus Analysis"}
     title = titles.get(kind, "交付物")
+    if kind == "needs":
+        baseline_reasoning = None
+        baseline_ref = ""
+        if baseline:
+            baseline_reasoning, baseline_ref = needs_delivery.load_baseline(baseline)
+        comparison = (
+            needs_delivery.compare(reasoning, baseline_reasoning)
+            if baseline_reasoning is not None else None
+        )
+        path = out_dir / "needs.md"
+        path.write_text(
+            needs_delivery.render(
+                study, reasoning, evidence, audit_status,
+                baseline=baseline_reasoning, baseline_ref=baseline_ref,
+            ),
+            encoding="utf-8",
+        )
+        return {
+            "status": "written",
+            "path": str(path),
+            "kind": kind,
+            "audit_status": audit_status,
+            "audit_generated_at": audit_info.get("generated_at", ""),
+            "evidence_count": evidence["count"],
+            "product_reasoning": product_reasoning_summary(reasoning),
+            "baseline": baseline_ref or None,
+            "comparison": comparison,
+        }
     if kind == "plan":
         path = out_dir / "plan.md"
         path.write_text(
@@ -6277,13 +6307,14 @@ def deliver(
     industry: str | None = None,
     deliverable_id: str | None = None,
     chain_id: str | None = None,
+    baseline: str | Path | None = None,
 ) -> dict[str, Any]:
     # One delivery run, one evidence-store read: the artifact and its chat
     # summary must see the same snapshot even if files change mid-run.
     evidence = _evidence_summary(Path(study_dir).resolve())
     result = _deliver_artifact(
         study_dir, kind, audit=audit, role_id=role_id, industry=industry, deliverable_id=deliverable_id, chain_id=chain_id,
-        evidence=evidence,
+        evidence=evidence, baseline=baseline,
     )
     return _with_chat_summary(study_dir, kind, result, audit, evidence=evidence)
 
@@ -9116,6 +9147,9 @@ def collect_platform(
     ack_terms: bool = False,
     lease_valid: Callable[[], bool] | None = None,
     attach_existing: bool = False,
+    account: str = "",
+    account_policy_path: Path | None = None,
+    quota_reserved: bool = False,
 ) -> dict[str, Any]:
     if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
         raise ValueError("limit must be a positive integer")
@@ -9138,6 +9172,7 @@ def collect_platform(
         if procurement_block is not None:
             return procurement_block
     run_id = run_id or _run_id(platform)
+    account_view = _account_view(platform, account, account_policy_path)
     review_expired = platform_review_expired(platform)
     review_warnings: list[str] = []
     if review_expired:
@@ -9155,6 +9190,7 @@ def collect_platform(
         "decision": entry.get("decision"),
         "run_id": run_id,
         "dry_run": dry_run,
+        "account": account_view,
         "review_status": "expired" if review_expired else "current",
         "warnings": review_warnings,
     }
@@ -9168,6 +9204,10 @@ def collect_platform(
         next_command = (
             f"askovo collect {study_dir} --platform {platform} --query {query!r} --limit {limit}"
         )
+        if account:
+            next_command += f" --account {shlex.quote(str(account))}"
+        if account_policy_path:
+            next_command += f" --account-policy {shlex.quote(str(account_policy_path))}"
         if cdp_url:
             next_command += f" --cdp-url {cdp_url} --url {str(url or '')!r}"
             if ack_terms:
@@ -9190,6 +9230,19 @@ def collect_platform(
         }
     if lease_valid is not None and not lease_valid():
         return {"status": "lease_lost", "platform": platform, "reason": "queue lease is no longer owned by this worker"}
+    daily_cap = account_view.get("daily_cap")
+    if not quota_reserved and daily_cap is not None:
+        quota_store = _account_quota_store(account_policy_path)
+        wait = quota_store.acquire_daily(
+            platform, account_view["account_id"] or account, daily_cap,
+        )
+        if wait > 0:
+            return {
+                "status": "quota_exhausted", "reason": "daily_cap",
+                "platform": platform, "action": "collect",
+                "account": account_view, "retry_after_seconds": round(wait, 3),
+                "reset": "UTC next day",
+            }
     started_at = now()
     if cdp_url:
         return collect_cdp(
@@ -9255,6 +9308,7 @@ def collect_platform(
         "connector_license": "" if fixture else adapter_config.get("connector_license") or "MIT",
         "access_basis": "authorized_export" if fixture else ", ".join(entry.get("access_modes", [])),
         "auth": entry.get("auth"),
+        "account": account_view,
         "started_at": started_at,
         "finished_at": completed_at,
         "requested": limit,
@@ -10387,6 +10441,9 @@ def cli_collect(args: Any) -> int:
             url=args.url,
             ack_terms=args.ack_terms,
             attach_existing=bool(getattr(args, "attach_existing", False)),
+            account=str(getattr(args, "account", "") or ""),
+            account_policy_path=(Path(args.account_policy)
+                                 if getattr(args, "account_policy", "") else None),
         )
     except (OSError, ValueError, json.JSONDecodeError, RuntimeError, ConnectionError, urllib.error.URLError) as exc:
         print(str(exc), file=sys.stderr)
@@ -10463,6 +10520,13 @@ CREATE INDEX IF NOT EXISTS jobs_status_next ON jobs(status, next_at);
 CREATE TABLE IF NOT EXISTS rate_state (
     platform TEXT PRIMARY KEY,
     next_at REAL NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS account_quota_state (
+    platform TEXT NOT NULL,
+    account TEXT NOT NULL,
+    day TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(platform, account)
 );
 """
 
@@ -10608,6 +10672,47 @@ class QueueStore:
                 conn.execute("ROLLBACK")
                 raise
 
+    def acquire_daily(self, platform: str, account: str, daily_cap: int | None) -> float:
+        """Atomically reserve one collection request in this account's UTC day."""
+        if daily_cap is None:
+            return 0.0
+        if type(daily_cap) is not int or daily_cap < 0:
+            raise ValueError("daily_cap must be a non-negative integer")
+        now_ts = time.time()
+        day = datetime.fromtimestamp(now_ts, tz=timezone.utc).date().isoformat()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = conn.execute(
+                    "SELECT day, count FROM account_quota_state WHERE platform=? AND account=?",
+                    (platform, account),
+                ).fetchone()
+                count = int(row["count"]) if row is not None and row["day"] == day else 0
+                if count >= daily_cap:
+                    moment = datetime.fromtimestamp(now_ts, tz=timezone.utc)
+                    tomorrow = datetime.fromtimestamp(now_ts + 86400, tz=timezone.utc).date()
+                    reset = datetime.combine(
+                        tomorrow, datetime.min.time(), tzinfo=timezone.utc,
+                    )
+                    conn.execute("COMMIT")
+                    return max(0.0, reset.timestamp() - moment.timestamp())
+                if row is None:
+                    conn.execute(
+                        "INSERT INTO account_quota_state(platform, account, day, count) "
+                        "VALUES (?, ?, ?, 1)", (platform, account, day),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE account_quota_state SET day=?, count=? "
+                        "WHERE platform=? AND account=?",
+                        (day, count + 1, platform, account),
+                    )
+                conn.execute("COMMIT")
+                return 0.0
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+
     def has_work(self) -> bool:
         with self._connect() as conn:
             row = conn.execute(
@@ -10640,11 +10745,31 @@ def _rate_for(platform: str, override: float | None) -> float:
     return DEFAULT_RATE_SECONDS.get(platform, 5.0)
 
 
+def _account_view(
+    platform: str,
+    account: str = "",
+    policy_path: Path | None = None,
+) -> dict[str, Any]:
+    from connectors import account_policy
+    return account_policy.view_for(
+        platform, "collect", account, path=policy_path,
+    )
+
+
+def _account_quota_store(policy_path: Path | None = None) -> QueueStore:
+    from connectors import account_policy
+    store = QueueStore(account_policy.quota_db_path(policy_path))
+    store.init()
+    return store
+
+
 def run_queue(
     study_dir: Path,
     workers: int = 2,
     min_interval: float | None = None,
     lease_seconds: float = 300,
+    account: str = "",
+    account_policy_path: Path | None = None,
 ) -> dict[str, Any]:
     if workers < 1:
         raise ValueError("workers must be at least 1")
@@ -10684,6 +10809,17 @@ def run_queue(
             heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
             heartbeat_thread.start()
             try:
+                account_view = _account_view(
+                    job["platform"], account, account_policy_path,
+                )
+                daily_wait = (_account_quota_store(account_policy_path).acquire_daily(
+                    job["platform"], account_view["account_id"] or account,
+                    account_view["daily_cap"],
+                ) if account_view["daily_cap"] is not None else 0.0)
+                if daily_wait > 0:
+                    time.sleep(daily_wait)
+                if lease_lost.is_set():
+                    return
                 wait = store.acquire_rate(job["platform"], _rate_for(job["platform"], min_interval))
                 if wait > 0:
                     time.sleep(wait)
@@ -10700,6 +10836,9 @@ def run_queue(
                     url=job["url"],
                     ack_terms=bool(job["ack_terms"]),
                     lease_valid=lambda: not lease_lost.is_set(),
+                    account=account,
+                    account_policy_path=account_policy_path,
+                    quota_reserved=True,
                 )
                 status = result.get("status")
                 if status == "lease_lost":
@@ -10798,6 +10937,9 @@ def cli_queue_run(args: Any) -> int:
             workers=args.workers,
             min_interval=args.min_interval,
             lease_seconds=args.lease_seconds,
+            account=str(getattr(args, "account", "") or ""),
+            account_policy_path=(Path(args.account_policy)
+                                 if getattr(args, "account_policy", "") else None),
         )
     except (OSError, ValueError, sqlite3.Error) as exc:
         print(str(exc), file=sys.stderr)
@@ -12067,7 +12209,7 @@ def cli_context_export(args: Any) -> int:
 
 def cli_deliver(args: Any) -> int:
     try:
-        result = deliver(Path(args.study_dir), args.kind)
+        result = deliver(Path(args.study_dir), args.kind, baseline=getattr(args, "baseline", None))
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         result = delivery_error(Path(args.study_dir), args.kind, exc)
         print(json.dumps(result, ensure_ascii=False, indent=2))

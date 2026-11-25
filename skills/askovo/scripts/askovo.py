@@ -3429,6 +3429,8 @@ def command_deliver(args: argparse.Namespace) -> int:
     """Deliver from a fresh full audit, never from a stale audit.json."""
     study_dir = Path(args.study_dir).resolve()
     try:
+        if args.kind != "needs" and getattr(args, "baseline", None):
+            raise ValueError("--baseline is only supported for --kind needs")
         context = study_context.StudyContext(study_context.StudyRepository(study_dir))
         with context.activate():
             audit = audit_study(study_dir, "full")
@@ -3440,6 +3442,7 @@ def command_deliver(args: argparse.Namespace) -> int:
                 industry=getattr(args, "industry", None),
                 deliverable_id=getattr(args, "deliverable", None),
                 chain_id=getattr(args, "chain", None),
+                baseline=getattr(args, "baseline", None),
             )
     except (OSError, json.JSONDecodeError, ValueError, write_integrity.IntegrityError) as exc:
         result = sure_engine.delivery_error(study_dir, args.kind, exc)
@@ -6201,6 +6204,8 @@ def build_parser() -> argparse.ArgumentParser:
     collect_parser.add_argument("--platform", required=True)
     collect_parser.add_argument("--query", required=True)
     collect_parser.add_argument("--limit", type=int, default=100)
+    collect_parser.add_argument("--account", default="", help="persistent account_id or handle")
+    collect_parser.add_argument("--account-policy", help="account-quotas.json path; defaults to the persistent user policy")
     collect_parser.add_argument("--dry-run", action="store_true")
     collect_parser.add_argument("--fixture", help="local JSONL/CSV fixture for offline collection")
     collect_parser.add_argument("--cdp-url", help="Chrome DevTools endpoint, e.g. http://127.0.0.1:9222")
@@ -6589,8 +6594,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="add constrained LLM candidate themes/mechanisms/counterexamples "
              "(default off; no config falls back to deterministic analysis)")
     analyze_parser.add_argument(
-        "--semantic-provider", choices=("auto", "openai", "offline"), default="auto",
-        help="auto uses ASKOVO_LLM_* when configured; offline is a deterministic stub")
+        "--semantic-provider", choices=("auto", "openai", "offline", "host"), default="auto",
+        help="auto uses ASKOVO_LLM_* when configured; offline is a deterministic stub; "
+             "host writes a task for the host agent instead of calling a model")
     analyze_parser.add_argument(
         "--allow-external", action="store_true",
         help="authorize sending source text to a non-loopback model endpoint")
@@ -6832,6 +6838,30 @@ def build_parser() -> argparse.ArgumentParser:
     semantic_review.add_argument("--note", default="")
     semantic_review.add_argument("--json", action="store_true")
     semantic_review.set_defaults(func=semantic_candidates.cmd_review)
+    semantic_support = semantic_sub.add_parser(
+        "support", help="record whether the cited quotes entail, partly support or contradict a candidate")
+    semantic_support.add_argument("study_dir")
+    semantic_support.add_argument("--candidate", required=True)
+    semantic_support.add_argument("--entailment", required=True,
+                                  choices=semantic_candidates.ENTAILMENTS)
+    semantic_support.add_argument("--context", required=True, choices=("intact", "broken"))
+    semantic_support.add_argument("--generalization-risk", required=True,
+                                  choices=semantic_candidates.GENERALIZATION_RISKS)
+    semantic_support.add_argument("--checker", default="human",
+                                  choices=semantic_candidates.SUPPORT_CHECKERS)
+    semantic_support.add_argument("--reviewer", required=True)
+    semantic_support.add_argument("--note", default="")
+    semantic_support.add_argument("--override", action="store_true",
+                                  help="allow an unsupported claim with a named reason")
+    semantic_support.add_argument("--json", action="store_true")
+    semantic_support.set_defaults(func=semantic_candidates.cmd_support)
+    semantic_import = semantic_sub.add_parser(
+        "import", help="validate and import a host-agent semantic response")
+    semantic_import.add_argument("study_dir")
+    semantic_import.add_argument("--file", required=True)
+    semantic_import.add_argument("--by", required=True)
+    semantic_import.add_argument("--json", action="store_true")
+    semantic_import.set_defaults(func=semantic_candidates.cmd_import)
     semantic_export = semantic_sub.add_parser(
         "export", help="export accepted candidates as E2 collected-statement observations")
     semantic_export.add_argument("study_dir")
@@ -6842,6 +6872,8 @@ def build_parser() -> argparse.ArgumentParser:
     semantic_export.add_argument("--region", default="")
     semantic_export.add_argument("--export-now", action="store_true",
                                  help="also run observation export into 01-sources/observations.jsonl")
+    semantic_export.add_argument("--against-snapshot", default="",
+                                 help="allow a clearly labelled historical export bound to this corpus hash")
     semantic_export.add_argument("--json", action="store_true")
     semantic_export.set_defaults(func=semantic_candidates.cmd_export)
     semantic_validate = semantic_sub.add_parser(
@@ -6957,11 +6989,12 @@ def build_parser() -> argparse.ArgumentParser:
         "deliver", help="assemble the business plan, decision package, MRD, PRD, BRD, memo and tracker deliverables"
     )
     deliver_parser.add_argument("study_dir")
-    deliver_parser.add_argument("--kind", choices=("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "analysis", "role", "lifecycle", "web"), default="memo")
+    deliver_parser.add_argument("--kind", choices=("memo", "report", "mrd", "prd", "brd", "ops", "decision", "tracker", "signoff", "plan", "needs", "analysis", "role", "lifecycle", "web"), default="memo")
     deliver_parser.add_argument("--role", help="kind=role: role id/name whose deliverable is projected from the canonical chain")
     deliver_parser.add_argument("--deliverable", help="kind=role: deliverable id/name; defaults to the role's first")
     deliver_parser.add_argument("--industry", help="kind=role: override the study industry context")
     deliver_parser.add_argument("--chain", help="kind=role: canonical chain id when no bound workplan exists or to select its target")
+    deliver_parser.add_argument("--baseline", help="kind=needs: previous study directory or product-reasoning.json for semantic comparison")
     deliver_parser.add_argument("--strict", action="store_true",
                                 help="audit_failed 时不返回 0（草稿仍写出，便于自动化拦截）")
     deliver_parser.set_defaults(func=command_deliver)
@@ -7012,6 +7045,8 @@ def build_parser() -> argparse.ArgumentParser:
     queue_run.add_argument("--workers", type=int, default=2)
     queue_run.add_argument("--min-interval", type=float, default=None, help="override per-platform seconds")
     queue_run.add_argument("--lease-seconds", type=float, default=300)
+    queue_run.add_argument("--account", default="", help="persistent account_id or handle for this run")
+    queue_run.add_argument("--account-policy", help="account-quotas.json path; defaults to the persistent user policy")
     queue_run.set_defaults(func=command_queue_run)
     queue_status = queue_sub.add_parser("status", help="show queue counts and recent errors")
     queue_status.add_argument("study_dir")

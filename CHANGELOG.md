@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.24.0 — 2026-11-25
+
+### Added
+
+- Corpus-bound semantic candidates: `04-findings/semantic-candidates.json` now carries a `corpus_snapshot` over every record id + text hash. New counter-evidence or an edited record makes review/export fail with `STALE_CORPUS`; `askovo semantic export --against-snapshot <hash>` allows a clearly labelled historical export.
+- Semantic support sidecar: `askovo semantic support` records `supported|partial|unsupported|contradicted`, context integrity, generalization risk, independent sources, checker and a named reviewer. `contradicted` blocks export, `unsupported` needs an explicit named override, `partial` exports with a warning; the sidecar binds to the current candidate + critic hashes and never assigns E0–E5.
+- Host Agent semantic mode: `askovo analyze --semantic --semantic-provider host` writes `04-findings/semantic-host-request.json`; `askovo semantic import` validates nonce, schema, exact quotes, record ids and forbidden conclusion fields, generates candidate ids/hashes locally, and still requires named review before export.
+- **Business-first needs report (`askovo deliver STUDY --kind needs`)**: business owners, PMs and requirements analysts get a main answer organized as business conclusion → requirement changes → product/business impact → next actions. Demand cards use plain scene/substitute/friction/consequence/outcome language; quotes, evidence ids, audit and engine states move to the appendix, and the chat summary shares the same business text. `--baseline` accepts a previous study or `product-reasoning.json` and reports added/removed chains plus old/new semantic fields in demand, solution and business order. Missing baselines never imply new demand; evidence/status changes and unlinked corpus records stay separate from demand changes. CLI and MCP expose the same projection.
+- **Per-account collection policy**: `skills/askovo/scripts/connectors/account_policy.py` persists platform account id/handle, account tier and `collect` daily caps in `.askovo/account-quotas.json`; rotation resolves the same profile by platform plus account and never treats a publishing quota as a collection quota. Unknown tiers/caps stay `unknown`.
+
+### Tests
+
+- 8 semantic regressions cover added counter-evidence, historical snapshots, contradicted/unsupported/partial support, host import and forbidden host fields.
+- 9 needs-delivery regressions cover business projection, baseline comparison and CLI/MCP parity.
+- 48 account-policy, rotation and queue tests pass; account caps are exact-match and unrelated platforms keep their defaults.
+
 ## 2.23.0 — 2026-11-24
 
 ### Added

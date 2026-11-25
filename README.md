@@ -37,6 +37,7 @@ A polished research answer is only as useful as the material behind it. Askovo h
 |---|---|
 | Decision Brief | Align on the recommendation, supporting evidence, counterexamples and next action |
 | Business plan | Connect target scenes, user needs, product form and the route to market |
+| Needs report | Start with the business conclusion, requirement changes, product/business impact and next action; keep evidence and technical detail in the appendix |
 | Decision Package | Compare opportunities, options, trade-offs and the cheapest useful validation |
 | MRD / PRD / BRD | Give market, requirements and business readers a view built for their work |
 | Decision replay | Revisit how new evidence changed an earlier recommendation |
@@ -56,6 +57,8 @@ askovo case list
 ```
 
 Retraction preserves the original text but removes the record from analysis, demand judgments and audit; restoration preserves it too. E3 correction requires a valid concept test. BRD projects the latest DecisionRecord without implying execution or business acceptance. See [CLI reference](docs/cli.md).
+
+For every external platform, `.askovo/account-quotas.json` persistently records the account identity, tier and optional `collect` daily cap. Direct collection, rotation and queue runs share this policy across processes and conversations. Publishing quotas never become collection quotas; unknown tiers and limits stay unknown. See [platforms and connectors](docs/connectors.md).
 
 ## Run the product-reasoning sample
 
