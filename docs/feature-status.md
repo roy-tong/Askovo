@@ -1,5 +1,14 @@
 # Askovo: implementation status
 
+## Needs-first delivery and account policy (v2.24.0, 2026-11-25)
+
+- `askovo deliver STUDY --kind needs` projects the canonical chain into a business-first needs report: conclusion, requirement changes, product/business impact and next actions; evidence IDs, audit states and quotes stay in the appendix. `--baseline` compares a previous study and separates added/removed chains from evidence and status changes.
+- Semantic candidates now bind to a full-corpus snapshot (`record_id + text hash`). New counter-evidence or an edited record returns `STALE_CORPUS`; `--against-snapshot` is required for a clearly labelled historical export. `askovo semantic support` adds a candidate+critic-bound support sidecar; contradicted support blocks export, unsupported needs a named override, partial exports with a warning.
+- Host Agent mode writes a request for the host to answer, then validates nonce, exact quotes, record ids and forbidden conclusion fields on import. Candidate ids and hashes stay local; named review is still required.
+- `account_policy.py` persists platform account id/handle, account tier and `collect` daily caps in `.askovo/account-quotas.json`; rotation resolves profile by platform plus account. Publishing quotas are never reused as collection quotas; unknown tiers/caps stay unknown.
+- **Verification:** 1028 full-suite tests pass; the release worktree also includes the 9 needs-delivery, 8 semantic and 48 account/rotation/queue regressions.
+
+
 ## Release update, 2026-11-23 · v2.22.1
 
 - `StudyRepository` / `StudyContext` give one `askovo deliver` request an immutable study snapshot; external rewrites during the request no longer mix revisions, and the compatibility JSONL cache is a bounded 32-entry LRU. v2.22.1 removes the 32-file byte-snapshot eviction and deep-copies nested claims.
