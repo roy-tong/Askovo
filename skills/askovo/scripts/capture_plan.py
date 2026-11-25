@@ -6,10 +6,10 @@ counter-evidence ids, chain hash) into an immutable record, requires explicit
 consent boundaries, stop conditions and a named review before authorization,
 and accepts imported notes only as **candidates**.
 
-Candidates never carry an evidence level (``evidence_level=None``), never move
+Unreviewed candidates never carry an evidence level (``evidence_level=None``), never move
 a verdict (``verdict_effect="none"``), and are never registered into
-``02-data/evidence.jsonl``. The existing named-human capture review bridge is
-still the only route from a candidate to canonical evidence.
+``02-data/evidence.jsonl``. The named-human ``review-candidate`` transaction is
+the only route from a candidate to a separate canonical evidence record.
 
 Every rendered document treats external text as data: ``<``/``>``/``&`` are
 escaped, so a note that looks like an instruction stays a string.
@@ -194,8 +194,8 @@ def validate_plan(plan: Dict[str, Any]) -> List[str]:
             continue
         if candidate.get("evidence_level") is not None:
             problems.append(f"candidate {index} carries an evidence level")
-        if candidate.get("state") != "candidate":
-            problems.append(f"candidate {index} is not in candidate state")
+        if candidate.get("state") not in ("candidate", "accepted", "rejected"):
+            problems.append(f"candidate {index} has unknown review state")
     if not isinstance(plan.get("review", []), list):
         problems.append("review must be a list")
     if not isinstance(plan.get("change_log", []), list):
@@ -561,6 +561,12 @@ def start_collection(plan: Dict[str, Any], *, actor: str,
     return updated
 
 
+def candidate_hash(record: Dict[str, Any]) -> str:
+    return _sha_text(_canonical({
+        key: record[key] for key in CANDIDATE_COLUMNS if key != "candidate_id"
+    }))
+
+
 def _candidate_record(candidate: Dict[str, Any], *, plan: Dict[str, Any],
                       stamp: str) -> Dict[str, Any]:
     if _as_str(candidate.get("evidence_level")).strip():
@@ -596,9 +602,7 @@ def _candidate_record(candidate: Dict[str, Any], *, plan: Dict[str, Any],
         "state": "candidate",
         "usable": True,
     }
-    record["candidate_hash"] = _sha_text(_canonical({
-        key: record[key] for key in CANDIDATE_COLUMNS if key != "candidate_id"
-    }))
+    record["candidate_hash"] = candidate_hash(record)
     if not record["candidate_id"]:
         record["candidate_id"] = "cand-" + record["candidate_hash"].split(":", 1)[1][:12]
     return record

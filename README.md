@@ -21,7 +21,7 @@ Askovo helps product teams collect user and market evidence, test demand assumpt
 A polished research answer is only as useful as the material behind it. Askovo helps a team go beyond the information already in the prompt:
 
 - **Collect real material.** Gather community feedback, interview material, competitor records and authorized exports with source and acquisition history.
-- **Test demand assumptions.** Keep concept feedback, prototype responses, willingness-to-pay statements and observed behavior distinct; simulated users do not become demand evidence.
+- **Test demand assumptions.** Keep concept feedback, prototype responses, longitudinal diary entries, willingness-to-pay statements and observed behavior distinct; simulated users do not become demand evidence.
 - **Compare support and counterevidence.** Put exact source quotes, alternative explanations and coverage gaps beside each candidate direction.
 - **Move and revisit the decision.** Turn the material into a Decision Brief and next validation, then revisit the same decision when new evidence arrives.
 

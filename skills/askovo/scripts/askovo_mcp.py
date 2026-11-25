@@ -60,6 +60,10 @@ SERVER_INSTRUCTIONS = (
     "askovo_plan; askovo_check remains the low-level gate command. "
     "askovo_decide_start / askovo_decide_status / askovo_decide_result track one decision question "
     "as a task over the same loop (dry run by default; decide never authorizes or assesses). "
+    "askovo_primary_research exposes local survey/landing/prototype/diary create, import, status and export only; serve, "
+    "public recruitment and candidate accept/reject remain outside MCP. "
+    "askovo_research_watch creates and explicitly ticks durable local decision-review watches; "
+    "it is not a daemon and never performs network collection, promotes evidence or rewrites decisions. "
     "exit codes: 1 = failed gate or claim exceeding evidence, 3 = no feasible platform or "
     "adapter, 4 = safety/ethics gate not acknowledged. These are research statuses to report, "
     "never reasons to substitute a commercial provider, merchant API, saved login, internal "
@@ -424,6 +428,40 @@ def _build_review(arguments: dict[str, Any]) -> argparse.Namespace:
     )
 
 
+def _build_research_watch(arguments: dict[str, Any]) -> argparse.Namespace:
+    action = _string(arguments.get("action"), "action")
+    if action not in ("create", "status", "run", "pause", "resume", "resolution"):
+        raise ValueError("research watch action must be create, status, run, pause, resume or resolution")
+    values = {
+        "watch_action": action,
+        "study_dir": _string(arguments.get("study_dir"), "study_dir"),
+        "question": "",
+        "interval_hours": 0,
+        "by": "",
+        "delta_file": "",
+        "delta_authorized_by": "",
+        "now": "",
+        "due": _boolean(arguments, "due"),
+        "watch_id": "",
+    }
+    if action == "create":
+        interval = arguments.get("interval_hours")
+        if isinstance(interval, bool) or not isinstance(interval, (int, float)) or interval <= 0:
+            raise ValueError("interval_hours must be a positive number")
+        values.update(
+            question=_string(arguments.get("question"), "question"),
+            interval_hours=interval,
+            by=_string(arguments.get("by"), "by"),
+            delta_file=_optional_string(arguments, "delta_file") or "",
+            delta_authorized_by=_optional_string(arguments, "delta_authorized_by") or "",
+        )
+    if action in ("pause", "resume", "resolution"):
+        values["watch_id"] = _string(arguments.get("watch_id"), "watch_id")
+    elif action == "run":
+        values["watch_id"] = _optional_string(arguments, "watch_id") or ""
+    return _namespace(**values)
+
+
 def _build_decision(arguments: dict[str, Any]) -> argparse.Namespace:
     action = _string(arguments.get("action"), "action")
     if action not in ("record", "adopt", "list", "replay"):
@@ -665,6 +703,75 @@ def _tool_platform_map(arguments: dict[str, Any]) -> dict[str, Any]:
             ),
         },
     }
+
+
+def _build_primary_research(arguments: dict[str, Any]) -> argparse.Namespace:
+    action = _string(arguments.get("action"), "action")
+    if action in ("survey_create", "survey_status", "survey_export_candidates"):
+        values = {"survey_action": action.replace("survey_", "").replace("export_candidates", "export-candidates")}
+        if action == "survey_create":
+            values.update(spec=_string(arguments.get("spec"), "spec"),
+                          out=_string(arguments.get("out"), "out"))
+        else:
+            values["dir"] = _string(arguments.get("dir"), "dir")
+            if action == "survey_export_candidates":
+                values["out"] = _string(arguments.get("out"), "out")
+        return _namespace(**values)
+    if action in ("landing_create", "landing_status", "landing_export"):
+        values = {"landing_action": action.replace("landing_", "")}
+        if action == "landing_create":
+            values.update(spec=_string(arguments.get("spec"), "spec"),
+                          out=_string(arguments.get("out"), "out"))
+        else:
+            values["dir"] = _string(arguments.get("dir"), "dir")
+            if action == "landing_export":
+                values.update(design=_string(arguments.get("design"), "design"),
+                              out=_string(arguments.get("out"), "out"))
+        return _namespace(**values)
+    if action == "screening_export":
+        return _namespace(plan_action="screen",
+                          plan=_string(arguments.get("plan"), "plan"),
+                          file=_string(arguments.get("file"), "file"),
+                          by=_string(arguments.get("by"), "by"),
+                          out=_string(arguments.get("out"), "out"), at="")
+    if action in ("prototype_create", "prototype_import", "prototype_status", "prototype_export"):
+        values = {"experiment_kind": "prototype",
+                  "prototype_action": action.replace("prototype_", "")}
+        if action == "prototype_create":
+            values.update(spec=_string(arguments.get("spec"), "spec"),
+                          out=_string(arguments.get("out"), "out"))
+        else:
+            values["dir"] = _string(arguments.get("dir"), "dir")
+            if action == "prototype_import":
+                values.update(file=_string(arguments.get("file"), "file"),
+                              by=_string(arguments.get("by"), "by"))
+            elif action == "prototype_export":
+                values["out"] = _string(arguments.get("out"), "out")
+        return _namespace(**values)
+    if action in ("diary_create", "diary_import", "diary_status", "diary_export"):
+        values = {"experiment_kind": "diary", "diary_action": action.replace("diary_", "")}
+        if action == "diary_create":
+            values.update(spec=_string(arguments.get("spec"), "spec"),
+                          out=_string(arguments.get("out"), "out"))
+        else:
+            values["dir"] = _string(arguments.get("dir"), "dir")
+            if action == "diary_import":
+                values.update(file=_string(arguments.get("file"), "file"),
+                              by=_string(arguments.get("by"), "by"))
+            elif action == "diary_export":
+                values["out"] = _string(arguments.get("out"), "out")
+            else:
+                values["at"] = str(arguments.get("at") or "")
+        return _namespace(**values)
+    raise ValueError("primary research action must be local create/import/status/export; serve and human review stay in CLI")
+
+
+def _command_primary_research(args: argparse.Namespace) -> int:
+    if hasattr(args, "plan_action"):
+        return askovo_cli.command_capture_plan(args)
+    if hasattr(args, "survey_action"):
+        return askovo_cli.command_survey(args)
+    return askovo_cli.command_experiment(args)
 
 
 TOOLS: list[dict[str, Any]] = [
@@ -1386,6 +1493,50 @@ TOOLS.append({
     },
 })
 
+TOOLS.append({
+    "name": "askovo_primary_research",
+    "description": ("Run local survey/landing/prototype/diary and participant-screening create, import, status and export operations. "
+                    "No blocking serve action and no candidate accept/reject: public recruitment and named human review stay outside MCP."),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {"enum": ["survey_create", "survey_status", "survey_export_candidates",
+                                 "landing_create", "landing_status", "landing_export", "screening_export",
+                                 "prototype_create", "prototype_import", "prototype_status", "prototype_export",
+                                 "diary_create", "diary_import", "diary_status", "diary_export"]},
+            "spec": {"type": "string", "description": "survey/landing/prototype/diary registration JSON"},
+            "dir": {"type": "string", "description": "existing local experiment directory"},
+            "design": {"type": "string", "description": "landing shared-export design JSON"},
+            "file": {"type": "string", "description": "prototype/diary local observation JSON/JSONL"},
+            "by": {"type": "string", "description": "prototype/diary observation importer"},
+            "out": {"type": "string", "description": "new output path; never overwritten"},
+            "at": {"type": "string", "description": "diary status: current ISO timestamp for due cells"},
+        },
+        "required": ["action"],
+    },
+})
+
+TOOLS.append({
+    "name": "askovo_research_watch",
+    "description": ("Create, inspect, pause, resume or explicitly tick persistent local decision-review watches. "
+                    "External cron/host scheduling is required. No daemon, collection, evidence promotion or decision mutation."),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {"enum": ["create", "status", "run", "pause", "resume", "resolution"]},
+            "study_dir": {"type": "string", "description": "existing local study directory"},
+            "question": {"type": "string", "description": "create: research question to keep reviewing"},
+            "interval_hours": {"type": "number", "description": "create: positive review interval"},
+            "by": {"type": "string", "description": "create: named research owner"},
+            "delta_file": {"type": "string", "description": "create: authorized local issue export for due syncs"},
+            "delta_authorized_by": {"type": "string", "description": "create: named export/data-rights authorizer"},
+            "watch_id": {"type": "string", "description": "run/pause/resume/resolution: optional or required watch id"},
+            "due": {"type": "boolean", "description": "status: show only due active watches"},
+        },
+        "required": ["action", "study_dir"],
+    },
+})
+
 TOOL_BUILDERS = {
     "askovo_route": (askovo_cli.sure_engine.cli_route, _build_route),
     "askovo_do": (askovo_cli.sure_engine.cli_do, _build_do),
@@ -1402,6 +1553,8 @@ TOOL_BUILDERS = {
     "askovo_chain": (askovo_cli.sure_engine.cli_chain, _build_codebook),
     "askovo_deliver": (askovo_cli.command_deliver, _build_deliver),
     "askovo_proof_export": (askovo_cli.command_proof, _build_proof_export),
+    "askovo_primary_research": (_command_primary_research, _build_primary_research),
+    "askovo_research_watch": (askovo_cli.command_watch, _build_research_watch),
     "askovo_observation": (_command_observation, _build_observation),
     "askovo_semantic": (_command_semantic, _build_semantic),
     "askovo_methods": (askovo_cli.sure_engine.cli_methods, _build_methods),
