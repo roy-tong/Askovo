@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.25.1rc2 — 2026-11-26
 
 ### Fixed
 

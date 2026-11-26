@@ -29,9 +29,24 @@ jobs:
           else
             echo "legacy release/* backfill path; tag ancestry is checked by the release job"
           fi
+      - name: Decide whether the release jobs should run
+        id: ready
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            TAG="${GITHUB_REF#refs/heads/release/}"
+            case "${TAG}" in v*) ;; *) TAG="v${TAG}" ;; esac
+            if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q .; then
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "ready=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
 
   release:
     needs: release-guard
+    if: needs.release-guard.outputs.ready == 'true'
     runs-on: ubuntu-22.04
     steps:
       - name: Resolve release tag
@@ -51,11 +66,15 @@ jobs:
           fetch-depth: 0
       - name: Check out the release tag
         run: |
-          TARGET_SHA="$(git rev-parse "refs/tags/${TAG}^{commit}" 2>/dev/null || true)"
+          TARGET_SHA="$(git rev-parse --verify --quiet "refs/tags/${TAG}^{commit}" 2>/dev/null || true)"
           if [ -z "${TARGET_SHA}" ]; then
             TARGET_SHA="$(git ls-remote origin "refs/tags/${TAG}" | cut -f1)"
           fi
           if [ -z "${TARGET_SHA}" ]; then
+            if [[ "$GITHUB_REF" == refs/heads/release/* ]]; then
+              echo "tag ${TAG} is not published yet; skipping release until the tag is pushed"
+              exit 0
+            fi
             echo "tag ${TAG} not found locally or on origin" >&2
             exit 2
           fi
