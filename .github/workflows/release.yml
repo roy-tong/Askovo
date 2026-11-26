@@ -29,9 +29,24 @@ jobs:
           else
             echo "legacy release/* backfill path; tag ancestry is checked by the release job"
           fi
+      - name: Decide whether the release jobs should run
+        id: ready
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            TAG="${GITHUB_REF#refs/heads/release/}"
+            case "${TAG}" in v*) ;; *) TAG="v${TAG}" ;; esac
+            if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q .; then
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "ready=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
 
   release:
     needs: release-guard
+    if: needs.release-guard.outputs.ready == 'true'
     runs-on: ubuntu-22.04
     steps:
       - name: Resolve release tag

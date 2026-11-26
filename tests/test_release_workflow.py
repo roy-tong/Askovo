@@ -13,6 +13,12 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("exit 0", block)
         self.assertIn("exit 2", block)
 
+    def test_whole_release_job_is_skipped_until_tag_exists(self):
+        text = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        self.assertIn("id: ready", text)
+        self.assertIn('echo "ready=false" >> "$GITHUB_OUTPUT"', text)
+        self.assertIn("if: needs.release-guard.outputs.ready == 'true'", text)
+
     def test_tag_push_still_checks_out_the_tag(self):
         text = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
         self.assertIn("git checkout --detach \"${TARGET_SHA}\"", text)
