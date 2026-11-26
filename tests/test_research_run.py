@@ -11,6 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "skills/askovo/scripts/askovo.py"
 SAMPLE = ROOT / "examples/sample-study"
+sys.path.insert(0, str(ROOT / "skills/askovo/scripts"))
+import research_run  # noqa: E402
 
 
 def run_cli(*args):
@@ -75,6 +77,14 @@ class ResearchRunTests(unittest.TestCase):
         self.assertEqual({"completed": 1}, payload["counts"])
         self.assertTrue((self.study / "02-data" / "raw" / "github").exists())
         self.assertTrue((self.study / "01-sources" / "manifests").exists())
+
+    def test_run_reports_only_newly_collected_source_records(self):
+        research_run.prepare(self.study, self.actions())
+        research_run.authorize(self.study, by="researcher")
+        first = research_run.run(self.study)
+        second = research_run.run(self.study)
+        self.assertEqual(1, first["new_records"])
+        self.assertEqual(0, second["new_records"])
 
     def test_action_platform_must_be_in_study_scope(self):
         actions = self.actions(platform="reddit")

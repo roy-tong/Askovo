@@ -21,8 +21,12 @@ Askovo works independently. The host agent chooses the research path; Askovo sup
 ## Entry points
 
 ```bash
-pipx install askovo
-askovo demo
+# Stable
+<!--OVO:askovo-stable-->pipx install askovo==2.25.0
+askovo demo<!--/OVO:askovo-stable-->
+# Preview
+<!--OVO:askovo-preview-->pipx install askovo==2.25.1rc1
+askovo demo<!--/OVO:askovo-preview-->
 askovo do "Should we rebuild onboarding for small teams?" --domain software --dry-run
 
 # Whole decision task; start is dry-run by default

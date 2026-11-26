@@ -73,6 +73,8 @@ PyPI 是可延后但不得虚假宣传的分发渠道。若发布 PyPI，使用 
 
 ## 6. 发布后复核与回滚
 
+- Stable 与 Preview 必须分别核验。先更新统一官网 `versions.json`，再运行 `python3 assets/sync_versions.py --askovo <repo> --growovo <repo> --verovo <repo>`，确认脚本重复执行无 diff；不得只改 Start 页而漏掉 README 或 `llms.txt`。
+- 用 `https://pypi.org/pypi/askovo/<version>/json` 核验精确版本及分发文件，不能用默认 PyPI 版本推断 RC 是否发布。默认 `pipx install askovo` 对应 Stable，Preview 必须显式写完整版本号。
 - 复核 GitHub About、Topics、Release、Community Profile、Security 入口和旧 URL 重定向。
 - 记录 wheel/sdist 安装与采用指标，不只用 star 判断发布效果。
 - 文档或 CI 失败：停止推广，发布新的补丁版本；不要移动公开 tag。

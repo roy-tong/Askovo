@@ -101,6 +101,9 @@ class LandingExperimentTest(unittest.TestCase):
         cookie = headers["Set-Cookie"].split(";", 1)[0]
         self.assertNotIn("<script>alert(1)</script>", body)
         self.assertIn("anonymous assignment", body)
+        source_hash = "sha256:" + hashlib.sha256(
+            (self.root / landing_experiment.SPEC_NAME).read_bytes()).hexdigest()
+        self.assertIn(source_hash, body)
         self.request(server, cookie=cookie)
         second_status, _, _ = self.request(server)
         self.assertEqual(200, second_status)
@@ -344,9 +347,58 @@ class LandingExperimentTest(unittest.TestCase):
             process_runner=lambda **kwargs: {"exit_code": 0, "error": "",
                 "stdout": b'{"url":"https://example.test/experiment","deployment_id":"deploy-local-1","observed_at":"2026-11-26T00:00:00Z"}',
                 "stderr": b""})
-        self.assertEqual("DEPLOYED", result["status"])
+        self.assertEqual("DEPLOYMENT_REPORTED", result["status"])
         self.assertEqual("https://example.test/experiment", result["url"])
+        self.assertFalse(result["deployment_verified"])
         self.assertFalse(result["external_deployment_executed"])
+
+    def test_deploy_verifies_public_page_against_frozen_source(self):
+        landing_experiment.create(self.spec(), self.root)
+        import landing_deployment
+        spec = self.deployment_spec()
+        spec["verify_url"] = True
+        body = ("<html><head><meta name='askovo-source-sha256' content='%s'></head></html>"
+                % spec["source_sha256"]).encode("utf-8")
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self, limit=-1):
+                return body
+        opened = []
+        def opener(url, timeout):
+            opened.append((url, timeout))
+            return Response()
+        result = landing_deployment.deploy(
+            spec, self.root,
+            process_runner=lambda **kwargs: {"exit_code": 0, "error": "",
+                "stdout": b'{"url":"https://example.test/experiment","deployment_id":"deploy-local-1","observed_at":"2026-11-26T00:00:00Z"}',
+                "stderr": b""}, url_opener=opener)
+        self.assertEqual("DEPLOYMENT_VERIFIED", result["status"])
+        self.assertTrue(result["deployment_verified"])
+        self.assertEqual([("https://example.test/experiment", 5.0)], opened)
+
+    def test_deploy_verification_rejects_a_different_experiment_version(self):
+        landing_experiment.create(self.spec(), self.root)
+        import landing_deployment
+        spec = self.deployment_spec()
+        spec["verify_url"] = True
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self, limit=-1):
+                return b"<meta name='askovo-source-sha256' content='sha256:other'>"
+        result = landing_deployment.deploy(
+            spec, self.root,
+            process_runner=lambda **kwargs: {"exit_code": 0, "error": "",
+                "stdout": b'{"url":"https://example.test/experiment","deployment_id":"deploy-local-1","observed_at":"2026-11-26T00:00:00Z"}',
+                "stderr": b""}, url_opener=lambda url, timeout: Response())
+        self.assertEqual("DEPLOYMENT_REPORTED", result["status"])
+        self.assertFalse(result["deployment_verified"])
+        self.assertEqual("source_hash_mismatch", result["verification_error"])
 
     def test_cli_deploys_through_explicit_adapter(self):
         landing_experiment.create(self.spec(), self.root)
@@ -365,7 +417,7 @@ class LandingExperimentTest(unittest.TestCase):
             "--dir", str(self.root), "--adapter", str(adapter), "--out", str(out),
         ], text=True, capture_output=True)
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        self.assertEqual("DEPLOYED", json.loads(out.read_text())["status"])
+        self.assertEqual("DEPLOYMENT_REPORTED", json.loads(out.read_text())["status"])
 
     def test_cli_create_and_status(self):
         spec_path = Path(self.tmp.name) / "spec.json"

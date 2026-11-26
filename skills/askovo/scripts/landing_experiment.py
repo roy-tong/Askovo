@@ -262,15 +262,17 @@ def _variant(spec, arm_id):
     return next(row for row in spec["variants"] if row["arm_id"] == arm_id)
 
 
-def _page(spec, variant, participant_id):
+def _page(spec, variant, participant_id, source_sha256=""):
     consent = html.escape(spec["consent_notice"])
     title = html.escape(variant["title"])
     body = html.escape(variant["body"])
     cta = html.escape(variant["cta_label"])
-    return """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+    fingerprint = ("<meta name='askovo-source-sha256' content='%s'>"
+                   % html.escape(source_sha256, quote=True)) if source_sha256 else ""
+    return """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>%s
 <title>%s</title><style>body{font:16px/1.6 system-ui;max-width:680px;margin:60px auto;padding:0 20px}button{padding:12px 18px}</style></head>
 <body><main><h1>%s</h1><p>%s</p><form method='post' action='/convert'><button type='submit'>%s</button></form>
-<p><small>%s</small></p></main></body></html>""" % (title, title, body, cta, consent)
+<p><small>%s</small></p></main></body></html>""" % (fingerprint, title, title, body, cta, consent)
 
 
 class LandingServer(ThreadingHTTPServer):
@@ -279,6 +281,8 @@ class LandingServer(ThreadingHTTPServer):
     def __init__(self, address, root):
         self.root = Path(root)
         self.spec = load_spec(self.root)
+        self.source_sha256 = "sha256:" + hashlib.sha256(
+            (self.root / SPEC_NAME).read_bytes()).hexdigest()
         seed = self.spec.get("assignment_seed")
         self.random = random.Random(seed) if seed is not None else secrets.SystemRandom()
         self.assignment_lock = threading.Lock()
@@ -360,7 +364,9 @@ class LandingHandler(BaseHTTPRequestHandler):
         variant = _variant(self.server.spec, arm_id)
         cookie = "ovo_landing_pid=%s; HttpOnly; SameSite=Lax; Path=/" % participant_id
         self._headers(cookie=cookie)
-        self.wfile.write(_page(self.server.spec, variant, participant_id).encode("utf-8"))
+        self.wfile.write(_page(
+            self.server.spec, variant, participant_id,
+            source_sha256=self.server.source_sha256).encode("utf-8"))
 
     def do_POST(self):
         if self.path != "/convert":

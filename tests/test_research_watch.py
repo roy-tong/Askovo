@@ -96,6 +96,29 @@ class ResearchWatchTests(unittest.TestCase):
         self.assertEqual(["collect", "review"], calls)
         self.assertEqual("authorized_research_run_and_local_review", result["execution"])
         self.assertEqual(3, result["collection"]["records"])
+        self.assertEqual(3, result["new_source_records_collected"])
+        self.assertTrue(result["new_source_material_collected"])
+        self.assertFalse(result["new_evidence_collected"])
+
+    def test_serve_executes_authorized_collection_before_review(self) -> None:
+        self.create()
+        import research_run
+        research_run.state_path(self.study).parent.mkdir(parents=True, exist_ok=True)
+        research_run.state_path(self.study).write_text("{}", encoding="utf-8")
+        calls = []
+        def collected(*args, **kwargs):
+            calls.append("collect")
+            return {"new_records": 2, "state": {"status": "completed", "actions": [
+                {"id": "A1", "state": "completed", "result": {"records": 2}}]}}
+        def reviewed(*args, **kwargs):
+            calls.append("review")
+            return {"status": "completed", "runs": [{"status": "completed"}]}
+        with mock.patch("research_run.run", side_effect=collected), \
+                mock.patch.object(research_watch, "run_due", side_effect=reviewed):
+            result = research_watch.serve(self.study, once=True, now=self.now)
+        self.assertEqual(["collect", "review"], calls)
+        self.assertEqual(2, result["new_source_records_collected"])
+        self.assertTrue(result["new_source_material_collected"])
         self.assertFalse(result["new_evidence_collected"])
 
     def test_outbox_is_atomic_with_run_and_delivery_is_persistent(self) -> None:

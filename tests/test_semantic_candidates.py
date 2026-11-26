@@ -115,6 +115,12 @@ class SemanticFixture(unittest.TestCase):
         payload = semantic_candidates.load_candidates(study)
         return payload["candidates"][0]["candidate_id"]
 
+    def assess(self, study: Path, candidate_id: str, reviewer: str = "alice") -> dict:
+        return semantic_candidates.assess_support(
+            study, candidate_id, entailment="supported", context_intact=True,
+            generalization_risk="low", reviewer=reviewer, checker="human",
+            note="quotes and context checked")
+
 
 class UsageAccountingTests(SemanticFixture):
     def test_openai_usage_is_accumulated_and_offline_cost_is_zero(self) -> None:
@@ -424,6 +430,28 @@ class OfflineRunTests(SemanticFixture):
 
 
 class ReviewExportTests(SemanticFixture):
+    def test_evidence_qualification_change_invalidates_corpus_snapshot(self) -> None:
+        study = self.make_study()
+        records = semantic_candidates.load_records(study)
+        before = semantic_candidates.corpus_snapshot(records)
+        records[0]["evidence_level"] = "E5"
+        records[0]["source_url"] = "https://example.com/changed"
+        records[0]["method"] = "different_method"
+        after = semantic_candidates.corpus_snapshot(records)
+        self.assertNotEqual(before["records_sha256"], after["records_sha256"])
+
+    def test_not_assessed_support_cannot_export_an_observation(self) -> None:
+        study = self.make_study()
+        self.run_offline(study)
+        candidate_id = self.first_candidate(study)
+        semantic_candidates.review_candidate(
+            study, candidate_id, "accept", reviewer="alice", note="quotes checked")
+        result = semantic_candidates.export_observations(
+            study, study / "01-sources" / "semantic-observations", by="alice")
+        self.assertEqual(0, result["exported_count"])
+        self.assertTrue(any("not assessed" in row["reason"]
+                            for row in result["skipped"]))
+
     def test_review_requires_a_critic_pass(self) -> None:
         study = self.make_study()
         records = semantic_candidates.records_by_id(semantic_candidates.load_records(study))
@@ -475,6 +503,7 @@ class ReviewExportTests(SemanticFixture):
             study, candidate_id, "accept", reviewer="alice", note="quotes checked")
         self.assertEqual("reviewed", again["status"])
         self.assertEqual(2, len(semantic_candidates.load_reviews(study)))
+        self.assess(study, candidate_id)
         store = study / "01-sources" / "semantic-observations"
         result = semantic_candidates.export_observations(study, store, by="alice")
         self.assertEqual(1, result["exported_count"])
@@ -572,6 +601,7 @@ class ReviewExportTests(SemanticFixture):
         candidate_id = self.first_candidate(study)
         semantic_candidates.review_candidate(
             study, candidate_id, "accept", reviewer="alice", note="quotes checked")
+        self.assess(study, candidate_id)
         declared = semantic_candidates.load_candidates(study)["corpus_snapshot"]
         path = study / "02-data" / "evidence.jsonl"
         rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
@@ -609,6 +639,7 @@ class ReviewExportTests(SemanticFixture):
         if second:
             semantic_candidates.review_candidate(
                 study, second, "accept", reviewer="bob", note="ok")
+        self.assess(study, first)
         store = study / "01-sources" / "semantic-observations"
         result = semantic_candidates.export_observations(
             study, store, by="alice")
@@ -625,6 +656,7 @@ class ReviewExportTests(SemanticFixture):
         candidate_id = self.first_candidate(study)
         semantic_candidates.review_candidate(
             study, candidate_id, "accept", reviewer="alice", note="quote reviewed")
+        self.assess(study, candidate_id)
         store = study / "01-sources" / "semantic-observations"
         result = semantic_candidates.export_observations(study, store, by="alice")
         self.assertEqual(1, result["exported_count"])
@@ -644,6 +676,7 @@ class ReviewExportTests(SemanticFixture):
         candidate_id = self.first_candidate(study)
         semantic_candidates.review_candidate(
             study, candidate_id, "accept", reviewer="alice", note="ok")
+        self.assess(study, candidate_id)
         store = study / "01-sources" / "semantic-observations"
         semantic_candidates.export_observations(study, store, by="alice")
         code = observation.cmd_export(SimpleNamespace(
@@ -699,6 +732,7 @@ class ReviewExportTests(SemanticFixture):
         candidate_id = self.first_candidate(study)
         semantic_candidates.review_candidate(
             study, candidate_id, "accept", reviewer="alice", note="ok")
+        self.assess(study, candidate_id)
         store = study / "01-sources" / "semantic-observations"
         first = semantic_candidates.export_observations(study, store, by="alice")
         second = semantic_candidates.export_observations(study, store, by="alice")
@@ -757,6 +791,7 @@ class HostModeTests(SemanticFixture):
         self.assertTrue(candidate_id.startswith("host-"))
         semantic_candidates.review_candidate(
             study, candidate_id, "accept", reviewer="alice", note="checked")
+        self.assess(study, candidate_id)
         store = study / "01-sources" / "semantic-observations"
         exported = semantic_candidates.export_observations(study, store, by="alice")
         self.assertEqual(1, exported["exported_count"])
@@ -833,6 +868,7 @@ class SemanticCliTests(SemanticFixture):
                            "--decision", "accept", "--reviewer", "alice",
                            "--note", "quote reviewed")
         self.assertEqual(0, reviewed.returncode, reviewed.stdout + reviewed.stderr)
+        self.assess(study, candidate_id)
         exported = run_cli("semantic", "export", str(study), "--by", "alice")
         self.assertEqual(0, exported.returncode, exported.stdout + exported.stderr)
         payload = json.loads(exported.stdout)
