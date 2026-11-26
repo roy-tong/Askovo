@@ -1,14 +1,13 @@
-# Askovo site
+# Askovo website entry
 
-> Build product decisions on real evidence. Askovo helps product teams collect user and market material, test demand assumptions, preserve source and counterevidence links, and revisit the same decision as evidence changes. Simulated users and model-generated interviews are not real demand evidence.
+Askovo is now presented inside the unified OVO website, not as a separately styled homepage.
 
-Pages: / (landing, capability boundaries table, need-validation method with a five-judgment worked example, local 30s verification) · /first-look.html (task intake: mailto draft with 5-field template; scope and fee agreed per task, no public price list) · /claims.html (what we claim and never claim; six conclusion types; what tests prove) · /faq.html (Chinese FAQ: difference from generic AI reports, E0-E5 in plain words, data sources and no-scraping boundaries, free/paid boundary, 30s local verification, deliverables, family relations) · /guides/need-validation.html (Chinese guide: spoken intent vs observed behavior — four misreadings, E2 substitute-behavior checklist, grading conclusions, three do-it-now steps, where the product automates) · /glossary.html (E0-E5 level-by-level definitions, seven-node chain, SURE engine boundary, reading aids, overclaim).
+- Unified product home: https://roy-tong.github.io/ovo/
+- English home: https://roy-tong.github.io/ovo/en.html
+- Real cases: https://roy-tong.github.io/ovo/cases.html
+- Engineering journal: https://roy-tong.github.io/ovo/journal.html
+- Get started: https://roy-tong.github.io/ovo/start.html
+- Askovo repository and full agent entry: https://github.com/roy-tong/Askovo (repo-root llms.txt)
+- Current capabilities: https://github.com/roy-tong/Askovo/blob/main/docs/feature-status.md
 
-English mirror (/en/, same six pages, reciprocal hreflang, x-default points at the Chinese page): /en/index.html · /en/first-look.html · /en/claims.html · /en/faq.html · /en/glossary.html · /en/guides/need-validation.html.
-
-Canonical repo and full agent entry: https://github.com/roy-tong/Askovo (see repo-root llms.txt for commands, protocols, and data contracts). Synthetic demo proves structure self-consistency only — never real demand, market size, release readiness, or commercial truth.
-
-- [Replay a synthetic decision after a mapped contradiction](https://roy-tong.github.io/Askovo/examples/decision-replay.html)
-
-- [OVO Discord community](https://discord.gg/UqrM8MCXb)
-- [OVO product updates on X](https://x.com/elliwoodtong)
+Deep product guides and examples remain at their existing Askovo URLs, including /examples/decision-replay.html, /guides/need-validation.html, /first-look.html, /claims.html and /faq.html.

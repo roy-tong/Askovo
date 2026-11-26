@@ -25,7 +25,7 @@ class ResearchWatchMcpTest(unittest.TestCase):
     def test_manifest_exposes_only_local_watch_actions(self) -> None:
         tool = next(row for row in askovo_mcp.TOOLS if row["name"] == "askovo_research_watch")
         actions = tool["inputSchema"]["properties"]["action"]["enum"]
-        self.assertEqual({"create", "status", "run", "pause", "resume", "resolution"}, set(actions))
+        self.assertEqual({"create", "status", "run", "execute", "pause", "resume", "resolution"}, set(actions))
         self.assertFalse(any("serve" in action or "collect" in action for action in actions))
 
     def test_mcp_create_run_pause_resume_and_status(self) -> None:

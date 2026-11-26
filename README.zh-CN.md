@@ -6,61 +6,56 @@
 
 # Askovo
 
-**好产品，先从真实证据开始。**
+**发现那些你原本不知道的真实需求。**
 
-Askovo 帮产品团队汇集用户与市场证据、检验需求假设，再决定做什么、不做什么。它在现有 Agent 工作流上补上研究执行、来源追踪、反证和需求验证记录。
+Askovo 是一项 AI Native 研究服务，面向需要做产品决定的团队。带来一个产品想法、一项待验证假设或一个已上线产品。你的 Agent 可以借助 Askovo 找到真实用户与市场证据、检验需求，并在证据变化时重新复审决定。
 
-[官网](https://roy-tong.github.io/Askovo/) · [反证重放](https://roy-tong.github.io/Askovo/examples/decision-replay.html) · [快速开始](docs/quickstart.md) · [产品推理方法](docs/product-reasoning.md)
+[OVO 统一官网](https://roy-tong.github.io/ovo/) · [决定重放](https://roy-tong.github.io/Askovo/examples/decision-replay.html) · [快速开始](docs/quickstart.md) · [当前能力](docs/feature-status.md)
 
 [![CI](https://github.com/roy-tong/Askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/Askovo/actions/workflows/tests.yml)
 [![PyPI](https://img.shields.io/pypi/v/askovo)](https://pypi.org/project/askovo/)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
-## 通用 Agent 会推理，Askovo 把真实证据带进研究
+## 通用 Agent 能设计研究，Askovo 带回真实证据
 
-一份漂亮的研究答案，价值取决于背后的材料。Askovo 帮团队走出已有上下文，继续获得和检验新证据：
+当模型已经拥有足够上下文，生成一个看似合理的答案并不昂贵。真正昂贵的是找到不同意见的用户、人们已经在用的替代方案、与产品宣讲相矛盾的行为，以及那个应该改变研发顺序的结果。
 
-- **采集真实材料**：汇集社区反馈、访谈材料、竞品记录和授权导出，保留来源与采集历史。
-- **检验需求假设**：区分概念反馈、原型反馈、多日日记记录、付费意愿表达和真实行为；模拟用户不能成为需求证据。
-- **比较支持与反证**：把原文引用、替代解释和覆盖缺口放在候选方向旁边。
-- **推进并复审决定**：形成 Decision Brief 和下一验证，新证据到来时继续复审同一个决定。
+Askovo 为你正在使用的 Agent 提供一套研究服务：来源追踪、反证、验证记录和可持续复审的决定状态。
 
-| 通用 Agent | Askovo |
-| --- | --- |
-| 帮助设计研究、分析已有材料、起草建议 | 增加采集、证据血缘、需求验证记录和决定状态 |
-| 能根据当前上下文生成合理答案 | 让支持、反例和未知项跟着受影响的主张走 |
-| 能为不同读者改写报告 | 从同一条研究链投影 Decision Brief、业务方案、MRD、PRD 和 BRD |
+### 三种研究服务
 
-## 你可以做出什么
+| 服务 | 最小输入 | 业务交付 |
+| --- | --- | --- |
+| **Opportunity Research** | 一个行业、技术或产品想法 | 真实用户问题、现有替代方案、反证，以及有实证基础的机会判断 |
+| **Demand Validation** | 一项需求假设或产品概念 | 参与者筛选、本地实验契约、概念/原型观察和明确的验证结果 |
+| **Product Intelligence** | 一个已上线产品 | 持续研究 Watch、增量证据，以及不断变化的用户、竞品和需求图景 |
 
-| 交付物 | 帮团队完成什么 |
-|---|---|
-| Decision Brief | 对齐建议、支持依据、反例和下一动作 |
-| 业务方案 | 串起目标场景、用户需求、产品形态和走向市场的路径 |
-| 需求研究报告 | 先读业务结论、需求变化、产品/商业影响和下一步；证据与技术细节放入附录 |
-| 决策包 | 比较机会、选项、代价和最值得先做的验证 |
-| MRD / PRD / BRD | 给市场、需求与商业读者各自适用的工作视图 |
-| 决策重放 | 回看新证据如何改变早先的建议 |
+第一项服务创造第一次惊喜：**“我发现了原本不知道的重要问题。”** 第二项帮助真实决定，第三项让决定随证据持续更新。
 
-所有交付物来自同一条推理链：**场景 → 用户 → 痛点 → 需求 → 特性 → 产品 → 商业**。不同读者看到不同视图，不需要再对几版结论。
+## 目标不是生成更好看的报告
 
-## 不再手改研究数据
+一个好的首次结果，会改变团队接下来做什么：
 
-研究合同、链级字段、商业节点、需求判断和角色工作台都有正式写接口。CSV 导入识别 `记录编号 / 内容 / 证据等级 / 来源 / 采集时间`；同一正文不会重复计数，同编号不同正文会在写入前拒绝整批。
+- **发现未知。** 真实用户讨论和替代方案，让原始 brief 里没有的问题浮出来。
+- **检验假设。** 概念、原型、日记和价格敏感记录，始终与真实支付和市场普遍性分开。
+- **改变或维持决定。** Decision Brief 把支持、反例和未知项放在建议旁边。
+- **再次复审。** 新证据触发有边界的复审，而不是悄悄改写旧结论。
 
-```bash
-askovo chain STUDY set --field context_key --value-json '"after_sales_saas"'
-askovo study STUDY set --field decision.owner --value-json '"周航"'
-askovo evidence STUDY retract R01 --by "赵敏" --reason "纠正误导入记录"
-askovo evidence STUDY restore R01 --by "赵敏"
-askovo case list
-```
+一个真实研究项目分析了 **8 个社区、24 个月内的 109,429 条去重评论**。它把产品顺序从“先做专用硬件”改为“先验证软件和导出”。这是便利样本，不是用户数，也不是市场份额估算。[查看研究方法](docs/product-reasoning.md)。
 
-撤销保留原文，但不再参与分析、需求判断或审计；恢复同样保留原文。E3 纠错必须提供有效概念测试。BRD 会投影最新 DecisionRecord，不代表执行或商业验收已完成。详见 [CLI 参考](docs/cli.md)。
+## 让 Agent 自由组合能力，而不是再学一套工作流
 
-所有外部平台通过 `.askovo/account-quotas.json` 持久记录账号身份、等级和可选的 `collect` 日上限。直接采集、轮转和队列跨进程、跨对话共用这份策略；发帖额度不会冒充采集额度，未知等级和限额保持未知。详见 [平台与连接器](docs/connectors.md)。
+由宿主 Agent 决定研究路径，Askovo 提供可组合能力和保护研究质量的约束：
 
-## 运行产品推理样例
+1. **定义有投入代价的决定。** 从真实产品选择开始，而不是泛泛地“做一份研究”。
+2. **取得缺失材料。** 采集公开内容，或导入已授权的客户反馈、访谈和产品记录。
+3. **主动寻找反证。** 让每个候选方向都保留原文、替代解释和覆盖缺口。
+4. **证据不足时继续验证。** 按需使用参与者筛选和本地实验运行时；公开招募和部署需要单独授权的外部服务。
+5. **交付并复审。** 生成 Decision Brief，记录负责人的选择，在新证据到来时重新打开决定。
+
+CLI、Agent Skill 和 MCP 共用同一研究引擎。既可以使用高阶决定入口，也可以把采集、分析、实验和证据导出作为原子能力自由组合。
+
+## 运行离线样例
 
 ```bash
 pipx install askovo
@@ -68,34 +63,34 @@ askovo demo
 askovo do "要不要为小团队重做新手引导？" --domain software --dry-run
 ```
 
-离线合成样例展示了 Askovo 如何组织研究、关联证据，并把一个问题变成可讨论的产品判断。[看一条反证如何改变决定](https://roy-tong.github.io/Askovo/examples/decision-replay.html)。
+这个合成样例展示一项研究如何变成可复核的产品判断。[看看一条反证如何改变决定](https://roy-tong.github.io/Askovo/examples/decision-replay.html)。
 
-## 为真实研究执行而设计
-
-1. **定义决定**：从有投入代价的选择开始，而不是泛泛地做一份调研。
-2. **采集与导入**：使用社区反馈、访谈材料、竞品记录、授权导出，以及概念或原型反馈。
-3. **带着来源分析**：定量与语义分析都要回到原始材料和反例。
-4. **验证并决定**：区分口头兴趣、付费意愿和真实行为；负责人确定下一步，并随证据变化复审。
-
-可以直接使用 CLI，也可以把 Askovo 作为 Agent Skill 接入工作流，或通过 MCP 调用同一套行为。采集、分析、访谈和证据分级为产品判断服务，不代替判断。
+处理一项完整决定任务：
 
 ```bash
-# 安装 Agent Skill
-bash scripts/install-skill.sh
-
-# CLI 与 MCP 共用同一引擎
-askovo decision --help
-askovo mcp
+askovo decide start --input task.json
+askovo decide status TASK_ID
+askovo decide brief TASK_ID --format md
 ```
 
-## 继续探索
+外部采集需要来源授权。候选生成与人工语义复核保持分离，模拟用户永远不会成为需求证据。
+
+## 已经证明什么，下一步验证什么
+
+- **当前可用：** 研究采集与导入、证据溯源、反证复核、Decision Brief、参与者筛选、本地问卷/落地页/原型/日记实验、研究 Watch 和 Proof 导出。
+- **下一步验证：** 真实参与者招募、公网实验托管、更多产品事件数据源，以及由宿主 Agent 主导的持续研究。
+- **仍待用户证明：** 外部用户独立完成首次任务、同一负责人进行第二次决定复审，以及持续的外部采用。
+
+实现边界见[功能状态](docs/feature-status.md)。本地实验或结构检查通过，不代表已经完成招募、需求证明或产品验收。
+
+## 继续了解
 
 - [快速开始](docs/quickstart.md)
+- [需求验证指南](https://roy-tong.github.io/Askovo/guides/need-validation.html)
 - [产品与商业推理](docs/product-reasoning.md)
 - [Decision Brief](docs/decision-brief.md)
-- [岗位与行业方法](docs/product-methodology.md)
 - [平台与连接器](docs/connectors.md)
 - [CLI 参考](docs/cli.md)
 - [Agent Skill](skills/askovo/SKILL.md) · [llms.txt](llms.txt) · [AGENTS.md](AGENTS.md)
 
-Askovo 以 MIT 开源。通过[任务页](https://roy-tong.github.io/Askovo/first-look.html)带来一个产品决定，或在 [GitHub](https://github.com/roy-tong/Askovo/issues) 提交可复现问题。
+Askovo 以 MIT 协议开源。通过[任务页](https://roy-tong.github.io/Askovo/first-look.html)带来一项有投入代价的产品决定，或在 [GitHub](https://github.com/roy-tong/Askovo/issues) 提交可复现的问题。

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import http.client
+import importlib.util
 import json
 import subprocess
 import sys
@@ -8,6 +10,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "skills/askovo/scripts/askovo.py"
@@ -16,6 +19,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import landing_experiment  # noqa: E402
+import participant_screening  # noqa: E402
 
 
 class LandingExperimentTest(unittest.TestCase):
@@ -70,8 +74,8 @@ class LandingExperimentTest(unittest.TestCase):
             },
         }
 
-    def start(self, maximum=10):
-        landing_experiment.create(self.spec(maximum), self.root)
+    def start(self, maximum=10, spec=None):
+        landing_experiment.create(spec or self.spec(maximum), self.root)
         server = landing_experiment.create_server(self.root, port=0)
         self.servers.append(server)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -234,6 +238,134 @@ class LandingExperimentTest(unittest.TestCase):
         self.assertEqual("ovo.experiment-contract/1", payload["schema"])
         second = subprocess.run(argv, text=True, capture_output=True)
         self.assertEqual(1, second.returncode)
+
+    def test_enrollment_window_rejects_late_new_participants(self):
+        spec = self.spec()
+        spec["window"] = {"start": "2026-11-20T00:00:00Z", "end": "2026-11-21T00:00:00Z"}
+        landing_experiment.create(spec, self.root)
+        with mock.patch.object(landing_experiment, "_now", return_value="2026-11-22T00:00:00Z"):
+            server = landing_experiment.create_server(self.root, port=0)
+            self.servers.append(server)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            self.addCleanup(thread.join, 2)
+            status, _, body = self.request(server)
+            self.assertEqual(503, status)
+            self.assertIn("enrollment_closed", body)
+            report = landing_experiment.status(self.root)
+            self.assertEqual(0, report["totals"]["assignments"])
+            self.assertEqual("enrollment_closed", report["stop_reason"])
+
+    def test_existing_participant_can_convert_during_outcome_window(self):
+        spec = self.spec()
+        spec["window"] = {"start": "2026-11-20T00:00:00Z", "end": "2026-11-21T00:00:00Z"}
+        spec["outcome_window"] = {"start": "2026-11-20T00:00:00Z", "end": "2026-11-25T00:00:00Z"}
+        with mock.patch.object(landing_experiment, "_now", return_value="2026-11-20T12:00:00Z"):
+            server = self.start(spec=spec)
+            status, headers, _ = self.request(server)
+        self.assertEqual(200, status)
+        cookie = headers["Set-Cookie"].split(";", 1)[0]
+        with mock.patch.object(landing_experiment, "_now", return_value="2026-11-23T12:00:00Z"):
+            self.assertEqual(503, self.request(server)[0])
+            self.assertEqual(200, self.request(server, method="POST", path="/convert", cookie=cookie)[0])
+        report = landing_experiment.status(self.root)
+        self.assertEqual(1, report["totals"]["assignments"])
+        self.assertEqual(1, report["totals"]["conversions"])
+
+    def test_conversion_after_outcome_window_is_not_recorded(self):
+        spec = self.spec()
+        spec["window"] = {"start": "2026-11-20T00:00:00Z", "end": "2026-11-21T00:00:00Z"}
+        spec["outcome_window"] = {"start": "2026-11-20T00:00:00Z", "end": "2026-11-25T00:00:00Z"}
+        with mock.patch.object(landing_experiment, "_now", return_value="2026-11-20T12:00:00Z"):
+            server = self.start(spec=spec)
+            status, headers, _ = self.request(server)
+        self.assertEqual(200, status)
+        cookie = headers["Set-Cookie"].split(";", 1)[0]
+        with mock.patch.object(landing_experiment, "_now", return_value="2026-11-26T12:00:00Z"):
+            status, _, body = self.request(server, method="POST", path="/convert", cookie=cookie)
+            self.assertEqual(410, status)
+            self.assertIn("outcome_closed", body)
+        self.assertEqual(0, landing_experiment.status(self.root)["totals"]["conversions"])
+
+    def test_registered_eligibility_token_is_required_and_deduplicated(self):
+        token = "eligible-token"
+        spec = self.spec()
+        spec["eligibility"] = {
+            "screening_sha256": "sha256:" + "a" * 64,
+            "registry": [{"token_sha256": "sha256:" + hashlib.sha256(token.encode()).hexdigest(),
+                          "participant_ref_hash": "sha256:" + "b" * 64}],
+        }
+        server = self.start(spec=spec)
+        self.assertEqual(403, self.request(server)[0])
+        self.assertEqual(403, self.request(server, path="/?token=wrong")[0])
+        status, headers, _ = self.request(server, path="/?token=" + token)
+        self.assertEqual(200, status)
+        first_cookie = headers["Set-Cookie"].split(";", 1)[0]
+        status, headers, _ = self.request(server, path="/?token=" + token)
+        self.assertEqual(200, status)
+        self.assertEqual(first_cookie, headers["Set-Cookie"].split(";", 1)[0])
+        self.assertEqual(1, landing_experiment.status(self.root)["totals"]["assignments"])
+        self.assertNotIn(token, json.dumps(landing_experiment.export_experiment(
+            self.root, self.export_design(), "2.25.0")))
+
+    def test_screening_issues_tokens_only_to_research_ready_participants(self):
+        document = participant_screening.build(
+            {"plan_id": "p1", "target_participants": {"criteria": "target user", "count": 2}},
+            [{"participant_ref": "ready", "source_ref": "screen-1", "reason": "qualified",
+              "eligible": True, "evidence_refs": ["evidence-1"], "consent_state": "accepted"},
+             {"participant_ref": "pending", "source_ref": "screen-2", "reason": "consent pending",
+              "eligible": True, "evidence_refs": ["evidence-2"], "consent_state": "pending"}],
+            reviewed_by="research-owner")
+        issue = getattr(participant_screening, "issue_tokens", None)
+        self.assertIsNotNone(issue)
+        invitations = issue(document, "landing-demo")
+        self.assertEqual(1, len(invitations["invitations"]))
+        self.assertEqual(1, len(invitations["eligibility"]["registry"]))
+        self.assertNotIn("pending", json.dumps(invitations))
+        self.assertNotIn("ready", json.dumps(invitations["eligibility"]))
+
+    def deployment_spec(self):
+        digest = hashlib.sha256((self.root / landing_experiment.SPEC_NAME).read_bytes()).hexdigest()
+        return {
+            "schema": "askovo.landing-deployment/1",
+            "deployment_id": "deploy-local-1",
+            "source_sha256": "sha256:" + digest,
+            "authorization": {"authorized_by": "owner", "authorization_ref": "deploy-approval-1"},
+            "argv": ["fake-deploy"], "timeout_seconds": 5,
+            "external_deployment": False,
+        }
+
+    def test_deploy_adapter_binds_source_and_returns_public_url(self):
+        landing_experiment.create(self.spec(), self.root)
+        self.assertIsNotNone(importlib.util.find_spec("landing_deployment"))
+        import landing_deployment
+        result = landing_deployment.deploy(
+            self.deployment_spec(), self.root,
+            process_runner=lambda **kwargs: {"exit_code": 0, "error": "",
+                "stdout": b'{"url":"https://example.test/experiment","deployment_id":"deploy-local-1","observed_at":"2026-11-26T00:00:00Z"}',
+                "stderr": b""})
+        self.assertEqual("DEPLOYED", result["status"])
+        self.assertEqual("https://example.test/experiment", result["url"])
+        self.assertFalse(result["external_deployment_executed"])
+
+    def test_cli_deploys_through_explicit_adapter(self):
+        landing_experiment.create(self.spec(), self.root)
+        script = Path(self.tmp.name) / "deployer.py"
+        script.write_text(
+            "import json\nprint(json.dumps({'url':'https://example.test/experiment',"
+            "'deployment_id':'deploy-local-1','observed_at':'2026-11-26T00:00:00Z'}))\n",
+            encoding="utf-8")
+        spec = self.deployment_spec()
+        spec["argv"] = [sys.executable, str(script)]
+        adapter = Path(self.tmp.name) / "adapter.json"
+        adapter.write_text(json.dumps(spec), encoding="utf-8")
+        out = Path(self.tmp.name) / "deployment.json"
+        result = subprocess.run([
+            sys.executable, str(CLI), "experiment", "landing", "deploy",
+            "--dir", str(self.root), "--adapter", str(adapter), "--out", str(out),
+        ], text=True, capture_output=True)
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        self.assertEqual("DEPLOYED", json.loads(out.read_text())["status"])
 
     def test_cli_create_and_status(self):
         spec_path = Path(self.tmp.name) / "spec.json"

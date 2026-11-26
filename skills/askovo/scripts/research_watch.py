@@ -1,8 +1,8 @@
 """Persistent, explicitly ticked research reviews over an existing study.
 
 A watch schedules local decision reviews and optional authorized local issue-delta
-syncs. It does not perform network collection, promote evidence, rewrite judgments,
-or provide a background worker.
+syncs. It does not perform network collection, promote evidence or rewrite judgments.
+The optional serve command runs ticks without installing a daemon by default.
 """
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import decision_review
+import notification_outbox
 import research_delta
 import write_integrity
 from study_context import StudyRepository
@@ -77,6 +78,7 @@ def _find(state: Dict[str, Any], watch_id: str) -> Dict[str, Any]:
 def _source_fingerprint(study_dir: Path) -> str:
     manifest = StudyRepository(study_dir).version_manifest()
     excluded = {STATE_RELATIVE.as_posix(), HISTORY_RELATIVE.as_posix(),
+                notification_outbox.OUTBOX_RELATIVE.as_posix(),
                 write_integrity.JOURNAL_RELATIVE.as_posix(), write_integrity.LOCK_RELATIVE.as_posix()}
     projected = {key: value for key, value in manifest.items() if key not in excluded}
     canonical = json.dumps(projected, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -158,7 +160,7 @@ def status(study_dir: Path, *, now: Optional[str] = None,
         "watch_count": len(watches),
         "due_count": sum(1 for watch in watches if watch["due"]),
         "watches": watches,
-        "scheduler": "external_tick_required",
+        "scheduler": "external_tick_or_watch_serve",
         "execution": LOCAL_ONLY,
         "new_evidence_collected": False,
     }
@@ -194,7 +196,7 @@ def run_due(study_dir: Path, *, watch_id: str = "",
                     and _instant(watch.get("next_due_at")) <= instant]
         if not selected:
             return {"schema": SCHEMA, "status": "no_due_watches", "runs": [],
-                    "checked_at": stamp, "scheduler": "external_tick_required"}
+                    "checked_at": stamp, "scheduler": "external_tick_or_watch_serve"}
         history = write_integrity.read_jsonl(
             _history_path(study_dir), missing_ok=True, label="research watch history")
         runs: List[Dict[str, Any]] = []
@@ -267,13 +269,88 @@ def run_due(study_dir: Path, *, watch_id: str = "",
         new_records = history[-len(runs):]
         payload = "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in new_records)
         txn.add(HISTORY_RELATIVE, payload, mode="append")
+        event_payload = notification_outbox.events_for_txn(study_dir, runs)
+        if event_payload:
+            txn.add(notification_outbox.OUTBOX_RELATIVE, event_payload, mode="append")
         txn.commit()
     return {
         "schema": SCHEMA,
         "status": "completed" if all(run["status"] == "completed" for run in runs) else "failed",
         "checked_at": stamp,
         "runs": runs,
-        "scheduler": "external_tick_required",
+        "scheduler": "external_tick_or_watch_serve",
         "new_evidence_collected": False,
         "boundary": "A run syncs any configured authorized local export and reviews the study. Source snapshots are not canonical evidence or automatic product decisions.",
+    }
+
+
+def serve(study_dir: Path, *, watch_id: str = "", now: Optional[str] = None,
+          once: bool = False, poll_seconds: float = 300.0, max_cycles: int = 0,
+          clock=None, sleeper=None) -> Dict[str, Any]:
+    """Run due watches from Askovo itself; no host agent is used for the scheduler."""
+    import time
+    if poll_seconds <= 0:
+        raise ValueError("poll_seconds must be positive")
+    if max_cycles < 0:
+        raise ValueError("max_cycles must be non-negative")
+    clock = clock or (lambda: _iso(_instant(None)))
+    sleeper = sleeper or time.sleep
+    cycles = 0
+    started = time.monotonic()
+    while True:
+        cycles += 1
+        instant = _iso(_instant(now)) if now else clock()
+        result = run_due(study_dir, watch_id=watch_id, now=instant)
+        active = [row for row in status(study_dir, now=instant)["watches"]
+                  if row.get("state") == "active"]
+        finished = once or (max_cycles and cycles >= max_cycles) or not active
+        if finished:
+            return {
+                "schema": SCHEMA, "status": "tick_finished" if active else "schedule_finished",
+                "run_status": result["status"], "runs": result.get("runs") or [],
+                "cycles": cycles, "pending_notifications": len(notification_outbox.pending(study_dir)),
+                "operations": {
+                    "host_agent": "not_used", "scheduler_token_usage": 0,
+                    "other_token_usage": "not_measured",
+                    "elapsed_sec": round(time.monotonic() - started, 3),
+                },
+                "new_evidence_collected": False,
+            }
+        sleeper(poll_seconds)
+
+
+def execute_due(study_dir: Path, *, watch_id: str = "", now: Optional[str] = None,
+                max_steps: int = 1) -> Dict[str, Any]:
+    """Run an already-authorized bounded research plan before the local due review."""
+    due = status(study_dir, now=now, due_only=True)
+    selected = [watch for watch in due["watches"]
+                if not watch_id or watch.get("watch_id") == watch_id]
+    if not selected:
+        return {"schema": SCHEMA, "status": "no_due_watches", "runs": [],
+                "scheduler": "external_tick_or_watch_serve", "new_evidence_collected": False}
+    import research_run
+    collected = research_run.run(study_dir, max_steps=max_steps)
+    run_state = collected.get("state") or {}
+    actions = run_state.get("actions") or []
+    records = sum(int((row.get("result") or {}).get("records") or 0) for row in actions)
+    collection = {"status": run_state.get("status"), "run_id": run_state.get("run_id"),
+                  "records": records,
+                  "completed_actions": sum(row.get("state") == "completed" for row in actions)}
+    if run_state.get("status") == "blocked":
+        return {"schema": SCHEMA, "status": "failed", "collection": collection,
+                "review_status": "not_run", "runs": [],
+                "scheduler": "external_tick_or_watch_serve", "new_evidence_collected": False,
+                "canonical_evidence_promoted": False}
+    reviewed = run_due(study_dir, watch_id=watch_id, now=now)
+    return {
+        "schema": SCHEMA,
+        "status": reviewed.get("status"),
+        "execution": "authorized_research_run_and_local_review",
+        "collection": collection,
+        "review_status": reviewed.get("status"),
+        "runs": reviewed.get("runs") or [],
+        "scheduler": "external_tick_or_watch_serve",
+        "new_evidence_collected": False,
+        "canonical_evidence_promoted": False,
+        "boundary": "Collection reuses the separately authorized research-run contract. New source material is not canonical evidence or an automatic decision mutation.",
     }

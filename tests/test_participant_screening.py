@@ -88,6 +88,22 @@ class ParticipantScreeningTest(unittest.TestCase):
             "--file", str(reviews), "--by", "research-owner", "--out", str(out),
         ], text=True, capture_output=True)
         self.assertNotEqual(0, second.returncode)
+    def test_cli_issues_private_invitations_without_distribution(self):
+        plan_path = capture_plan.store_plan(self.plan, self.tmp / "stored")["path"]
+        roster = self.tmp / "roster.json"
+        roster.write_text(json.dumps(participant_screening.build(
+            self.plan, [self.review()], reviewed_by="research-owner")), encoding="utf-8")
+        before = Path(plan_path).read_bytes()
+        out = self.tmp / "invitations.json"
+        result = subprocess.run([
+            sys.executable, str(CLI), "capture", "plan", "invitations", "--plan", plan_path,
+            "--file", str(roster), "--experiment-id", "landing-demo", "--out", str(out),
+        ], text=True, capture_output=True)
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        payload = json.loads(out.read_text())
+        self.assertEqual(1, len(payload["invitations"]))
+        self.assertEqual(0, payload["external_actions"])
+        self.assertEqual(before, Path(plan_path).read_bytes())
 
 
 if __name__ == "__main__":

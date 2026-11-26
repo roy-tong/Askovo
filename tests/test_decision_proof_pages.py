@@ -16,10 +16,14 @@ class DecisionProofPagesTest(unittest.TestCase):
             self.assertNotIn("<script", text)
 
     def test_bilingual_homepages_link_story_and_decision_proof(self):
-        for relative, prefix in (("index.html", "./"), ("en/index.html", "./")):
+        requirements = {
+            "index.html": "https://roy-tong.github.io/ovo/",
+            "en/index.html": "https://roy-tong.github.io/ovo/en.html",
+        }
+        for relative, destination in requirements.items():
             text = (ROOT / "website" / relative).read_text(encoding="utf-8")
-            self.assertIn("Generate Anything. Prove What Matters.", text)
-            self.assertIn(prefix + "examples/decision-replay.html", text)
+            self.assertIn(f'http-equiv="refresh" content="0;url={destination}"', text)
+            self.assertIn("./examples/decision-replay.html", text)
 
 
 if __name__ == "__main__":
