@@ -9,6 +9,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         text = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
         block = text[text.index("TARGET_SHA="):text.index("git checkout --detach")]
         self.assertIn('if [[ "$GITHUB_REF" == refs/heads/release/* ]]; then', block)
+        self.assertIn("rev-parse --verify --quiet", block)
         self.assertIn("exit 0", block)
         self.assertIn("exit 2", block)
 

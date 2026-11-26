@@ -51,7 +51,7 @@ jobs:
           fetch-depth: 0
       - name: Check out the release tag
         run: |
-          TARGET_SHA="$(git rev-parse "refs/tags/${TAG}^{commit}" 2>/dev/null || true)"
+          TARGET_SHA="$(git rev-parse --verify --quiet "refs/tags/${TAG}^{commit}" 2>/dev/null || true)"
           if [ -z "${TARGET_SHA}" ]; then
             TARGET_SHA="$(git ls-remote origin "refs/tags/${TAG}" | cut -f1)"
           fi
