@@ -142,11 +142,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          PRERELEASE=""
+          if [[ "$TAG" == *rc* ]]; then PRERELEASE="--prerelease"; fi
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes-file /tmp/notes.md
+            gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes-file /tmp/notes.md $PRERELEASE
             gh release upload "$TAG" -R "$GITHUB_REPOSITORY" dist/*.whl dist/*.tar.gz --clobber
           else
-            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "Askovo ${TAG#v}" --notes-file /tmp/notes.md dist/*.whl dist/*.tar.gz
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "Askovo ${TAG#v}" --notes-file /tmp/notes.md dist/*.whl dist/*.tar.gz $PRERELEASE
           fi
 
   # ── PyPI: `pipx install askovo` ──

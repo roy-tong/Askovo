@@ -62,7 +62,7 @@ CLI、Agent Skill 和 MCP 共用同一研究引擎。既可以使用高阶决定
 <!--OVO:askovo-stable-->pipx install askovo==2.25.0
 askovo demo<!--/OVO:askovo-stable-->
 # 预发行验收版
-<!--OVO:askovo-preview-->pipx install askovo==2.25.1rc2
+<!--OVO:askovo-preview-->pipx install askovo==2.25.1rc3
 askovo demo<!--/OVO:askovo-preview-->
 askovo do "要不要为小团队重做新手引导？" --domain software --dry-run
 ```
