@@ -1,8 +1,8 @@
 # website/ — GitHub Pages 站点（产品官网）
 
-结构参照 verovo 的打法：**repo README 是落地页，本目录是接单页与 claims 信任页**，两者互相链接。纯静态、零依赖（不用 Google Fonts，国内可达）、无 JS、无表单后端（接单用 mailto 草稿模板）。
+**产品首页已迁入 OVO 统一官网**（`https://roy-tong.github.io/ovo/`），本目录保留接单页、深度指南与 claims 信任页。统一官网集中维护产品、案例、Journal 与开始使用入口；本目录不再维护独立视觉首页。跳转页仅负责兼容旧链接，深度内容继续按原 URL 工作。
 
-- `index.html` — 落地页：痛点句、七节点链、**今天可用什么（能力边界表）**、30 秒本地验证
+- `index.html` — 跳转至 OVO 统一官网；本目录的深度文档继续独立可用
 - `first-look.html` — 接单页：五字段任务模板（mailto 草稿）、**逐案口径**（不公布标准价目）
 - `claims.html` — 主张纪律：六类结论、测试证明什么、永远不做的推断、star 请求句（canonical，仅限三处：免费交付收尾 / 接单页 / 本页）
 - `en/` — 英文镜像：六个页面同名同层级（`index.html`、`first-look.html`、`claims.html`、`faq.html`、`glossary.html`、`guides/need-validation.html`），`lang="en"`、独立 canonical；中英页面双向 `hreflang`（`zh-CN` / `en` / `x-default`→中文页），导航各有 `EN` / `中文` 切换

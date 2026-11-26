@@ -6,61 +6,56 @@
 
 # Askovo
 
-**Build product decisions on real evidence.**
+**Discover the demand you did not know existed.**
 
-Askovo helps product teams collect user and market evidence, test demand assumptions, and decide what to build next. It adds research execution, source traceability, counterexamples and validation records to the agent workflow you already use.
+Askovo is an AI-native research service for product teams. Bring a product idea, an assumption or a live product. Your agent can use Askovo to find real user and market evidence, test demand and revisit the decision as the evidence changes.
 
-[Website](https://roy-tong.github.io/Askovo/) · [Decision replay](https://roy-tong.github.io/Askovo/en/examples/decision-replay.html) · [Quickstart](docs/quickstart.md) · [Method](docs/product-reasoning.md)
+[OVO unified website](https://roy-tong.github.io/ovo/) · [Decision replay](https://roy-tong.github.io/Askovo/en/examples/decision-replay.html) · [Quickstart](docs/quickstart.md) · [Current capabilities](docs/feature-status.md)
 
 [![CI](https://github.com/roy-tong/Askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/Askovo/actions/workflows/tests.yml)
 [![PyPI](https://img.shields.io/pypi/v/askovo)](https://pypi.org/project/askovo/)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
-## A general agent can reason. Askovo brings real evidence into the study.
+## A general agent can design the study. Askovo brings back the evidence.
 
-A polished research answer is only as useful as the material behind it. Askovo helps a team go beyond the information already in the prompt:
+A plausible answer is cheap when the model already has enough context. The expensive part is finding the user who disagrees, the substitute people already rely on, the behavior that contradicts the pitch, and the result that should change the roadmap.
 
-- **Collect real material.** Gather community feedback, interview material, competitor records and authorized exports with source and acquisition history.
-- **Test demand assumptions.** Keep concept feedback, prototype responses, longitudinal diary entries, willingness-to-pay statements and observed behavior distinct; simulated users do not become demand evidence.
-- **Compare support and counterevidence.** Put exact source quotes, alternative explanations and coverage gaps beside each candidate direction.
-- **Move and revisit the decision.** Turn the material into a Decision Brief and next validation, then revisit the same decision when new evidence arrives.
+Askovo gives the agent you already use a research service with provenance, counterevidence, validation records and durable decision state.
 
-| General-purpose agent | Askovo |
-|---|---|
-| Helps frame a study, analyze supplied material and draft a recommendation | Adds collection, evidence provenance, demand-validation records and decision state |
-| Can produce a plausible answer from the current context | Keeps support, counterexamples and unknowns attached to the claims they affect |
-| Can rewrite a report for different readers | Projects the same research chain into a Decision Brief, business plan, MRD, PRD and BRD |
+### Three research services
 
-## What you can make
+| Service | Start with | Business delivery |
+| --- | --- | --- |
+| **Opportunity Research** | An industry, technology or product idea | Real user problems, existing substitutes, counterevidence and an evidence-backed opportunity |
+| **Demand Validation** | A demand assumption or product concept | Participant screening, local experiment contracts, concept/prototype observations and a clear validation result |
+| **Product Intelligence** | A live product | Durable research watches, incremental evidence and a changing picture of users, competitors and demand |
 
-| Deliverable | What it helps the team do |
-|---|---|
-| Decision Brief | Align on the recommendation, supporting evidence, counterexamples and next action |
-| Business plan | Connect target scenes, user needs, product form and the route to market |
-| Needs report | Start with the business conclusion, requirement changes, product/business impact and next action; keep evidence and technical detail in the appendix |
-| Decision Package | Compare opportunities, options, trade-offs and the cheapest useful validation |
-| MRD / PRD / BRD | Give market, requirements and business readers a view built for their work |
-| Decision replay | Revisit how new evidence changed an earlier recommendation |
+The first service creates the magic moment: **“I found something important that I did not know.”** The second helps a real decision. The third keeps the decision current.
 
-Every deliverable comes from one reasoning chain: **scene → user → pain → need → feature → product → business**. You get different views for different readers without reconciling several versions of the conclusion.
+## The goal is not a better-looking report
 
-## Research data without hand-edited JSON
+A good first result changes what the team does next:
 
-Use the formal writers for study contracts, chain-level fields, commercial nodes, demand judgments and role workplans. CSV imports recognize `记录编号 / 内容 / 证据等级 / 来源 / 采集时间`; duplicate text is not counted twice, and conflicting record IDs reject the whole batch before evidence is written.
+- **Find the unknown.** Real user discussions and alternatives reveal needs that were absent from the original brief.
+- **Test the assumption.** Concept, prototype, diary and price-sensitivity records stay distinct from actual payment or market prevalence.
+- **Change or reaffirm a decision.** The Decision Brief keeps support, counterexamples and unknowns beside the recommendation.
+- **Review it again.** New evidence triggers a bounded re-review instead of quietly rewriting an old conclusion.
 
-```bash
-askovo chain STUDY set --field context_key --value-json '"after_sales_saas"'
-askovo study STUDY set --field decision.owner --value-json '"周航"'
-askovo evidence STUDY retract R01 --by "Research owner" --reason "Imported by mistake"
-askovo evidence STUDY restore R01 --by "Research owner"
-askovo case list
-```
+One real research project analyzed **109,429 deduplicated comments across 8 communities over 24 months**. It moved the product sequence from dedicated hardware to software and export validation first. That is a convenience sample, not a user count or a market-share estimate. [Inspect the research method](docs/product-reasoning.md).
 
-Retraction preserves the original text but removes the record from analysis, demand judgments and audit; restoration preserves it too. E3 correction requires a valid concept test. BRD projects the latest DecisionRecord without implying execution or business acceptance. See [CLI reference](docs/cli.md).
+## Built for agents to compose, not for people to learn another workflow
 
-For every external platform, `.askovo/account-quotas.json` persistently records the account identity, tier and optional `collect` daily cap. Direct collection, rotation and queue runs share this policy across processes and conversations. Publishing quotas never become collection quotas; unknown tiers and limits stay unknown. See [platforms and connectors](docs/connectors.md).
+Your host agent decides the research path. Askovo supplies the capabilities and the rules that protect research quality:
 
-## Run the product-reasoning sample
+1. **Frame a consequential decision.** Start with a real choice, not a generic research prompt.
+2. **Acquire what is missing.** Collect public material or import authorized customer feedback, interviews and product records.
+3. **Challenge the answer.** Keep exact source material, alternative explanations and coverage gaps attached to each candidate.
+4. **Validate when evidence is insufficient.** Use participant screening and local experiment runtimes where appropriate; public recruitment and deployment require separately authorized services.
+5. **Deliver and revisit.** Produce a Decision Brief, record the owner’s choice and reopen it when new evidence arrives.
+
+CLI, Agent Skill and MCP share the same research engine. Use the high-level decision entry or compose collection, analysis, experiments and evidence exports as atomic capabilities.
+
+## Run the offline sample
 
 ```bash
 pipx install askovo
@@ -68,36 +63,34 @@ askovo demo
 askovo do "Should we rebuild onboarding for small teams?" --domain software --dry-run
 ```
 
-The offline synthetic sample shows how Askovo structures a study, links evidence and turns a question into a reviewable product judgment. [See how one counterexample changes a decision](https://roy-tong.github.io/Askovo/en/examples/decision-replay.html).
+The synthetic sample shows how a study becomes a reviewable product judgment. [See how a counterexample changes a decision](https://roy-tong.github.io/Askovo/en/examples/decision-replay.html).
 
-## A workflow built for real research execution
-
-1. **Frame the decision.** Start with the choice that has a real cost, not a generic request for research.
-2. **Collect and import.** Use community feedback, interview material, competitor records, authorized exports and concept or prototype feedback.
-3. **Analyze with provenance.** Quantitative and semantic analysis stay linked to exact source material and counterexamples.
-4. **Validate and decide.** Keep stated interest, willingness to pay and observed behavior distinct; the decision owner selects the next move and revisits it as evidence changes.
-
-Use the CLI directly, attach Askovo to your agent as a Skill, or call the same behavior through MCP. Collection, analysis, interviews and evidence grading support the product judgment rather than replacing it.
+For a whole decision task:
 
 ```bash
-# Agent Skill
-bash scripts/install-skill.sh
-
-# CLI and MCP share the same engine
-askovo decision --help
-askovo mcp
+askovo decide start --input task.json
+askovo decide status TASK_ID
+askovo decide brief TASK_ID --format md
 ```
 
-CLI output and the detailed guides under `docs/` are currently Chinese. Commands, JSON fields and audit results are language-independent.
+External collection requires source authorization. Human semantic review remains separate from candidate generation, and simulated users never become demand evidence.
+
+## What is proven, and what comes next
+
+- **Available now:** research collection and imports, evidence provenance, counterexample review, Decision Briefs, participant screening, local survey/landing/prototype/diary runtimes, research watches and proof exports.
+- **Being validated next:** real participant recruitment, public experiment hosting, richer product-event sources and continuous host-led research.
+- **Still to prove with users:** independent first-task success, a second decision review by the same owner and repeated external adoption.
+
+See [feature status](docs/feature-status.md) for the implementation boundary. A local experiment or a passed structural check is not recruitment, demand proof or product acceptance.
 
 ## Continue
 
 - [Quickstart](docs/quickstart.md)
+- [Demand-validation guide](https://roy-tong.github.io/Askovo/guides/need-validation.html)
 - [Product and business reasoning](docs/product-reasoning.md)
 - [Decision Brief](docs/decision-brief.md)
-- [Role and industry methods](docs/product-methodology.md)
 - [Platforms and connectors](docs/connectors.md)
 - [CLI reference](docs/cli.md)
 - [Agent Skill](skills/askovo/SKILL.md) · [llms.txt](llms.txt) · [AGENTS.md](AGENTS.md)
 
-Askovo is MIT open source. Bring a product decision through the [task page](https://roy-tong.github.io/Askovo/first-look.html), or open a reproducible issue on [GitHub](https://github.com/roy-tong/Askovo/issues).
+Askovo is MIT open source. Bring one consequential product decision through the [task page](https://roy-tong.github.io/Askovo/first-look.html), or open a reproducible issue on [GitHub](https://github.com/roy-tong/Askovo/issues).

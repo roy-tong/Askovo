@@ -1023,6 +1023,75 @@ def delegation_view(task: Dict[str, Any], step: Dict[str, Any],
     }
 
 
+def task_result_view(task: Dict[str, Any], step: Dict[str, Any],
+                     refs: List[str], gaps: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Project the shared business-result contract without changing task state."""
+    task_id = str(task.get("task_id") or "")
+    delegation = delegation_view(task, step, refs)
+    status = {
+        "READY": "running",
+        "NEEDS_INPUT": "waiting_external",
+        "NEEDS_REVIEW": "needs_decision",
+        "PARTIAL": "partial_result",
+        "DELIVERED": "completed",
+        "BLOCKED": "unable_to_complete",
+    }[delegation["task_state"]]
+    reason_code = step.get("blocked_reason_code")
+    if status == "running" and reason_code in ("AUTH_REQUIRED", "INPUT_REQUIRED"):
+        status = "waiting_external"
+    elif status == "running" and reason_code == "REVIEW_REQUIRED":
+        status = "needs_decision"
+
+    completed = []
+    names = {Path(ref).name for ref in refs}
+    if names & {"product-reasoning.json", "demand-judgments.json"}:
+        completed.append("Research reasoning artifacts are available for review.")
+    if names & {"brief.md", "brief.json"}:
+        completed.append("The decision brief is available for business-owner review.")
+    if str(task.get("state") or "") == "delivered":
+        completed.append("The decision task was delivered; business acceptance remains separate.")
+    unresolved = int((gaps or {}).get("unresolved") or 0)
+    if status == "running" and unresolved and (completed or refs):
+        status = "partial_result"
+
+    missing = []
+    if reason_code:
+        scope = ("task_input" if status == "waiting_external" else
+                 "research_review" if status == "needs_decision" else "task_execution")
+        missing.append({
+            "code": str(reason_code),
+            "detail": str(step.get("next_required_action") or "Resolve the blocked condition."),
+            "scope": scope,
+            "blocking": True,
+        })
+    if unresolved and status != "completed":
+        missing.append({
+            "code": "RESEARCH_GAPS_OPEN",
+            "detail": "%d research gap(s) remain unresolved." % unresolved,
+            "scope": "research_evidence",
+            "blocking": False,
+        })
+    actor_raw = str(step.get("next_actor") or "")
+    requires_user = actor_raw.startswith("human") or actor_raw in ("business_owner", "reviewer")
+    return {
+        "schema": "ovo.task-result/1",
+        "task_id": task_id,
+        "product": "askovo",
+        "status": status,
+        "completed": completed,
+        "observations": ["Current decision-task state: %s." % (task.get("state") or "unknown")],
+        "evidence_refs": list(refs),
+        "missing_conditions": missing,
+        "next_actions": [{
+            "kind": "instruction",
+            "description": str(step.get("next_required_action") or "Inspect the task status."),
+            "requires_user": requires_user,
+        }],
+        "user_decision_required": status == "needs_decision",
+        "resume_ref": task_id,
+    }
+
+
 def status(workspace: Path, task_id: str) -> Dict[str, Any]:
     """C-01 status projection: state, next actor/action, reason code, budget, gaps."""
     workspace = Path(workspace).resolve()
@@ -1037,6 +1106,8 @@ def status(workspace: Path, task_id: str) -> Dict[str, Any]:
     step = _next_step(workspace, task, loop_summary)
     detail = task.get("state_detail") or {}
     pending_effects = str(task.get("state")) in ("collecting", "interrupted")
+    refs = _artifact_refs(workspace, task)
+    gaps = _gap_view(study_dir, loop_summary)
     return {
         "schema": SCHEMA,
         "task_id": task.get("task_id"),
@@ -1049,11 +1120,12 @@ def status(workspace: Path, task_id: str) -> Dict[str, Any]:
         "blocked_reason_code": step.get("blocked_reason_code"),
         "last_updated_at": task.get("updated_at"),
         "has_pending_external_effect": pending_effects,
-        "artifact_refs": _artifact_refs(workspace, task),
-        "delegation": delegation_view(task, step, _artifact_refs(workspace, task)),
+        "artifact_refs": refs,
+        "delegation": delegation_view(task, step, refs),
+        "task_result": task_result_view(task, step, refs, gaps),
         "plan": task.get("plan") or {},
         "budget": task.get("budget") or {},
-        "gaps": _gap_view(study_dir, loop_summary),
+        "gaps": gaps,
         "candidates": int((loop_summary or {}).get("candidates") or 0),
         "loop_status": (loop_summary or {}).get("status"),
         "loop_stop_reason": (loop_summary or {}).get("stop_reason"),

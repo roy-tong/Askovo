@@ -1,7 +1,9 @@
 """Named participant screening with separate eligibility, consent and readiness."""
 from __future__ import annotations
 
+import hashlib
 import json
+import secrets
 from pathlib import Path
 
 SCHEMA = "askovo.participant-screening/1"
@@ -71,6 +73,38 @@ def build(plan, reviews, *, reviewed_by, reviewed_at=""):
         "source_plan_mutated": False, "recruitment_executed": False,
         "external_actions": 0,
         "boundary": "Named screening and consent declarations only. Research readiness is not recruitment, actual participation, evidence quality, representativeness or a demand verdict.",
+    }
+
+
+def issue_tokens(document, experiment_id):
+    if not isinstance(document, dict) or document.get("schema") != SCHEMA:
+        raise ValueError("participant screening schema must be %s" % SCHEMA)
+    experiment_id = str(experiment_id or "").strip()
+    if not experiment_id:
+        raise ValueError("experiment_id is required")
+    canonical = json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    screening_hash = "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    registry = []
+    invitations = []
+    for row in document.get("participants") or []:
+        if row.get("research_ready") is not True:
+            continue
+        token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        participant_hash = hashlib.sha256(
+            (experiment_id + "\0" + str(row["participant_ref"])).encode("utf-8")).hexdigest()
+        registry.append({"token_sha256": "sha256:" + token_hash,
+                         "participant_ref_hash": "sha256:" + participant_hash})
+        invitations.append({"participant_ref": row["participant_ref"], "token": token})
+    if not registry:
+        raise ValueError("no research-ready participants are eligible for invitations")
+    return {
+        "schema": "askovo.research-eligibility/1",
+        "experiment_id": experiment_id,
+        "eligibility": {"screening_sha256": screening_hash, "registry": registry},
+        "invitations": invitations,
+        "external_actions": 0,
+        "boundary": "Private invitations contain bearer tokens; the experiment registry stores hashes only. Distribution and actual participation remain unproven.",
     }
 
 

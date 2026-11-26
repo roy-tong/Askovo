@@ -1105,12 +1105,32 @@ def _open_model_request(request: urllib.request.Request):
     return opener.open(request, timeout=_timeout())
 
 
+def _empty_usage():
+    return {"status": "not_measured", "prompt_tokens": None,
+            "completion_tokens": None, "total_tokens": None}
+
+
+def _record_usage(provider, payload):
+    observed = payload.get("usage") if isinstance(payload, dict) else None
+    if not isinstance(observed, dict):
+        return
+    for field in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        value = observed.get(field)
+        if type(value) is not int or value < 0:
+            continue
+        if provider.usage[field] is None:
+            provider.usage[field] = 0
+        provider.usage[field] += value
+        provider.usage["status"] = "observed"
+
+
 class OfflineProvider:
     """Deterministic stub used by tests and offline schema runs."""
 
     kind = "offline"
     model = "offline-stub-v1"
     loopback = True
+    usage = {"status": "observed", "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
     def complete(self, messages: Sequence[Dict[str, str]]) -> str:
         user = str(messages[-1].get("content") or "")
@@ -1134,6 +1154,7 @@ class OpenAICompatibleProvider:
         self.key = key
         self.model = model
         self.loopback = _is_loopback(base)
+        self.usage = _empty_usage()
 
     def complete(self, messages: Sequence[Dict[str, str]]) -> str:
         url = _endpoint_url(self.base, "chat/completions")
@@ -1149,6 +1170,7 @@ class OpenAICompatibleProvider:
         try:
             with _open_model_request(request) as response:
                 payload = json.loads(response.read().decode("utf-8"))
+            _record_usage(self, payload)
         except urllib.error.HTTPError as exc:
             detail = exc.read()[:300].decode("utf-8", "replace")
             raise SemanticUnavailable("model request failed: HTTP %s %s" % (exc.code, detail),
@@ -1629,6 +1651,7 @@ def run_semantic_analysis(study_dir: Path, records: Sequence[Dict[str, Any]], *,
         "rejected_count": len(rejected),
         "renamed_ids": renamed,
         "critic": {"status": critic_status, "errors": critic_errors},
+        "operations": {"token_usage": dict(getattr(provider_instance, "usage", None) or _empty_usage())},
         "validation_errors": errors,
         "files": {
             "candidates": str(study_dir / CANDIDATES_REL),

@@ -306,7 +306,7 @@ askovo decide delta A-TASK-1A2B3C4D --since latest-accepted
 - 输入是 `askovo.decision-task/1`（PRD §2.2）；`--question`/`--repo`/`--approved-by`/`--allowed-source`/`--fixture` 是同一文档的命令行形态，`--mode discover|validate` 映射到 `prioritize_features` / `validate_hypothesis`。
 - **默认 dry-run**：`start` 只做规范化、绑定 study、写 loop plan 与 digest；`--run` 才尝试推进，而且只在人工 `loop authorize` 之后。decide 自己绝不 authorize、绝不 `loop assess`。
 - 产品状态是 loop 状态的投影：`created → scoped → collecting → analyzed → review_required → brief_ready → delivered`，异常 `needs_input|blocked|interrupted|cancelled`；`delivered` 不等于 `decision_approved`。
-- 每次 `status` 都返回 C-01 六字段（`next_actor`、`next_required_action`、`blocked_reason_code`、`last_updated_at`、`has_pending_external_effect`、`artifact_refs`）外加 `state`、`budget`、`gaps`。
+- 每次 `status` 都返回 C-01 六字段（`next_actor`、`next_required_action`、`blocked_reason_code`、`last_updated_at`、`has_pending_external_effect`、`artifact_refs`）外加 `state`、`budget`、`gaps`。`task_result` 另按 `ovo.task-result/1` 投影六种业务状态、已完成工作、证据引用、局部缺项、下一步和 `resume_ref`；等待外部条件与需要用户决定分开，交付仍不等于决策批准。
 - 拒绝走稳定的 `reason_code`（`INPUT_REQUIRED` / `AUTH_REQUIRED` / `UNSUPPORTED_SCOPE` / `POLICY_DENIED` / `ARTIFACT_PARTIAL`），stdout 是拒绝文档，退出码 2，不生成貌似成功的任务。
 - 记录上限取 `authorization.max_records` 并同时写入 loop envelope；`cancel` 之后任何 `--run` 都返回 `POLICY_DENIED`，不再读取。
 - MCP 对应 `askovo_decide_start` / `askovo_decide_status` / `askovo_decide_result`，复用同一编排函数；细节见[一问题研究执行器](decide.md)。

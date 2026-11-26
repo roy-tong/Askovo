@@ -31,6 +31,8 @@ class PrimaryResearchMcpTest(unittest.TestCase):
         actions = tool["inputSchema"]["properties"]["action"]["enum"]
         self.assertIn("survey_create", actions)
         self.assertIn("landing_export", actions)
+        self.assertIn("landing_deploy", actions)
+        self.assertIn("screening_invitations", actions)
         self.assertFalse(any("serve" in action for action in actions))
         self.assertNotIn("askovo_primary_review", {row["name"] for row in askovo_mcp.TOOLS})
 

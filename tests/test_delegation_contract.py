@@ -12,6 +12,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 CLI = REPO / "skills" / "askovo" / "scripts" / "askovo.py"
+sys.path.insert(0, str(CLI.parent))
 STATES = {"NEEDS_INPUT", "READY", "NEEDS_REVIEW", "BLOCKED", "PARTIAL", "DELIVERED"}
 CODES = {"INPUT_REQUIRED", "AUTH_REQUIRED", "REVIEW_REQUIRED", "UNSUPPORTED_SCOPE",
          "POLICY_DENIED", "RATE_LIMITED", "STALE_SOURCE",
@@ -75,6 +76,52 @@ class DelegationContractTests(unittest.TestCase):
         self.assertEqual(["github"], block["authorization_scope"]["allowed_sources"])
         self.assertEqual(5, block["authorization_scope"]["max_records"])
         self.assertIsNone(block["authorization_scope"]["approved_by"])
+
+    def test_task_result_waits_for_external_input_without_requesting_a_decision(self):
+        payload = self._status()
+        self.assertIn("task_result", payload)
+        result = payload["task_result"]
+        self.assertEqual("ovo.task-result/1", result["schema"])
+        self.assertEqual("askovo", result["product"])
+        self.assertEqual(self.task_id, result["task_id"])
+        self.assertEqual("waiting_external", result["status"])
+        self.assertFalse(result["user_decision_required"])
+        self.assertEqual(self.task_id, result["resume_ref"])
+        self.assertTrue(result["missing_conditions"])
+        self.assertTrue(result["next_actions"])
+        self.assertTrue(result["next_actions"][0]["requires_user"])
+
+    def test_review_state_maps_to_needs_decision(self):
+        import decide
+        self.assertTrue(hasattr(decide, "task_result_view"))
+        result = decide.task_result_view(
+            {"task_id": "T-review", "state": "review_required"},
+            {"next_actor": "human_reviewer", "next_required_action": "review candidates",
+             "blocked_reason_code": "REVIEW_REQUIRED"}, [])
+        self.assertEqual("needs_decision", result["status"])
+        self.assertTrue(result["user_decision_required"])
+
+    def test_blocked_state_maps_to_unable_to_complete_with_recovery(self):
+        import decide
+        self.assertTrue(hasattr(decide, "task_result_view"))
+        result = decide.task_result_view(
+            {"task_id": "T-blocked", "state": "blocked"},
+            {"next_actor": "human_operator", "next_required_action": "repair the source",
+             "blocked_reason_code": "INTERNAL_ERROR"}, [])
+        self.assertEqual("unable_to_complete", result["status"])
+        self.assertFalse(result["user_decision_required"])
+        self.assertTrue(result["next_actions"])
+
+    def test_open_research_gaps_with_results_map_to_partial_result(self):
+        import decide
+        result = decide.task_result_view(
+            {"task_id": "T-partial", "state": "collecting"},
+            {"next_actor": "askovo", "next_required_action": "continue research"},
+            ["study/04-findings/research-loop.json"], {"unresolved": 2})
+        self.assertEqual("partial_result", result["status"])
+        self.assertFalse(result["user_decision_required"])
+        self.assertEqual("research_evidence", result["missing_conditions"][0]["scope"])
+        self.assertFalse(result["missing_conditions"][0]["blocking"])
 
 
 if __name__ == "__main__":

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.25.1rc1 — 2026-11-26
+
+### Added
+
+- `watch serve` runs recurring reviews without a host agent. Notification events commit with watch history, `watch notifications` lists undelivered events, and injected delivery adapters need receipts. The scheduler reports zero model tokens, while other work stays separately measured.
+- Semantic reports distinguish deterministic zero-token work from observed OpenAI-compatible `usage` totals and unmeasured responses. Candidate and critic calls accumulate usage rather than keeping only the last response.
+- Enrollment/outcome-window enforcement, research-ready eligibility token invitations, hash-only landing assignments, source-bound deployment adapters and high-order `watch execute` orchestration across CLI, Skill and MCP.
+- `decide status` now includes an `ovo.task-result/1` projection with six business states, completed work, evidence references, scoped missing conditions, next actions and a resume reference. It reuses the existing task state and never implies decision approval or background execution.
+
+### Fixed
+
+- Research-watch notification delivery requires a non-empty adapter receipt; empty receipts remain failed and pending.
+
 ## 2.25.0 — 2026-11-26
 
 ### Added

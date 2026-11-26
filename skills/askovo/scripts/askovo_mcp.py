@@ -60,10 +60,10 @@ SERVER_INSTRUCTIONS = (
     "askovo_plan; askovo_check remains the low-level gate command. "
     "askovo_decide_start / askovo_decide_status / askovo_decide_result track one decision question "
     "as a task over the same loop (dry run by default; decide never authorizes or assesses). "
-    "askovo_primary_research exposes local survey/landing/prototype/diary create, import, status and export only; serve, "
+    "askovo_primary_research exposes local survey/landing/prototype/diary create, import, status and export plus explicit token invitations and source-bound deployment; serve, "
     "public recruitment and candidate accept/reject remain outside MCP. "
-    "askovo_research_watch creates and explicitly ticks durable local decision-review watches; "
-    "it is not a daemon and never performs network collection, promotes evidence or rewrites decisions. "
+    "askovo_research_watch creates and explicitly ticks durable local decision-review watches; execute reuses a separately authorized research run before review; "
+    "no path is a daemon, automatically authorizes collection, promotes evidence or rewrites decisions. "
     "exit codes: 1 = failed gate or claim exceeding evidence, 3 = no feasible platform or "
     "adapter, 4 = safety/ethics gate not acknowledged. These are research statuses to report, "
     "never reasons to substitute a commercial provider, merchant API, saved login, internal "
@@ -430,8 +430,8 @@ def _build_review(arguments: dict[str, Any]) -> argparse.Namespace:
 
 def _build_research_watch(arguments: dict[str, Any]) -> argparse.Namespace:
     action = _string(arguments.get("action"), "action")
-    if action not in ("create", "status", "run", "pause", "resume", "resolution"):
-        raise ValueError("research watch action must be create, status, run, pause, resume or resolution")
+    if action not in ("create", "status", "run", "execute", "pause", "resume", "resolution"):
+        raise ValueError("research watch action must be create, status, run, execute, pause, resume or resolution")
     values = {
         "watch_action": action,
         "study_dir": _string(arguments.get("study_dir"), "study_dir"),
@@ -443,6 +443,7 @@ def _build_research_watch(arguments: dict[str, Any]) -> argparse.Namespace:
         "now": "",
         "due": _boolean(arguments, "due"),
         "watch_id": "",
+        "max_steps": 1,
     }
     if action == "create":
         interval = arguments.get("interval_hours")
@@ -457,8 +458,13 @@ def _build_research_watch(arguments: dict[str, Any]) -> argparse.Namespace:
         )
     if action in ("pause", "resume", "resolution"):
         values["watch_id"] = _string(arguments.get("watch_id"), "watch_id")
-    elif action == "run":
+    elif action in ("run", "execute"):
         values["watch_id"] = _optional_string(arguments, "watch_id") or ""
+    if action == "execute":
+        steps = arguments.get("max_steps", 1)
+        if isinstance(steps, bool) or not isinstance(steps, int) or not 1 <= steps <= 20:
+            raise ValueError("max_steps must be an integer from 1 to 20")
+        values["max_steps"] = steps
     return _namespace(**values)
 
 
@@ -717,7 +723,7 @@ def _build_primary_research(arguments: dict[str, Any]) -> argparse.Namespace:
             if action == "survey_export_candidates":
                 values["out"] = _string(arguments.get("out"), "out")
         return _namespace(**values)
-    if action in ("landing_create", "landing_status", "landing_export"):
+    if action in ("landing_create", "landing_status", "landing_export", "landing_deploy"):
         values = {"landing_action": action.replace("landing_", "")}
         if action == "landing_create":
             values.update(spec=_string(arguments.get("spec"), "spec"),
@@ -727,6 +733,9 @@ def _build_primary_research(arguments: dict[str, Any]) -> argparse.Namespace:
             if action == "landing_export":
                 values.update(design=_string(arguments.get("design"), "design"),
                               out=_string(arguments.get("out"), "out"))
+            elif action == "landing_deploy":
+                values.update(adapter=_string(arguments.get("adapter"), "adapter"),
+                              out=_string(arguments.get("out"), "out"))
         return _namespace(**values)
     if action == "screening_export":
         return _namespace(plan_action="screen",
@@ -734,6 +743,12 @@ def _build_primary_research(arguments: dict[str, Any]) -> argparse.Namespace:
                           file=_string(arguments.get("file"), "file"),
                           by=_string(arguments.get("by"), "by"),
                           out=_string(arguments.get("out"), "out"), at="")
+    if action == "screening_invitations":
+        return _namespace(plan_action="invitations",
+                          plan=_string(arguments.get("plan"), "plan"),
+                          file=_string(arguments.get("file"), "file"),
+                          experiment_id=_string(arguments.get("experiment_id"), "experiment_id"),
+                          out=_string(arguments.get("out"), "out"))
     if action in ("prototype_create", "prototype_import", "prototype_status", "prototype_export"):
         values = {"experiment_kind": "prototype",
                   "prototype_action": action.replace("prototype_", "")}
@@ -1495,18 +1510,22 @@ TOOLS.append({
 
 TOOLS.append({
     "name": "askovo_primary_research",
-    "description": ("Run local survey/landing/prototype/diary and participant-screening create, import, status and export operations. "
-                    "No blocking serve action and no candidate accept/reject: public recruitment and named human review stay outside MCP."),
+    "description": ("Run local survey/landing/prototype/diary and participant-screening operations, including private eligibility invitations and explicit source-bound deployment. "
+                    "No blocking serve or candidate accept/reject: public recruitment and named human evidence review stay outside MCP."),
     "inputSchema": {
         "type": "object",
         "properties": {
             "action": {"enum": ["survey_create", "survey_status", "survey_export_candidates",
-                                 "landing_create", "landing_status", "landing_export", "screening_export",
+                                 "landing_create", "landing_status", "landing_export", "landing_deploy",
+                                 "screening_export", "screening_invitations",
                                  "prototype_create", "prototype_import", "prototype_status", "prototype_export",
                                  "diary_create", "diary_import", "diary_status", "diary_export"]},
             "spec": {"type": "string", "description": "survey/landing/prototype/diary registration JSON"},
             "dir": {"type": "string", "description": "existing local experiment directory"},
             "design": {"type": "string", "description": "landing shared-export design JSON"},
+            "adapter": {"type": "string", "description": "landing deployment adapter JSON"},
+            "plan": {"type": "string", "description": "participant capture plan JSON"},
+            "experiment_id": {"type": "string", "description": "screening invitations experiment id"},
             "file": {"type": "string", "description": "prototype/diary local observation JSON/JSONL"},
             "by": {"type": "string", "description": "prototype/diary observation importer"},
             "out": {"type": "string", "description": "new output path; never overwritten"},
@@ -1518,19 +1537,20 @@ TOOLS.append({
 
 TOOLS.append({
     "name": "askovo_research_watch",
-    "description": ("Create, inspect, pause, resume or explicitly tick persistent local decision-review watches. "
-                    "External cron/host scheduling is required. No daemon, collection, evidence promotion or decision mutation."),
+    "description": ("Create, inspect, pause, resume or explicitly tick persistent decision-review watches. Execute reuses a separately authorized research run before review. "
+                    "External cron/host scheduling is required. No daemon, automatic plan authorization, evidence promotion or decision mutation."),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "action": {"enum": ["create", "status", "run", "pause", "resume", "resolution"]},
+            "action": {"enum": ["create", "status", "run", "execute", "pause", "resume", "resolution"]},
             "study_dir": {"type": "string", "description": "existing local study directory"},
             "question": {"type": "string", "description": "create: research question to keep reviewing"},
             "interval_hours": {"type": "number", "description": "create: positive review interval"},
             "by": {"type": "string", "description": "create: named research owner"},
             "delta_file": {"type": "string", "description": "create: authorized local issue export for due syncs"},
             "delta_authorized_by": {"type": "string", "description": "create: named export/data-rights authorizer"},
-            "watch_id": {"type": "string", "description": "run/pause/resume/resolution: optional or required watch id"},
+            "watch_id": {"type": "string", "description": "run/execute/pause/resume/resolution: optional or required watch id"},
+            "max_steps": {"type": "integer", "description": "execute: bounded authorized research steps, 1..20"},
             "due": {"type": "boolean", "description": "status: show only due active watches"},
         },
         "required": ["action", "study_dir"],

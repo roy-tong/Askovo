@@ -34,6 +34,7 @@ import sure_engine  # noqa: E402
 import research_run  # noqa: E402
 import research_loop  # noqa: E402
 import decision_review  # noqa: E402
+import notification_outbox  # noqa: E402
 import decide  # noqa: E402
 import decision_brief  # noqa: E402
 import research_delta  # noqa: E402
@@ -46,6 +47,7 @@ import experiment_export  # noqa: E402
 import primary_candidate_review  # noqa: E402
 import participant_screening  # noqa: E402
 import landing_experiment  # noqa: E402
+import landing_deployment  # noqa: E402
 import prototype_experiment  # noqa: E402
 import survey_experiment  # noqa: E402
 import diary_study  # noqa: E402
@@ -3338,6 +3340,20 @@ def command_watch(args: argparse.Namespace) -> int:
             result = research_watch.status(study_dir, now=args.now, due_only=args.due)
         elif args.watch_action == "run":
             result = research_watch.run_due(study_dir, watch_id=args.watch_id or "", now=args.now)
+        elif args.watch_action == "execute":
+            result = research_watch.execute_due(
+                study_dir, watch_id=args.watch_id or "", now=args.now,
+                max_steps=args.max_steps)
+        elif args.watch_action == "serve":
+            result = research_watch.serve(
+                study_dir, watch_id=args.watch_id or "", now=args.now,
+                once=bool(args.once), poll_seconds=float(args.poll_seconds),
+                max_cycles=int(args.max_cycles))
+        elif args.watch_action == "notifications":
+            items = notification_outbox.pending(study_dir)
+            result = {"schema": "askovo.research-watch-notifications/1",
+                      "status": "ok", "pending": len(items), "items": items,
+                      "outbox": str(notification_outbox._path(study_dir))}
         elif args.watch_action in ("pause", "resume"):
             result = research_watch.set_paused(
                 study_dir, args.watch_id, args.watch_action == "pause", now=args.now)
@@ -3556,6 +3572,16 @@ def command_capture_plan(args: argparse.Namespace) -> int:
                               "participants": len(document["participants"]),
                               "research_ready": document["summary"]["research_ready"],
                               "path": str(out)}, ensure_ascii=False, indent=2))
+            return 0
+        if action == "invitations":
+            invitations = participant_screening.issue_tokens(
+                capture_plan.load_json(Path(args.file)), args.experiment_id)
+            out = participant_screening.write_new(invitations, Path(args.out))
+            print(json.dumps({"status": "created", "schema": invitations["schema"],
+                              "invitations": len(invitations["invitations"]),
+                              "external_actions": 0, "path": str(out),
+                              "boundary": "Private bearer-token file; no invitation was sent."},
+                             ensure_ascii=False, indent=2))
             return 0
         if action == "show":
             print(json.dumps({"status": "ok", "plan": plan},
@@ -6136,6 +6162,15 @@ def command_experiment(args: argparse.Namespace) -> int:
                               "outcome": document["outcome"]["status"],
                               "path": str(out)}, ensure_ascii=False, indent=2))
             return 0
+        if args.landing_action == "deploy":
+            adapter = json.loads(Path(args.adapter).read_text(encoding="utf-8"))
+            document = landing_deployment.deploy(
+                adapter, Path(args.dir), process_runner=landing_deployment.run_process)
+            out = landing_deployment.write_new(document, Path(args.out))
+            print(json.dumps({"status": document["status"], "url": document["url"],
+                              "external_deployment_executed": document["external_deployment_executed"],
+                              "path": str(out)}, ensure_ascii=False, indent=2))
+            return 0 if document["status"] == "DEPLOYED" else 1
         if args.landing_action == "serve":
             server = landing_experiment.create_server(
                 Path(args.dir), host=args.host, port=args.port)
@@ -6573,6 +6608,14 @@ def build_parser() -> argparse.ArgumentParser:
     plan_screen_parser.add_argument("--out", required=True, help="new roster JSON; never overwritten")
     plan_screen_parser.set_defaults(func=command_capture_plan)
 
+    plan_invitations_parser = plan_sub.add_parser(
+        "invitations", help="create private eligibility tokens and a public hash registry; never sends them")
+    plan_invitations_parser.add_argument("--plan", required=True)
+    plan_invitations_parser.add_argument("--file", required=True, help="participant screening roster JSON")
+    plan_invitations_parser.add_argument("--experiment-id", required=True)
+    plan_invitations_parser.add_argument("--out", required=True, help="new private invitation JSON")
+    plan_invitations_parser.set_defaults(func=command_capture_plan)
+
     plan_show_parser = plan_sub.add_parser("show", help="print the stored plan JSON")
     plan_show_parser.add_argument("plan")
     plan_show_parser.set_defaults(func=command_capture_plan)
@@ -6831,7 +6874,7 @@ def build_parser() -> argparse.ArgumentParser:
     review_parser.set_defaults(func=command_review)
 
     watch_parser = subparsers.add_parser(
-        "watch", help="persist recurring local research reviews; an external cron/host must tick them")
+        "watch", help="persist recurring research reviews; use run for external ticks or serve for product ticks")
     watch_sub = watch_parser.add_subparsers(dest="watch_action", required=True)
     watch_create = watch_sub.add_parser("create", help="create a due local-review watch")
     watch_create.add_argument("study_dir")
@@ -6853,6 +6896,26 @@ def build_parser() -> argparse.ArgumentParser:
     watch_run.add_argument("--watch-id", default="")
     watch_run.add_argument("--now", default="", help=argparse.SUPPRESS)
     watch_run.set_defaults(func=command_watch)
+    watch_execute = watch_sub.add_parser(
+        "execute", help="run an already-authorized research action plan before due local reviews")
+    watch_execute.add_argument("study_dir")
+    watch_execute.add_argument("--watch-id", default="")
+    watch_execute.add_argument("--max-steps", type=int, default=1)
+    watch_execute.add_argument("--now", default="", help=argparse.SUPPRESS)
+    watch_execute.set_defaults(func=command_watch)
+    watch_serve = watch_sub.add_parser(
+        "serve", help="run due watches from Askovo without a host agent")
+    watch_serve.add_argument("study_dir")
+    watch_serve.add_argument("--watch-id", default="")
+    watch_serve.add_argument("--once", action="store_true")
+    watch_serve.add_argument("--poll-seconds", type=float, default=300.0)
+    watch_serve.add_argument("--max-cycles", type=int, default=0)
+    watch_serve.add_argument("--now", default="", help=argparse.SUPPRESS)
+    watch_serve.set_defaults(func=command_watch)
+    watch_notifications = watch_sub.add_parser(
+        "notifications", help="list watch events not confirmed delivered")
+    watch_notifications.add_argument("study_dir")
+    watch_notifications.set_defaults(func=command_watch)
     for action in ("pause", "resume"):
         watch_state = watch_sub.add_parser(action)
         watch_state.add_argument("study_dir")
@@ -7435,6 +7498,12 @@ def build_parser() -> argparse.ArgumentParser:
     landing_export.add_argument("--design", required=True)
     landing_export.add_argument("--out", required=True)
     landing_export.set_defaults(func=command_experiment)
+    landing_deploy = landing_sub.add_parser(
+        "deploy", help="run a named-authorized external deployment adapter bound to the experiment source hash")
+    landing_deploy.add_argument("--dir", required=True)
+    landing_deploy.add_argument("--adapter", required=True)
+    landing_deploy.add_argument("--out", required=True, help="new deployment receipt JSON")
+    landing_deploy.set_defaults(func=command_experiment)
     landing_serve = landing_sub.add_parser("serve")
     landing_serve.add_argument("--dir", required=True)
     landing_serve.add_argument("--host", default="127.0.0.1")

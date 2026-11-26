@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "skills/askovo/scripts"
@@ -76,6 +77,68 @@ class ResearchWatchTests(unittest.TestCase):
         resumed = research_watch.set_paused(self.study, "W001", False, now=self.now)
         self.assertEqual("active", resumed["watch"]["state"])
         self.assertEqual(self.now, resumed["watch"]["next_due_at"])
+
+    def test_execute_due_runs_authorized_collection_before_local_review(self) -> None:
+        self.create()
+        execute = getattr(research_watch, "execute_due", None)
+        self.assertIsNotNone(execute)
+        calls = []
+        def collected(*args, **kwargs):
+            calls.append("collect")
+            return {"state": {"status": "completed", "actions": [
+                {"id": "A1", "state": "completed", "result": {"records": 3}}]}}
+        def reviewed(*args, **kwargs):
+            calls.append("review")
+            return {"status": "completed", "runs": [{"status": "completed"}]}
+        with mock.patch("research_run.run", side_effect=collected), \
+                mock.patch.object(research_watch, "run_due", side_effect=reviewed):
+            result = execute(self.study, watch_id="W001", now=self.now, max_steps=1)
+        self.assertEqual(["collect", "review"], calls)
+        self.assertEqual("authorized_research_run_and_local_review", result["execution"])
+        self.assertEqual(3, result["collection"]["records"])
+        self.assertFalse(result["new_evidence_collected"])
+
+    def test_outbox_is_atomic_with_run_and_delivery_is_persistent(self) -> None:
+        import notification_outbox
+        self.create()
+        research_watch.run_due(self.study, now=self.now)
+        self.assertEqual(1, len(notification_outbox.pending(self.study)))
+        research_watch.run_due(self.study, now=self.now)
+        self.assertEqual(1, len(notification_outbox.pending(self.study)))
+        got = notification_outbox.deliver_pending(
+            self.study, lambda event: {"receipt": "offline-watch-delivery"})
+        self.assertEqual(1, got["delivered"])
+        self.assertEqual([], notification_outbox.pending(self.study))
+
+    def test_empty_delivery_receipt_remains_pending(self) -> None:
+        import notification_outbox
+        self.create()
+        research_watch.run_due(self.study, now=self.now)
+        got = notification_outbox.deliver_pending(self.study, lambda event: "")
+        self.assertEqual(1, got["failed"])
+        self.assertEqual(0, got["delivered"])
+        self.assertEqual(1, len(notification_outbox.pending(self.study)))
+
+    def test_serve_runs_without_agent_and_reports_cost_boundary(self) -> None:
+        self.assertTrue(hasattr(research_watch, "serve"))
+        self.create()
+        got = research_watch.serve(self.study, once=True, now=self.now)
+        self.assertEqual("tick_finished", got["status"])
+        self.assertEqual("not_used", got["operations"]["host_agent"])
+        self.assertEqual(0, got["operations"]["scheduler_token_usage"])
+        self.assertEqual("not_measured", got["operations"]["other_token_usage"])
+
+    def test_cli_serve_and_notifications(self) -> None:
+        created = self.run_cli(
+            "watch", "create", str(self.study), "--question", "Track demand changes",
+            "--interval-hours", "12", "--by", "owner", "--now", self.now)
+        self.assertEqual(0, created.returncode, created.stdout + created.stderr)
+        served = self.run_cli("watch", "serve", str(self.study), "--once", "--now", self.now)
+        self.assertEqual(0, served.returncode, served.stdout + served.stderr)
+        self.assertEqual("not_used", json.loads(served.stdout)["operations"]["host_agent"])
+        notifications = self.run_cli("watch", "notifications", str(self.study))
+        self.assertEqual(0, notifications.returncode, notifications.stdout + notifications.stderr)
+        self.assertEqual(1, json.loads(notifications.stdout)["pending"])
 
     def test_cli_create_run_and_status(self) -> None:
         created = self.run_cli(

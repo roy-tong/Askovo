@@ -116,6 +116,38 @@ class SemanticFixture(unittest.TestCase):
         return payload["candidates"][0]["candidate_id"]
 
 
+class UsageAccountingTests(SemanticFixture):
+    def test_openai_usage_is_accumulated_and_offline_cost_is_zero(self) -> None:
+        class Response:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def read(self):
+                return json.dumps(self.payload).encode("utf-8")
+
+        provider = semantic_candidates.OpenAICompatibleProvider(
+            "http://127.0.0.1/v1", "", "test-model")
+        responses = iter([
+            {"choices": [{"message": {"content": "{}"}}],
+             "usage": {"prompt_tokens": 3, "completion_tokens": 5, "total_tokens": 8}},
+            {"choices": [{"message": {"content": "{}"}}],
+             "usage": {"prompt_tokens": 4, "completion_tokens": 6, "total_tokens": 10}},
+        ])
+        with mock.patch("semantic_candidates._open_model_request", side_effect=lambda request: Response(next(responses))):
+            provider.complete([{"role": "user", "content": "first"}])
+            provider.complete([{"role": "user", "content": "second"}])
+        self.assertEqual({"status": "observed", "prompt_tokens": 7,
+                          "completion_tokens": 11, "total_tokens": 18}, provider.usage)
+        report = self.run_offline(self.make_study())
+        self.assertEqual(0, report["operations"]["token_usage"]["total_tokens"])
+
+
 class CandidateValidationTests(SemanticFixture):
     def test_a_valid_candidate_passes(self) -> None:
         study = self.make_study()

@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict
+from urllib.parse import parse_qs, urlsplit
 
 SCHEMA = "askovo.landing-experiment/1"
 STATUS_SCHEMA = "askovo.landing-experiment-status/1"
@@ -29,6 +30,37 @@ def _now():
 
 def _canonical(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _instant(value, label):
+    try:
+        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("%s must be an ISO 8601 timestamp" % label) from exc
+    if parsed.tzinfo is None:
+        raise ValueError("%s must include a timezone" % label)
+    return parsed
+
+
+def _window_bounds(window, label="window"):
+    if not isinstance(window, dict):
+        raise ValueError("%s must be an object" % label)
+    start = _instant(window.get("start"), label + ".start")
+    end = _instant(window.get("end"), label + ".end")
+    if end <= start:
+        raise ValueError("%s must end after it starts" % label)
+    return start, end
+
+
+def _window_state(spec, kind, at=None):
+    window = spec["window"] if kind == "enrollment" else spec.get("outcome_window") or spec["window"]
+    start, end = _window_bounds(window, kind + "_window")
+    current = _instant(at or _now(), "current time")
+    if current < start:
+        return kind + "_not_started"
+    if current >= end:
+        return kind + "_closed"
+    return "active"
 
 
 def _validate(spec):
@@ -60,8 +92,30 @@ def _validate(spec):
         raise ValueError("planned_sample_per_arm must be a positive integer") from exc
     if planned <= 0:
         raise ValueError("planned_sample_per_arm must be a positive integer")
-    if not isinstance(spec.get("window"), dict) or not isinstance(spec.get("comparability"), dict):
-        raise ValueError("window and comparability must be objects")
+    if not isinstance(spec.get("comparability"), dict):
+        raise ValueError("comparability must be an object")
+    _window_bounds(spec.get("window"))
+    if spec.get("outcome_window") is not None:
+        _window_bounds(spec["outcome_window"], "outcome_window")
+    eligibility = spec.get("eligibility")
+    if eligibility is not None:
+        if not isinstance(eligibility, dict) \
+                or not str(eligibility.get("screening_sha256") or "").startswith("sha256:"):
+            raise ValueError("eligibility needs a screening_sha256")
+        registry = eligibility.get("registry")
+        if not isinstance(registry, list) or not registry:
+            raise ValueError("eligibility.registry must be a non-empty array")
+        tokens = set()
+        participants = set()
+        for row in registry:
+            if not isinstance(row, dict) \
+                    or not str(row.get("token_sha256") or "").startswith("sha256:") \
+                    or not str(row.get("participant_ref_hash") or "").startswith("sha256:"):
+                raise ValueError("eligibility registry entries need token and participant hashes")
+            if row["token_sha256"] in tokens or row["participant_ref_hash"] in participants:
+                raise ValueError("eligibility registry hashes must be unique")
+            tokens.add(row["token_sha256"])
+            participants.add(row["participant_ref_hash"])
     revision_keys = ("revision_of", "previous_design_sha256", "revision_reason")
     if any(spec.get(key) for key in revision_keys):
         if not all(str(spec.get(key) or "").strip() for key in revision_keys):
@@ -251,7 +305,7 @@ class LandingHandler(BaseHTTPRequestHandler):
                 return value
         return ""
 
-    def _assign(self, participant_id):
+    def _assign(self, participant_id, token=""):
         spec = self.server.spec
         with self.server.assignment_lock:
             with _connect(self.server.root) as connection:
@@ -259,31 +313,49 @@ class LandingHandler(BaseHTTPRequestHandler):
                     row = connection.execute(
                         "SELECT arm_id FROM assignments WHERE participant_id=?", (participant_id,)).fetchone()
                     if row:
-                        return participant_id, str(row["arm_id"]), False
+                        return participant_id, str(row["arm_id"]), ""
+                eligibility = spec.get("eligibility")
+                if eligibility:
+                    token_hash = hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()
+                    registered = next((row for row in eligibility["registry"]
+                                       if row["token_sha256"] == "sha256:" + token_hash), None)
+                    if registered is None:
+                        return "", "", "ineligible"
+                    participant_id = token_hash
+                    row = connection.execute(
+                        "SELECT arm_id FROM assignments WHERE participant_id=?", (participant_id,)).fetchone()
+                    if row:
+                        return participant_id, str(row["arm_id"]), ""
+                enrollment = _window_state(spec, "enrollment")
+                if enrollment != "active":
+                    return "", "", enrollment
                 count = connection.execute("SELECT COUNT(*) AS n FROM assignments").fetchone()["n"]
                 if count >= int(spec["max_exposures"]):
-                    return "", "", True
-                participant_id = uuid.uuid4().hex
+                    return "", "", "max_exposures_reached"
+                participant_id = participant_id or uuid.uuid4().hex
                 arm_id = self.server.random.choice(spec["variants"])["arm_id"]
                 connection.execute(
                     "INSERT INTO assignments(participant_id,arm_id,assigned_at) VALUES (?,?,?)",
                     (participant_id, arm_id, _now()))
             _record_event(self.server.root, spec["experiment_id"], participant_id, arm_id, "exposure")
-            return participant_id, arm_id, False
+            return participant_id, arm_id, ""
 
     def do_GET(self):
-        if self.path == "/status.json":
+        parsed = urlsplit(self.path)
+        route = parsed.path
+        token = parse_qs(parsed.query).get("token", [""])[0]
+        if route == "/status.json":
             self._headers(content_type="application/json; charset=utf-8")
             self.wfile.write((json.dumps(status(self.server.root), ensure_ascii=False) + "\n").encode())
             return
-        if self.path != "/":
+        if route != "/":
             self._headers(404)
             self.wfile.write(b"Not found")
             return
-        participant_id, arm_id, stopped = self._assign(self._cookie())
+        participant_id, arm_id, stopped = self._assign(self._cookie(), token=token)
         if stopped:
-            self._headers(503)
-            self.wfile.write(b"Experiment stopped: registered exposure limit reached")
+            self._headers(403 if stopped == "ineligible" else 503)
+            self.wfile.write(("Experiment stopped: " + stopped).encode("utf-8"))
             return
         variant = _variant(self.server.spec, arm_id)
         cookie = "ovo_landing_pid=%s; HttpOnly; SameSite=Lax; Path=/" % participant_id
@@ -306,6 +378,11 @@ class LandingHandler(BaseHTTPRequestHandler):
         if row is None:
             self._headers(409)
             self.wfile.write(b"No experiment assignment")
+            return
+        outcome = _window_state(self.server.spec, "outcome")
+        if outcome != "active":
+            self._headers(410)
+            self.wfile.write(("Experiment outcome unavailable: " + outcome).encode("utf-8"))
             return
         _record_event(self.server.root, self.server.spec["experiment_id"],
                       participant_id, str(row["arm_id"]), "conversion")
@@ -397,6 +474,8 @@ def status(root):
     totals = {key: sum(row[key] for row in arms)
               for key in ("assignments", "exposures", "conversions")}
     stopped = totals["assignments"] >= int(spec["max_exposures"])
+    enrollment = _window_state(spec, "enrollment")
+    stop_reason = "max_exposures_reached" if stopped else (enrollment if enrollment != "active" else "")
     minimum = int(spec.get("min_exposures_per_arm", 30))
     comparisons = []
     controls = [row for row in arms if row["role"] == "control"]
@@ -415,8 +494,8 @@ def status(root):
     return {
         "schema": STATUS_SCHEMA,
         "experiment_id": spec["experiment_id"],
-        "state": "stopped" if stopped else "accepting_new_visitors",
-        "stop_reason": "max_exposures_reached" if stopped else "",
+        "state": "stopped" if stop_reason else "accepting_new_visitors",
+        "stop_reason": stop_reason,
         "conversion_definition": spec["conversion_definition"],
         "pricing": _pricing(spec),
         "arms": arms,
