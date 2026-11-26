@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.25.1rc3 — 2026-11-26
+
+### Fixed
+
+- Package the synthetic sample with the same method version as the runtime, eliminating the stale-sample warning present in the RC2 wheel.
+- Export release readiness to dependent jobs, check the exact candidate version on PyPI and mark RC GitHub Releases as prereleases.
+
 ## 2.25.1rc2 — 2026-11-26
 
 ### Fixed

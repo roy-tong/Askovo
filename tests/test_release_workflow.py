@@ -33,6 +33,12 @@ class ReleaseWorkflowTests(unittest.TestCase):
         text = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
         self.assertIn('https://pypi.org/pypi/askovo/${VER}/json', text)
 
+    def test_rc_github_release_is_marked_as_prerelease(self):
+        text = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        self.assertIn('if [[ "$TAG" == *rc* ]]; then PRERELEASE="--prerelease"; fi', text)
+        self.assertIn('gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes-file /tmp/notes.md $PRERELEASE', text)
+        self.assertIn('dist/*.whl dist/*.tar.gz $PRERELEASE', text)
+
 
 if __name__ == "__main__":
     unittest.main()
