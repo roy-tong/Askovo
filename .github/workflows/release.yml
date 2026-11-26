@@ -13,6 +13,8 @@ permissions:
 jobs:
   release-guard:
     runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.ready.outputs.ready }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -167,7 +169,7 @@ jobs:
       - name: Skip if this version is already live on PyPI (idempotent re-runs)
         run: |
           VER="$(cat VERSION)"
-          LIVE="$(curl -sf "https://pypi.org/pypi/askovo/json" | python3 -c "import json,sys; print(json.load(sys.stdin)['info']['version'])" 2>/dev/null || echo none)"
+          LIVE="$(curl -sf "https://pypi.org/pypi/askovo/${VER}/json" | python3 -c "import json,sys; print(json.load(sys.stdin)['info']['version'])" 2>/dev/null || echo none)"
           echo "local=$VER live=$LIVE"
           if [[ "$VER" == "$LIVE" ]]; then
             echo "askovo $VER already live on PyPI — skipping publish"

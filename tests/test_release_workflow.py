@@ -23,6 +23,16 @@ class ReleaseWorkflowTests(unittest.TestCase):
         text = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
         self.assertIn("git checkout --detach \"${TARGET_SHA}\"", text)
 
+    def test_guard_exposes_ready_to_dependent_jobs(self):
+        text = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        guard = text[text.index("  release-guard:"):text.index("  release:")]
+        self.assertIn("outputs:", guard)
+        self.assertIn("ready: ${{ steps.ready.outputs.ready }}", guard)
+
+    def test_pypi_skip_checks_the_exact_candidate_version(self):
+        text = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        self.assertIn('https://pypi.org/pypi/askovo/${VER}/json', text)
+
 
 if __name__ == "__main__":
     unittest.main()
