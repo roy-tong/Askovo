@@ -56,6 +56,10 @@ jobs:
             TARGET_SHA="$(git ls-remote origin "refs/tags/${TAG}" | cut -f1)"
           fi
           if [ -z "${TARGET_SHA}" ]; then
+            if [[ "$GITHUB_REF" == refs/heads/release/* ]]; then
+              echo "tag ${TAG} is not published yet; skipping release until the tag is pushed"
+              exit 0
+            fi
             echo "tag ${TAG} not found locally or on origin" >&2
             exit 2
           fi
