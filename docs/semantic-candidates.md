@@ -114,12 +114,15 @@ askovo analyze ./study --semantic --semantic-max-records 120 \
 askovo semantic list ./study
 askovo semantic review ./study --candidate theme-night-alert-fatigue \
   --decision accept --reviewer alice --note "两条原始引文已核对"
+askovo semantic support ./study --candidate theme-night-alert-fatigue \
+  --entailment supported --context intact --generalization-risk low \
+  --reviewer alice --note "引文与上下文支持该候选"
 askovo semantic export ./study --by alice --export-now
 ```
 
 - 没有 critic 记录的候选拒绝复核（`REVIEW_REQUIRED`）。
 - 复核日志追加到 `04-findings/semantic-reviews.jsonl`，同一结论重复提交是幂等的。
-- 只有最新决定为 `accept`、且 `--by` 与复核人一致的候选才能导出；复核同时绑定 candidate hash 与 critic hash，任一变化都要重新复核。
+- 只有最新决定为 `accept`、且 `--by` 与复核人一致的候选才能导出；复核同时绑定 candidate hash 与 critic hash，任一变化都要重新复核。导出前还必须有当前 candidate+critic 绑定的具名支持度评估，`not_assessed` 不再导出。
 - `accept/reject` 只能由人在 CLI 中执行；MCP `askovo_semantic` 仅支持 `list/export/validate`，不能代填 reviewer 自签。
 - 导出先生成 `01-sources/semantic-observations/<id>.json`，通过 `observation.py` 的 E2 校验；`--export-now` 再调用 `askovo observation export` 写 `01-sources/observations.jsonl`。
 - 进入 `02-data/evidence.jsonl` 仍需具名人工语义审核，不会自动发生。

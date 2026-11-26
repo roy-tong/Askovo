@@ -17,8 +17,8 @@ class DecisionProofPagesTest(unittest.TestCase):
 
     def test_bilingual_homepages_link_story_and_decision_proof(self):
         requirements = {
-            "index.html": "https://roy-tong.github.io/ovo/",
-            "en/index.html": "https://roy-tong.github.io/ovo/en.html",
+            "index.html": "https://roy-tong.github.io/ovo/askovo/",
+            "en/index.html": "https://roy-tong.github.io/ovo/askovo/en.html",
         }
         for relative, destination in requirements.items():
             text = (ROOT / "website" / relative).read_text(encoding="utf-8")

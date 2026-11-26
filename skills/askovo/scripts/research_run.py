@@ -290,6 +290,7 @@ def _run(study_dir: Path, *, max_steps: int = 1, analyze: bool = False) -> Dict[
     state = load_state(study_dir)
     _check_authorized(state)
     completed = 0
+    new_records = 0
     for action in state.get("actions") or []:
         if completed >= max_steps:
             break
@@ -323,6 +324,7 @@ def _run(study_dir: Path, *, max_steps: int = 1, analyze: bool = False) -> Dict[
             action["state"] = "completed"
             state["budget"]["used_records"] = int(state["budget"].get("used_records", 0)) + int(
                 result.get("records", 0) or 0)
+            new_records += int(result.get("records", 0) or 0)
             completed += 1
             _save(state_path(study_dir), state)
         elif result.get("status") == "planned":
@@ -342,7 +344,7 @@ def _run(study_dir: Path, *, max_steps: int = 1, analyze: bool = False) -> Dict[
         state["analysis"] = analysis
     state["updated_at"] = _now()
     _save(state_path(study_dir), state)
-    return {"state": state, "analysis": analysis}
+    return {"state": state, "analysis": analysis, "new_records": new_records}
 
 
 def status(study_dir: Path) -> Dict[str, Any]:

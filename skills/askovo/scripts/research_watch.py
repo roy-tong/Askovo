@@ -1,8 +1,8 @@
 """Persistent, explicitly ticked research reviews over an existing study.
 
 A watch schedules local decision reviews and optional authorized local issue-delta
-syncs. It does not perform network collection, promote evidence or rewrite judgments.
-The optional serve command runs ticks without installing a daemon by default.
+syncs. When a separately authorized research-run plan exists, serve executes that
+bounded plan before review. It never promotes evidence or rewrites judgments.
 """
 from __future__ import annotations
 
@@ -300,7 +300,11 @@ def serve(study_dir: Path, *, watch_id: str = "", now: Optional[str] = None,
     while True:
         cycles += 1
         instant = _iso(_instant(now)) if now else clock()
-        result = run_due(study_dir, watch_id=watch_id, now=instant)
+        import research_run
+        if research_run.state_path(study_dir).is_file():
+            result = execute_due(study_dir, watch_id=watch_id, now=instant)
+        else:
+            result = run_due(study_dir, watch_id=watch_id, now=instant)
         active = [row for row in status(study_dir, now=instant)["watches"]
                   if row.get("state") == "active"]
         finished = once or (max_cycles and cycles >= max_cycles) or not active
@@ -314,6 +318,8 @@ def serve(study_dir: Path, *, watch_id: str = "", now: Optional[str] = None,
                     "other_token_usage": "not_measured",
                     "elapsed_sec": round(time.monotonic() - started, 3),
                 },
+                "new_source_records_collected": int(result.get("new_source_records_collected") or 0),
+                "new_source_material_collected": bool(result.get("new_source_material_collected")),
                 "new_evidence_collected": False,
             }
         sleeper(poll_seconds)
@@ -327,20 +333,24 @@ def execute_due(study_dir: Path, *, watch_id: str = "", now: Optional[str] = Non
                 if not watch_id or watch.get("watch_id") == watch_id]
     if not selected:
         return {"schema": SCHEMA, "status": "no_due_watches", "runs": [],
-                "scheduler": "external_tick_or_watch_serve", "new_evidence_collected": False}
+                "scheduler": "external_tick_or_watch_serve",
+                "new_source_records_collected": 0, "new_source_material_collected": False,
+                "new_evidence_collected": False}
     import research_run
     collected = research_run.run(study_dir, max_steps=max_steps)
     run_state = collected.get("state") or {}
     actions = run_state.get("actions") or []
-    records = sum(int((row.get("result") or {}).get("records") or 0) for row in actions)
+    fallback_records = sum(int((row.get("result") or {}).get("records") or 0) for row in actions)
+    records = int(collected["new_records"]) if collected.get("new_records") is not None else fallback_records
     collection = {"status": run_state.get("status"), "run_id": run_state.get("run_id"),
                   "records": records,
                   "completed_actions": sum(row.get("state") == "completed" for row in actions)}
     if run_state.get("status") == "blocked":
         return {"schema": SCHEMA, "status": "failed", "collection": collection,
                 "review_status": "not_run", "runs": [],
-                "scheduler": "external_tick_or_watch_serve", "new_evidence_collected": False,
-                "canonical_evidence_promoted": False}
+                "scheduler": "external_tick_or_watch_serve",
+                "new_source_records_collected": records, "new_source_material_collected": records > 0,
+                "new_evidence_collected": False, "canonical_evidence_promoted": False}
     reviewed = run_due(study_dir, watch_id=watch_id, now=now)
     return {
         "schema": SCHEMA,
@@ -350,6 +360,8 @@ def execute_due(study_dir: Path, *, watch_id: str = "", now: Optional[str] = Non
         "review_status": reviewed.get("status"),
         "runs": reviewed.get("runs") or [],
         "scheduler": "external_tick_or_watch_serve",
+        "new_source_records_collected": records,
+        "new_source_material_collected": records > 0,
         "new_evidence_collected": False,
         "canonical_evidence_promoted": False,
         "boundary": "Collection reuses the separately authorized research-run contract. New source material is not canonical evidence or an automatic decision mutation.",

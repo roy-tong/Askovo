@@ -266,17 +266,27 @@ def records_by_id(records: Sequence[Dict[str, Any]]) -> Dict[str, Dict[str, Any]
 
 
 def corpus_snapshot(records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
-    """Content-bound snapshot of the whole corpus, not only the selected batch.
-
-    Hashing ``record_id + text`` catches both new counter-evidence and edits to
-    an existing record whose id stayed the same.
-    """
+    """Bind the snapshot to text and metadata that changes its research meaning."""
+    metadata_fields = (
+        "source_url", "source_ref", "method", "participant_id", "participant_ref",
+        "user_id", "subject_id", "sample_frame", "eligibility", "eligible",
+        "research_ready", "consent_state", "context_key",
+    )
     items = []
     for record in records:
         rid = record_id(record)
         if not rid:
             continue
-        items.append({"record_id": rid, "sha256": _sha(record_text(record))})
+        metadata = {key: record.get(key) for key in metadata_fields if key in record}
+        metadata.update({
+            "platform": record_platform(record),
+            "evidence_level": record_level(record),
+        })
+        items.append({
+            "record_id": rid,
+            "text_sha256": _sha(record_text(record)),
+            "research_metadata_sha256": _sha(_canonical(metadata)),
+        })
     items.sort(key=lambda row: row["record_id"])
     times = sorted(value for value in (_record_time(record) for record in records) if value)
     platforms = sorted({record_platform(record) for record in records
@@ -2107,6 +2117,10 @@ def export_observations(study_dir: Path, store_dir: Path, *, by: str,
         support = support_for(document, candidate, critique, support_doc)
         support_status = (support or {}).get("entailment") or "not_assessed"
         support_counts[support_status] += 1
+        if support_status == "not_assessed":
+            skipped.append({"candidate_id": candidate_id,
+                            "reason": "support is not assessed; record a named support assessment"})
+            continue
         if support_status == "contradicted":
             skipped.append({"candidate_id": candidate_id,
                             "reason": "support is contradicted by the cited records"})

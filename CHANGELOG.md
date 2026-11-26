@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Semantic corpus snapshots now bind source, evidence level, research method, participant and eligibility metadata. Observation export additionally requires a current named support assessment; `not_assessed` cannot export.
+- Landing deployments distinguish `DEPLOYMENT_REPORTED` from `DEPLOYMENT_VERIFIED`; the latter independently reads the HTTPS page and matches the frozen experiment source fingerprint. Neither proves participation or demand.
+- `watch serve` executes a separately authorized research plan before review when present and reports newly collected source records without promoting canonical evidence. Repeated runs do not recount old records.
+- Stable and Preview installation commands are synchronized from the unified release manifest; legacy product homepages redirect to product-specific OVO entries.
+
 ## 2.25.1rc1 — 2026-11-26
 
 ### Added

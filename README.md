@@ -58,8 +58,12 @@ CLI, Agent Skill and MCP share the same research engine. Use the high-level deci
 ## Run the offline sample
 
 ```bash
-pipx install askovo
-askovo demo
+# Stable
+<!--OVO:askovo-stable-->pipx install askovo==2.25.0
+askovo demo<!--/OVO:askovo-stable-->
+# Preview (prerelease acceptance)
+<!--OVO:askovo-preview-->pipx install askovo==2.25.1rc1
+askovo demo<!--/OVO:askovo-preview-->
 askovo do "Should we rebuild onboarding for small teams?" --domain software --dry-run
 ```
 

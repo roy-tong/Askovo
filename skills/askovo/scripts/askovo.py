@@ -6170,7 +6170,11 @@ def command_experiment(args: argparse.Namespace) -> int:
             print(json.dumps({"status": document["status"], "url": document["url"],
                               "external_deployment_executed": document["external_deployment_executed"],
                               "path": str(out)}, ensure_ascii=False, indent=2))
-            return 0 if document["status"] == "DEPLOYED" else 1
+            if document["status"] == "DEPLOYMENT_VERIFIED":
+                return 0
+            if document["status"] == "DEPLOYMENT_REPORTED" and not document["verification_requested"]:
+                return 0
+            return 1
         if args.landing_action == "serve":
             server = landing_experiment.create_server(
                 Path(args.dir), host=args.host, port=args.port)

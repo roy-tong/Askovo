@@ -4,11 +4,42 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+import urllib.request
+from html.parser import HTMLParser
 from pathlib import Path
 
 import landing_experiment
 
 SCHEMA = "askovo.landing-deployment/1"
+
+
+class _ExperimentMetadata(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.source_sha256 = ""
+
+    def handle_starttag(self, tag, attrs):
+        values = dict(attrs)
+        if tag == "meta" and values.get("name") == "askovo-source-sha256":
+            self.source_sha256 = str(values.get("content") or "")
+
+
+def _verify_public_page(url, source_hash, timeout, url_opener):
+    try:
+        with url_opener(url, timeout=timeout) as response:
+            final_url = str(response.geturl()) if hasattr(response, "geturl") else url
+            payload = response.read(1048577)
+        if not final_url.startswith("https://"):
+            return False, "non_https_final_url"
+        if len(payload) > 1048576:
+            return False, "response_too_large"
+        metadata = _ExperimentMetadata()
+        metadata.feed(payload.decode("utf-8"))
+        if metadata.source_sha256 != source_hash:
+            return False, "source_hash_mismatch"
+        return True, ""
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        return False, type(exc).__name__
 
 
 def run_process(*, argv, cwd, env, timeout):
@@ -44,7 +75,7 @@ def _validate(spec, root):
     return digest
 
 
-def deploy(spec, root, *, process_runner=None):
+def deploy(spec, root, *, process_runner=None, url_opener=None):
     root = Path(root).resolve()
     landing_experiment.load_spec(root)
     source_hash = _validate(spec, root)
@@ -65,23 +96,36 @@ def deploy(spec, root, *, process_runner=None):
         observed = {}
     if "sha256:" + hashlib.sha256((root / landing_experiment.SPEC_NAME).read_bytes()).hexdigest() != source_hash:
         raise ValueError("landing experiment source changed during deployment")
-    deployed = bool(not outcome.get("error") and outcome.get("exit_code") == 0
+    reported = bool(not outcome.get("error") and outcome.get("exit_code") == 0
                     and observed.get("deployment_id") == spec["deployment_id"]
                     and str(observed.get("url") or "").startswith("https://")
                     and str(observed.get("observed_at") or "").strip())
+    verified = False
+    verification_error = ""
+    verification_requested = spec.get("verify_url") is True
+    if reported and verification_requested:
+        verified, verification_error = _verify_public_page(
+            str(observed["url"]), source_hash, float(spec["timeout_seconds"]),
+            url_opener or urllib.request.urlopen)
+    status = ("DEPLOYMENT_VERIFIED" if verified else
+              "DEPLOYMENT_REPORTED" if reported else "ADAPTER_EXECUTED")
     return {
         "schema": "askovo.landing-deployment-result/1",
-        "status": "DEPLOYED" if deployed else "UNPROVABLE",
+        "status": status,
         "deployment_id": spec["deployment_id"],
         "url": str(observed.get("url") or ""),
         "observed_at": str(observed.get("observed_at") or ""),
         "source_sha256": source_hash,
         "adapter_executed": True,
+        "deployment_reported": reported,
+        "deployment_verified": verified,
+        "verification_requested": verification_requested,
+        "verification_error": verification_error,
         "external_deployment_executed": spec.get("external_deployment") is True,
         "exit_code": outcome.get("exit_code"),
         "error": str(outcome.get("error") or ""),
         "source_mutated": False,
-        "boundary": "A deployment receipt proves only the configured adapter response. It does not prove eligible traffic, participation, conversion or demand.",
+        "boundary": "DEPLOYMENT_REPORTED is only the adapter receipt. DEPLOYMENT_VERIFIED independently reads the HTTPS page and matches its frozen source fingerprint. Neither proves eligible traffic, participation, conversion or demand.",
     }
 
 
