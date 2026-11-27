@@ -12,6 +12,8 @@ Askovo 是一项 AI Native 研究服务，面向需要做产品决定的团队�
 
 [OVO 统一官网](https://roy-tong.github.io/ovo/) · [决定重放](https://roy-tong.github.io/Askovo/examples/decision-replay.html) · [快速开始](docs/quickstart.md) · [当前能力](docs/feature-status.md)
 
+**关注进展：** [X @elliwoodtong](https://x.com/elliwoodtong) · [加入 OVO Discord](https://discord.gg/UqrM8MCXb)
+
 [![CI](https://github.com/roy-tong/Askovo/actions/workflows/tests.yml/badge.svg)](https://github.com/roy-tong/Askovo/actions/workflows/tests.yml)
 [![PyPI](https://img.shields.io/pypi/v/askovo)](https://pypi.org/project/askovo/)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
