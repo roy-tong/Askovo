@@ -40,9 +40,11 @@ GitHub Actions 必须通过 Python 3.9、3.10、3.11、3.12 和 packaging job。
 
 ## 4. 构建并检查最终产物
 
+构建需要能读取 PEP 621 元数据的工具链：`setuptools>=77`、`build`。旧系统 Python（例如 macOS 自带 3.9 配 setuptools 58 / pip 21.2.4）会产出 `UNKNOWN-0.0.0` 空壳并报 `Missing dependencies: setuptools>=77`，先升级构建工具或在 CI 构建，不要用本地产物代替发布件。
+
 ```bash
 rm -rf build dist *.egg-info
-python3 -m pip install build twine
+python3 -m pip install --upgrade build twine setuptools
 python3 -m build
 python3 -m twine check dist/*
 python3 -m venv /tmp/askovo-release-venv

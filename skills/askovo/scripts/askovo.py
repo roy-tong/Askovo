@@ -816,7 +816,9 @@ def _validate_cdp_transport_config(adapter_name: str, config: dict[str, Any]) ->
     if config.get("connector_revision") != sure_engine.VERSION:
         errors.append(
             f"{adapter_name} connector_revision must be the engine version "
-            f"{sure_engine.VERSION} that stamps CDP run manifests"
+            f"{sure_engine.VERSION} that stamps CDP run manifests; migrate with "
+            f"`askovo study STUDY set --field source_adapters.{adapter_name}.connector_revision "
+            f"--value-json '\"current\"'`"
         )
     if config.get("connector_license") != CDP_TRANSPORT_LICENSE:
         errors.append(f"{adapter_name} connector_license must be {CDP_TRANSPORT_LICENSE}")

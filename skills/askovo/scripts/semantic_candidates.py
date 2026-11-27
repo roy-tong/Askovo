@@ -61,6 +61,9 @@ KINDS = ("theme", "mechanism", "counterexample")
 STATUS = "unverified"
 MIN_STATEMENT_CHARS = 8
 MIN_QUOTE_CHARS = 4
+# Records shorter than this carry no analyzable statement (e.g. "yupp", "+1").
+# Quoted evidence may still be short; this floor only filters batch selection.
+MIN_RECORD_CHARS = 24
 MAX_REFS_PER_CANDIDATE = 12
 
 CANDIDATES_REL = Path("04-findings/semantic-candidates.json")
@@ -941,7 +944,8 @@ def select_records(records: Sequence[Dict[str, Any]], question: str,
                    text_of: Callable[[Dict[str, Any]], str], *,
                    max_records: int, retrieval: str,
                    study_dir: Path, allow_external: bool) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    usable = [record for record in records if len(text_of(record)) >= MIN_QUOTE_CHARS]
+    usable = [record for record in records if len(text_of(record).strip()) >= MIN_RECORD_CHARS]
+    filtered_short = len(records) - len(usable)
     limit = max(1, int(max_records))
     if not question:
         selected = _stratified(usable, limit, text_of)
@@ -950,6 +954,7 @@ def select_records(records: Sequence[Dict[str, Any]], question: str,
             "relevance_used": 0,
             "requested": retrieval,
             "available": len(usable),
+            "filtered_short": filtered_short,
             "selected": len(selected),
         }
     scores: Dict[str, float] = {}
@@ -988,6 +993,7 @@ def select_records(records: Sequence[Dict[str, Any]], question: str,
         "used": used,
         "error": error,
         "available": len(usable),
+        "filtered_short": filtered_short,
         "selected": len(selected),
     }
 
@@ -2084,6 +2090,14 @@ def export_observations(study_dir: Path, store_dir: Path, *, by: str,
     latest = review_state(load_reviews(study_dir))
     exported: List[Dict[str, Any]] = []
     skipped: List[Dict[str, Any]] = []
+    blocked: List[Dict[str, Any]] = []
+
+    def _skip(candidate_id: str, reason: str, *, neutral: bool = False) -> None:
+        row = {"candidate_id": candidate_id, "reason": reason}
+        skipped.append(row)
+        if not neutral:
+            blocked.append(row)
+
     support_counts = {key: 0 for key in ("supported", "partial", "unsupported",
                                          "contradicted", "not_assessed")}
     support_warnings: List[Dict[str, Any]] = []
@@ -2093,41 +2107,33 @@ def export_observations(study_dir: Path, store_dir: Path, *, by: str,
         review = latest.get(candidate_id) or {}
         current_hash = _sha(_canonical(candidate))
         if review.get("decision") != "accept":
-            skipped.append({"candidate_id": candidate_id,
-                            "reason": "no accepted named review"})
+            _skip(candidate_id, "no accepted named review", neutral=True)
             continue
         if review.get("candidate_hash") and review["candidate_hash"] != current_hash:
-            skipped.append({"candidate_id": candidate_id,
-                            "reason": "review is stale for this candidate revision; "
-                                      "review the current text again"})
+            _skip(candidate_id, "review is stale for this candidate revision; "
+                                "review the current text again")
             continue
         if str(review.get("reviewer") or "") != by:
-            skipped.append({"candidate_id": candidate_id,
-                            "reason": "accepted by a different reviewer (%s)" % review.get("reviewer")})
+            _skip(candidate_id, "accepted by a different reviewer (%s)" % review.get("reviewer"))
             continue
         critique = (critic.get("candidates") or {}).get(candidate_id) or {}
         if not critique:
-            skipped.append({"candidate_id": candidate_id,
-                            "reason": "critic record missing; rerun analyze --semantic"})
+            _skip(candidate_id, "critic record missing; rerun analyze --semantic")
             continue
         if str(review.get("critic_hash") or "") != _sha(_canonical(critique)):
-            skipped.append({"candidate_id": candidate_id,
-                            "reason": "stale critic revision; review the current critic again"})
+            _skip(candidate_id, "stale critic revision; review the current critic again")
             continue
         support = support_for(document, candidate, critique, support_doc)
         support_status = (support or {}).get("entailment") or "not_assessed"
         support_counts[support_status] += 1
         if support_status == "not_assessed":
-            skipped.append({"candidate_id": candidate_id,
-                            "reason": "support is not assessed; record a named support assessment"})
+            _skip(candidate_id, "support is not assessed; record a named support assessment")
             continue
         if support_status == "contradicted":
-            skipped.append({"candidate_id": candidate_id,
-                            "reason": "support is contradicted by the cited records"})
+            _skip(candidate_id, "support is contradicted by the cited records")
             continue
         if support_status == "unsupported" and not (support or {}).get("override"):
-            skipped.append({"candidate_id": candidate_id,
-                            "reason": "support is unsupported; a named override is required"})
+            _skip(candidate_id, "support is unsupported; a named override is required")
             continue
         if support_status == "partial":
             support_warnings.append({"candidate_id": candidate_id,
@@ -2138,8 +2144,7 @@ def export_observations(study_dir: Path, store_dir: Path, *, by: str,
             if item not in needs:
                 needs.append(item)
         if not needs:
-            skipped.append({"candidate_id": candidate_id,
-                            "reason": "no unknowns or missing evidence recorded"})
+            _skip(candidate_id, "no unknowns or missing evidence recorded")
             continue
         refs = candidate.get("evidence_refs") or []
         platforms = [ref.get("platform") or "unknown" for ref in refs]
@@ -2198,18 +2203,17 @@ def export_observations(study_dir: Path, store_dir: Path, *, by: str,
         }
         doc_errors = observation.validate_observation(doc)
         if doc_errors:
-            skipped.append({"candidate_id": candidate_id,
-                            "reason": "observation validation failed: " + "; ".join(doc_errors[:4])})
+            _skip(candidate_id,
+                  "observation validation failed: " + "; ".join(doc_errors[:4]))
             continue
         target = store_dir / ("%s.json" % observation_id)
         payload = json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
         if target.is_file():
             if target.read_text(encoding="utf-8") == payload:
-                skipped.append({"candidate_id": candidate_id, "reason": "already exported"})
+                _skip(candidate_id, "already exported", neutral=True)
                 continue
-            skipped.append({"candidate_id": candidate_id,
-                            "reason": "observation %s already exists with different content"
-                                      % observation_id})
+            _skip(candidate_id,
+                  "observation %s already exists with different content" % observation_id)
             continue
         store_dir.mkdir(parents=True, exist_ok=True)
         try:
@@ -2219,10 +2223,18 @@ def export_observations(study_dir: Path, store_dir: Path, *, by: str,
                                 "INTERNAL_ERROR") from exc
         exported.append({"candidate_id": candidate_id, "observation_id": observation_id,
                          "file": str(target), "generalization": doc["claims"][0]["generalization"]})
+    if exported:
+        status = "exported"
+    elif blocked:
+        status = "blocked"
+    else:
+        status = "nothing_to_export"
     return {
-        "status": "exported",
+        "status": status,
         "exported": exported,
         "exported_count": len(exported),
+        "blocked": blocked,
+        "blocked_count": len(blocked),
         "skipped": skipped,
         "store": str(store_dir),
         "corpus_binding": corpus_binding,
@@ -2339,7 +2351,7 @@ def cmd_export(args: argparse.Namespace) -> int:
         except json.JSONDecodeError:
             payload["observation_export"] = buffer.getvalue().strip()
     _print(payload, bool(getattr(args, "json", False)))
-    return 0
+    return 1 if payload.get("status") == "blocked" else 0
 
 
 def cmd_validate(args: argparse.Namespace) -> int:

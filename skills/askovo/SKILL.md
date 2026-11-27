@@ -15,7 +15,7 @@ askovo serves product managers, user researchers, user operations, market/requir
 
 The canonical artifact is `04-findings/product-reasoning.json`; read [references/product-reasoning.md](references/product-reasoning.md) before creating or changing it. Every feature needs a solution-neutral need and explicit rationale; every product needs scope, non-goals, and acceptance criteria; every business node needs a market boundary, payer, price/cost hypotheses, unit-economics inputs, success metrics, and a resource gate. Evidence supports reasoning; it does not replace it.
 
-The same deterministic operations are available as MCP tools via [scripts/askovo_mcp.py](scripts/askovo_mcp.py) for MCP-first agents; this Skill remains the source of judgment, mode selection, and safety boundaries regardless of the entry point.
+The same deterministic operations are available as MCP tools via [scripts/askovo_mcp.py](scripts/askovo_mcp.py) for MCP-first agents; this Skill remains the source of judgment, mode selection, and safety boundaries regardless of the entry point. Read-only projections (`askovo_page`, `askovo_brief`, `askovo_delta show|status`) are exposed too; named human review, `delta sync/approve` and `experiment serve` stay CLI-only.
 
 The same operations are exposed as the `askovo` CLI and as MCP tools via `askovo mcp`. Examples below use `python3 scripts/askovo.py` for a repo checkout; the installed CLI is equivalent. Use `askovo do` for a new product question and `askovo audit` first when the user already has material.
 

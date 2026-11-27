@@ -125,6 +125,8 @@ askovo semantic export ./study --by alice --export-now
 - 只有最新决定为 `accept`、且 `--by` 与复核人一致的候选才能导出；复核同时绑定 candidate hash 与 critic hash，任一变化都要重新复核。导出前还必须有当前 candidate+critic 绑定的具名支持度评估，`not_assessed` 不再导出。
 - `accept/reject` 只能由人在 CLI 中执行；MCP `askovo_semantic` 仅支持 `list/export/validate`，不能代填 reviewer 自签。
 - 导出先生成 `01-sources/semantic-observations/<id>.json`，通过 `observation.py` 的 E2 校验；`--export-now` 再调用 `askovo observation export` 写 `01-sources/observations.jsonl`。
+- 导出结果分三种状态：`exported`（至少写出一条）、`nothing_to_export`（没有待导出或被跳过的既有成功）、`blocked`（有已接受候选，但全部因支持度为 `contradicted`/`unsupported`、复核过期、critic 过期或观察校验失败被拦）。`blocked` 返回**退出码 1**，`nothing_to_export` 与幂等重复导出返回 0；批量自动化不应把“导出 0 条”当成功。
+- 批次选择先按正文长度过滤：短于 `MIN_RECORD_CHARS`（24 字符）的记录（如 `yupp`、`+1`）不进入模型批次，`selection.filtered_short` 记录被过滤条数；引文本身仍允许短于该阈值。
 - 进入 `02-data/evidence.jsonl` 仍需具名人工语义审核，不会自动发生。
 
 导出的观察使用 `source_kind: collected_corpus_statement` 与 `basis: collected_statement_quote`。这里的 E2 含义是**这句原话确实出现在语料中**，不是“主题已被验证”，也不证明总体比例、需求强度或方案接受。

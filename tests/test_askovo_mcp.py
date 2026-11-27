@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -307,6 +308,40 @@ class AskvoMcpServerTests(unittest.TestCase):
         self.assertEqual(-32602, bad_args["code"])
         self.assertIn("array of strings", bad_args["message"])
 
+
+
+    def test_read_only_page_brief_and_delta_tools_are_exposed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            study = Path(directory) / "study"
+            shutil.copytree(ROOT / "examples/sample-study", study)
+            responses = run_mcp(
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                    "name": "askovo_page",
+                    "arguments": {"study_dir": str(study), "node": "need"}}},
+                {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
+                    "name": "askovo_brief", "arguments": {"study_dir": str(study)}}},
+                {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {
+                    "name": "askovo_delta",
+                    "arguments": {"action": "status", "study_dir": str(study)}}},
+                {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {
+                    "name": "askovo_delta",
+                    "arguments": {"action": "sync", "study_dir": str(study)}}},
+            )
+            names = {row["name"] for row in responses[0]["result"]["tools"]}
+            for name in ("askovo_page", "askovo_brief", "askovo_delta"):
+                self.assertIn(name, names)
+            page = tool_payload(responses[1])
+            self.assertEqual(0, page["exit_code"], page)
+            self.assertEqual("askovo.evidence-page/1", page["result"]["schema"])
+            brief = tool_payload(responses[2])
+            self.assertIn(brief["exit_code"], (0, 1))
+            self.assertEqual("askovo.decision-brief/1", brief["result"]["schema"])
+            status = tool_payload(responses[3])
+            self.assertEqual(0, status["exit_code"], status)
+            refused = responses[4]
+            self.assertIn("sync stays CLI-only",
+                          json.dumps(refused, ensure_ascii=False))
 
 if __name__ == "__main__":
     unittest.main()

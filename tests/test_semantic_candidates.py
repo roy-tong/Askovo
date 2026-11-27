@@ -894,5 +894,85 @@ class SemanticCliTests(SemanticFixture):
                 "decision": "accept", "reviewer": "agent-self-declared"})
 
 
+
+class ExportStatusAndSelectionTests(SemanticFixture):
+    def test_blocked_export_is_not_reported_as_success(self) -> None:
+        study = self.make_study()
+        self.run_offline(study)
+        candidate_id = self.first_candidate(study)
+        semantic_candidates.review_candidate(
+            study, candidate_id, "accept", reviewer="alice", note="quotes checked")
+        semantic_candidates.assess_support(
+            study, candidate_id, entailment="contradicted", context_intact=False,
+            generalization_risk="high", reviewer="alice", checker="human",
+            note="R02 says the opposite")
+        store = study / "01-sources" / "semantic-observations"
+        result = semantic_candidates.export_observations(study, store, by="alice")
+        self.assertEqual("blocked", result["status"])
+        self.assertEqual(0, result["exported_count"])
+        self.assertEqual(1, result["blocked_count"])
+        completed = run_cli("semantic", "export", str(study), "--by", "alice", "--json")
+        self.assertEqual(1, completed.returncode, completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertEqual("blocked", payload["status"])
+        self.assertEqual(1, payload["blocked_count"])
+
+    def test_repeated_export_of_the_same_observation_is_not_blocked(self) -> None:
+        study = self.make_study()
+        self.run_offline(study)
+        candidate_id = self.first_candidate(study)
+        semantic_candidates.review_candidate(
+            study, candidate_id, "accept", reviewer="alice", note="quotes checked")
+        self.assess(study, candidate_id)
+        store = study / "01-sources" / "semantic-observations"
+        first = semantic_candidates.export_observations(study, store, by="alice")
+        self.assertEqual("exported", first["status"])
+        second = semantic_candidates.export_observations(study, store, by="alice")
+        self.assertEqual("nothing_to_export", second["status"])
+        self.assertEqual(0, second["blocked_count"])
+        completed = run_cli("semantic", "export", str(study), "--by", "alice", "--json")
+        self.assertEqual(0, completed.returncode, completed.stderr)
+
+    def test_unassessed_support_is_blocked_not_silently_exported(self) -> None:
+        study = self.make_study()
+        self.run_offline(study)
+        candidate_id = self.first_candidate(study)
+        semantic_candidates.review_candidate(
+            study, candidate_id, "accept", reviewer="alice", note="quotes checked")
+        result = semantic_candidates.export_observations(
+            study, study / "01-sources" / "semantic-observations", by="alice")
+        self.assertEqual("blocked", result["status"])
+        self.assertEqual(0, result["exported_count"])
+        self.assertEqual(1, result["blocked_count"])
+        self.assertEqual("support is not assessed; record a named support assessment",
+                         result["blocked"][0]["reason"])
+        completed = run_cli("semantic", "export", str(study), "--by", "alice", "--json")
+        self.assertEqual(1, completed.returncode, completed.stderr)
+
+    def test_unreviewed_candidates_are_not_blocked(self) -> None:
+        study = self.make_study()
+        self.run_offline(study)
+        result = semantic_candidates.export_observations(
+            study, study / "01-sources" / "semantic-observations", by="alice")
+        self.assertEqual("nothing_to_export", result["status"])
+        self.assertEqual(0, result["blocked_count"])
+
+    def test_short_records_never_enter_the_model_batch(self) -> None:
+        records = default_records() + [
+            {"record_id": "R05", "platform": "reddit", "evidence_level": "E1",
+             "created_at": "2026-03-02T00:00:00Z", "text": "yupp"},
+            {"record_id": "R06", "platform": "reddit", "evidence_level": "E1",
+             "created_at": "2026-03-03T00:00:00Z", "text": "+1"},
+        ]
+        study = self.make_study(records)
+        selected, summary = semantic_candidates.select_records(
+            semantic_candidates.load_records(study), "", semantic_candidates.record_text,
+            max_records=10, retrieval="auto", study_dir=study, allow_external=False)
+        ids = {row["record_id"] for row in selected}
+        self.assertNotIn("R05", ids)
+        self.assertNotIn("R06", ids)
+        self.assertEqual(2, summary["filtered_short"])
+
+
 if __name__ == "__main__":
     unittest.main()

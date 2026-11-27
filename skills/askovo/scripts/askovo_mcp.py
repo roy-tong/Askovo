@@ -574,6 +574,50 @@ def _build_observation(arguments: dict[str, Any]) -> argparse.Namespace:
     )
 
 
+def _build_page(arguments: dict[str, Any]) -> argparse.Namespace:
+    node = _optional_string(arguments, "node") or "scene"
+    if node not in ("scene", "user", "pain", "need", "feature", "product", "business"):
+        raise ValueError("node must be scene, user, pain, need, feature, product or business")
+    return _namespace(
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        chain=_optional_string(arguments, "chain") or "",
+        node=node,
+        html=_optional_string(arguments, "html") or "",
+        json=True,
+    )
+
+
+def _build_brief(arguments: dict[str, Any]) -> argparse.Namespace:
+    fmt = _optional_string(arguments, "format") or "json"
+    if fmt not in ("json", "md"):
+        raise ValueError("format must be json or md")
+    return _namespace(
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        format=fmt,
+        task=_optional_string(arguments, "task") or "",
+        question=_optional_string(arguments, "question") or "",
+        chain=_optional_string(arguments, "chain") or "",
+        output=_optional_string(arguments, "output") or "",
+    )
+
+
+def _build_delta(arguments: dict[str, Any]) -> argparse.Namespace:
+    action = _string(arguments.get("action"), "action")
+    if action not in ("show", "status"):
+        raise ValueError("delta MCP action must be show or status; sync stays CLI-only")
+    fmt = _optional_string(arguments, "format") or "json"
+    if fmt not in ("json", "md"):
+        raise ValueError("format must be json or md")
+    return _namespace(
+        study_dir=_string(arguments.get("study_dir"), "study_dir"),
+        action=action,
+        version=_optional_string(arguments, "version") or "",
+        format=fmt,
+        file="", authorized_by="", since="", label="", question="",
+        by="", approval_ref="", option="", decision_id="",
+    )
+
+
 def _build_proof_export(arguments: dict[str, Any]) -> argparse.Namespace:
     classification = _optional_string(arguments, "classification") or "private"
     if classification not in ("private", "synthetic", "public-redacted"):
@@ -1557,6 +1601,62 @@ TOOLS.append({
     },
 })
 
+TOOLS.append({
+    "name": "askovo_page",
+    "description": ("Read-only single-judgment evidence page for one chain node "
+                    "(scene/user/pain/need/feature/product/business): supporting and counter "
+                    "evidence, reasoning edges, gaps and falsification prompts. Exit 1 means the "
+                    "page is failed, stale or empty; it never approves a claim."),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "study_dir": {"type": "string"},
+            "chain": {"type": "string", "description": "PRxx chain id when the study has several"},
+            "node": {"enum": ["scene", "user", "pain", "need", "feature", "product", "business"],
+                     "default": "scene"},
+            "html": {"type": "string", "description": "optional self-contained HTML output path"},
+            "json": {"type": "boolean", "default": True},
+        },
+        "required": ["study_dir"],
+    },
+})
+
+TOOLS.append({
+    "name": "askovo_brief",
+    "description": ("Read-only decision brief projected from the canonical chain. It stays "
+                    "artifact_status=partial with every gap listed and decision_state=not_approved; "
+                    "exit 1 means stale inputs. It never approves or validates a decision."),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "study_dir": {"type": "string"},
+            "format": {"enum": ["json", "md"], "default": "json"},
+            "task": {"type": "string", "description": "optional decide task id to bind"},
+            "question": {"type": "string", "description": "override the decision question"},
+            "chain": {"type": "string"},
+            "output": {"type": "string", "description": "output directory (default 06-report)"},
+        },
+        "required": ["study_dir"],
+    },
+})
+
+TOOLS.append({
+    "name": "askovo_delta",
+    "description": ("Read-only incremental research delta: show the latest or a named version, or "
+                    "report version/freshness status. Sync approves nothing and stays CLI/authorized; "
+                    "an approved DecisionSnapshot is never mutated."),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {"enum": ["show", "status"]},
+            "study_dir": {"type": "string"},
+            "version": {"type": "string", "description": "show: delta version, default latest"},
+            "format": {"enum": ["json", "md"], "default": "json"},
+        },
+        "required": ["action", "study_dir"],
+    },
+})
+
 TOOL_BUILDERS = {
     "askovo_route": (askovo_cli.sure_engine.cli_route, _build_route),
     "askovo_do": (askovo_cli.sure_engine.cli_do, _build_do),
@@ -1572,6 +1672,9 @@ TOOL_BUILDERS = {
     "askovo_codebook": (askovo_cli.sure_engine.cli_codebook, _build_codebook),
     "askovo_chain": (askovo_cli.sure_engine.cli_chain, _build_codebook),
     "askovo_deliver": (askovo_cli.command_deliver, _build_deliver),
+    "askovo_page": (askovo_cli.command_page, _build_page),
+    "askovo_brief": (askovo_cli.command_brief, _build_brief),
+    "askovo_delta": (askovo_cli.command_delta, _build_delta),
     "askovo_proof_export": (askovo_cli.command_proof, _build_proof_export),
     "askovo_primary_research": (_command_primary_research, _build_primary_research),
     "askovo_research_watch": (askovo_cli.command_watch, _build_research_watch),

@@ -35,7 +35,7 @@ import urllib.request
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Optional
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
@@ -413,7 +413,12 @@ def detect_intent(text: str, explicit: str | None = None) -> dict[str, Any]:
 
 
 RISK_RULES = (
-    ("road_test", ("开放道路", "实车路测", "上路测试", "道路试验", "on-road", "road test", "road-test", "public road")),
+    ("road_test", (
+        "开放道路", "实车路测", "上路测试", "道路试验", "道路测试", "真实道路", "实车测试",
+        "路测", "驾驶分心", "分心驾驶", "试驾测试",
+        "on-road", "road test", "road-test", "public road", "test drive",
+        "driver distraction", "driving distraction", "behind the wheel",
+    )),
     ("food_ingest", ("试吃", "试喝", "摄入", "食用测试", "吃下去", "food ingestion", "ingest", "taste test", "eating", "drinking")),
     ("skin_contact", ("皮肤接触", "涂抹", "上脸", "斑贴", "skin contact", "skin-contact", "topical", "patch test", "on-skin")),
     ("minors", ("儿童", "未成年", "小学生", "幼儿", "children", "child", "minor", "underage", "pediatric")),
@@ -11872,6 +11877,102 @@ def cli_evidence(args: Any) -> int:
         return 2
 
 
+def _adapter_revision_platform(field_name: str) -> Optional[str]:
+    """Return the platform for `source_adapters.<platform>.connector_revision`.
+
+    `source_adapters.*.connector_revision` (or the shortcut
+    `source_adapters.connector_revision`) returns "*" meaning every adapter.
+    """
+    parts = [part for part in str(field_name or "").split(".") if part]
+    if len(parts) == 3 and parts[0] == "source_adapters" and parts[2] == "connector_revision":
+        return parts[1]
+    if len(parts) == 2 and parts[0] == "source_adapters" and parts[1] == "connector_revision":
+        return "*"
+    return None
+
+
+def _cli_study_set_adapter_revision(
+    study_dir: Path, study: dict[str, Any], platform: str, args: Any
+) -> int:
+    adapters = study.get("source_adapters")
+    if not isinstance(adapters, dict) or not adapters:
+        raise ValueError(
+            "study.json 没有 source_adapters；先按平台设计声明采集适配器，再迁移版本"
+        )
+    def _is_cdp(config: Any) -> bool:
+        if not isinstance(config, dict):
+            return False
+        return (str(config.get("collection_mode") or "") == "authorized_visible_page"
+                or str(config.get("connector_id") or "") == "cdp-authorized-visible-page")
+
+    if platform == "*":
+        targets = [name for name, config in adapters.items()
+                   if _is_cdp(config) and "connector_revision" in config]
+    else:
+        if not isinstance(adapters.get(platform), dict):
+            raise ValueError(
+                "study.json 没有 source_adapters.%s；可用：%s"
+                % (platform, ", ".join(sorted(str(name) for name in adapters)))
+            )
+        if not _is_cdp(adapters.get(platform)):
+            raise ValueError(
+                "source_adapters.%s 不是 CDP 可见页适配器；API/历史数据集连接器的 "
+                "connector_revision 是代码版本哈希，不能用引擎版本替换" % platform
+            )
+        targets = [platform]
+    if not targets:
+        raise ValueError(
+            "没有可迁移的 CDP connector_revision；只有 collection_mode=authorized_visible_page "
+            "的适配器需要跟随引擎版本"
+        )
+    raw = getattr(args, "value_json", None)
+    if raw is None:
+        raise ValueError(
+            "--field source_adapters.<platform>.connector_revision 需要 --value-json；"
+            '迁移到当前引擎用 --value-json \'"current"\''
+        )
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("--value-json 必须是有效 JSON：%s" % exc) from exc
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("--value-json 需要非空字符串，例如 \"current\" 或 \"2.25.1rc1\"")
+    value = value.strip()
+    if value.lower() in ("current", "engine"):
+        value = VERSION
+    previous: dict[str, Any] = {}
+    changed: list[str] = []
+    for name in targets:
+        old = adapters[name].get("connector_revision")
+        if old != value:
+            previous[name] = old
+            adapters[name]["connector_revision"] = value
+            changed.append(name)
+    if not changed:
+        print(json.dumps({
+            "status": "unchanged",
+            "field": "source_adapters.%s.connector_revision" % platform,
+            "connector_revision": value,
+            "adapters": targets,
+        }, ensure_ascii=False, indent=2))
+        return 0
+    _write_json_document(study_dir / "study.json", study)
+    print(json.dumps({
+        "status": "updated",
+        "field": "source_adapters.%s.connector_revision" % platform,
+        "connector_revision": value,
+        "previous": previous,
+        "adapters": changed,
+        "audit_status": "not_run",
+        "boundary": (
+            "只把 CDP 适配器的版本标记迁移到当前引擎，不重新采集、不提升任何证据，"
+            "也不代表旧 run manifest 由当前引擎产生。"
+        ),
+        "next_step": "运行 `askovo check %s --stage full` 重新审计；旧采集记录仍需按原 manifest 复核" % study_dir,
+    }, ensure_ascii=False, indent=2))
+    return 0
+
+
 def cli_study(args: Any) -> int:
     try:
         study_dir = Path(args.study_dir).resolve()
@@ -11880,6 +11981,9 @@ def cli_study(args: Any) -> int:
         path = study_dir / "study.json"
         study = load_json(path)
         field_name = str(getattr(args, "field", "") or "").strip()
+        adapter_platform = _adapter_revision_platform(field_name)
+        if adapter_platform is not None:
+            return _cli_study_set_adapter_revision(study_dir, study, adapter_platform, args)
         fields = {
             "title": str,
             "decision.question": str, "decision.owner": str, "decision.deadline": str,
