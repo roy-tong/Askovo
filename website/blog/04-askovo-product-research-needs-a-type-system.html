@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Askovo: product research needs a type system, not a confidence score — Askovo</title>
+  <meta name="description" content="Orthogonal evidence qualification, structural transaction checks, conclusion gates, and hash-bound research handoffs.">
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="canonical" href="https://roy-tong.github.io/Askovo/blog/04-askovo-product-research-needs-a-type-system.html">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Askovo">
+  <meta property="og:title" content="Askovo: product research needs a type system, not a confidence score">
+  <meta property="og:description" content="Orthogonal evidence qualification, structural transaction checks, conclusion gates, and hash-bound research handoffs.">
+  <meta property="og:url" content="https://roy-tong.github.io/Askovo/blog/04-askovo-product-research-needs-a-type-system.html">
+  <meta name="twitter:card" content="summary">
+  <link rel="stylesheet" href="../styles.css">
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Askovo: product research needs a type system, not a confidence score", "description": "Orthogonal evidence qualification, structural transaction checks, conclusion gates, and hash-bound research handoffs.", "datePublished": "2026-11-24", "dateModified": "2026-11-24", "inLanguage": "en", "author": {"@type": "Person", "name": "Roy Tong", "url": "https://github.com/roy-tong"}, "mainEntityOfPage": "https://roy-tong.github.io/Askovo/blog/04-askovo-product-research-needs-a-type-system.html", "codeRepository": "https://github.com/roy-tong/Askovo", "isAccessibleForFree": true, "wordCount": 1545}</script>
+  <style>
+:root{--bg:#090c10;--panel:#0f141b;--line:#1e2733;--text:#e8edf3;--muted:#9aa7b5;--accent:#4f9cf9;--accent-soft:rgba(79,156,249,.12);--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+body{background:var(--bg);color:var(--text);font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.post-back,.post-k,.post-meta{font-family:var(--mono)}.post-k{color:var(--accent)}
+pre{background:var(--panel);border:1px solid var(--line)}code{background:var(--panel);border:1px solid var(--line)}
+th{background:var(--panel);color:var(--muted)}.note{border-left:3px solid var(--accent);background:var(--accent-soft)}
+
+*{box-sizing:border-box}html{scroll-behavior:smooth}.skip-link{position:absolute;left:12px;top:-60px;padding:8px 12px;background:Canvas;color:CanvasText;z-index:20}.skip-link:focus{top:12px}
+.post{max-width:860px;margin:0 auto;padding:52px 24px 72px}.post-back{display:inline-block;font-size:.78rem;letter-spacing:.08em;margin-bottom:28px}.post-k{font-size:.75rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;margin:0 0 12px}
+.post h1{font-size:clamp(2rem,5vw,3rem);line-height:1.16;letter-spacing:-.025em;margin:0 0 16px}.post-meta{font-size:.8rem;line-height:1.6;color:var(--muted);margin-bottom:36px}.post h2{font-size:1.45rem;line-height:1.3;margin:42px 0 14px;letter-spacing:-.01em}.post h3{font-size:1.08rem;margin:28px 0 10px}.post p{margin:0 0 18px}.post ul,.post ol{margin:0 0 20px;padding-left:1.5rem}.post li{margin-bottom:8px}.post blockquote{margin:0 0 20px;padding:10px 16px;color:var(--muted);border-left:3px solid var(--line)}
+.post pre{border-radius:8px;padding:16px 18px;overflow-x:auto;margin:0 0 20px;line-height:1.55;font-size:.88rem}.post code{font-family:var(--mono);font-size:.9em;border-radius:4px;padding:1px 5px;overflow-wrap:anywhere}.post pre code{display:block;border:0;padding:0;overflow-wrap:normal}.post table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:.92rem}.post th,.post td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}.post th{font-weight:600}.table-scroll{overflow-x:auto;outline-offset:4px}.note{padding:12px 16px;border-radius:0 8px 8px 0;margin:0 0 20px}.post-footer{border-top:1px solid var(--line);margin-top:44px;padding-top:20px;color:var(--muted);font-size:.88rem}.post-footer ul{padding-left:1.2rem}.post-footer a{overflow-wrap:anywhere}
+.cards{display:grid;gap:18px;margin-top:28px}.card{border:1px solid var(--line);border-radius:10px;padding:22px}.card h2{font-size:1.3rem;margin:0 0 10px}.card p{color:var(--muted);margin:0 0 14px}.card .read{font-size:.85rem}.blog-links{margin-top:30px}.blog-links li{margin-bottom:10px}
+@media(max-width:640px){.post{padding:32px 18px 56px}.post h1{font-size:2rem}.post h2{font-size:1.3rem}.post table{font-size:.84rem}.post th,.post td{padding:8px}.post pre{font-size:.8rem;padding:13px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to article</a>
+<main class="post" id="content">
+  <nav aria-label="Article navigation"><a class="post-back" href="./">← ASKOVO TECHNICAL BLOG</a></nav>
+  <p class="post-k">Askovo · Engineering deep dive</p>
+  <h1>Askovo: product research needs a type system, not a confidence score</h1>
+  <p class="post-meta">24 November 2026 · 7 min read · 1,545 words · <a href="04-askovo-product-research-needs-a-type-system.md">Markdown source</a></p>
+  <article aria-label="Askovo: product research needs a type system, not a confidence score">
+<p><em>Orthogonal evidence qualification, structural transaction checks, conclusion gates, and hash-bound research handoffs.</em></p>
+<p>A GitHub API response can confirm that a repository has 220 stars. The same response cannot confirm that 220 people use the product, will pay for it, or made a product decision because of it.</p>
+<p>Now imagine a record that labels this observation <code>E5</code>, the highest evidence level in the system. A scalar confidence score has no good way to explain the problem. The observation may be perfectly accurate and still be the wrong type for a commercial conclusion.</p>
+<p>Askovo handles this by treating evidence qualification as three related but orthogonal dimensions:</p>
+<pre tabindex="0"><code class="language-text">measurement_integrity  → is the record itself confirmed, self-reported, unverified, or conflicted?
+behavior_kind          → what kind of behavior does the record describe?
+claim_eligibility      → which conclusion type may this record support?
+</code></pre>
+<p>The first two do not determine the third by themselves. They pass through explicit rules, some of which require human review. This is closer to a type system than a score: a valid observation of one type cannot be coerced into evidence for an unrelated claim just because it is reliable.</p>
+<h2>The qualification rules are deliberately non-monotonic</h2>
+<p>Running <code>qualify_evidence</code> on an attention metric with a confirmed source and an asserted E5 level returns:</p>
+<pre tabindex="0"><code class="language-json">{
+  &quot;measurement_integrity&quot;: &quot;confirmed_source&quot;,
+  &quot;behavior_kind&quot;: &quot;attention_metric&quot;,
+  &quot;claim_eligibility&quot;: &quot;descriptive_only&quot;,
+  &quot;needs_requalification&quot;: true,
+  &quot;review_required&quot;: false
+}
+</code></pre>
+<p>The original <code>evidence_level=E5</code> is not rewritten. Instead, the record is marked for requalification. Preserving that conflict is important: silently changing the level would erase the history of how the mistake entered the study.</p>
+<p>The eligibility function is not “higher integrity means higher business evidence.” Its branches include:</p>
+<div class="table-scroll" role="region" aria-label="Scrollable table" tabindex="0"><table>
+<thead>
+<tr>
+<th>Behavior</th>
+<th>Confirmed source</th>
+<th>Self-reported</th>
+<th>Unverified or conflicted</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>attention_metric</code></td>
+<td><code>descriptive_only</code></td>
+<td><code>none</code></td>
+<td><code>none</code></td>
+</tr>
+<tr>
+<td><code>commercial_intent</code></td>
+<td><code>descriptive_only</code></td>
+<td><code>descriptive_only</code></td>
+<td><code>none</code></td>
+</tr>
+<tr>
+<td><code>commercial_transaction</code></td>
+<td><code>commercial</code></td>
+<td><code>none</code> plus review</td>
+<td><code>none</code> plus review when applicable</td>
+</tr>
+<tr>
+<td><code>problem_behavior</code></td>
+<td><code>problem</code></td>
+<td><code>problem</code></td>
+<td><code>none</code></td>
+</tr>
+<tr>
+<td><code>solution_acceptance</code></td>
+<td><code>solution</code></td>
+<td><code>solution</code></td>
+<td><code>none</code></td>
+</tr>
+<tr>
+<td>Ordinary statement</td>
+<td><code>descriptive_only</code></td>
+<td><code>none</code></td>
+<td><code>none</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>An exact star count remains useful—as an attention metric. A self-reported intention to buy can describe demand language without becoming a transaction. A claimed payment with no verifiable source does not become commercial evidence merely because the claimant used the word “paid.”</p>
+<p>The derivation also consumes source-specific fields. Verified purchase and transaction-linked statuses can confirm a commercial transaction; pledged or adjusted crowdfunding statuses describe commercial intent; tracker, funding, and rating snapshots are attention metrics. This keeps the vocabulary aligned with what the source actually measured.</p>
+<h2>Evidence levels still matter, but imports have structural ceilings</h2>
+<p>Askovo retains E0–E5 grades for the broader research method. The import layer applies a separate ceiling by evidence form:</p>
+<pre tabindex="0"><code class="language-python">IMPORT_LEVEL_CAPS = {
+    &quot;self_report&quot;: &quot;E2&quot;,
+    &quot;behavior_log&quot;: &quot;E2&quot;,
+    &quot;transaction&quot;: &quot;E5&quot;,
+    &quot;purchase&quot;: &quot;E5&quot;,
+}
+</code></pre>
+<p>A self-report or behavior log cannot be imported at E3 acceptance or E4+/E5 commercial levels. The file is rejected if the requested level exceeds the form's cap. A row cannot raise its level above the cap declared for the import, and mixed rows keep per-row derived levels.</p>
+<p>Transaction and purchase forms need additional structure before E4-/E4+/E5 is allowed:</p>
+<pre tabindex="0"><code class="language-text">counterparty
+occurred_at
+amount
+source_ref
+evidence_ref
+</code></pre>
+<p>Defaults do not fill these fields. If any is missing, the row is held at E2 and <code>level_basis</code> records the rule:</p>
+<pre tabindex="0"><code class="language-text">transaction structure incomplete: missing counterparty, amount; E5 held at E2
+</code></pre>
+<p>This produces two different failure behaviors that are easy to confuse:</p>
+<ul>
+<li>an imported self-report requesting E5 fails the import policy check;</li>
+<li>a transaction-form row requesting E5 can enter the pipeline, but an incomplete row is downgraded structurally to E2.</li>
+</ul>
+<p>The command's <code>--evidence-form transaction</code> flag is therefore not a voucher. It only selects the rules that a real transaction record must satisfy. Fifteen import and conclusion-gate tests passed when I ran them for this article, including every missing transaction field, mixed rows, unknown levels, and plain text claiming to be a transaction.</p>
+<h2>Source count is not independent-source count</h2>
+<p>Quantitative research has another coercion problem: 1,000 copied records look larger than one record. Askovo computes independent sources with a separate identity key:</p>
+<pre tabindex="0"><code class="language-text">source_url, if present
+→ otherwise collection_run_id + source_ref
+→ otherwise record_id / normalized_text_hash / object identity fallback
+</code></pre>
+<p>The independent-source count is the cardinality of that key set. One URL repeated across 500 records remains one source. This does not make those 500 records useless; frequency, distribution, and text analysis still matter. It prevents record volume from masquerading as independent corroboration.</p>
+<p>That distinction is essential in the internal golf-device study often used to illustrate Askovo. It analyzed 109,429 deduplicated comments from eight communities over 24 months and changed the proposed sequence from dedicated camera hardware to validating software and exports first. The corpus was a convenience sample. Its scale supported quantitative analysis of that corpus, not a market-prevalence estimate or 109,429 independent confirmations.</p>
+<p>A type-aware reading asks better questions of the same data: which records describe current behavior, which describe acceptance, which are counterexamples, which are merely attention metrics, and which sources are genuinely distinct?</p>
+<h2>The formal conclusion gate is separate from node confidence</h2>
+<p>Askovo exposes six claim categories in its MCP schema: <code>need</code>, <code>acceptance</code>, <code>usability</code>, <code>performance</code>, <code>commercial</code>, and <code>safety</code>. They should not share one acceptance criterion. Interviews may support a need without proving performance; clicks may describe usability without establishing pricing; a vendor assertion cannot establish safety.</p>
+<p>The delivery layer adds a final gate for calling something a formal business conclusion:</p>
+<pre tabindex="0"><code class="language-text">business node is validated
++ qualifying E4+/E5 commercial evidence is present
++ full audit passes
+= formal conclusion
+</code></pre>
+<p>Otherwise, the output remains a current judgment with named gaps and a next evidence action. A validated business node without commercial evidence is still gated. A clean commercial record cannot rescue a failed full audit. Multiple chains are evaluated independently, so one well-supported chain cannot lend its status to another.</p>
+<p>This gate is stricter than an individual node's display status, and deliberately so. A product team can use a current judgment to decide what to investigate next without presenting it as commercial proof.</p>
+<h2>Context export is a type-preserving handoff</h2>
+<p>The handoff to Growovo introduces a different failure mode: research premises arrive downstream looking like verified facts. Askovo's context exporter maps each of the seven chain nodes to one of three statuses:</p>
+<pre tabindex="0"><code class="language-python">if node_status == &quot;validated&quot; and evidence_refs and not unresolved_refs:
+    status = &quot;evidence_supported&quot;
+elif node_status == &quot;hypothesis&quot;:
+    status = &quot;hypothesis&quot;
+else:
+    status = &quot;insufficient_evidence&quot;
+</code></pre>
+<p>A validated node with a missing evidence ID is downgraded to <code>insufficient_evidence</code>. Rejected and deprioritized nodes also remain non-facts. A node with no external reference gets a <code>status_record_only</code> reference to its own reasoning record, which is explicitly not external research evidence.</p>
+<p>The export requires three human-defined inputs:</p>
+<ul>
+<li><code>--approved-by</code>, because forwarding research premises is an approval act;</li>
+<li>at least one <code>--value-event</code>, because Askovo cannot invent the downstream value metric;</li>
+<li>at least one non-goal, either already declared in product/business nodes or supplied with <code>--non-goal</code>.</li>
+</ul>
+<p>The command is:</p>
+<pre tabindex="0"><code class="language-bash">askovo context export STUDY --out NEW_DIR \
+  --approved-by &quot;Product owner&quot; \
+  --value-event &quot;A product owner records a decision disposition&quot;
+</code></pre>
+<p>It writes two immutable files:</p>
+<pre tabindex="0"><code class="language-text">&lt;context_id&gt;.&lt;version&gt;.payload.json  # claims, evidence refs, value events, non-goals
+&lt;context_id&gt;.&lt;version&gt;.json         # same payload + source ref + content_sha256
+</code></pre>
+<p>The default version is <code>reasoning-&lt;first 12 hex of the reasoning file SHA-256&gt;</code>. The payload is serialized with sorted keys, and the envelope's <code>content_sha256</code> hashes those exact bytes. Growovo recomputes the payload hash during import, so the two files must remain together at the original path. Re-exporting the same version refuses to overwrite either file; if envelope creation fails, the newly created payload is removed.</p>
+<p>I ran the exporter on the synthetic sample, then deliberately changed one product node to <code>validated</code> with a nonexistent evidence ID and one business node to <code>hypothesis</code>. The resulting projection was:</p>
+<pre tabindex="0"><code class="language-text">total:                7
+evidence_supported:   5
+hypothesis:           1
+insufficient_evidence: 1
+
+PR01:product
+  status: insufficient_evidence
+  unresolved: [&quot;missing-evidence-id&quot;]
+
+PR01:business
+  status: hypothesis
+</code></pre>
+<p>This is the handoff behavior that matters. The mutated product node still says <code>validated</code> in the source, but downstream receives an unresolved evidence gap rather than an upgraded claim.</p>
+<h2>A second use should preserve the same distinctions</h2>
+<p>The second decision or research review is useful only if it retains these type boundaries. A new GitHub metric should remain an attention observation. A new transaction should bring its row-level structure and source. A copied URL should not inflate independent corroboration. A changed evidence reference should produce a new reasoning version and a different handoff hash.</p>
+<p>That gives the second-use measurement a concrete shape:</p>
+<ul>
+<li>count new and removed independent sources;</li>
+<li>compare eligibility distributions, not just evidence totals;</li>
+<li>preserve requalification conflicts for human review;</li>
+<li>compare claim statuses in the exported payload;</li>
+<li>record which conclusions remained current judgments;</li>
+<li>record the owner's actual disposition and review minutes.</li>
+</ul>
+<p>The engineering tradeoff is that Askovo keeps several notions of “good evidence” visible at once. This is more work than displaying one confidence percentage. It also makes the system harder to misuse as a universal answer generator. The score that is easiest to read is often the one that hides the type error.</p>
+<h3>Source and verification links</h3>
+<ul>
+<li><a href="https://github.com/roy-tong/Askovo/blob/main/skills/askovo/scripts/sure_engine.py"><code>sure_engine.py</code>: import ceilings, evidence qualification, and context export</a></li>
+<li><a href="https://github.com/roy-tong/Askovo/blob/main/tests/test_p0_import_levels.py">Import-level tests</a></li>
+<li><a href="https://github.com/roy-tong/Askovo/blob/main/tests/test_delivery_conclusion_gate.py">Delivery conclusion-gate tests</a></li>
+<li><a href="https://github.com/roy-tong/Askovo/blob/main/tests/test_context_export.py">Context-export tests</a></li>
+<li><a href="https://github.com/roy-tong/Askovo/blob/main/CHANGELOG.md">Askovo changelog</a></li>
+</ul>
+  </article>
+  <footer class="post-footer">
+    <p><strong>Also in this Askovo series</strong></p>
+    <ul><li><a href="01-askovo-a-research-database-needs-transactions.html">Askovo: a research database needs transaction semantics</a> — Evidence graphs, immutable decision records, request-scoped snapshots, and a deterministic response to contradiction.</li></ul>
+    <p><a href="./">Blog index</a> · <a href="04-askovo-product-research-needs-a-type-system.md">Download Markdown</a> · <a href="https://github.com/roy-tong/Askovo">Source repository</a></p>
+  </footer>
+</main>
+</body>
+</html>

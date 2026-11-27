@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.25.2 — 2026-11-26
+
+### Added
+
+- `askovo study set` now migrates engine-stamped CDP adapter revisions: `--field source_adapters.<platform>.connector_revision --value-json '"current"'` (or `source_adapters.*.connector_revision` for every visible-page adapter). API and historical connector revisions are code/commit pins and are refused. The migration rewrites the marker only — no recollection, no evidence promotion, no re-stamped old manifests — and the check failure message now names the exact command.
+- MCP exposes read-only `askovo_page`, `askovo_brief` and `askovo_delta` (`show`/`status`), so a host agent can read the single-node evidence page and the partial decision brief without dropping to the CLI. Named semantic review, `delta sync/approve`, experiment serving and candidate accept/reject stay CLI-only.
+
+### Fixed
+
+- `askovo semantic export` reports `status: blocked` and exits 1 when accepted candidates exist but every one is blocked (unassessed/contradicted/unsupported support, stale review or critic, observation validation). Unassessed support counts as blocked: an accepted candidate still waiting for a named support assessment is a step owed, not "nothing to do". `nothing_to_export` and idempotent re-exports still exit 0, so automation no longer reads "0 exported" as success.
+- Semantic batch selection drops records shorter than 24 characters (`selection.filtered_short`); quoted evidence may still be short.
+- The `road_test` risk rule now catches ordinary road/driving wording (`真实道路`, `道路测试`, `驾驶分心`, `driver distraction`, …) while cabin research without a test stays clear.
+- `deliver --kind` now documents its file names as one table (`user-ops.md`, `postlaunch-tracker.csv`, `web/index.html`); scripts should read the JSON `path` field instead of guessing `<kind>.md`.
+
 ## 2.25.1rc3 — 2026-11-26
 
 ### Fixed

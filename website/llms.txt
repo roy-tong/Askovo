@@ -6,6 +6,7 @@ Askovo is now presented inside the unified OVO website, not as a separately styl
 - English home: https://roy-tong.github.io/ovo/en.html
 - Real cases: https://roy-tong.github.io/ovo/cases.html
 - Engineering journal: https://roy-tong.github.io/ovo/journal.html
+- Askovo technical blog: https://roy-tong.github.io/Askovo/blog/index.html
 - Get started: https://roy-tong.github.io/ovo/start.html
 - Askovo repository and full agent entry: https://github.com/roy-tong/Askovo (repo-root llms.txt)
 - Current capabilities: https://github.com/roy-tong/Askovo/blob/main/docs/feature-status.md

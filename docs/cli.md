@@ -461,6 +461,19 @@ askovo report ./study
 
 角色交付 `role`/`lifecycle` 见上文「roles」一节，签收页 `signoff` 见下文 F3 一节；与本节合计 15 种（默认 `memo`）。
 
+`deliver --kind` 与落盘文件的对应关系如下（脚本请优先读命令 JSON 里的 `path`，不要按 `<kind>.md` 猜）：
+
+| kind | 文件 |
+| --- | --- |
+| `memo` / `report` | `06-report/memo.md`、`06-report/report.md` |
+| `plan` / `needs` / `analysis` | `06-report/plan.md`、`06-report/needs.md`、`06-report/analysis.md` |
+| `decision` / `mrd` / `prd` / `brd` | `06-report/decision-package.md`、`06-report/mrd.md`、`06-report/prd.md`、`06-report/brd.md` |
+| `ops` / `tracker` / `signoff` | `06-report/user-ops.md`、`06-report/postlaunch-tracker.csv`、`06-report/signoff.md` |
+| `role` / `lifecycle` | `06-report/role-Rxx-Dyy.md`、`06-report/lifecycle-board.md` |
+| `web` | `06-report/web/index.html` |
+
+
+
 多链研究：`--kind plan` 先输出跨链比较表与逐链结论，七环节正文只展开优先级最高的一条；`--kind report` 的“产品决策”一节按链生成状态/依据强度/建议/下一步/失败线，没有 `decided` 链时明确标注为待验证建议，不再留空模板。`--kind analysis` 的漏斗支持 `01-sources/collection-summary.json` 的累计口径。
 
 `--kind plan` 第 0 节“结论与推进建议”有门禁：只有商业环节 `validated`、绑定合格的 E4+/E5 商业证据（成交、付费或可核对的商业行为）、链带 `context_key`，且最近一次 `askovo check --stage full` 通过时才给正式结论；否则输出当前判断、缺口和下一步补证动作，不把假设写成结论。交付文档中尚未提供的字段统一用“缺口 + 影响 + 补法”说明（BRD/MRD/PRD 为“材料缺口”小节），不留占位符或空白模板。
@@ -612,7 +625,7 @@ askovo evidence STUDY retract R01 --by 赵敏 --reason "纠正误导入记录"
 askovo evidence STUDY restore R01 --by 赵敏
 ```
 
-`study set` 支持决策、范围、假设与停止/重启规则；`chain set` 支持链级关联、缺口和反证；商业节点支持市场、价格、成本、收入和业务门等类型化字段。需求判断只接受已登记证据 ID。`evidence set` 纠正证据形式/等级时，E3 必须同时提供有效的 `--concept-test`，不能借纠错升权。撤销后的证据不参与分析、需求判断或审计，恢复保留原文。
+`study set` 支持决策、范围、假设、停止/重启规则，以及 CDP 适配器版本迁移：`--field source_adapters.<platform>.connector_revision --value-json '"current"'` 把该平台迁移到当前引擎版本，`source_adapters.*.connector_revision` 作用于全部 CDP 可见页适配器（`collection_mode=authorized_visible_page`）。API/历史数据集连接器的 `connector_revision` 是代码版本哈希，不能被引擎版本替换，命令会明确拒绝。迁移只改版本标记，不重采、不提升证据；旧 run manifest 仍按原版本复核。`chain set` 支持链级关联、缺口和反证；商业节点支持市场、价格、成本、收入和业务门等类型化字段。需求判断只接受已登记证据 ID。`evidence set` 纠正证据形式/等级时，E3 必须同时提供有效的 `--concept-test`，不能借纠错升权。撤销后的证据不参与分析、需求判断或审计，恢复保留原文。
 
 CSV 导入识别 `记录编号 / 内容 / 证据等级 / 来源 / 采集时间`。编号和正文均参与跨文件判重；同编号不同正文会在任何证据写入前拒绝整批，不会先写一半。重复项返回 `duplicates` 映射，采集时间不再冒充内容发生时间。
 
